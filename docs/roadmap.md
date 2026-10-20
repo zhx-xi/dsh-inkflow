@@ -1,5 +1,9 @@
 # dsh-inkflow 路线图（Roadmap）
 
+> ⚠️ **架构变更（2026-10-21，用户拍板）**：存储已从「SQLite 为真相源」改为「**文件真相 + SQLite 派生索引**」（[ADR-0005](adr/0005-files-first-with-derived-index.md)）。
+> 凡本文出现「SQLite 表 / 数据库迁移 / 作品库目录 / 35 张物理表」的表述，一律以 [docs/conventions.md](conventions.md) 与 [docs/data-model.md v2](data-model.md) 为准；
+> 旧版数据模型已归档到 [docs/archive/](archive/data-model-sqlite-truth.md)。功能范围、差异化、验收口径不受影响。
+
 > **一句话**：单人全职 + AI 辅助，按 P0 技术验证 → P1 数据层/工具面/工作台 → P2 提取与写作质量 → P3 账本与批量 → P4 系列共享与深度结构化 → P5 同步与发布 六个阶段推进，规格估工合计 125–185 人日（逐项相加 123–175 人日），存量真实数据规模为 43 表 / 13 核心表 / 约 2900 实体 / 59 万字。
 
 | 项 | 内容 | 来源 |

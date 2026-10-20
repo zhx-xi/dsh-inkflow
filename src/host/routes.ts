@@ -2,32 +2,33 @@
  * Loopback-only HTTP surface for the InkFlow workbench page.
  *
  * The DSH web server has NO authentication of its own: any page the browser
- * loads can attempt a fetch to 127.0.0.1:<port>/inkflow/... . Therefore this
- * handler is written fail-closed:
+ * loads can attempt a fetch to 127.0.0.1:<port>/inkflow/... . This handler is
+ * therefore fail-closed (ADR-0004):
  *
- *   1. `Host` must be a loopback authority (defeats DNS rebinding: a hostile
- *      domain resolving to 127.0.0.1 still sends its own Host header).
- *   2. `Origin`, when present, must be a loopback origin (defeats cross-site
- *      fetches from a page served elsewhere).
+ *   1. `Host` must be a loopback authority (defeats DNS rebinding).
+ *   2. `Origin`, when present, must be a loopback origin (defeats cross-site fetch).
  *   3. Only an explicit method allowlist is served; everything else is 405.
- *   4. No CORS headers are ever emitted, so browsers refuse cross-origin reads.
+ *   4. No CORS headers are ever emitted.
  *
- * Mutation routes (P1+) additionally require `Content-Type: application/json`
- * so a plain HTML form post cannot reach them.
+ * Both routes here are read-only projections of the filesystem, so a browser
+ * compromise cannot corrupt novel data through this surface.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Database } from './db.js'
-import { countProjects, listProjects, SCHEMA_VERSION } from './db.js'
+
+import type { HostContext } from './context.js'
+import { INDEX_SCHEMA_VERSION } from './conventions.js'
+import { buildIndex, listChapters, readIndexMeta } from './indexer.js'
+import { inspectProject, projectLabel } from './project.js'
+import { readState } from './state.js'
 
 const LOOPBACK_AUTHORITY = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
 const LOOPBACK_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i
 const PREFIX = '/inkflow'
 
 export interface HttpDeps {
-  database: Database
+  ctx: HostContext
   dataDir: string
-  dbFile: string
   version: string
 }
 
@@ -46,14 +47,10 @@ function headerValue(req: IncomingMessage, name: string): string {
   return typeof raw === 'string' ? raw : ''
 }
 
-function isLoopbackAuthority(value: string): boolean {
-  return LOOPBACK_AUTHORITY.test(value.trim())
-}
-
 export function createHttpHandler(deps: HttpDeps) {
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const host = headerValue(req, 'host')
-    if (!isLoopbackAuthority(host)) {
+    if (!LOOPBACK_AUTHORITY.test(host.trim())) {
       sendJson(res, 403, { ok: false, error: { code: 'forbidden-host', host } })
       return
     }
@@ -70,52 +67,77 @@ export function createHttpHandler(deps: HttpDeps) {
       return
     }
     const route = path.slice(PREFIX.length)
-
     const method = (req.method ?? 'GET').toUpperCase()
     if (method !== 'GET') {
       sendJson(res, 405, { ok: false, error: { code: 'method-not-allowed', method } })
       return
     }
 
-    if (route === '/api/health') {
+    const rootParam = url.searchParams.get('root')
+    const remembered = readState(deps.dataDir).lastProjectRoot
+    const root = rootParam !== null && rootParam !== '' ? rootParam : remembered
+
+    if (route === '/api/status') {
+      if (root === undefined || root === '') {
+        sendJson(res, 200, {
+          ok: true,
+          value: {
+            pluginVersion: deps.version,
+            project: null,
+            hint: 'no project touched yet: run inkflow_project_status in a novel session',
+          },
+        })
+        return
+      }
+      const probe = inspectProject(root)
+      const index = readIndexMeta(probe.root, probe)
       sendJson(res, 200, {
         ok: true,
         value: {
           pluginVersion: deps.version,
-          dataDir: deps.dataDir,
-          dbFile: deps.dbFile,
-          schemaVersion: SCHEMA_VERSION,
-          projectCount: countProjects(deps.database),
+          project: {
+            root: probe.root,
+            label: projectLabel(probe),
+            usable: probe.usable,
+            checks: probe.checks,
+            missing: probe.missing,
+            reasons: probe.reasons,
+          },
+          index: {
+            dbFile: index.dbFile,
+            dbExists: index.dbExists,
+            schemaVersion: index.schemaVersion ?? null,
+            schemaMatches: index.schemaMatches,
+            builtAt: index.builtAt ?? null,
+            counts: index.counts,
+          },
+          indexSchemaVersion: INDEX_SCHEMA_VERSION,
         },
       })
       return
     }
 
-    if (route === '/api/projects') {
-      const includeArchived = url.searchParams.get('includeArchived') === '1'
-      const limitRaw = Number(url.searchParams.get('limit') ?? '100')
-      const limit = Number.isFinite(limitRaw) ? limitRaw : 100
-      const rows = listProjects(deps.database, { includeArchived, limit })
-      sendJson(res, 200, {
-        ok: true,
-        value: {
-          total: rows.length,
-          projects: rows.map((row) => ({
-            id: row.id,
-            title: row.title,
-            subtitle: row.subtitle,
-            author: row.author,
-            genre: row.genre,
-            seriesId: row.series_id ?? '',
-            status: row.status,
-            wordCount: row.word_count,
-            chapterCount: row.chapter_count,
-            rev: row.rev,
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-          })),
-        },
-      })
+    if (route === '/api/chapters') {
+      if (root === undefined || root === '') {
+        sendJson(res, 200, { ok: true, value: { total: 0, chapters: [], hint: 'no project yet' } })
+        return
+      }
+      const probe = inspectProject(root)
+      if (!probe.usable) {
+        sendJson(res, 200, {
+          ok: false,
+          error: { code: 'NOT_AN_INKFLOW_PROJECT', missing: probe.missing, reasons: probe.reasons },
+        })
+        return
+      }
+      let chapters = listChapters(probe.root, 200)
+      let rebuilt = false
+      if (chapters === undefined) {
+        buildIndex(probe.root)
+        chapters = listChapters(probe.root, 200) ?? []
+        rebuilt = true
+      }
+      sendJson(res, 200, { ok: true, value: { total: chapters.length, indexRebuilt: rebuilt, chapters } })
       return
     }
 

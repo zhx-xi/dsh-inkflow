@@ -149,3 +149,25 @@ Invoke-WebRequest http://127.0.0.1:2149/inkflow/api/health -UseBasicParsing | Se
 & 'D:\program\DeepSeek Harness\resources\runtime\primary-runtime\dependencies\node\bin\node.exe' `
   -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(':memory:');console.log(process.version, db.prepare('select sqlite_version() v').get().v)"
 ```
+
+
+---
+
+## 8. 架构变更后的补充验证（2026-10-21 下午：文件真相 + 派生索引）
+
+> 背景：用户拍板改用「文件真相 + SQLite 派生索引」（[ADR-0005](adr/0005-files-first-with-derived-index.md)），P0 代码当日切换。§1–§7 记录的是切换前（SQLite 真相源）的证据，仍然有效；本节记录切换后的验证。
+
+| 验证项 | 结果 | 证据 |
+|---|---|---|
+| `tsc --noEmit` | 通过 | 退出码 0 |
+| 构建 | `lib/index.js`（host ESM）+ `lib/client.js`（loader factory） | `pnpm run build` |
+| 契约测试 | **13 / 13 通过**（门禁 5 种组合、BOM 回归、索引重建、不变量、HTTP 安全、frontmatter 边界） | `tests/contract.test.js`，约 250 ms |
+| 门禁：普通目录 | `NOT_AN_INKFLOW_PROJECT`，`missing` 含 `.git`／六个目录／`inkflow.json` | 测试用例 3 |
+| 门禁：git 但缺目录 | `missing` 恰为 `outlines`、`world` | 测试用例 4 |
+| 门禁：缺 `index/` | 自动重建并标 `indexDirRecreated: true`（派生物不锁死插件） | 测试用例 5 |
+| 真实样例项目（`.tmp/sample-book`，git init + 7 个文件） | 门禁通过；重建 `files 7 / chapters 2 / characters 1 / world 1 / outlines 1 / library 1`，`issues: []`，10 ms | `.tmp/verify.mjs` 驱动**构建产物** lib/index.js |
+| 派生索引文件 | 106,496 B，`PRAGMA user_version = 1`，`chapters_fts` 2 行，章行 seq/title/status/word_count 正确 | 同上 |
+| HTTP 投影（构建产物 + 假 req） | `/inkflow/api/status` 200、`/inkflow/api/chapters` 200 | 同上 |
+| **HMR 边界（重要）** | 修改已安装插件的 `lib/` **不会**热替换：运行中的 DSH 仍暴露旧的 3 个工具（`inkflow_health` 等） | `cordis_inspect_query` Tool.listTools |
+| 真实文件坑：UTF-8 BOM | PowerShell `Set-Content -Encoding utf8` 写出的 `inkflow.json` 带 BOM，导致 `JSON.parse` 失败、项目被判无效 | 已修（读前剥 BOM）+ 回归测试 |
+| 未验证 | 新代码在运行中 DSH 里生效（需重启）、面板视觉、59 万字重建耗时 | 见 architecture.md §9 |

@@ -1,26 +1,22 @@
 /**
- * Plugin configuration, resolved from the `cordis.patch.yml` row.
+ * Plugin configuration.
  *
- * Every path is configurable because the user's patch layer outlives plugin
- * upgrades; code must never hard-code a machine-specific location.
+ * Under ADR-0005 there is almost nothing to configure: the novel lives in its
+ * own git repository and the directory names are fixed conventions. The only
+ * plugin-owned path is where this plugin keeps its own small state file.
  */
 
 import { isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 
 export interface ResolvedConfig {
-  /** Absolute directory holding this plugin's own state. */
+  /** Absolute directory holding this plugin's own state (NOT novel data). */
   dataDir: string
-  /** Absolute path of the SQLite database (truth source for novel data). */
-  dbFile: string
   /** Whether the loopback-only /inkflow/api/* routes are registered. */
   serveHttp: boolean
 }
 
-const DEFAULTS = {
-  dbFile: 'inkflow.db',
-  serveHttp: true,
-} as const
+const DEFAULTS = { serveHttp: true } as const
 
 /** $DSH_HOME, defaulting to ~/.dsh (the value DSH itself uses). */
 export function dshHome(): string {
@@ -41,19 +37,13 @@ function nonEmptyString(value: unknown): string | undefined {
 
 export function resolveConfig(raw: unknown): ResolvedConfig {
   const config = asRecord(raw)
-
   const configured = nonEmptyString(config['dataDir'])
   const dataDir = configured
     ? isAbsolute(configured)
       ? configured
       : resolve(dshHome(), configured)
     : join(dshHome(), 'inkflow')
-
-  const dbName = nonEmptyString(config['dbFile']) ?? DEFAULTS.dbFile
-  const dbFile = isAbsolute(dbName) ? dbName : join(dataDir, dbName)
-
   const serveHttp =
     typeof config['serveHttp'] === 'boolean' ? config['serveHttp'] : DEFAULTS.serveHttp
-
-  return { dataDir, dbFile, serveHttp }
+  return { dataDir, serveHttp }
 }

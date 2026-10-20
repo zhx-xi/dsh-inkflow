@@ -2,8 +2,8 @@
 # dsh-inkflow — bundle patch
 # ============================================================================
 #
-# This file is inserted into the DSH Loader entry list when the bundle is
-# installed. Rules that matter (verified against DSH 0.2.1-rc.2):
+# Installed as a DSH bundle; this row is inserted into the Loader entry list.
+# Rules that matter (verified against DSH 0.2.1-rc.2):
 #
 #   * A new plugin row MUST live under `- insert:`. A bare `- id: ...` row only
 #     overrides an *existing* entry; when the id does not exist the patch is
@@ -14,20 +14,20 @@
 #     `main` (lib/index.js).
 #   * `config` below is passed verbatim to `apply(ctx, config)`.
 #
-# Every value here must stay overridable from the user's own patch layer; do
-# not hard-code machine paths in code.
+# There is deliberately almost nothing to configure: a novel is a git
+# repository with fixed directory names (docs/conventions.md), so a project's
+# location is declared by the project itself, not by plugin config.
 # ----------------------------------------------------------------------------
 
 - insert:
     - id: dsh-inkflow
       name: 'dsh-inkflow'
       config:
-        # Absolute directory for this plugin's own state (SQLite db, caches,
-        # run records). Empty = "$DSH_HOME/inkflow" (~/.dsh/inkflow).
+        # Where this plugin keeps its own state (lastProjectRoot). NOT novel
+        # data: novels live in their own git repositories.
+        # Empty = "$DSH_HOME/inkflow" (~/.dsh/inkflow).
         dataDir: ''
-        # SQLite file name inside dataDir.
-        dbFile: 'inkflow.db'
-        # Register the /inkflow/api/* HTTP routes used by the workbench page.
-        # They never leave this machine: the handler rejects any Host/Origin
-        # that is not loopback.
+        # Register the read-only /inkflow/api/* routes used by the workbench
+        # page. They never leave this machine: the handler rejects any
+        # Host/Origin that is not loopback.
         serveHttp: true

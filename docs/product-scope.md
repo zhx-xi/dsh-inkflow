@@ -1,5 +1,9 @@
 # dsh-inkflow 产品范围（Product Scope）
 
+> ⚠️ **架构变更（2026-10-21，用户拍板）**：存储已从「SQLite 为真相源」改为「**文件真相 + SQLite 派生索引**」（[ADR-0005](adr/0005-files-first-with-derived-index.md)）。
+> 凡本文出现「SQLite 表 / 数据库迁移 / 作品库目录 / 35 张物理表」的表述，一律以 [docs/conventions.md](conventions.md) 与 [docs/data-model.md v2](data-model.md) 为准；
+> 旧版数据模型已归档到 [docs/archive/](archive/data-model-sqlite-truth.md)。功能范围、差异化、验收口径不受影响。
+
 > **一句话定位**：一个 DSH 插件（Host + Client 双半）在本地单机完成长篇小说的全部创作流程——SQLite 为真相源、复用 DSH 的 agent/skills/模型配置，不做 Chat UI、不做自研编排；差异化不在功能平铺（11 项基础能力竞品已全覆盖），而在「旧稿/设定 → 结构化资料库的提取管线」「系列共享设定 / 同世界观多故事」「结构化深度（多纪元历法 + 双时间轴 + 知识图谱 + 地图）」三点。
 
 | 项 | 内容 | 来源 |
