@@ -2,7 +2,7 @@
 
 > ⚠️ **架构变更（2026-10-21，用户拍板）**：存储已从「SQLite 为真相源」改为「**文件真相 + SQLite 派生索引**」（[ADR-0005](../adrs/0005-files-first-with-derived-index.md)）。
 > 凡本文出现「SQLite 表 / 数据库迁移 / 作品库目录 / 35 张物理表」的表述，一律以 [.agents/specs/conventions.md](conventions.md) 与 [.agents/specs/data-model.md v2](data-model.md) 为准；
-> 旧版数据模型已归档到 [docs/archive/](../../docs/archive/data-model-sqlite-truth.md)。功能范围、差异化、验收口径不受影响。
+> 旧版数据模型与实测证据**不入库**（见 [AGENTS.md §9.5 D7](../../AGENTS.md)）；需要时查 git 历史或对应 PR 评论。功能范围、差异化、验收口径不受影响。
 
 > **一句话**：单人全职 + AI 辅助，按 P0 技术验证 → P1 数据层/工具面/工作台 → P2 提取与写作质量 → P3 账本与批量 → P4 系列共享与深度结构化 → P5 同步与发布 六个阶段推进，规格估工合计 125–185 人日（逐项相加 123–175 人日），存量真实数据规模为 43 表 / 13 核心表 / 约 2900 实体 / 59 万字。
 
@@ -117,7 +117,7 @@
 | 契约测试 | `tests/contract.test.js`（13 条），覆盖门禁/索引重建/不变量/HTTP 安全 | 文件核对 |
 | 构建产物 | `lib/index.js`（约 17 KB ESM）、`lib/client.js`（约 13 KB CJS + loader 包装） | ADR-0003 验证段 |
 | 偏离项 | 构建链用 esbuild 单工具链，偏离用户原建议的 tsdown | ADR-0003；见 §8 RM-P-17 |
-| 未完成 | P0-6（卸载/升级闭环）、P0-2（iframe 的 DOM 实测）、P0-5 的 20 条检索用例、P0-1 的面板视觉确认 | 对照 DoD 逐条；P0-7 已由 `docs/tech-spike.md` 承担 |
+| 未完成 | P0-6（卸载/升级闭环）、P0-2（iframe 的 DOM 实测）、P0-5 的 20 条检索用例、P0-1 的面板视觉确认 | 对照 DoD 逐条；P0-7 的证据改走 PR 评论（§9.5 D7） |
 | 真机实测（Lead 2026-10-21） | 安装 `application=applied`（HMR 生效，无需重启）；3 个 `inkflow_*` 工具出现在工具表且可调用；`/inkflow/api/health` 与 `/api/projects` 返回 200；`sidebar.panellist` 与 `main` 两个槽位 `active:true` | `docs/tech-spike.md` §4 |
 
 **DoD（逐条可检验）**
@@ -130,7 +130,7 @@
 | P0-4 | `node:sqlite` 在宿主进程建库→建表→写入→读回全通，DB 落在 `~/.dsh/inkflow/inkflow.db` | 探针脚本输出 | 4/4 步通过 | 【推断】 |
 | P0-5 | 中文检索策略定案：trigram（≥3 字）+ 2 字回退 LIKE，建立 20 条检索用例 | 用例集跑通 | 命中率 100% | 【推断】 |
 | P0-6 | Windows 安装 → 启用 → 重启 DSH 后仍生效 → 卸载无残留 | 手工闭环 + 目录比对 | 残留文件 = 0 | 【推断】 |
-| P0-7 | 输出 `docs/tech-spike.md`：每条结论附版本号 / 命令 / 日志 | 文档评审 | 证据可复跑 | 【推断】 |
+| P0-7 | 证据记录：每条结论附版本号 / 命令 / 日志，贴在 PR 评论（不入库） | 评论区复核 | 证据可复跑 | 【推断】 |
 | P0-8 | 结论为「通过」才进 P1；任一不通则改方案并重估 P1 | 评审会议结论 | 通过 / 改方案 | 【推断】 |
 
 **退出判据**：P0-1 ~ P0-8 全绿，且 P0-4/P0-5 有可复跑脚本。【推断】

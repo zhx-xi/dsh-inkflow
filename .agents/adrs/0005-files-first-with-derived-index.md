@@ -49,4 +49,4 @@ P0 阶段按 ADR-0002 把 SQLite 定为唯一真相源。随后对比了 9 个�
 ## 验证
 
 - 约定本身：`.agents/specs/conventions.md`
-- P0 实测：`tests/*.test.js`（门禁 6 种组合、索引重建幂等、FTS 命中）+ `docs/tech-spike.md`
+- P0 实测：`tests/*.test.js`（门禁组合、索引重建幂等、不变量、HTTP 安全）；实测证据贴在对应 PR 评论（不入库）

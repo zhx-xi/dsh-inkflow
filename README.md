@@ -100,7 +100,7 @@ tests/                 node:test 契约测试（不依赖 DSH 进程，13 条）
 .agents/constitution/  项目章程、DSH 硬约束、工程纪律、数据安全政策
 .agents/specs/         规范：产品范围 / 架构 / 目录约定 / 数据模型 / 路线图 + spec 索引
 .agents/adrs/          决策记录 + 索引与决策速览
-docs/                  验证证据（tech-spike）与已作废设计归档
+docs/                  用户使用手册（安装 / 使用 / 文件格式 / 排错 / FAQ）
 AGENTS.md              AI 编码助手入口（权威源索引 + 高频纪律）
 CLAUDE.md              Claude Code 入口（指向 AGENTS.md，不复制规则）
 ```
