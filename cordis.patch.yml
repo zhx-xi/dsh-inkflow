@@ -1,0 +1,33 @@
+# ============================================================================
+# dsh-inkflow — bundle patch
+# ============================================================================
+#
+# This file is inserted into the DSH Loader entry list when the bundle is
+# installed. Rules that matter (verified against DSH 0.2.1-rc.2):
+#
+#   * A new plugin row MUST live under `- insert:`. A bare `- id: ...` row only
+#     overrides an *existing* entry; when the id does not exist the patch is
+#     dropped with a warning that never reaches the user.
+#   * The row `id` is the Loader entry id. Keep it unique and stable: user
+#     patch layers elsewhere address this row by id.
+#   * `name` is the package specifier; `dsh-inkflow` resolves to this package's
+#     `main` (lib/index.js).
+#   * `config` below is passed verbatim to `apply(ctx, config)`.
+#
+# Every value here must stay overridable from the user's own patch layer; do
+# not hard-code machine paths in code.
+# ----------------------------------------------------------------------------
+
+- insert:
+    - id: dsh-inkflow
+      name: 'dsh-inkflow'
+      config:
+        # Absolute directory for this plugin's own state (SQLite db, caches,
+        # run records). Empty = "$DSH_HOME/inkflow" (~/.dsh/inkflow).
+        dataDir: ''
+        # SQLite file name inside dataDir.
+        dbFile: 'inkflow.db'
+        # Register the /inkflow/api/* HTTP routes used by the workbench page.
+        # They never leave this machine: the handler rejects any Host/Origin
+        # that is not loopback.
+        serveHttp: true

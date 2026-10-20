@@ -1,0 +1,68 @@
+{
+  "name": "dsh-inkflow",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "InkFlow: one DeepSeek Harness plugin for the whole long-form novel writing workflow — projects, volumes, chapters, outlines, characters, world settings, foreshadowing, timelines, an in-Harness workbench and inkflow_* tools. Local-first, pure TypeScript.",
+  "license": "MIT",
+  "author": "zhx-xi",
+  "homepage": "https://github.com/zhx-xi/dsh-inkflow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhx-xi/dsh-inkflow.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "novel",
+    "writing",
+    "worldbuilding"
+  ],
+  "main": "lib/index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.12.0",
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tests/*.test.js\"",
+    "check": "npm run typecheck && npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.1",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}
