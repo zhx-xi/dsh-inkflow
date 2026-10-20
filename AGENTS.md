@@ -1,31 +1,32 @@
 # AGENTS.md — AI 编码助手说明书
 
 > **一句话**：DSH 插件项目（纯 TypeScript），**文件即真相** + SDD + TDD。动手写代码前先读 [.agents/constitution/constitution.md](.agents/constitution/constitution.md) 与相关的 [.agents/specs/](.agents/specs/)。
-> 本文件只放**索引 + 无法从代码推导的纪律**；规范细节一律看权威源，不在本文件复制（复制体必然漂移）。
+> 本文件只放**权威源索引 + 长期纪律**；**易变内容（待拍板、进度、版本、日期）一律不进本文件**（见 §9.6）。
 
 ## 0. 文件体系与权威源（先读）
 
 | 文件 | 角色 | 何时读 |
 |---|---|---|
-| [.agents/constitution/constitution.md](.agents/constitution/constitution.md) | **最高依据**：6 条核心原则 + 技术约束 + 质量门 + 治理 | 每次会话开始 |
+| [.agents/constitution/constitution.md](.agents/constitution/constitution.md) | **最高依据**：核心原则 + 技术约束 + 质量门 + 治理 | 每次会话开始 |
 | [.agents/constitution/hard-constraints.md](.agents/constitution/hard-constraints.md) | **DSH 宿主硬约束** H1–H11（违反会静默失败） | 碰插件装配/路由/UI/文件 IO 前 |
-| [.agents/constitution/engineering-discipline.md](.agents/constitution/engineering-discipline.md) | SDD/TDD/ADR/提交/评审/文档/证据纪律 | 写代码与提交前 |
+| [.agents/constitution/engineering-discipline.md](.agents/constitution/engineering-discipline.md) | SDD/TDD/评审/证据的执行细则（治理规则见 §9） | 写代码与提交前 |
 | [.agents/constitution/data-safety.md](.agents/constitution/data-safety.md) | 数据边界、写入纪律、危险操作、路径与密钥安全 | 任何会写文件的操作前 |
-| [.agents/specs/README.md](.agents/specs/README.md) | **spec 索引**（S-01…S-05）与编写规范 | 接新功能前 |
+| [.agents/specs/README.md](.agents/specs/README.md) | **spec 索引**（S-01…S-06）+ 编写规范 | 接新功能前 |
 | [.agents/specs/conventions.md](.agents/specs/conventions.md) | **项目目录/文件契约**（六目录 + `inkflow.json` + 门禁） | 碰数据/路径/工具前 |
 | [.agents/specs/data-model.md](.agents/specs/data-model.md) | 实体→文件映射、字段字典、派生索引表、不变量 | 碰数据结构前 |
 | [.agents/specs/architecture.md](.agents/specs/architecture.md) | 模块边界、DSH 集成点实测签名、数据流 | 改结构/加模块前 |
+| [.agents/specs/open-questions.md](.agents/specs/open-questions.md) | **待裁决清单**（唯一允许频繁更新的规范类文件） | 开工前 / 决策卡住时 |
 | [.agents/adrs/README.md](.agents/adrs/README.md) | **ADR 索引 + 决策速览**（改代码前先查） | 做技术选型前 |
-| [docs/](docs/) | **证据与归档**（验证记录、已作废设计），不是规范 | 需要复跑证据时 |
+| [docs/user-guide.md](docs/user-guide.md) | **用户使用手册**（安装、使用、排错、FAQ）——面向插件使用者，不是规范 | 写用户可见行为时 |
 | [package.json](package.json) / [scripts/build.mjs](scripts/build.mjs) | 构建入口、脚本、`engines.dsh` | 改构建/依赖时 |
 
-放置规则：**规范** → `.agents/specs/`；**决策** → `.agents/adrs/`；**纪律/政策** → `.agents/constitution/`；**证据/归档** → `docs/`。
+放置规则：**纪律/政策** → `.agents/constitution/`；**规范** → `.agents/specs/`；**决策** → `.agents/adrs/`；**面向用户的手册** → `docs/`；**证据与过程稿** → issue / PR comment（不入库，见 §9.5 D7）。
 
 ## 1. 项目概览
 
 **dsh-inkflow**：一个 DSH 插件（Host 半 + Client 半），用**一个插件**完成长篇小说创作全流程——项目/卷/章、大纲、人物、世界观、伏笔、时间线、工作台、`inkflow_*` 工具。
 三个差异点：①旧稿/设定 → 结构化资料库的**提取管线**；②**系列共享设定 / 同世界观多故事**；③结构化深度（多纪元历法、双时间轴、知识图谱、地图）。
-当前阶段：**P0 已交付**（文件真相骨架 + 4 个工具 + 工作台 + 派生索引），P1 待用户确认后开工。范围与估工见 [S-05 roadmap](.agents/specs/roadmap.md)。
+范围、阶段与估工见 [S-05 roadmap](.agents/specs/roadmap.md)（阶段进度也在那里，不在本文件）。
 
 ## 2. 技术栈（易错项，无法从代码推导）
 
@@ -42,7 +43,7 @@
 
 一部小说 = 一个 git 仓库 = 一个项目根：`inkflow.json` + `chapters/ characters/ world/ outlines/ library/ index/`。
 门禁三条全中才算项目：① 是 git 仓库 ② 六个目录齐全 ③ `inkflow.json` 可解析。
-目录名**固定英文、不可配置**——改约定先改 `src/host/conventions.ts` 与 [S-03](.agents/specs/conventions.md)（同一提交）。
+目录名**固定英文、不可配置**——改约定必须**同一提交**内改 `src/host/conventions.ts` 与 [S-03](.agents/specs/conventions.md)。
 
 ## 4. 架构规则（不可违反）
 
@@ -57,7 +58,7 @@
 
 - `src/host/conventions.ts` 是**目录/文件约定的唯一常量来源**；任何字面量目录名都应从那里取。
 - 不变量靠「写入校验 + 索引重建校验」双重保障；新增不变量必须同时加重建期 code 与测试。
-- 组件依赖方向：`client/index.tsx` → `client/context.ts`；Host 侧 `index.ts` → `tools.ts` → `{project,indexer,state,conventions}`。
+- 依赖方向：`client/index.tsx` → `client/context.ts`；Host 侧 `index.ts` → `tools.ts` → `{project,indexer,state,conventions}`。
 
 ## 5. 开发工作流（SDD + TDD）
 
@@ -67,15 +68,15 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 
 - **spec 先行**：spec 与实现矛盾 → 先改 spec，再改代码。
 - **测试打构建产物**（`lib/index.js`），不是源码：测用户真正装到的东西。
-- 提交前必过：`pnpm.cmd run check`（typecheck + build + test）+ `node scripts/check-links.mjs`。
+- 提交前必过：`pnpm.cmd run check`（typecheck + build + test + 链接门禁）。
 - 提交信息：Conventional Commits，冒号后**小写**，例 `feat(tools): add inkflow_chapter_list`。
 
 ## 6. 编码规范
 
-- TS **strict**；`verbatimModuleSyntax`（import 类型必须 `import type`）；不新增裸 `any`。
+- TS **strict**；`verbatimModuleSyntax`（类型导入必须 `import type`）；不新增裸 `any`。
 - 注释写「为什么」与宿主契约来源（例：`// DSH 0.2.1-rc.2 实测：...`），不写「改了什么」。
 - 文件 IO：UTF-8 无 BOM、LF；**读取用户文件必须容忍 BOM/CRLF**；写入用「临时文件 + rename」原子替换。
-- 纯函数优先（`frontmatter.ts`、`project.ts` 的判定逻辑不做 IO 以外的事），便于单测。
+- 纯函数优先（`frontmatter.ts`、`project.ts` 的判定逻辑），便于单测。
 - 可见文本走宿主主题 token（`--dsw-alias-*`）；不硬编码颜色（图标除外）。
 
 ## 7. 测试
@@ -93,57 +94,108 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 | 2 | 改完 `lib/` 直接测 | HMR 不热替换已加载插件，必须重启 DSH |
 | 3 | 面板有图标没页面 | `sidebar.panellist.id` 与 `main.key` 必须是同一个 `PANEL_ID` |
 | 4 | Windows 写 BOM | 读 `inkflow.json`/frontmatter 前剥 BOM |
-| 5 | 给索引写 ALTER TABLE | 索引是缓存：改 schema 版本号 → 删库重建 |
-| 6 | 在 `.tmp/` 里留证据并引用 | `.tmp/` 是 gitignored；长期证据放 `docs/` |
+| 5 | 给索引写 `ALTER TABLE` | 索引是缓存：改 schema 版本号 → 删库重建 |
+| 6 | 把证据/过程稿写进仓库 | 证据 → issue/PR comment；仓库只留手册与规范 |
 | 7 | 把「应该可以」写成「已验证」 | 未跑过的标【未验证】 |
 
-## 9. AI 行为准则
+## 9. 文档治理（ADR / spec / constitution）
 
-### 9.1 Think Before Coding —— 不假设、不藏困惑
+> 本节是文档治理的**唯一入口**；模板与索引细则见 [.agents/adrs/README.md](.agents/adrs/README.md)、[.agents/specs/README.md](.agents/specs/README.md)。
+
+### 9.1 五类内容的边界
+
+| 想写的内容 | 放哪 | 变化频率 |
+|---|---|---|
+| 「必须/禁止做什么」（原则、硬约束、安全） | `.agents/constitution/` | 低 |
+| 「是什么」（数据形状、契约、边界、验收） | `.agents/specs/` | 中 |
+| 「为什么选 A 不选 B」 | `.agents/adrs/` | 低（只追加） |
+| 「还没定，等裁决」 | `.agents/specs/open-questions.md` | **高（唯一允许频繁改）** |
+| 「这东西怎么用」（面向使用者） | `docs/` | 中 |
+| 「这次实测跑出了什么」 | **issue / PR comment**（不入库） | 高 |
+
+### 9.2 ADR 治理（硬性）
+
+| # | 规则 |
+|---|---|
+| A1 | **先 ADR 后代码**：技术选型、架构边界、数据格式、对外契约变更，必须先落 ADR 再改实现 |
+| A2 | 编号 `NNNN-<kebab-slug>.md`，四位递增；**不复用、不跳号**；被删除/合并的编号也保留空缺 |
+| A3 | 状态机：`提议 → 已采纳 → 已被 NNNN 取代`。被取代时**不改原文**，只改头部状态并指向新 ADR；新 ADR 注明取代关系 |
+| A4 | 可按域分子目录，但**文件名与编号稳定**（不因目录重构改号，避免断外部引用）；移动用 `git mv` 保留历史 |
+| A5 | 新增/变更后必须同步 [.agents/adrs/README.md](.agents/adrs/README.md)：索引表（编号/标题/状态/日期）+「决策速览」一行一条 |
+| A6 | 必须含「备选与取舍」与「验证」；只写结论不写为什么不选别的，视为不合格 ADR |
+| A7 | 代码与 ADR 不一致时：**以 ADR 为决策依据修代码**；若决策本身已变，先改 ADR 再改代码 |
+
+### 9.3 Spec 治理（硬性）
+
+| # | 规则 |
+|---|---|
+| S1 | spec 是功能的**唯一真相**；先改 spec 再改代码；实现与 spec 矛盾先修 spec 并说明理由 |
+| S2 | 编号 `S-NN` 稳定不复用；合并/并入时保留旧编号并标「并入 S-xx（见附录）」；空号保留 |
+| S3 | 一个文件一个域，**不按技术层拆分**；端/域只在头部标注 |
+| S4 | 头部只留：`依据` / `依赖`（相对链接）/ `相关 ADR` / `状态`（活跃·草稿·已取代）；不写日期、版本号、进展、快速导航 |
+| S5 | 必含章节：概述、数据形状、契约（工具/路由/文件格式）、边界与错误、验收判据、不在范围内、非功能（规模/延迟/降级各一行，无则写「不适用」）、验证命令 |
+| S6 | 篇幅：单文件 **≤800 行**；超出且章节内聚可拆时，允许 `<spec>/references/` 子目录，spec 头部必须声明清单 |
+| S7 | 不贴实现代码；决策集中在「决策表」（含备选列）；不写「修改履历」 |
+
+### 9.4 Constitution 治理
+
+| # | 规则 |
+|---|---|
+| C1 | 最高依据；与其他文档冲突时以章程为准，或**停下来指出冲突**交由用户裁决 |
+| C2 | 修订分级：MAJOR = 删改原则；MINOR = 新增原则/约束；PATCH = 措辞澄清。修订需在 ADR 留痕（纯澄清除外） |
+| C3 | 合规检查 = §5 的质量门 + 提交前自查清单（[engineering-discipline](.agents/constitution/engineering-discipline.md)） |
+
+### 9.5 文档硬性门禁（跨类通用）
+
+| # | 规则 | 违反后果 |
+|---|---|---|
+| D1 | 相对链接必须有效，提交前跑 `node scripts/check-links.mjs` | 断链 → 下一读者/agent 丢失权威源 |
+| D2 | **不引用 gitignored 路径**（`.tmp/`、`lib/`、`node_modules/` 等） | 别人拿不到、且会被清理 |
+| D3 | 不写进展叙事（「已实现」「已合入」「PR #NNN」「用户拍板 X」） | 噪声且随时间腐烂；归属是 git 历史 + ADR（ADR 头部允许日期/状态） |
+| D4 | 来源逐条标注【已定】/【既有资料】/【推断】/【外部参考】；**推断不得标成已定**；推断集中进 open-questions | 污染用户决策 |
+| D5 | 新增 spec/ADR 必须同步索引，否则视为未完成 | 索引与文件脱节 |
+| D6 | 文档迁移/改名必须**同一提交**内修完所有相对链接 | 大规模断链 |
+| D7 | **证据与过程稿不入库**：实测日志、探针输出、评审草稿、作废设计一律进 issue / PR comment（或临时文件），仓库只留规范、决策与用户手册 | 仓库被一次性材料污染 |
+
+### 9.6 本文件（AGENTS.md）自身的稳定原则
+
+- **只放**：权威源索引、长期纪律、高频陷阱、AI 行为准则。
+- **不放**：待拍板清单（→ `open-questions.md`）、阶段进度（→ `roadmap.md`）、版本号与日期、临时排查记录。
+- **改动门槛**：只有「新增/删除长期纪律」或「权威源变化」才改本文件；其余情况改对应文档。
+- **篇幅上限**：约 150–250 行。逼近上限说明该把内容下沉到 constitution/specs，而不是继续往这里加。
+- 判断方法：这条内容**半年后是否仍然成立**？是 → 可留在本文件；否 → 属于 open-questions / roadmap / issue。
+
+## 10. AI 行为准则
+
+### 10.1 Think Before Coding —— 不假设、不藏困惑
 
 - 动手前**陈述假设**；不确定就问。
 - 有多种合理解释时**全部呈现**，不要静默选一个。
 - 有更简单的方案就说，该推回就推回。
 - 架构点需要用户拍板时，给**选项 + 推荐 + 代价**，不要猜。
 
-### 9.2 Simplicity First —— 最小可用，零投机
+### 10.2 Simplicity First —— 最小可用，零投机
 
 - 不做超范围功能；不为单次使用做抽象；不添加没人要的「灵活性」。
 - 200 行能写成 50 行就重写。问自己：资深工程师会觉得这过度复杂吗？
 
-### 9.3 测试哲学
+### 10.3 测试哲学
 
 - 不写无意义测试；测试必须能在代码损坏时 FAIL。
 - 测试是契约：实现不得为了让测试过而改测试。
 
-### 9.4 抑制必须带理由
+### 10.4 抑制必须带理由
 
 - 每个 lint/type 抑制写明规则 + 理由；禁止裸 `@ts-ignore`。
 
-### 9.5 工程惯例
+### 10.5 工程惯例
 
 - 组合优于继承、early return 优于深嵌套、显式优于隐式。
 - 标准库优先；不手搓已有轮子。
 - 无巨型文件（单文件 >600 行先考虑拆分）。
 - 新代码全类型化；边界处先校验再进内部类型。
 
-### 9.6 证据与来源
+### 10.6 证据与来源
 
-- 结论区分【已验证】/【未验证】，并给路径行号或命令输出。
-- 写设计/规格时逐条标【已定】/【既有资料】/【推断】/【外部参考】；**绝不把推断标成已定**。
-
-## 10. 文档纪律（摘要）
-
-- 不写进展叙事（「已实现」「PR #NNN 已合」）：归属是 git 历史 + ADR。
-- ADR 头部允许写状态与日期；正文不写「修改履历」。
-- 不引用 `.tmp/` 等 gitignored 路径。
-- 待裁决项集中在文末表格；拍板后转成「裁决记录」保留原话要点。
-
-## 11. 当前待拍板（P1 开工前）
-
-见 [S-03 conventions §8](.agents/specs/conventions.md) 与 [S-04 data-model §7](.agents/specs/data-model.md)：
-
-1. `index/` 缺失自动重建是否接受（建议接受）；
-2. 伏笔/时间线/知识关系/账本的归属子目录（已有建议值）；
-3. 目录名是否就按 `chapters/characters/world/outlines/library/index`；
-4. 每部小说一个 git 仓库与外层仓库的嵌套关系（建议外层 `.gitignore` 忽略各书目录）。
+- 结论区分【已验证】/【未验证】，并给路径行号或命令输出；证据进 issue/PR comment。
+- 只读取证优先；改动前给出根因与最小修复面。

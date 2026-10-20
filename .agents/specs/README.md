@@ -12,9 +12,10 @@
 | S-02 | [architecture.md](architecture.md) | 模块边界、DSH 集成点实测签名、数据流、设计决策索引、未验证清单 | 活跃 |
 | S-03 | [conventions.md](conventions.md) | **项目目录与文件契约**（六目录、frontmatter、门禁、索引、写入纪律） | 活跃（代码常量以此为准） |
 | S-04 | [data-model.md](data-model.md) | 实体 → 文件映射、字段字典、派生索引表、不变量与强制手段 | 活跃 |
-| S-05 | [roadmap.md](roadmap.md) | P0–P5 阶段计划、WBS 估工、每阶段 DoD、风险、拍板清单 | 活跃 |
+| S-05 | [roadmap.md](roadmap.md) | P0–P5 阶段计划、WBS 估工、每阶段 DoD、风险 | 活跃 |
+| S-06 | [open-questions.md](open-questions.md) | **待裁决清单**（唯一允许频繁更新的规范类文件）+ 裁决记录 | 活跃 |
 
-历史稿：[../../docs/archive/](../../docs/archive/)（已被取代的设计，只作复盘用）。
+历史稿**不入库**（见 [AGENTS.md §9.5 D7](../../AGENTS.md)）：被取代的设计走 `git log` 查历史版本。
 
 ## 2. spec 编写规范
 

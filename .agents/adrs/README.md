@@ -47,4 +47,4 @@
 
 ## 4. 当前未决问题
 
-数据模型相关的待裁决项见 [S-04 data-model](../specs/data-model.md) 与 [S-03 conventions](../specs/conventions.md) 的「待拍板」表；拍板后再决定是否升级为 ADR。
+所有未决问题集中在 [S-06 open-questions](../specs/open-questions.md)；拍板后按需升级为 ADR（重要决策才立 ADR，纯口径调整记入裁决记录即可）。

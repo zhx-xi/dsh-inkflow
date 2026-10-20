@@ -40,7 +40,7 @@
 1. **Spec 先行**（SDD）：先改 `.agents/specs/`，再写测试，再写实现。
 2. **测试先行**（TDD）：RED → GREEN → REFACTOR。
 3. **决策留痕**：技术选型/架构调整先写 `.agents/adrs/`，PR/提交引用 ADR 编号。
-4. **文档归属**：规范类 → `.agents/specs/`；决策 → `.agents/adrs/`；纪律/政策 → `.agents/constitution/`；证据/归档 → `docs/`。
+4. **文档归属**：规范类 → `.agents/specs/`；决策 → `.agents/adrs/`；纪律/政策 → `.agents/constitution/`；面向用户的手册 → `docs/`；证据与过程稿 → issue / PR comment（不入库）。
 
 ## 五、治理
 
