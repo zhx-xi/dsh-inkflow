@@ -1,0 +1,9 @@
+# Keep the repository byte-stable across Windows/Linux checkouts.
+# The plugin's own data lives in SQLite; nothing here needs CRLF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
