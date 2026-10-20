@@ -1,7 +1,7 @@
 # InkFlow 项目目录约定（约定大于配置）
 
 > 状态：**已定（用户拍板 2026-10-21）**。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。
-> 决策依据：[ADR-0005](adr/0005-files-first-with-derived-index.md)。
+> 决策依据：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)。
 
 ## 1. 什么算一个 InkFlow 项目
 

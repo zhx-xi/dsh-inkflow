@@ -1,4 +1,4 @@
-> ⚠️ **已作废（2026-10-21）**：本文按「SQLite 为真相源」设计（35 张物理表 + FK/CHECK/触发器强制不变量 + 数据库迁移）。用户随后拍板改为**文件真相 + 派生索引**（[ADR-0005](../adr/0005-files-first-with-derived-index.md)），权威契约改为 [docs/conventions.md](../conventions.md)。本文仅作历史参考与「哪些不变量值得保留」的清单保留。
+> ⚠️ **已作废（2026-10-21）**：本文按「SQLite 为真相源」设计（35 张物理表 + FK/CHECK/触发器强制不变量 + 数据库迁移）。用户随后拍板改为**文件真相 + 派生索引**（[ADR-0005](../../.agents/adrs/0005-files-first-with-derived-index.md)），权威契约改为 [docs/conventions.md](../../.agents/specs/conventions.md)。本文仅作历史参考与「哪些不变量值得保留」的清单保留。
 
 # dsh-inkflow 数据模型（SQLite · node:sqlite）
 

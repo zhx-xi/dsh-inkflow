@@ -40,7 +40,7 @@
 
 ## 3. 项目门禁（约定大于配置）
 
-`findProjectRoot(start)` 从会话工作目录向上走，判定条件（[docs/conventions.md](conventions.md) §1）：
+`findProjectRoot(start)` 从会话工作目录向上走，判定条件（[.agents/specs/conventions.md](conventions.md) §1）：
 
 | 条件 | 检测 | 不满足时 |
 |---|---|---|
@@ -93,7 +93,7 @@
 
 ### 5.3 单一构建工具链（esbuild）
 
-`lib/index.js` = Host ESM bundle；`lib/client.js` = CJS bundle 外套 `window.__ModuleLoader__.load({id, factory})`。Client 半必须是这个字节形状（React 走注入的 `require`，其余内联），esbuild 的 banner/footer + `format:'cjs'` 正好产出（[ADR-0003](adr/0003-build-chain.md)）。
+`lib/index.js` = Host ESM bundle；`lib/client.js` = CJS bundle 外套 `window.__ModuleLoader__.load({id, factory})`。Client 半必须是这个字节形状（React 走注入的 `require`，其余内联），esbuild 的 banner/footer + `format:'cjs'` 正好产出（[ADR-0003](../adrs/0003-build-chain.md)）。
 
 ### 5.4 面板 API 只读 + 只绑 loopback
 

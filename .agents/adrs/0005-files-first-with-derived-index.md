@@ -2,7 +2,7 @@
 
 - 状态：**已采纳（用户拍板 2026-10-21）**，取代 [ADR-0002](0002-sqlite-truth-source.md)
 - 日期：2026-10-21
-- 影响：`docs/data-model.md`（原 SQLite 真相源设计）作废重写；P0 代码切换存储层
+- 影响：`.agents/specs/data-model.md`（原 SQLite 真相源设计）作废重写；P0 代码切换存储层
 
 ## 背景
 
@@ -48,5 +48,5 @@ P0 阶段按 ADR-0002 把 SQLite 定为唯一真相源。随后对比了 9 个�
 
 ## 验证
 
-- 约定本身：`docs/conventions.md`
+- 约定本身：`.agents/specs/conventions.md`
 - P0 实测：`tests/*.test.js`（门禁 6 种组合、索引重建幂等、FTS 命中）+ `docs/tech-spike.md`

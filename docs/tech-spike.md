@@ -112,7 +112,7 @@ C:\Users\zhx-xi\.dsh\inkflow\
 
 ## 5. `node:sqlite` 能力探针
 
-数据模型（`docs/data-model.md`）依赖以下能力，全部实测可用：
+数据模型（`.agents/specs/data-model.md`）依赖以下能力，全部实测可用：
 
 | 能力 | 结果 |
 |---|---|
@@ -155,7 +155,7 @@ Invoke-WebRequest http://127.0.0.1:2149/inkflow/api/health -UseBasicParsing | Se
 
 ## 8. 架构变更后的补充验证（2026-10-21 下午：文件真相 + 派生索引）
 
-> 背景：用户拍板改用「文件真相 + SQLite 派生索引」（[ADR-0005](adr/0005-files-first-with-derived-index.md)），P0 代码当日切换。§1–§7 记录的是切换前（SQLite 真相源）的证据，仍然有效；本节记录切换后的验证。
+> 背景：用户拍板改用「文件真相 + SQLite 派生索引」（[ADR-0005](../.agents/adrs/0005-files-first-with-derived-index.md)），P0 代码当日切换。§1–§7 记录的是切换前（SQLite 真相源）的证据，仍然有效；本节记录切换后的验证。
 
 | 验证项 | 结果 | 证据 |
 |---|---|---|

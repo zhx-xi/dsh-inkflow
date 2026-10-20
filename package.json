@@ -57,7 +57,8 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"tests/*.test.js\"",
-    "check": "npm run typecheck && npm run build && npm test"
+    "check": "npm run typecheck && npm run build && npm test && node scripts/check-links.mjs",
+    "check:links": "node scripts/check-links.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

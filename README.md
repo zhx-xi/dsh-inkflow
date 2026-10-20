@@ -4,9 +4,9 @@
 
 **Why one plugin:** installing five writing plugins to get five features means five chances of plugin conflict and five upgrade paths to babysit. dsh-inkflow is deliberately a single bundle: one sidebar icon, one workbench page, one data model, one upgrade.
 
-**Storage: files are the truth.** Every novel is its own git repository; the plugin reads and writes Markdown/JSON files, and keeps `index/inkflow.db` only as a **rebuildable query cache**. That is why plugin upgrades never touch existing projects and why there is no database migration to run — see [ADR-0005](docs/adr/0005-files-first-with-derived-index.md) and the directory contract in [docs/conventions.md](docs/conventions.md).
+**Storage: files are the truth.** Every novel is its own git repository; the plugin reads and writes Markdown/JSON files, and keeps `index/inkflow.db` only as a **rebuildable query cache**. That is why plugin upgrades never touch existing projects and why there is no database migration to run — see [ADR-0005](.agents/adrs/0005-files-first-with-derived-index.md) and the directory contract in [.agents/specs/conventions.md](.agents/specs/conventions.md).
 
-**Status: P0 (files-first skeleton, not usable for writing yet).** Verified against a real DSH 0.2.1-rc.2 install: project gate (git + six directories + `inkflow.json`), derived index rebuild with invariant checks, four `inkflow_*` tools, a loopback-only HTTP projection, and the workbench panel. Write tools and the editor land in P1 — see [docs/roadmap.md](docs/roadmap.md).
+**Status: P0 (files-first skeleton, not usable for writing yet).** Verified against a real DSH 0.2.1-rc.2 install: project gate (git + six directories + `inkflow.json`), derived index rebuild with invariant checks, four `inkflow_*` tools, a loopback-only HTTP projection, and the workbench panel. Write tools and the editor land in P1 — see [.agents/specs/roadmap.md](.agents/specs/roadmap.md).
 
 ---
 
@@ -97,7 +97,12 @@ src/client/            Client 半（浏览器 React）
   context.ts           本插件用到的 DSH Client 表面（slots / layout）
 scripts/build.mjs      esbuild 双半构建（Host ESM + Client module-loader factory）
 tests/                 node:test 契约测试（不依赖 DSH 进程，13 条）
-docs/                  产品范围、架构、目录约定、数据模型、路线图、tech-spike、ADR
+.agents/constitution/  项目章程、DSH 硬约束、工程纪律、数据安全政策
+.agents/specs/         规范：产品范围 / 架构 / 目录约定 / 数据模型 / 路线图 + spec 索引
+.agents/adrs/          决策记录 + 索引与决策速览
+docs/                  验证证据（tech-spike）与已作废设计归档
+AGENTS.md              AI 编码助手入口（权威源索引 + 高频纪律）
+CLAUDE.md              Claude Code 入口（指向 AGENTS.md，不复制规则）
 ```
 
 ## 开发命令
@@ -123,11 +128,11 @@ docs/                  产品范围、架构、目录约定、数据模型、路
 8. **插件无沙箱**：代码以用户权限在宿主进程里跑；读 `inkflow.json` 要容忍 UTF-8 BOM（Windows 工具会写）。
 9. **HTTP 路由零鉴权**：面板 API 必须自校验 loopback Host/Origin，且只绑本机。
 
-每条约束的验证依据与后果见 [docs/architecture.md](docs/architecture.md) 与 [docs/adr/](docs/adr/)。
+每条约束的验证依据与后果见 [.agents/specs/architecture.md](.agents/specs/architecture.md) 与 [.agents/adrs/](.agents/adrs/)。
 
 ## 路线图
 
-P0 文件真相骨架 → P1 写入器/提案制 + 全量工具面 + 工作台编辑器 → P2 提取管线与写作 skills → P3 门禁与审稿 → P4 系列共享设定与历法/KG → P5 同世界观同步与发布。估工与每阶段 DoD 见 [docs/roadmap.md](docs/roadmap.md)。
+P0 文件真相骨架 → P1 写入器/提案制 + 全量工具面 + 工作台编辑器 → P2 提取管线与写作 skills → P3 门禁与审稿 → P4 系列共享设定与历法/KG → P5 同世界观同步与发布。估工与每阶段 DoD 见 [.agents/specs/roadmap.md](.agents/specs/roadmap.md)。
 
 ## 许可证
 

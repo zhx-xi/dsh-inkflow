@@ -1,16 +1,16 @@
 # dsh-inkflow 路线图（Roadmap）
 
-> ⚠️ **架构变更（2026-10-21，用户拍板）**：存储已从「SQLite 为真相源」改为「**文件真相 + SQLite 派生索引**」（[ADR-0005](adr/0005-files-first-with-derived-index.md)）。
-> 凡本文出现「SQLite 表 / 数据库迁移 / 作品库目录 / 35 张物理表」的表述，一律以 [docs/conventions.md](conventions.md) 与 [docs/data-model.md v2](data-model.md) 为准；
-> 旧版数据模型已归档到 [docs/archive/](archive/data-model-sqlite-truth.md)。功能范围、差异化、验收口径不受影响。
+> ⚠️ **架构变更（2026-10-21，用户拍板）**：存储已从「SQLite 为真相源」改为「**文件真相 + SQLite 派生索引**」（[ADR-0005](../adrs/0005-files-first-with-derived-index.md)）。
+> 凡本文出现「SQLite 表 / 数据库迁移 / 作品库目录 / 35 张物理表」的表述，一律以 [.agents/specs/conventions.md](conventions.md) 与 [.agents/specs/data-model.md v2](data-model.md) 为准；
+> 旧版数据模型已归档到 [docs/archive/](../../docs/archive/data-model-sqlite-truth.md)。功能范围、差异化、验收口径不受影响。
 
 > **一句话**：单人全职 + AI 辅助，按 P0 技术验证 → P1 数据层/工具面/工作台 → P2 提取与写作质量 → P3 账本与批量 → P4 系列共享与深度结构化 → P5 同步与发布 六个阶段推进，规格估工合计 125–185 人日（逐项相加 123–175 人日），存量真实数据规模为 43 表 / 13 核心表 / 约 2900 实体 / 59 万字。
 
 | 项 | 内容 | 来源 |
 | --- | --- | --- |
-| 文档版本 | v0.1（初稿，与 `docs/product-scope.md` 配套） | 【推断】 |
+| 文档版本 | v0.1（初稿，与 `.agents/specs/product-scope.md` 配套） | 【推断】 |
 | 出具日期 | 2026-10-21 | — |
-| 功能全集出处 | `docs/product-scope.md` §4（32 条 F-*） | 【已定】 |
+| 功能全集出处 | `.agents/specs/product-scope.md` §4（32 条 F-*） | 【已定】 |
 | 估工口径 | 单位 = 人日；1 人日 = 1 个工作日（约 8 h），含 AI 辅助 | 【推断】 |
 | 合计口径 | 规格给 125–185 人日；逐项相加为 123–175 人日（差 2–10，见 §8 RM-P-01） | 【已定】+【推断】 |
 
@@ -47,7 +47,7 @@
 | **合计** | — | — | **123–175（逐项）/ 125–185（规格口径）** | **24.6–35.0 周** | — | — | — | 【已定】+【推断】 |
 
 > 折周按 5 工作日 / 周换算；24.6–35.0 周 ≈ 5.7–8.1 月，与规格「4–6 个月」不一致，见 §8 RM-P-02。
-> 仓库当前状态（本次文件核对）：P0 骨架已落——`src/host/{index,config,db,tools,routes}.ts`、`src/client/index.tsx`、构建产物 `lib/index.js`（约 17 KB）/`lib/client.js`（约 13 KB）、契约测试 `tests/p0.test.js`（8,561 B）、4 篇 ADR 与 `docs/architecture.md`；P0 DoD 尚未逐条签收，故记「进行中」。【实测】
+> 仓库当前状态（本次文件核对）：P0 骨架已落——`src/host/{conventions,project,frontmatter,indexer,state,tools,routes,index}.ts`、`src/client/index.tsx`、构建产物 `lib/index.js`（约 17 KB）/`lib/client.js`（约 13 KB）、契约测试 `tests/contract.test.js`（13 条）、5 篇 ADR 与 `.agents/specs/architecture.md`；P0 DoD 尚未逐条签收，故记「进行中」。【实测】
 
 ---
 
@@ -110,11 +110,11 @@
 
 | 项 | 现状 | 证据来源 |
 | --- | --- | --- |
-| 插件骨架（Host + Client + 槽位 + 构建） | 已落并实测 | `docs/architecture.md` §2 与 §3；`src/host/*`、`src/client/index.tsx`、`scripts/build.mjs` |
+| 插件骨架（Host + Client + 槽位 + 构建） | 已落并实测 | `.agents/specs/architecture.md` §2 与 §3；`src/host/*`、`src/client/index.tsx`、`scripts/build.mjs` |
 | 数据层 | 已落：`app_settings` / `projects` / `change_log` 三表，`PRAGMA user_version = 1`，WAL + busy_timeout=5000 | `src/host/db.ts` 第 69–108、148–163 行；ADR-0002 |
 | 工具面 | 已落 3 个：`inkflow_health` / `inkflow_project_list` / `inkflow_project_create` | `src/host/tools.ts` 第 90 / 130 / 184 行 |
 | HTTP 路由 | 已落：`/inkflow/api/*` 前缀，loopback fail-closed，P0 只读 GET | ADR-0004；`src/host/routes.ts` |
-| 契约测试 | `tests/p0.test.js`（8,561 B），覆盖 DB/工具/路由四类 | 文件核对 |
+| 契约测试 | `tests/contract.test.js`（13 条），覆盖门禁/索引重建/不变量/HTTP 安全 | 文件核对 |
 | 构建产物 | `lib/index.js`（约 17 KB ESM）、`lib/client.js`（约 13 KB CJS + loader 包装） | ADR-0003 验证段 |
 | 偏离项 | 构建链用 esbuild 单工具链，偏离用户原建议的 tsdown | ADR-0003；见 §8 RM-P-17 |
 | 未完成 | P0-6（卸载/升级闭环）、P0-2（iframe 的 DOM 实测）、P0-5 的 20 条检索用例、P0-1 的面板视觉确认 | 对照 DoD 逐条；P0-7 已由 `docs/tech-spike.md` 承担 |
@@ -150,13 +150,13 @@
 | 导入导出 TXT/MD | 3–5 | 解析/序列化 + 一致性测试 | 【推断】 |
 | **合计** | **25–35** | — | 【推断】 |
 
-> 注：规格口径「约 20 表」指业务实体；权威数据模型 `docs/data-model.md` 给的是 22 个实体组 → 35 张物理表（含 2 张 FTS5 虚拟表、4 张辅助表）+ 2 个视图。估工仍按规格区间 25–35 人日不下调，差额作为口径裁决项（见 `docs/product-scope.md` §7 PS-I-04）。
+> 注：规格口径「约 20 表」指业务实体；权威数据模型 `.agents/specs/data-model.md`（v2）给的是 22 个实体组 → 文件位置映射；旧 SQLite 口径的「35 张物理表 / 2 视图」已随 ADR-0005 作废。估工仍按规格区间 25–35 人日不下调，差额作为口径裁决项（见 `.agents/specs/product-scope.md` §7 PS-I-04）。
 
 **DoD**
 
 | # | DoD | 检验方法 | 阈值 | 来源 |
 | --- | --- | --- | --- | --- |
-| P1-1 | 22 个实体组对应表全部落库（物理表 35 张，含 FTS/辅助表，以 `docs/data-model.md` §3.2 清单为准），`PRAGMA user_version` 版本号递增，迁移 0→1（及后续版本）可前滚、可重复执行、不可重放则回滚 | 迁移脚本连跑 2 次 + 表数核对 | 第 2 次无变更、无重复表、表数 = 35 | 【推断】 |
+| P1-1 | 写入器落地：章节/角色/世界观/大纲的增删改经工具**写入文件**（原子替换、路径越界拒绝、id 稳定），索引由文件重建并与文件一致 | 端到端脚本：建项目→写 3 章→改 1 章→删 1 章→重建索引→逐项核对 | 文件与索引 100% 一致；越界写入被拒 | 【推断】（v2 重基线；原 SQLite 迁移口径已作废） |
 | P1-2 | 27 个工具全部可调用，每个工具 ≥1 正向 + 1 异常用例 | 工具用例集 | 覆盖率 100% | 【推断】 |
 | P1-3 | 端到端：建项目 → 卷 → 章 → 写 3,000 字 → 读回；字数回写与实际字符数一致 | 脚本断言 | 误差 ≤ 1 字 | 【推断】 |
 | P1-4 | 工作台：500 章章节树加载、七分类树展开、编辑器保存 | 打点计时 | < 500 ms / 展开可用 / < 200 ms | 【推断】 |

@@ -1,9 +1,9 @@
 # dsh-inkflow 数据模型（文件真相 + 派生索引）
 
 > 状态：**v2（2026-10-21 架构变更后）**。
-> 契约权威：[docs/conventions.md](conventions.md)（目录/文件格式/门禁）。
-> 决策依据：[ADR-0005](adr/0005-files-first-with-derived-index.md)。
-> 旧版（SQLite 为真相源，35 张物理表 + FK/触发器/迁移）已归档：[docs/archive/data-model-sqlite-truth.md](archive/data-model-sqlite-truth.md)，仅作「哪些不变量值得保留」的清单参考。
+> 契约权威：[.agents/specs/conventions.md](conventions.md)（目录/文件格式/门禁）。
+> 决策依据：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)。
+> 旧版（SQLite 为真相源，35 张物理表 + FK/触发器/迁移）已归档：[docs/archive/data-model-sqlite-truth.md](../../docs/archive/data-model-sqlite-truth.md)，仅作「哪些不变量值得保留」的清单参考。
 
 ## 1. 一句话
 
@@ -79,7 +79,7 @@
 
 - 版本：`PRAGMA user_version = 1`；与代码不一致 → **删库重建**，不做 ALTER。
 - 重建：清空 → 全量扫描 → 事务写入 → 校验；`index/` 里除 `.gitkeep` 外全部是派生物。
-- 中文检索实测依据：[tech-spike.md](tech-spike.md) §5（trigram 3 字命中、2 字不命中）。
+- 中文检索实测依据：[tech-spike.md](../../docs/tech-spike.md) §5（trigram 3 字命中、2 字不命中）。
 
 ## 5. 不变量与强制手段（从「DB 强制」改为「应用层 + 重建校验」）
 
