@@ -27,9 +27,11 @@
         # data: novels live in their own git repositories.
         # Empty = "$DSH_HOME/inkflow" (~/.dsh/inkflow).
         dataDir: ''
-        # Register the read-only /inkflow/api/* routes used by the workbench
-        # page. They never leave this machine: the handler rejects any
-        # Host/Origin that is not loopback.
+        # Register the read-only /inkflow/internal/* projections behind the
+        # panel (the `conversation.view` entry: the InkFlow tab beside
+        # 对话 / 轨迹). They never leave this machine: the handler rejects any
+        # Host/Origin that is not loopback, refuses path parameters, and only
+        # accepts a session id (ADR-0008 D2/D3/D4).
         serveHttp: true
         # Writing context injected into the system prompt of sessions opened
         # inside a usable project (book/chapter/previous-tail/world-book).

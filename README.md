@@ -6,7 +6,7 @@
 
 **Storage: files are the truth.** Every novel is its own git repository; the plugin reads and writes Markdown/JSON files, and keeps `index/inkflow.db` only as a **rebuildable query cache**. That is why plugin upgrades never touch existing projects and why there is no database migration to run — see [ADR-0005](.agents/adrs/0005-files-first-with-derived-index.md) and the directory contract in [.agents/specs/conventions.md](.agents/specs/conventions.md).
 
-**Status: files-first skeleton (not usable for writing yet).** [已验证] against a real DSH 0.2.1-rc.2 install: project gate, derived index rebuild with invariant checks, loopback-only panel projection. [已验证] by the contract suite against the built bundle (`lib/index.js`): the nine content directories + `index/` + `.gitkeep` gate, the four-state verdict (`needs-setup` / `needs-repair` / `usable` / `needs-newer-plugin`), and the plan → apply setup/repair wizard including `git init`. [未验证] the wizard and the workbench view inside a live DSH generation (needs a restart). Five `inkflow_*` tools. Not implemented yet: write tools and the editor, volume/chapter catalog, `conversation.view` entry + `/inkflow/internal/*`, shared library, OVK search — see [.agents/specs/roadmap.md](.agents/specs/roadmap.md).
+**Status: files-first skeleton (not usable for writing yet).** [已验证] against a real DSH 0.2.1-rc.2 install: project gate, derived index rebuild with invariant checks, loopback-only panel projection. [已验证] by the contract suite against the built bundles (`lib/index.js` + `lib/client.js`): the nine content directories + `index/` + `.gitkeep` gate, the four-state verdict (`needs-setup` / `needs-repair` / `usable` / `needs-newer-plugin`), the plan → apply setup/repair wizard including `git init`, and the single `conversation.view` registration. [未验证] the panel and the wizard inside a live DSH generation (needs a restart). Twelve `inkflow_*` tools. Not implemented yet: the panel editor, volume/chapter catalog, shared library, OVK search — see [.agents/specs/roadmap.md](.agents/specs/roadmap.md).
 
 ---
 
@@ -53,10 +53,10 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 重启 DSH 后应看到（**当前构建**）：
 
-- 左侧栏出现 **InkFlow** 图标（order 30）→ 打开整页工作台（章节列表 + 项目诊断 + 十项目录勾选）；
+- 会话的「对话 / 轨迹」栏多出 **InkFlow** 页签（`conversation.view`，id `inkflow`，order 40）→ 面板骨架：项目标题 + 四态徽章 + 相对项目根、卷 → 章章节树、只读正文预览；非 `usable` 时显示 `missing[]` / `actions[]` 清单与只读的初始化计划；
 - 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search` / `inkflow_chapter_create` / `inkflow_chapter_write` / `inkflow_chapter_move` / `inkflow_chapter_delete` / `inkflow_volume_create` / `inkflow_volume_rename`。
 
-> 目标入口是会话视图 `conversation.view`（[ADR-0008](.agents/adrs/0008-panel-data-channel.md)），**当前尚未实现**；在它落地前，面板只有左侧栏入口，且无法解析会话所属项目（`NO_SESSION_CONTEXT`）。
+> 面板**只有**这一个入口（[ADR-0008](.agents/adrs/0008-panel-data-channel.md) D1）：`sidebar.panellist` 与 `main` 是 root 作用域、拿不到会话，不再注册。面板只读——写正文与初始化都要走用户确认后的工具调用。
 
 > ⚠️ 改完 `src/**` 必须 `pnpm run build` **并重启 DSH**：实测 HMR 只对新装 bundle 生效，改动已加载插件的 `lib/` 不会热替换（旧 generation 会继续跑）。
 
@@ -108,7 +108,8 @@ src/host/              Host 半（DSH Node 进程内）
   routes.ts            面板私有通道（/inkflow/internal/*：逐路由声明方法 + loopback/参数加固 + JSON 信封）
   internal.ts          私有通道的投影层（会话 → 项目解析、门禁清单、status/chapters/chapter/search 只读投影）
 src/client/            Client 半（浏览器 React）
-  index.tsx            面板视图与槽位注册（目标 conversation.view；当前 sidebar.panellist + main）
+  index.tsx            面板骨架与槽位注册（唯一的 conversation.view 入口）
+  panel-model.ts       纯视图模型：四态徽章文案、卷章树、空态判定、root 相对化、页签表
   internal.ts          `fetchInternal`：只送 sessionId 的私有通道客户端，`{ok,value}` 解包
   context.ts           本插件用到的 DSH Client 表面（slots / layout）
 scripts/build.mjs      esbuild 双半构建（Host ESM + Client module-loader factory）

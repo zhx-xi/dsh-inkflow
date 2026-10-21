@@ -85,15 +85,21 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.1 工作台面板
 
-**目标形态**（[ADR-0008](../.agents/adrs/0008-panel-data-channel.md)）：面板入口在**会话视图**（与「对话 / 轨迹」同栏）的 InkFlow 页签——它只显示当前会话所在的那本书，不需要你选项目。
+面板入口在**会话的「对话 / 轨迹」栏**——切换到这个页签，它只显示当前会话所在的那本书，不需要你选项目（[ADR-0008](../.agents/adrs/0008-panel-data-channel.md)）。左栏不再有全局图标：全局入口拿不到会话，无法判断该显示哪本书。
 
-**当前构建**：入口仍在**左侧栏**（点 InkFlow 图标打开整页工作台）。Host 侧已能按会话解析项目（`/inkflow/internal/*` 私有通道），但会话视图入口尚未落地，左侧栏入口拿不到会话身份，因此面板仍会显示「无法确定当前会话的项目」（`NO_SESSION_CONTEXT`）。在会话视图入口落地前，项目状态以工具返回为准：在小说目录的会话里让 AI 调 `inkflow_project_status`。
+面板**只读**，内容按当前会话所属目录的四态给出：
 
-工作台内容（当前）：
+| 面板状态 | 你看到什么 | 下一步 |
+|---|---|---|
+| **可用**（`usable`） | 顶部：项目标题、四态徽章、项目根（相对会话目录，通常就是 `./`）；左：章节树（卷 → 章）；右：所选章节的只读正文预览 | 直接读；写正文仍交给 AI（工具） |
+| **待初始化**（`needs-setup`） | 缺什么（`missing[]`）+ 初始化向导会做什么（`actions[]`）+「打开初始化向导」按钮 | 点按钮看只读计划；确认后让 AI 调 `inkflow_project_init`（`confirm: true`） |
+| **待修复**（`needs-repair`） | 同上，清单是缺的目录/`.gitkeep`/`inkflow.json` 等 | 同上：先看计划，再确认补齐（只补缺的，不覆盖已有文件） |
+| **需升级插件**（`needs-newer-plugin`） | 只读提示：这本书由更新版本的插件写入 | 先升级插件，这个版本不写入 |
+| **没有会话身份**（`NO_SESSION_CONTEXT`） | 明确空态文案，不是报错 | 在小说目录的会话里打开这个页签 |
 
-- **左栏**：章节列表（章号 / 标题 / 项目相对路径，来自 `chapters/` 的卷章投影）
-- **中栏**：正文区（编辑能力在后续版本）+ 项目诊断（项目路径、索引状态、统计）
-- **右栏**：十项目录（九个内容目录 + `index/`）勾选状态 + 约定速览
+- 设定 / 大纲 / 伏笔三个页签显示为**禁用态**并标注「0.2.0 起」——对应功能尚未实现，摆一个点了没反应的按钮比禁用更糟。
+- 面板不写盘、不建索引、不修复项目：它只投影 Host 的判定结果，写入一律是「用户确认后的工具调用」。
+- 面板看不到内容时，项目状态也可以直接问 AI：`inkflow_project_status`（判定）与 `inkflow_project_plan`（只读计划）。
 
 ### 5.2 对 AI 说人话就行
 
@@ -221,7 +227,7 @@ title: 全书总纲
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 面板显示「无法确定当前会话的项目」 | 面板入口还在左侧栏（root 作用域），拿不到会话身份，所以 Host 无法定位这本书（`NO_SESSION_CONTEXT`）；会话视图入口尚未落地 | 在小说目录的会话里调 `inkflow_project_status` 看项目状态 |
+| 面板显示「没有会话身份」（`NO_SESSION_CONTEXT`） | 面板在会话的「对话 / 轨迹」栏里才有会话身份；从没有会话的页面打开、或会话还没绑定工作区时，Host 无法判断该显示哪本书 | 在小说目录的会话里切到 InkFlow 页签；同时可调 `inkflow_project_status` 看项目状态 |
 | 工具报 `NOT_AN_INKFLOW_PROJECT`（`needs-setup`） | 这里还不是项目：缺 git / 缺目录 / 缺 `inkflow.json` | 看返回的 `missing` 与 `actions`；确认后让 AI 走 `inkflow_project_plan` → `inkflow_project_init`（`confirm: true`） |
 | 工具报 `PROJECT_NEEDS_REPAIR`（`needs-repair`） | 书已经存在，但缺目录/缺 `.gitkeep`/`inkflow.json` 坏了 | 先看 `actions`（只补缺失项，不覆盖已有文件）；坏 meta 会先回原文再重建 |
 | 工具报 `PROJECT_NEEDS_NEWER_PLUGIN` | `inkflow.json` 的 `schemaVersion` 比你装的插件新 | **升级插件**；不要试图修复或重建——旧版本写入会破坏新版本写下的数据 |
@@ -229,7 +235,7 @@ title: 全书总纲
 | 工具报 `GIT_INIT_FAILED` | 机器上没有可用的 git | 装好 git 后重试；或自己在书目录 `git init`，再走修复向导 |
 | 工具报 `PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN` | 传的路径不在当前会话工作目录里（或是盘符根/家目录/安装目录） | 在会话工作目录内建项目，或先把会话切到书的目录 |
 | 工具报 `INIT_REQUIRES_CONFIRMATION` | 向导还没拿到你的确认 | 看返回的「将创建/将修复」清单，确认无误后让 AI 带 `confirm: true` 再跑一次 |
-| 左侧栏没有 InkFlow 图标 | 插件未安装/未激活，或改了代码没重启 | 检查插件列表；重启 DSH |
+| 会话的「对话 / 轨迹」栏里没有 InkFlow 页签 | 插件未安装/未激活，或改了代码没重启（HMR 不热替换已加载的插件） | 检查插件列表；重启 DSH |
 | 装了插件但工具列表里没有 `inkflow_*` | 还是旧版本代码在跑 | 重启 DSH |
 | 技能目录里没有 `inkflow-*` 五个写作技能 | 会话工作目录不在 InkFlow 项目里（技能按目录门禁），或宿主没有 skills 服务 | 把会话切到书的目录；重启后在启动日志里看有没有 `skills service missing` |
 | 模式选择里没有「InkFlow 写作」 | 宿主没有 `agentPresets` 服务（或该宿主不支持 preset） | 技能与 `inkflow_*` 工具不依赖 preset，写作照常可用；重启升级后再看 |

@@ -31,7 +31,7 @@
             foreshadowing/ timeline/ relations/ facts/ library/ index/ }
 ```
 
-**实现状态**：工具与索引已按上图注册，`/inkflow/internal/*` 私有通道已落地（四条只读路由，见 §4.2 与 [conventions.md](conventions.md) §6.2）；`conversation.view` 入口尚未注册（归 #17），当前构建仍是 `sidebar.panellist`/`main` 两处 root 作用域注册，因此面板还拿不到 `sessionId`，会显示「无法确定当前会话的项目」。
+**实现状态**：工具与索引已按上图注册，`/inkflow/internal/*` 私有通道已落地（四条只读路由，见 §4.2 与 [conventions.md](conventions.md) §6.2）；Client 半只注册 `conversation.view(id='inkflow', order=40)` 一处（§4.3），面板因此拿到 `sessionId` 并把项目解析交给 Host。面板本身的编辑器与提案制修订尚未落地（§9.1）。
 
 ## 2. 存储决策（ADR-0005）
 
@@ -90,17 +90,29 @@
 
 ### 4.3 Client 槽位 — `ctx.slots`
 
-**目标形态**（[ADR-0008](../adrs/0008-panel-data-channel.md) D1）：
+**唯一入口**（[ADR-0008](../adrs/0008-panel-data-channel.md) D1）：
 
 | 槽位 | 类型 | 作用域 | 注册参数 | 说明 |
 |---|---|---|---|---|
-| `conversation.view` | keyed | **session** | `{name:'conversation.view', id:'inkflow', order:40}` | 与「对话 / 轨迹」同栏，是唯一入口 |
+| `conversation.view` | list | **session** | `{name:'conversation.view', id:'inkflow', order:40, label: () => 'InkFlow'}` | 与「对话 / 轨迹」同栏（chat 0、trajectory 10 之后），是唯一入口 |
 
-- 为什么只留 `conversation.view`：面板的语义是"这本书的驾驶舱"，而"这本书"只能从会话推出；`sidebar.panellist` 与 `main` 是 **root 作用域**，拿不到会话，只剩"上次打开的书"这条已删除的捷径。
-- `conversation.view` 的 standardProps 提供 `useWorkspaces`（items 含 `path`）与 `useSessions`（含 `cwd`），Client 只把 `sessionId` 交给 Host，路径由 Host 解析（D4）。
-- 注册包在 `ctx.effect(() => ctx.slots.inject(...))` 里。
+实测契约（DSH 0.2.1-rc.2 打包产物：`cordis_inspect_query` 的 client/Slots 在本机超时，改读 `dsh-cordis-client-runner/lib/client.js` 的槽位目录与各 `dsh-client-ui-<包>/lib/client.js` 的注册调用）：
 
-**实现状态**：当前构建仍注册 `sidebar.panellist(id='inkflow')` + `main(key='inkflow')`（共用 `PANEL_ID`）；`conversation.view` 未注册，归 #17。
+- register options 只有 `id`（必填）、`order`、`label`；**没有图标位**——`label` 是页签文字，thunk 形式跟随当前语言。
+- standardProps 中本面板用到的是：`sessionId`（会话 id）、`useSessions`（快照 `{ids, byId}`，`byId[id].cwd`）、`useWorkspaces`（快照 `items[]`，含 `path`/`title`/`sessionIds`）、`useSession`（会话快照，`openState` 等）。owner props（`inspectCall` / `viewRequest` / `openView` / `completeViewRequest`）骨架不使用。
+- `sidebar.panellist`（root，`id`/`order`/`label` + 图标组件）与 `main`（root，`key`）**不注册**：root 作用域拿不到会话，只剩"上次打开的书"这条已删除的捷径（ADR-0006 D5）。
+- 注册包在 `ctx.effect(() => ctx.slots.inject('conversation.view', () => ctx.slots.register(...)))` 里；整个 Client 半只有这一处注册，也只有这一处 `slots.inject`。
+
+**槽位数据 → 面板区域**（`src/client/index.tsx`）：
+
+| 用途 | 来源 |
+|---|---|
+| 会话 id（唯一发给 Host 的东西） | standardProp `sessionId` → `setActiveSessionId()` |
+| 工作区标题、`path`（`root` 相对化与项目名兜底） | `useWorkspaces((s) => s.items)`，按 `sessionIds` 匹配（`session-<uuid>` 与裸 uuid 两种写法都认，与 Host 解析同宽容度） |
+| 会话 `cwd`（工作区缺失时的相对化基准） | `useSessions((s) => s.byId)` |
+| 会话是否仍在打开（不抢在会话之前报空态） | `useSession((s) => s.openState)` |
+
+纯视图逻辑（四态徽标文案、卷章树、空态判定、`root` 相对化、页签表、`previewText` / `describeAction`）在 `src/client/panel-model.ts`：不碰 React、不发请求，由 `tests/panel-bundle.test.js` 直接打这个模块（`node --test` 无 DOM，组件本身只按构建产物做静态断言）。
 
 ### 4.4 主题
 
@@ -219,6 +231,20 @@
 
 面板与 Host 之间只有一条**私有内部通道**（[ADR-0008](../adrs/0008-panel-data-channel.md)）：不对外、不版本化、不接受路径参数、逐路由声明方法（读 GET / 写 POST + JSON）。写操作（如"确认并应用一次向导动作"）必须是 POST + `Content-Type: application/json` + 带 loopback `Origin`，并由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做只读模式下的自动修复。写入真相仍走工具 → `io.ts`。
 
+面板侧的数据流（`sessionId` → Host 解析 → 四态 → 投影）：
+
+| 步骤 | 谁做 | 形状 |
+|---|---|---|
+| 1. 绑定会话 | Client：`setActiveSessionId(sessionId)` | 只一个会话 id |
+| 2. 读门禁 | `GET /inkflow/internal/status?sessionId=…` | `usable` → `{ok:true,value:{state,checks,missing,actions,reasons,index,catalog}}`；其余三态 → `{ok:false,error:{code,state,checks,missing,actions,reasons,readOnly,hint}}`；解析不到会话 → `{ok:false,error:{code:'NO_SESSION_CONTEXT',actions}}`，**三种都是 HTTP 200** |
+| 3. 读卷章树 | `GET /inkflow/internal/chapters?sessionId=…` | `{total, volumes[{volumeId,dir,title,chapters[]}], looseChapters[], catalogStale}` |
+| 4. 读一章（只读预览） | `GET /inkflow/internal/chapters/:id?sessionId=…` | `{id,path,title,seq,body,bodyChars,issues}` |
+
+- **清单只来自 Host**：非 `usable` 时 `missing[]`/`actions[]` 在 `error` 里，`usable` 时在 `value` 里；面板把两种信封折成同一份 `PanelGate`（`src/client/panel-model.ts` 的 `readGate`），不自己补清单、不自己判定状态。
+- 面板**只读**：向导按钮只重读 `/status` 的计划，不调 `inkflow_project_init`；提交写入必须在会话里由用户确认。
+- Client 侧永不拼 `root`/`path`/`cwd`（`tests/panel-bundle.test.js` 对产物断言这三种查询参数都不存在）。
+
+
 ## 6. 模块边界
 
 | 模块 | 只做 | 不做 |
@@ -244,7 +270,8 @@
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建 | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个只读投影 | HTTP 加固、写任何文件、重建索引 |
 | `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封 | 业务规则、写真相文件 |
-| `src/client/index.tsx` | 视图、槽位注册、`fetchInternal` 调私有通道 | 业务规则、文件 IO |
+| `src/client/index.tsx` | `conversation.view` 注册（唯一入口）、面板骨架（四态徽章 / 章节树 / 只读正文预览 / 向导清单）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
+| `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
 | `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路 | 拼路径参数、文件 IO |
 
 ## 7. 数据流
@@ -267,10 +294,11 @@
 |---|---|---|
 | patch 裸 `- id:` | 目标不存在时整条 patch 静默丢弃 | 新增行一律 `- insert:` |
 | 改已装插件的 `lib/` | **HMR 只对新装 bundle 生效**，改代码不生效 | 改完必须重启 DSH |
-| `sidebar.panellist` 与 `main` 的 id 不一致 | 有图标没页面 | 共用 `PANEL_ID` 常量（两处入口本身随 ADR-0008 撤掉） |
+| `sidebar.panellist` 与 `main` 两处入口 | 两个 root 作用域槽位的 id/key 不一致就"有图标没页面"；且都拿不到会话工作区 | 两处都撤掉，只留 session 作用域的 `conversation.view`（ADR-0008 D1） |
 | 把面板放在 root 作用域插槽 | 拿不到会话工作区，只能靠"上次打开的书"猜 | 入口用 session 作用域的 `conversation.view`（ADR-0008 D1） |
 | 面板让客户端传 `root`/`path` | 任意 loopback 页面可指向任意目录，`inspectProject` 还会在那里建 `index/` | Client 只传 `sessionId`，Host 解析（ADR-0008 D4） |
-| `main` 已有 key `conversation` | 复用会被替换 | 用自有 key `inkflow` |
+| 按 `value` 读非 `usable` 的门禁清单 | 非 `usable` 的清单在 `error` 里（HTTP 仍是 200），只读 `value` 会得到"什么都没有"的空面板 | `readGate` 同时读两种信封（§5.4） |
+| 给未实现的页签挂真按钮 | 点了没反应的死入口，用户以为插件坏了 | 未实现页签只做禁用态 + 版本 tooltip |
 | Windows 工具写 UTF-8 BOM | `JSON.parse` 抛错 → 项目被判无效 | 读 `inkflow.json` 前剥 BOM（已有回归测试） |
 | `node:sqlite` 的 `PRAGMA user_version` | 只能 `prepare().get()` 读、`exec()` 写 | 已封装在 indexer |
 | 用 `ctx.skills.register()` 注册随包技能 | 落到**全局层**：所有会话（含代码会话）的技能目录都被塞进小说技能 | 走 `registerProvider` + `cwd` 门禁（§4.6） |
@@ -282,7 +310,7 @@
 
 | 契约 | 现状 | 归属 |
 |---|---|---|
-| 面板入口 `conversation.view` | 仍注册 `sidebar.panellist` + `main`；面板因此还拿不到 `sessionId` | #17 |
+| 面板编辑器与提案制修订 | 面板只有只读预览；写入仍走工具 | #45 |
 | 搜索的正文全文检索 | `/search` 目前只匹配章节元数据（id/路径/标题），并显式标 `searchUnavailable: true` | #22 |
 | 卷章 catalog + `volumeId` | 未落地；卷归属按目录名推导 | #15 |
 | 索引 v2（九目录全实体 + 提及 + 全实体 FTS） | 只覆盖章/角色/世界观/大纲 | #22 / #23 |
@@ -296,7 +324,7 @@
 | 项 | 状态 | 验证方式 |
 |---|---|---|
 | 新 Host 代码在**运行中的 DSH** 里生效 | 未验证（需重启加载新 generation） | 重启后复核工具表 |
-| 面板视觉（十项目录勾选、章节列表） | 未验证 | 重启后目视 |
+| 面板视觉（四态徽章、章节树、只读正文预览、禁用页签） | 未验证（契约测试打构建产物，未在运行中的 DSH 里看过） | 重启后目视：会话的「对话 / 轨迹」栏第三个页签 InkFlow |
 | 向导在运行中的 DSH 里的交互（plan → apply、`git init`） | 契约测试全绿（打 `lib/index.js`），未在重启后的会话里跑过 | 重启后手动跑一次全流程 |
 | 59 万字全量重建耗时 | 未验证 | 用真实库基准（当前样例 7 文件 10ms） |
 | 面板的项目来源（会话 → 工作区） | 契约测试全绿（打 `lib/index.js`，含 registry → workingDirectory → header 三级链）；运行中 DSH 未观测 | 重启后在小说会话打开面板，确认 `/inkflow/internal/status` 的 `resolvedFrom` 与 `root` 指向该书 |
