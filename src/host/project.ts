@@ -168,7 +168,10 @@ export function checkProjectRootScope(candidate: string, workspace: string): Sco
   if (root === parsePath(root).root) {
     return reject('PATH_FORBIDDEN', 'refusing a drive/volume root as a project root')
   }
-  const home = realpathLoose(homedir())
+  // `homedir()` honours HOME on POSIX and USERPROFILE on Windows, but tests and
+  // portable setups may override only one of them; read the environment first so
+  // both platforms agree, then fall back to the OS account directory.
+  const home = realpathLoose(process.env['HOME'] ?? process.env['USERPROFILE'] ?? homedir())
   if (root === home) {
     return reject('PATH_FORBIDDEN', `refusing the user home directory itself (${home}); use a subdirectory`)
   }

@@ -12,7 +12,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, parse as parsePath } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -587,8 +587,8 @@ test('identity: a session outside a project never answers for a remembered book'
     assert.equal(status.ok, false)
     assert.equal(status.error.code, 'NOT_AN_INKFLOW_PROJECT')
     assert.equal(status.error.needsSetup, true)
-    assert.equal(status.error.root, dir)
-    assert.notEqual(status.error.root, bookA)
+    assert.equal(realpathSync.native(status.error.root), realpathSync.native(dir))
+    assert.notEqual(realpathSync.native(status.error.root), realpathSync.native(bookA))
     assert.ok(status.error.missing.includes('.git'))
     assert.ok(Array.isArray(status.error.reasons))
   } finally {
@@ -608,7 +608,9 @@ test('scope: a projectRoot outside the session workspace is rejected untouched',
     const status = await callTool(harness, 'inkflow_project_status', { projectRoot: outsideBook })
     assert.equal(status.ok, false)
     assert.equal(status.error.code, 'PATH_OUT_OF_SCOPE')
-    assert.equal(status.error.root, outsideBook)
+    // Windows CI exposes the temp dir through an 8.3 short name (RUNNER~1); the
+    // guard returns the real path, so compare resolved forms on both sides.
+    assert.equal(realpathSync.native(status.error.root), realpathSync.native(outsideBook))
     // The derived index directory is the observable side effect of the old code.
     assert.equal(existsSync(join(outsideBook, 'index')), false)
     assert.equal(statSync(outsideBook).mtimeMs, before)
@@ -636,12 +638,14 @@ test('scope: a projectRoot outside the session workspace is rejected untouched',
 
 test('scope: the user home directory itself is refused as a project root', async () => {
   const dir = workdir()
-  const previous = process.env['USERPROFILE']
+  const previousHome = process.env['HOME']
+  const previousProfile = process.env['USERPROFILE']
   try {
     const fakeHome = join(dir, 'home')
     mkdirSync(fakeHome, { recursive: true })
-    // os.homedir() reads USERPROFILE on Windows, so this exercises the real
-    // "no scaffolding in your home directory" rule without touching the account.
+    // The plugin reads HOME first (POSIX) then USERPROFILE (Windows), so set both
+    // to exercise the real "no scaffolding in your home directory" rule.
+    process.env['HOME'] = fakeHome
     process.env['USERPROFILE'] = fakeHome
     const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_init', { root: fakeHome, title: '放家里' })
@@ -649,8 +653,10 @@ test('scope: the user home directory itself is refused as a project root', async
     assert.equal(result.error.code, 'PATH_FORBIDDEN')
     assert.deepEqual(readdirSync(fakeHome), [])
   } finally {
-    if (previous === undefined) delete process.env['USERPROFILE']
-    else process.env['USERPROFILE'] = previous
+    if (previousHome === undefined) delete process.env['HOME']
+    else process.env['HOME'] = previousHome
+    if (previousProfile === undefined) delete process.env['USERPROFILE']
+    else process.env['USERPROFILE'] = previousProfile
     rmSync(dir, { recursive: true, force: true })
   }
 })
