@@ -92,6 +92,35 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
+test('catalog: a volume takes its title from the matching outline, not the slug', () => {
+  const dir = workdir()
+  try {
+    const root = project(dir)
+    chapter(root, 'chapters/vol-01-ru-shan/0001-a.md', { title: '第一章', volume: 'vol-01', seq: 1 })
+    writeFileSync(join(root, 'outlines', 'vol-01-ru-shan.md'), '---\ntitle: 入山卷\n---\n\n# 入山\n', 'utf8')
+
+    const result = readCatalog(root)
+    const volume = result.catalog.volumes.find((item) => item.volumeId === 'vol-01')
+    assert.equal(volume.title, '入山卷', 'the outline is the human-authored source for the volume name')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('catalog: without an outline the volume title falls back to the directory slug', () => {
+  const dir = workdir()
+  try {
+    const root = project(dir)
+    chapter(root, 'chapters/vol-01-ru-shan/0001-a.md', { title: '第一章', volume: 'vol-01', seq: 1 })
+
+    const result = readCatalog(root)
+    const volume = result.catalog.volumes.find((item) => item.volumeId === 'vol-01')
+    assert.equal(volume.title, 'ru-shan')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 /** Content snapshot of the whole project (files + presence of directories). */
 function snapshot(root) {
   const entries = []

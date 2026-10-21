@@ -197,6 +197,44 @@ function leadingNumber(file: string): number | undefined {
 }
 
 /**
+ * Volume title: `outlines/vol-NN[-slug].md` is the human-authored source for the
+ * volume's name, so it wins over the directory slug (a slug has no spaces and
+ * cannot be renamed without touching the file system; the outline can).
+ *
+ * Frontmatter `title` is authoritative; a first `# heading` is the fallback for
+ * hand-written outlines that never grew frontmatter. Missing outline, unreadable
+ * file or an empty title all fall back to the directory slug at the call site.
+ */
+function volumeTitleFromOutline(root: string, volumeId: string): string | undefined {
+  const outlinesDir = join(root, 'outlines')
+  let names: string[]
+  try {
+    names = readdirSync(outlinesDir)
+  } catch {
+    return undefined
+  }
+  const number = volumeId.startsWith('vol-') ? volumeId.slice('vol-'.length) : ''
+  const wanted = number === '' ? undefined : Number.parseInt(number, 10)
+  if (wanted === undefined || Number.isNaN(wanted)) return undefined
+  const file = names.find((name) => {
+    const match = /^vol-(\d+)(?:[-_].*)?\.md$/i.exec(name)
+    return match?.[1] !== undefined && Number.parseInt(match[1], 10) === wanted
+  })
+  if (file === undefined) return undefined
+  let text: string
+  try {
+    text = readFileSync(join(outlinesDir, file), 'utf8')
+  } catch {
+    return undefined
+  }
+  const parsed = parseMarkdown(text)
+  const field = stringField(parsed.data, 'title')?.trim()
+  if (field !== undefined && field !== '') return field
+  const heading = /^\s{0,3}#\s+(.+?)\s*$/m.exec(parsed.body)
+  return heading?.[1]?.trim()
+}
+
+/**
  * Volume directories are the immediate subdirectories of `chapters/` that follow
  * the `vol-NN[-slug]` convention. Anything else stays a plain directory; its
  * chapters remain visible as loose chapters instead of disappearing.
@@ -214,10 +252,11 @@ function scanVolumes(root: string): CatalogVolume[] {
     const volumeId = volumeIdOfDir(entry.name)
     if (volumeId === undefined) continue
     const slug = (VOLUME_DIR.exec(entry.name)?.[2] ?? '').trim()
+    const outlineTitle = volumeTitleFromOutline(root, volumeId)
     volumes.push({
       volumeId,
       dir: entry.name,
-      title: slug === '' ? volumeId : slug,
+      title: outlineTitle ?? (slug === '' ? volumeId : slug),
       order: Number.parseInt(volumeId.slice('vol-'.length), 10),
     })
   }
