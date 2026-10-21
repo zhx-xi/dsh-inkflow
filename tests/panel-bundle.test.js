@@ -101,6 +101,26 @@ test('client bundle ships the skeleton wording the user sees', () => {
   }
 })
 
+test('client bundle carries the build stamp and the restart guidance (issue #88)', () => {
+  const text = readBundle()
+  // scripts/build.mjs bakes `__INKFLOW_BUILD__` = `<sha>@<ISO>` into this bundle;
+  // the panel shows it and, when the Host proves the disk is newer, says restart.
+  assert.match(text, /@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/, 'the client bundle carries its own stamp')
+  for (const marker of ['staleLoadedCode', '插件代码已更新', 'pnpm.cmd run build', '完全退出并重启 DSH', '刷新不会生效']) {
+    assert.ok(text.includes(marker), `bundle is missing the stale-build wording: ${marker}`)
+  }
+})
+
+test('the stale-build banner sits above the tabs, so every gate state shows it', () => {
+  // A stale generation renders the REFUSAL screen for a usable book, so the
+  // banner must not live inside the usable-only branch of the panel tree.
+  const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
+  const banner = source.indexOf('<StaleBuildBanner')
+  const tabs = source.indexOf('<div style={tabRowStyle}>')
+  assert.ok(banner > 0 && tabs > 0 && banner < tabs, 'the banner is rendered before the tab row')
+  assert.ok(source.includes('readBuild(status)'), 'the panel reads the stamp out of /status, not from a guess')
+})
+
 test('client sources draw every colour from theme tokens', () => {
   const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
   assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(source), false, 'no hardcoded colour literals (AGENTS.md §6)')
@@ -337,4 +357,77 @@ test('readGate carries titleSuspicious and describeTitleSuspicion words it (issu
   const refused = readGate({ ok: false, status: 200, error: { code: 'NOT_AN_INKFLOW_PROJECT', state: 'needs-setup' } })
   assert.equal(refused.titleSuspicious, false)
   assert.equal(describeTitleSuspicion(readGate(null)), null)
+})
+
+// ---------------------------------------------------------------------------
+// 3. Build identity and the stale-build banner (issue #88)
+// ---------------------------------------------------------------------------
+
+const STAMP = 'abc1234@2026-10-21T13:44:02.000Z'
+const LOADED_AT = '2026-10-21T12:52:13.000Z'
+
+test('readBuild reads the summary out of `value` and out of a gate refusal', () => {
+  const { readBuild } = model
+  assert.equal(readBuild(null), null)
+  assert.equal(readBuild({ ok: true, status: 200, value: { usable: true } }), null, 'an old host sends no build field')
+
+  const fromValue = readBuild({
+    ok: true,
+    status: 200,
+    value: {
+      usable: true,
+      build: { version: '0.0.2', build: STAMP, loadedAt: LOADED_AT, staleLoadedCode: true, diskBuildTime: STAMP.slice(8) },
+    },
+  })
+  assert.deepEqual(fromValue, {
+    version: '0.0.2',
+    build: STAMP,
+    loadedAt: LOADED_AT,
+    staleLoadedCode: true,
+    diskBuildTime: STAMP.slice(8),
+  })
+
+  // The refusal envelope is where a STALE generation hides a usable book, so the
+  // summary has to survive there too.
+  const fromError = readBuild({
+    ok: false,
+    status: 200,
+    error: { code: 'NOT_AN_INKFLOW_PROJECT', build: { build: STAMP, staleLoadedCode: true } },
+  })
+  assert.equal(fromError.build, STAMP)
+  assert.equal(fromError.staleLoadedCode, true)
+  assert.equal(fromError.version, null, 'a field the host did not send stays null')
+})
+
+test('shortBuild shows the sha half of the stamp and nothing invented', () => {
+  const { shortBuild } = model
+  assert.equal(shortBuild(STAMP), 'abc1234')
+  assert.equal(shortBuild('unknown@2026-10-21T13:44:02.000Z'), 'unknown')
+  assert.equal(shortBuild('abc1234'), 'abc1234', 'a stamp without a timestamp is shown as it is')
+  assert.equal(shortBuild(''), null)
+  assert.equal(shortBuild(null), null)
+})
+
+test('describeBuildTime renders a fixed-width local clock, or the raw value it cannot read', () => {
+  const { describeBuildTime } = model
+  assert.match(describeBuildTime(STAMP.slice(8)), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+  assert.equal(describeBuildTime(null), '未知')
+  assert.equal(describeBuildTime('unknown'), '未知')
+  assert.equal(describeBuildTime('not-a-date'), 'not-a-date')
+})
+
+test('staleWarning states the evidence, the action, and the thing that does NOT work', () => {
+  const { staleWarning, describeBuildTime } = model
+  assert.equal(staleWarning(null), null)
+  assert.equal(staleWarning({ staleLoadedCode: false }), null, 'a fresh build says nothing')
+
+  const text = staleWarning({ staleLoadedCode: true, diskBuildTime: STAMP.slice(8), loadedAt: LOADED_AT })
+  assert.match(text, /插件代码已更新/)
+  assert.match(text, /晚于 DSH 启动/, 'the banner shows both timestamps: it is evidence, not a slogan')
+  assert.match(text, /pnpm\.cmd run build/)
+  assert.match(text, /完全退出并重启 DSH/)
+  assert.match(text, /刷新不会生效/)
+  // Both moments are rendered, so a user can see which build is which.
+  assert.ok(text.includes(describeBuildTime(STAMP.slice(8))))
+  assert.ok(text.includes(describeBuildTime(LOADED_AT)))
 })

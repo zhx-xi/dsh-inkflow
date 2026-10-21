@@ -31,6 +31,7 @@ import type {
   WorkingDirectoryLike,
   WorkspaceRegistryLike,
 } from './context.js'
+import { getLoadedBuild, summarizeBuild } from './build-info.js'
 import { readCatalog } from './catalog.js'
 import type { CatalogChapter, CatalogVolume } from './catalog.js'
 import {
@@ -279,20 +280,35 @@ export function noSessionContextBody(version: string, sessionId?: string): JsonR
 }
 
 /**
+ * Attach the loaded-build summary to a refusal envelope (issue #88).
+ *
+ * The stale-build banner has to render on the "needs setup" / "needs repair"
+ * screens too: that screen is exactly what a stale generation shows for a book
+ * that is in fact usable, so the summary must travel with the refusal and not
+ * only with `value`. It goes under `error` (the envelope's payload half) so the
+ * Client half keeps its `{ok,value|error}` shape.
+ */
+function withBuild(failure: JsonRecord, version: string): JsonRecord {
+  const error = asRecord(failure['error'])
+  if (error === undefined) return failure
+  return { ...failure, error: { ...error, build: summarizeBuild(getLoadedBuild({ version })) } }
+}
+
+/**
  * Resolve the request's session to a usable project. `findProjectRoot` walks up
  * exactly like the tool surface, so a session opened in a chapter directory
  * still names its book (ADR-0006 D5).
  */
 export function resolveChannelTarget(ctx: HostContext, sessionId: string, version: string): ChannelResolution {
   const resolved = resolveSessionRoot(ctx, sessionId)
-  if (resolved === undefined) return { failure: noSessionContextBody(version, sessionId) }
+  if (resolved === undefined) return { failure: withBuild(noSessionContextBody(version, sessionId), version) }
 
   const root = findProjectRoot(resolved.root) ?? resolved.root
   // `recreateIndexDir: false`: this is the one write `inspectProject` performs
   // (ADR-0006 D2 relaxation) and a browser request must not perform it.
   const probe = inspectProject(root, { recreateIndexDir: false })
   if (probe.usable !== true) {
-    return { failure: gateFailureBody(sessionId, root, resolved.source, probe) }
+    return { failure: withBuild(gateFailureBody(sessionId, root, resolved.source, probe), version) }
   }
   return { target: { sessionId, root: probe.root, source: resolved.source, probe } }
 }
@@ -385,6 +401,10 @@ export function buildStatus(target: ChannelTarget, version: string): JsonRecord 
       chapters: chapterCount,
     },
     search: { available: false, scope: 'chapter-metadata', reason: SEARCH_REASON },
+    // Issue #88: the panel's "is this build old?" banner. Read at call time, so a
+    // rebuild while DSH is running makes the next `/status` answer "stale" and
+    // only a restart makes it "fresh" again — refreshing cannot clear it.
+    build: summarizeBuild(getLoadedBuild({ version })),
   }
 }
 

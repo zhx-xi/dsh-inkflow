@@ -69,6 +69,12 @@ export interface StatusValue {
     counts?: Record<string, number>
   }
   catalog?: { stale?: boolean; volumes?: number; chapters?: number }
+  /**
+   * Issue #88: which generation the Host is running and whether the disk holds a
+   * newer one. Present in `value` when the book is usable AND in `error` when the
+   * gate refuses — a stale generation refuses a healthy book as "needs setup".
+   */
+  build?: BuildValue
 }
 
 /** One chapter as the channel lists it. */
@@ -471,6 +477,95 @@ export function describeFacts(facts: ProjectFacts): string {
 }
 
 
+// ---------------------------------------------------------------------------
+// Build identity and stale-load warning (issue #88). Self-contained on purpose:
+// it is one block of additions, so a parallel change to the panel's book tree
+// merges around it instead of through it.
+// ---------------------------------------------------------------------------
+
+/** `/status` `build` (inside `value` or `error`) exactly as the Host sends it. */
+export interface BuildValue {
+  version?: string
+  build?: string
+  loadedAt?: string
+  staleLoadedCode?: boolean
+  diskBuildTime?: string
+}
+
+/** The same, normalized for rendering: `null` = the Host did not say. */
+export interface PanelBuild {
+  version: string | null
+  build: string | null
+  loadedAt: string | null
+  /** True only when the Host proved the disk file is newer than its own start. */
+  staleLoadedCode: boolean
+  diskBuildTime: string | null
+}
+
+/** What the panel shows before any answer arrives. */
+export const UNKNOWN_BUILD_LABEL = '未知'
+
+/**
+ * Read the build summary out of either envelope.
+ *
+ * Both halves matter (issue #88): a stale generation renders the gate REFUSAL
+ * for a book that is usable, so `error.build` is where the banner's evidence
+ * lives exactly when the user needs it most.
+ */
+export function readBuild(result: InternalResult<StatusValue> | null): PanelBuild | null {
+  if (result === null) return null
+  const payload = result.ok ? asRecord(result.value) : asRecord(result.error)
+  const raw = asRecord(payload?.['build'])
+  if (raw === undefined) return null
+  return {
+    version: optionalString(raw['version']),
+    build: optionalString(raw['build']),
+    loadedAt: optionalString(raw['loadedAt']),
+    staleLoadedCode: raw['staleLoadedCode'] === true,
+    diskBuildTime: optionalString(raw['diskBuildTime']),
+  }
+}
+
+/** The short form the panel shows: the `<sha>` half of `<sha>@<ISO>`. */
+export function shortBuild(build: string | null): string | null {
+  if (build === null || build === '') return null
+  const separator = build.indexOf('@')
+  return separator > 0 ? build.slice(0, separator) : build
+}
+
+/**
+ * `2026-10-21 13:44:02` in the reader's own timezone.
+ *
+ * Fixed-width by hand rather than `toLocaleString`: the banner compares two
+ * different days' worth of clock (a build from last night, a restart this
+ * morning) and a locale-dependent format makes that comparison harder, not
+ * easier. An unparseable stamp is shown as it arrived.
+ */
+export function describeBuildTime(iso: string | null): string {
+  if (iso === null || iso === '' || iso === 'unknown') return UNKNOWN_BUILD_LABEL
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return iso
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`
+}
+
+/**
+ * The banner text, or `null` when the loaded code is current.
+ *
+ * It states the evidence (two timestamps), the action (build, then FULLY quit and
+ * restart) and the one thing that does NOT work (refresh) — because "refresh"
+ * re-runs the same loaded generation, which is why the user is here in the first
+ * place. The panel must never clear this on its own: only a restart makes the
+ * process newer than the file.
+ */
+export function staleWarning(build: PanelBuild | null): string | null {
+  if (build === null || build.staleLoadedCode !== true) return null
+  return (
+    `插件代码已更新（磁盘构建 ${describeBuildTime(build.diskBuildTime)} 晚于 DSH 启动 ${describeBuildTime(build.loadedAt)}）` +
+    '→ 运行 `pnpm.cmd run build` 后完全退出并重启 DSH。刷新不会生效。'
+  )
+}
+
 /** A panel tab. `available: false` renders disabled with its `note` as tooltip. */
 export interface PanelTab {
   id: string
@@ -492,3 +587,4 @@ export const PANEL_TABS: PanelTab[] = [
   { id: 'outline', label: '大纲', available: false, note: '0.2.0 起' },
   { id: 'foreshadowing', label: '伏笔', available: false, note: '0.2.0 起' },
 ]
+

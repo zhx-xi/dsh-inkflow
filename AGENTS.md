@@ -92,7 +92,7 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 | # | 陷阱 | 对策 |
 |---|---|---|
 | 1 | `cordis.patch.yml` 漏 `- insert:` | 新增行一律写在 `- insert:` 下（漏了整条静默丢弃） |
-| 2 | 改完 `lib/` 直接测 | HMR 不热替换已加载插件，必须重启 DSH |
+| 2 | 改完 `lib/` 直接测 | HMR 不热替换已加载插件，必须重启 DSH；面板出现 stale build 警告条（或启动日志说磁盘有更新构建）时先重启——刷新面板不会生效 |
 | 3 | 面板指错书 / 有图标没页面 | 面板入口用 session 作用域的 `conversation.view`；root 插槽拿不到工作区，不能靠"上次打开的书"猜（[ADR-0008](.agents/adrs/0008-panel-data-channel.md)） |
 | 4 | Windows 写 BOM | 读 `inkflow.json`/frontmatter 前剥 BOM |
 | 5 | 给索引写 `ALTER TABLE` | 索引是缓存：改 schema 版本号 → 删库重建 |
