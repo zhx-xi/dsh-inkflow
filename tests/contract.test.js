@@ -411,6 +411,94 @@ test('frontmatter parsing survives the awkward forms used by hand-written files'
   }
 })
 
+/**
+ * Regression for issue #3: a chapter id collision aborted the rebuild with a
+ * UNIQUE constraint error, so the index was left half-built and every later
+ * read (and every retry) failed. Duplicate ids are a *data* problem: the
+ * rebuild must keep the first file, report DUPLICATE_ID, and stay usable.
+ */
+test('bugs: ids 001 and 1 are two distinct chapters, not a UNIQUE crash', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    // `id: 001` used to be parsed as the number 1, colliding with `id: 1`.
+    writeMarkdown(root, 'chapters/vol-01/0001-甲.md', ['id: 001', 'seq: 5', 'title: 甲'], '正文一')
+    writeMarkdown(root, 'chapters/vol-01/0002-乙.md', ['id: 1', 'seq: 6', 'title: 乙'], '正文二')
+    const harness = makeTools(join(dir, 'state'))
+
+    const rebuild = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
+    assert.equal(rebuild.ok, true)
+    assert.equal(rebuild.counts.chapters, 2)
+    assert.equal(rebuild.issues.some((issue) => issue.code === 'DUPLICATE_ID'), false)
+
+    const list = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root })
+    assert.equal(list.ok, true)
+    assert.deepEqual(list.chapters.map((chapter) => chapter.id).sort(), ['001', '1'])
+    // Numeric literals stay strings, so intField must still read seq as a number.
+    assert.deepEqual(list.chapters.map((chapter) => chapter.seq).sort(), [5, 6])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('bugs: a copied chapter keeps its id — first file wins, DUPLICATE_ID, list still works', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    writeMarkdown(root, 'chapters/vol-01/0001-甲.md', ['id: dup', 'seq: 1', 'title: 原章'], '正文一')
+    // A copy whose id was never changed: same id, different file.
+    writeMarkdown(root, 'chapters/vol-01/0002-甲的副本.md', ['id: dup', 'seq: 2', 'title: 副本'], '正文二')
+    const harness = makeTools(join(dir, 'state'))
+
+    // The lazy rebuild inside chapter_list is the path that used to throw on
+    // every call, because no index could ever be built.
+    const list = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root })
+    assert.equal(list.ok, true)
+    assert.equal(list.total, 1)
+    assert.equal(list.chapters[0].title, '原章')
+
+    const rebuild = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
+    assert.equal(rebuild.ok, true)
+    assert.equal(rebuild.counts.chapters, 1)
+    // status counts index rows, so it must agree with what the rebuild wrote.
+    const status = await callTool(harness, 'inkflow_project_status', { projectRoot: root })
+    assert.equal(status.index.counts.chapters, 1)
+    const duplicate = rebuild.issues.find((issue) => issue.code === 'DUPLICATE_ID')
+    assert.ok(duplicate, 'DUPLICATE_ID must be reported')
+    assert.equal(duplicate.path, 'chapters/vol-01/0002-甲的副本.md')
+    assert.match(duplicate.detail, /chapters\/vol-01\/0001-甲\.md/)
+
+    // Rebuilding again must keep the same file: "first" is the path order, not
+    // whatever order readdir happened to return.
+    const again = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root })
+    assert.equal(again.total, 1)
+    assert.equal(again.chapters[0].path, 'chapters/vol-01/0001-甲.md')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('bugs: the same id in two tables is reported but neither row is dropped', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    writeMarkdown(root, 'chapters/0001-甲.md', ['id: shared', 'seq: 1'], '正文')
+    writeMarkdown(root, 'outlines/overall.md', ['id: shared', 'kind: overall', 'title: 总纲'], '- 情节点')
+    const harness = makeTools(join(dir, 'state'))
+    const rebuild = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
+    assert.equal(rebuild.ok, true)
+    assert.ok(rebuild.issues.some((issue) => issue.code === 'DUPLICATE_ID'))
+    // Separate tables, separate primary keys: only same-table collisions drop a row.
+    assert.equal(rebuild.counts.chapters, 1)
+    assert.equal(rebuild.counts.outlineNodes, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('a UTF-8 BOM in inkflow.json does not break the gate', async () => {
   const dir = workdir()
   try {
