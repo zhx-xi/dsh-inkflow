@@ -11,6 +11,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, rmdirSync, st
 import { dirname, join, relative as relativePath, resolve } from 'node:path'
 
 import { DIR_KEEP_FILE, FILE_SCHEMA_VERSION, REQUIRED_DIRS, ROOT_META_FILE } from './conventions.js'
+import { compareExpectation, fingerprintFile, fingerprintProjectFile } from './file-cas.js'
+import type { FileChange, FileExpectation, FileFingerprint } from './file-cas.js'
 import { inspectProject, isDirectory, isGitRoot, missingGitignoreLines } from './project.js'
 import type { MetaRaw, ProjectChecks, ProjectMeta, ProjectProbe, ProjectState, WorkspaceAction } from './project.js'
 
@@ -53,6 +55,12 @@ export interface WorkspacePlan {
   blockedReason: string
   existingEntries: string[]
   existingCount: number
+  /**
+   * `inkflow.json` as it is right now (`null` = absent), so a plan → apply round
+   * trip can carry the baseline it planned against (issue #5: two sessions
+   * initialising the same directory must not overwrite each other's meta).
+   */
+  metaFingerprint: FileFingerprint | null
   metaRaw?: MetaRaw
   metaError?: string
 }
@@ -105,6 +113,7 @@ export function planWorkspace(root: string): WorkspacePlan {
     blockedReason,
     existingEntries: entries.slice(0, MAX_PLANNED_ENTRIES),
     existingCount: entries.length,
+    metaFingerprint: fingerprintProjectFile(absolute, ROOT_META_FILE) ?? null,
     ...(probe.metaRaw === undefined ? {} : { metaRaw: probe.metaRaw }),
     ...(probe.metaError === undefined ? {} : { metaError: probe.metaError }),
   }
@@ -116,6 +125,7 @@ export type WorkspaceErrorCode =
   | 'META_TITLE_REQUIRED'
   | 'TARGET_NOT_DIRECTORY'
   | 'GIT_INIT_FAILED'
+  | 'FILE_CHANGED'
   | 'APPLY_FAILED'
 
 export interface WorkspaceApplyInput {
@@ -124,6 +134,12 @@ export interface WorkspaceApplyInput {
   /** Required whenever `inkflow.json` has to be written: titles are never invented. */
   title?: string
   author?: string
+  /**
+   * The `inkflow.json` baseline the caller planned against (issue #5). Pass
+   * `{ absent: true }` when the plan reported `metaFingerprint: null`, or the
+   * plan's `metaFingerprint` itself; a mismatch is `FILE_CHANGED`, zero writes.
+   */
+  expected?: FileExpectation
 }
 
 export interface WorkspaceApplyResult {
@@ -140,14 +156,25 @@ export interface WorkspaceApplyResult {
   skipped: string[]
   gitInit: 'created' | 'already-initialised' | 'not-run'
   notices: string[]
-  error?: { code: WorkspaceErrorCode; message: string; rolledBack: boolean }
+  error?: {
+    code: WorkspaceErrorCode
+    message: string
+    rolledBack: boolean
+    /** `FILE_CHANGED` only: the file whose baseline no longer matches. */
+    path?: string
+    /** `FILE_CHANGED` only: which expected fields differ. */
+    changed?: string[]
+  }
 }
 
 class ApplyFailure extends Error {
   readonly code: WorkspaceErrorCode
-  constructor(code: WorkspaceErrorCode, message: string) {
+  /** Set for `FILE_CHANGED`: the project-relative path whose baseline moved. */
+  readonly path: string | undefined
+  constructor(code: WorkspaceErrorCode, message: string, path?: string) {
     super(message)
     this.code = code
+    this.path = path
   }
 }
 
@@ -229,6 +256,30 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
   let gitDirectoryCreated = false
   let createdGit = false
 
+  /**
+   * Issue #5: `inkflow.json` is the one file this wizard may *overwrite*, and it
+   * is also the file two concurrently initialising sessions both want to write.
+   * So the baseline is taken now, checked against whatever the caller planned
+   * against, and re-checked immediately before the overwrite — a lost race is
+   * `FILE_CHANGED` with zero writes, never a silently replaced title.
+   */
+  const metaPath = join(absolute, ROOT_META_FILE)
+  const metaBaseline = fingerprintFile(metaPath)
+  const changedFailure = (drift: FileChange, why: string): WorkspaceApplyResult => ({
+    ...refuse('FILE_CHANGED', `inkflow.json ${why} (${drift.changed.join(', ')}); nothing was written`),
+    error: {
+      code: 'FILE_CHANGED',
+      message: `inkflow.json ${why} (${drift.changed.join(', ')}); nothing was written`,
+      rolledBack: true,
+      path: ROOT_META_FILE,
+      changed: drift.changed,
+    },
+  })
+  const plannedAgainst = compareExpectation(metaBaseline, input.expected)
+  if (plannedAgainst !== undefined) {
+    return changedFailure(plannedAgainst, 'is not the version this call planned against')
+  }
+
   const rollback = (): boolean => {
     let clean = true
     for (const entry of restore) {
@@ -279,6 +330,19 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
         // The single overwrite the wizard may perform (ADR-0006 D3): only for an
         // inkflow.json this plugin cannot use, only after the caller confirmed,
         // and the old text stays available in the confirm round via metaRaw.
+        //
+        // Issue #5: `git init` above can take long enough for another session to
+        // finish its own initialisation, so the baseline is re-checked here, at
+        // the last moment before the overwrite. A lost race rolls back to the
+        // pre-call tree and reports `FILE_CHANGED`.
+        const race = compareExpectation(fingerprintFile(action.path), metaBaseline)
+        if (race !== undefined) {
+          throw new ApplyFailure(
+            'FILE_CHANGED',
+            `inkflow.json changed while this call was initialising (${race.changed.join(', ')}); the other change was kept`,
+            ROOT_META_FILE,
+          )
+        }
         const existed = existsSync(action.path)
         if (existed) restore.push({ path: action.path, original: readFileSync(action.path, 'utf8') })
         writeFileSync(action.path, metaBody(title, input.author), 'utf8')
@@ -332,6 +396,7 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
         code: cause instanceof ApplyFailure ? cause.code : 'APPLY_FAILED',
         message: cause instanceof Error ? cause.message : String(cause),
         rolledBack,
+        ...(cause instanceof ApplyFailure && cause.path !== undefined ? { path: cause.path } : {}),
       },
     }
   }

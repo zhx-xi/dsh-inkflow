@@ -86,7 +86,7 @@
 
 请求只携带 `sessionId`（query 或 `x-inkflow-session`）。Host 按序解析：`workspaceRegistry.list()` 的 `sessionIds → Workspace.path` → `workingDirectory.get(sessions.get(id))` → `Session.header.cwd` → 失败即 `200 + ok:false + NO_SESSION_CONTEXT`（附 `actions[]`，零写盘）；`session-` 前缀的两种写法都匹配。解析出的目录经 `findProjectRoot` 向上找书，再 `inspectProject(root, { recreateIndexDir: false })` 过四态门禁——面板与工具看到同一份 `state`/`checks`/`missing`/`actions`（D5）。
 
-路由清单与错误码见 [conventions.md](conventions.md) §6.2。投影实现在 `src/host/internal.ts`，全部只读：关掉 `index/` 的自动放宽、卷章树走 `readCatalog` 的 `.md` 投影、索引只以 `readOnly` 打开、章节文件只读且必须落在 `chapters/` 内。面板**不重建索引、不修复项目**；`index/` 缺失时 `/status` 报 `index.dbExists: false`，卷章树仍从文件投影得到。
+路由清单与错误码见 [conventions.md](conventions.md) §6.2。投影实现在 `src/host/internal.ts`，全部只读真相文件：关掉 `index/` 的自动放宽、卷章树走 `readCatalog` 的 `.md` 投影、索引只以 `readOnly` 打开（检索函数本身不建库）、章节文件只读且必须落在 `chapters/` 内。**唯一允许的写是派生缓存**：`/chapters` 与 `/search` 先经 `ensureIndex` 把索引弄新鲜（issue #5，§7），失败则降级——继续用旧索引或 catalog 投影作答并回 `indexError`。面板**从不修复项目结构**（`needs-repair` / `needs-setup` 下的写入只能由用户确认后的向导触发）；`index/` 缺失时 `/status` 报 `index.dbExists: false`，卷章树仍从文件投影得到。
 
 ### 4.3 Client 槽位 — `ctx.slots`
 
@@ -255,8 +255,10 @@
 | `src/host/project.ts` | 四态门禁判定、逐项清单（`missing` / `actions`）、`inkflow.json` 读写、路径作用域 | 执行动作、索引 |
 | `src/host/workspace.ts` | 向导 plan（只读）/ apply（`confirm`）、只补缺失项、`git init`（唯一 git 写）、失败回滚 | 门禁判定（读 `inspectProject`） |
 | `src/host/frontmatter.ts` | 极简 frontmatter 解析（标量/内联数组/块数组/注释） | 完整 YAML |
-| `src/host/indexer.ts` | 扫描九目录 → 派生索引 + 不变量校验 | 写真相文件 |
+| `src/host/indexer.ts` | 扫描九目录 → 派生索引 + 不变量校验；`walkProjectFiles` 是**唯一**的项目遍历（建索引与新鲜度共用） | 写真相文件 |
 | `src/host/index-build.ts` | 索引重建的原子替换、进程内单飞、`index/.lock` | 解析文件格式 |
+| `src/host/index-freshness.ts` | **新鲜度判定**（`checkIndexFreshness`，纯读：一次 readdir+stat 对拍 `files` 表）与**唯一重建触发点**（`ensureIndex`，四态 → 至多一次 `buildIndex`，失败结构化） | 改索引内容、删除索引文件、写项目文件 |
+| `src/host/file-cas.ts` | 写入的期望基线：`sha256`/`size`/`mtimeMs`/`absent` 的指纹与比对（`FILE_CHANGED` 的数据面） | 决定是否写（由 chapters/workspace 在写锁内调用）、拼接项目路径 |
 | `src/host/search.ts` | 章正文检索（`chapters_fts`）：trigram `MATCH`、1–2 字 `LIKE` 兜底、片段裁剪；**只读**，不建库不修复 | 写盘、门禁判定（由工具层先过门禁） |
 | `src/host/io.ts` | **唯一写入口**：路径解析、原子写、单项目写锁 | 业务规则、索引 |
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
@@ -267,8 +269,8 @@
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
 | `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete`） | 直接扫目录（走 indexer/project/workspace） |
-| `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建 | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
-| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个只读投影 | HTTP 加固、写任何文件、重建索引 |
+| `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
+| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError` | HTTP 加固、写作品文件、自己决定是否重建 |
 | `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封 | 业务规则、写真相文件 |
 | `src/client/index.tsx` | `conversation.view` 注册（唯一入口）、面板骨架（四态徽章 / 章节树 / 只读正文预览 / 向导清单）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
 | `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
@@ -277,13 +279,16 @@
 ## 7. 数据流
 
 ```
-写：Agent → inkflow_* 工具 → io.ts（解析 + 写锁 + 原子写）→ 文件（真相）→ git commit（用户/AI）
+写：Agent → inkflow_* 工具 → io.ts（解析 + 写锁 + 原子写 + 期望基线 CAS）→ 文件（真相）→ git commit（用户/AI）
 读：Agent → inkflow_* 工具 ─┐
-    面板 → /inkflow/internal/* → indexer（缺失/版本不符则重建）→ index/inkflow.db
+    面板 → /inkflow/internal/* → ① ensureIndex（判定 + 唯一重建点）→ ② index/inkflow.db
 语义：写入/重建 → OVK（peer 命名空间，按章同路径覆盖）→ 召回 uri → 自有索引定位 → 回文件读正文
 ```
 
-- 索引重建是**全量**的（删除 + 重扫 + 事务写入）；增量重建未实现（`files` 表的 mtime 是基础）。
+**读路径先 `ensureIndex`**（issue #5）：每一条读入口（`inkflow_chapter_list`、`inkflow_chapter_search`、`GET /internal/chapters`、`GET /internal/search`）都先调 `ensureIndex`，由它用一次 `readdir`+`stat` 与 `files` 表对拍判出 `fresh` / `stale` / `missing` / `incompatible`，必要时**只**建一次索引。判定函数 `checkIndexFreshness` 是纯读；重建复用 #4 的锁、单飞与原子替换。因此「列表已新、搜索还旧」在结构上不会发生。
+
+- 索引重建是**全量**的（删除 + 重扫 + 事务写入）；增量重建未实现（`files` 的 `(size, mtime)` 对拍是基础，按文件增量重扫是可选的下一步）。
+- 写路径用**期望基线 CAS**（`size`/`mtimeMs`/`sha256`，见 [conventions.md §5.5](conventions.md)）：基线不符 → `FILE_CHANGED`，零写入。
 - 卷章 catalog 是真相的结构投影：写路径重建、读路径只报 `catalogStale`（未实现，归 #15）。
 - 正文仍在文件里；`chapters_fts` 只存副本用于检索。
 - 语义检索是**叠加层**：OVK 缺席时降级为 FTS5，不影响数据与写作（[ADR-0009](../adrs/0009-ovk-semantic-search.md) P8）。

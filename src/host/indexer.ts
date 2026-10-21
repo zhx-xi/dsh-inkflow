@@ -85,11 +85,13 @@ export function nameKey(name: string): string {
   return name.normalize('NFKC').toLowerCase().replace(/\s+/gu, '')
 }
 
-interface WalkedFile {
+export interface WalkedFile {
   path: string
   dir: string
   size: number
   mtime: string
+  /** Same instant as `mtime`, unrounded by the ISO serialisation (freshness compares this). */
+  mtimeMs: number
 }
 
 function walk(root: string, dir: string, out: WalkedFile[], depth = 0): void {
@@ -117,11 +119,31 @@ function walk(root: string, dir: string, out: WalkedFile[], depth = 0): void {
         dir: rel.split('/')[0] ?? '',
         size: info.size,
         mtime: info.mtime.toISOString(),
+        mtimeMs: info.mtimeMs,
       })
     } catch {
       // Unreadable file: skip rather than fail the whole build.
     }
   }
+}
+
+/**
+ * One `readdir`+`stat` pass over the project (contents are *not* read), in a
+ * deterministic path order.
+ *
+ * Shared by the index build and by `checkIndexFreshness` on purpose: the
+ * freshness verdict is only meaningful when it sees exactly the file set the
+ * build would index, including the same skip rules (`index/`, `node_modules`,
+ * `.git`, dotfiles, `depth > 8`).
+ */
+export function walkProjectFiles(root: string): WalkedFile[] {
+  const files: WalkedFile[] = []
+  walk(root, '', files)
+  // Deterministic scan order: when two files claim the same id, "the first file
+  // wins" has to mean the same file on every rebuild — readdir order is not
+  // guaranteed by the OS or the filesystem.
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  return files
 }
 
 function leadingNumber(file: string): number | undefined {
@@ -247,12 +269,7 @@ export interface ScanResult {
 
 /** Scan and validate the project files. Pure read: no index file is touched here. */
 export function scanProject(root: string): ScanResult {
-  const files: WalkedFile[] = []
-  walk(root, '', files)
-  // Deterministic scan order: when two files claim the same id, "the first file
-  // wins" has to mean the same file on every rebuild — readdir order is not
-  // guaranteed by the OS or the filesystem.
-  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  const files = walkProjectFiles(root)
 
   const issues: ValidationIssue[] = []
   const chapters: ChapterRecord[] = []

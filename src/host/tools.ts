@@ -16,8 +16,11 @@ import { resolve as resolvePath } from 'node:path'
 import type { ContentBlock, HostContext, JsonSchemaNode, ToolDefinition, ToolRunContext } from './context.js'
 import { FILE_SCHEMA_VERSION, INDEX_SCHEMA_VERSION, REQUIRED_DIRS, ROOT_META_FILE } from './conventions.js'
 import { buildIndex, describeIndexBuildFailure } from './index-build.js'
+import { ensureIndex } from './index-freshness.js'
+import type { EnsureIndexResult } from './index-freshness.js'
 import { listChapters, readIndexMeta } from './indexer.js'
 import { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
+import type { FileExpectation } from './file-cas.js'
 import { applyWorkspace, planWorkspace } from './workspace.js'
 import type { ProjectProbe, ProjectState, ScopeRejection } from './project.js'
 import { checkProjectRootScope, findProjectRoot, inspectProject, projectLabel } from './project.js'
@@ -167,6 +170,53 @@ function indexBuildFailure(cause: unknown, root: string): Json {
   }
 }
 
+/**
+ * A caller-supplied write baseline (issue #5, `FILE_CHANGED`).
+ *
+ * Accepted as a plain object on `inkflow_chapter_write` / `_move` / `_delete`
+ * and on `inkflow_project_init`; every field that is present must match, so
+ * `{ sha256 }` alone is a full content check and `{ absent: true }` is "the file
+ * must not exist yet".
+ */
+const EXPECTED_PARAM = {
+  type: 'object',
+  properties: {
+    sha256: { type: 'string', description: 'Lowercase hex sha256 of the file bytes you last read.' },
+    size: { type: 'integer', minimum: 0, description: 'Byte length of the file you last read.' },
+    mtimeMs: { type: 'number', description: 'Modification time in ms (only compared when sha256/size are absent).' },
+    absent: { type: 'boolean', description: 'True when the file must not exist yet (project init).' },
+  },
+  additionalProperties: false,
+  description:
+    'Optional compare-and-swap baseline: the file fingerprint you last read. A mismatch is refused with FILE_CHANGED ' +
+    'and nothing is written, so an editor save is never overwritten by a stale write.',
+} as const
+
+function expectedParam(value: unknown): FileExpectation | undefined {
+  const raw = asRecord(value)
+  if (Object.keys(raw).length === 0) return undefined
+  const expected: FileExpectation = {}
+  if (typeof raw['sha256'] === 'string' && raw['sha256'].trim() !== '') expected.sha256 = raw['sha256'].trim()
+  if (typeof raw['size'] === 'number') expected.size = raw['size']
+  if (typeof raw['mtimeMs'] === 'number') expected.mtimeMs = raw['mtimeMs']
+  if (raw['absent'] === true) expected.absent = true
+  return expected
+}
+
+/** Report a rebuild that `ensureIndex` refused, keeping the freshness verdict visible. */
+function ensureFailure(ensured: EnsureIndexResult & { ok: false }, root: string): Json {
+  const failure = indexBuildFailure(ensured.failure, root)
+  const error = asRecord(failure['error'])
+  return {
+    ...failure,
+    error: {
+      ...error,
+      indexState: ensured.state,
+      indexReasons: ensured.freshness.reasons,
+    },
+  }
+}
+
 const PROJECT_ROOT_PARAM = {
   type: 'string',
   description:
@@ -188,6 +238,9 @@ function renderChapterFailure(verb: string, value: Json): ContentBlock[] {
   const error = asRecord(value['error'])
   const lines = [`${verb} failed: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`]
   if (error['path'] !== undefined) lines.push(`path: ${String(error['path'])}`)
+  if (error['nothingWritten'] === true) {
+    lines.push('Nothing was written: the file on disk is not the version you passed as `expected`.')
+  }
   if (error['rolledBack'] === true) {
     lines.push('The change was rolled back: the project files are as they were before the call.')
   }
@@ -377,8 +430,9 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
   const chapterList: ToolDefinition = {
     name: 'inkflow_chapter_list',
     description:
-      'List chapters of the InkFlow project in reading order, read from the derived index. If the index is ' +
-      'missing or was built by another schema, it is rebuilt automatically first (it is only a cache).',
+      'List chapters of the InkFlow project in reading order, read from the derived index. If the index is missing, ' +
+      'built by another schema, or no longer matches the files (a chapter edited, added or deleted outside the ' +
+      'plugin), it is rebuilt first (it is only a cache).',
     parameters: {
       type: 'object',
       properties: {
@@ -416,18 +470,20 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
       const probe = resolved.probe
       rememberProject(deps.dataDir, probe.root)
       const limit = typeof a['limit'] === 'number' ? a['limit'] : 100
-      let chapters = listChapters(probe.root, limit)
-      let indexRebuilt = false
-      if (chapters === undefined) {
-        try {
-          await buildIndex(probe.root)
-        } catch (cause) {
-          return indexBuildFailure(cause, probe.root)
-        }
-        chapters = listChapters(probe.root, limit) ?? []
-        indexRebuilt = true
+      // Issue #5: the read path no longer decides anything itself. `ensureIndex`
+      // is the single trigger, so this list and `inkflow_chapter_search` below
+      // can never disagree about which build they are reading.
+      const ensured = await ensureIndex(probe.root)
+      if (!ensured.ok) return ensureFailure(ensured, probe.root)
+      const chapters = listChapters(probe.root, limit) ?? []
+      return {
+        ok: true,
+        root: probe.root,
+        total: chapters.length,
+        indexRebuilt: ensured.rebuilt,
+        indexState: ensured.state,
+        chapters,
       }
-      return { ok: true, root: probe.root, total: chapters.length, indexRebuilt, chapters }
     },
   }
 
@@ -504,6 +560,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         blockedReason: planned.blockedReason,
         existing: planned.existingEntries,
         existingCount: planned.existingCount,
+        metaFingerprint: planned.metaFingerprint,
         ...(planned.metaRaw === undefined ? {} : { metaRaw: planned.metaRaw }),
         ...(planned.metaError === undefined ? {} : { metaError: planned.metaError }),
       }
@@ -537,6 +594,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           type: 'boolean',
           description: 'Set true only after the user has seen the plan (inkflow_project_plan) and agreed to it.',
         },
+        expected: EXPECTED_PARAM,
       },
       additionalProperties: false,
     },
@@ -601,6 +659,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         confirm: a['confirm'] === true,
         title: typeof a['title'] === 'string' ? a['title'] : '',
         author: typeof a['author'] === 'string' ? a['author'] : undefined,
+        expected: expectedParam(a['expected']),
       })
       const base = {
         root: result.root,
@@ -648,10 +707,14 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           code,
           message: result.error?.message ?? 'the plan could not be applied',
           rolledBack: result.error?.rolledBack === true,
+          ...(result.error?.path === undefined ? {} : { path: result.error.path }),
+          ...(result.error?.changed === undefined ? {} : { changed: result.error.changed }),
           hint:
             code === 'PROJECT_NEEDS_NEWER_PLUGIN'
               ? 'the book was written by a newer plugin: upgrade dsh-inkflow instead of repairing it here'
-              : 'nothing outside the listed actions was touched',
+              : code === 'FILE_CHANGED'
+                ? 'another session changed the plan between inkflow_project_plan and this call: re-plan, then apply again; nothing was written'
+                : 'nothing outside the listed actions was touched',
         },
       }
     },
@@ -836,6 +899,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         title: { type: 'string', description: 'New title; the file is renamed to match it.' },
         body: { type: 'string', description: 'New chapter body (everything after the frontmatter block).' },
         status: { type: 'string', enum: ['draft', 'revised', 'final'], description: 'New chapter status.' },
+        expected: EXPECTED_PARAM,
       },
       additionalProperties: false,
     },
@@ -861,6 +925,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           title: optionalString(a['title']),
           body: optionalString(a['body']),
           status: optionalString(a['status']),
+          expected: expectedParam(a['expected']),
         }),
       ),
   }
@@ -880,6 +945,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           oneOf: [{ type: 'string' }, { type: 'null' }],
           description: 'Target volume (`vol-NN`), or null to make the chapter loose (directly under chapters/).',
         },
+        expected: EXPECTED_PARAM,
       },
       additionalProperties: false,
     },
@@ -905,6 +971,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           chapterId: optionalString(a['chapterId']),
           file: optionalString(a['file']),
           volumeId: a['volumeId'] === null ? null : optionalString(a['volumeId']),
+          expected: expectedParam(a['expected']),
         }),
       ),
   }
@@ -920,6 +987,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         projectRoot: PROJECT_ROOT_PARAM,
         chapterId: { type: 'string', description: 'Stable chapter id (uuid). Mutually exclusive with `file`.' },
         file: { type: 'string', description: 'Project-relative chapter path. Mutually exclusive with `chapterId`.' },
+        expected: EXPECTED_PARAM,
       },
       additionalProperties: false,
     },
@@ -941,6 +1009,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         deleteChapter(root, {
           chapterId: optionalString(a['chapterId']),
           file: optionalString(a['file']),
+          expected: expectedParam(a['expected']),
         }),
       ),
   }
@@ -1021,26 +1090,20 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
       const limit = typeof a['limit'] === 'number' ? a['limit'] : DEFAULT_SEARCH_LIMIT
       const options = { limit }
 
-      let result = searchChapters(probe.root, query, options)
-      let indexRebuilt = false
-      // Lazy rebuild (issue #4): the search function itself must stay read-only,
-      // so the decision to write an index lives here, at the tool boundary.
-      if (!result.ok && result.code === 'INDEX_UNAVAILABLE') {
-        try {
-          await buildIndex(probe.root)
-        } catch (cause) {
-          return indexBuildFailure(cause, probe.root)
-        }
-        indexRebuilt = true
-        result = searchChapters(probe.root, query, options)
-      }
+      // Issue #5: same single trigger as `inkflow_chapter_list`. The query is
+      // validated above, so a rejected query still writes nothing; after that
+      // the index is made fresh once and both tools read the same build.
+      const ensured = await ensureIndex(probe.root)
+      if (!ensured.ok) return ensureFailure(ensured, probe.root)
+      const result = searchChapters(probe.root, query, options)
       rememberProject(deps.dataDir, probe.root)
       if (!result.ok) {
         return {
           ok: false,
           root: probe.root,
           query,
-          indexRebuilt,
+          indexRebuilt: ensured.rebuilt,
+          indexState: ensured.state,
           error: { code: result.code, message: result.message, hint: result.hint },
         }
       }
@@ -1051,7 +1114,8 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         mode: result.mode,
         total: result.total,
         limit,
-        indexRebuilt,
+        indexRebuilt: ensured.rebuilt,
+        indexState: ensured.state,
         items: result.items,
       }
     },

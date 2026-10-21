@@ -564,13 +564,16 @@ test('internal channel: /search matches the index chapter table and flags body s
     bookProject(root)
     const harness = createHarness({ workspace: root })
 
-    // The panel never builds the index; a stale/missing index degrades to the
-    // catalog projection but still answers.
+    // Issue #5: the read path makes the derived index fresh first (it is a
+    // cache, not the truth), so the first search fills it and answers from it.
     const empty = await internalCall(harness, '/search?q=雨')
     assert.equal(empty.status, 200)
     assert.equal(empty.json.ok, true)
     assert.equal(empty.json.value.searchUnavailable, true)
     assert.equal(empty.json.value.searchScope, 'chapter-metadata')
+    assert.equal(empty.json.value.indexState, 'missing')
+    assert.equal(empty.json.value.indexRebuilt, true)
+    assert.equal(existsSync(join(root, 'index', 'inkflow.db')), true, 'the panel read filled the cache')
 
     const hit = await internalCall(harness, '/search?q=散章')
     assert.equal(hit.json.value.total, 1)

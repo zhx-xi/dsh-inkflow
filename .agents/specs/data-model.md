@@ -168,8 +168,8 @@
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
-| `meta` | key | builtAt / root / indexSchemaVersion / fileCount | 索引元信息 |
-| `files` | path | dir / kind / size / mtime | 全量文件清单 |
+| `meta` | key | builtAt / root / indexSchemaVersion / fileCount | 索引元信息（`builtAt` 只作诊断，**不作新鲜度判据**，见下） |
+| `files` | path | dir / kind / size / mtime | 全量文件清单，**同时是新鲜度对拍基线** |
 | `chapters` | id | path / seq / title / volume / status / word_count | 章列表、字数统计 |
 | `characters` | id | path / name / name_key / group_name / role | 角色查询、重名校验 |
 | `world_entries` | id | path / title / category / parent | 世界观树 |
@@ -177,6 +177,13 @@
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
+
+**`files` 是新鲜度的对拍基线**（`checkIndexFreshness`，契约见 [conventions.md §4.0](conventions.md)）：
+
+- 每行 `(path, size, mtime)` 描述建库那一刻该文件的字节数与 mtime；`mtime` 与磁盘 `stat.mtime.toISOString()` **同源同精度**（毫秒），因此比较是字符串相等，不需要额外列，也不需要改 schema。
+- 对拍方式：一次 `readdir`+`stat`（与建索引同一个 `walkProjectFiles`）得到磁盘视图，与 `files` 全表比对 → 新增 / 删除 / `size` 变 / `mtime` 变 都算 `stale`。**不读文件内容、不算 hash**，所以 3000 文件量级仍是几十毫秒。
+- 为什么 `meta.builtAt` 不够：删文件不会抬高任何 mtime，一删一增的「等量替换」也骗得过时间戳。`builtAt` 仅用于诊断输出。
+- 索引 schema 不变（仍是 `user_version = 1`）：加入新鲜度不需要新列。若将来把内容 hash 也存进 `files`（用于「同 size 同 mtime 但内容被替换」这种极端情形），那是一次 `INDEX_SCHEMA_VERSION` 递增 + 删库重建，不写 ALTER。
 
 - 版本不符 → **删库重建**，不做 `ALTER`。
 - 重建：清空 → 全量扫描 → 事务写入 → 校验；`index/` 里除 `.gitkeep` 外全部是派生物。
@@ -186,7 +193,7 @@
   - **2 字边界**：trigram 以 3 字为一个 token，1–2 字查询 `MATCH` 返回 0 行且不报错，因此 1–2 字（或含短词的组合查询）走 `body LIKE '%q%'`，按 `seq` / 文件排序；≥3 字走 `MATCH`，按 `rank`（bm25）排序。
   - 查询按 FTS5 短语转义（内部 `"` → `""`），`-` `*` `OR` `NEAR(` 都当字面文本；LIKE 分支转义 `%` `_` `\`。
   - 短片段取命中词前后各 40 字（连续空白折叠），**不返回命中偏移的字符位置**；`chapterId` 是 `chapters.id`，`file` 是项目内相对路径。
-  - 索引缺失 / `user_version` 不符 → `INDEX_UNAVAILABLE`（读路径零写盘）；懒重建只在工具层执行一次。
+  - 索引缺失 / `user_version` 不符 → `INDEX_UNAVAILABLE`（读路径零写盘）；重建只由 `ensureIndex` 决定并执行一次（[conventions.md §4.0](conventions.md)）。
 
 ### 4.2 v2（规划，未实现，归 #22 / #23）
 

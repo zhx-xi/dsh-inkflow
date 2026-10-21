@@ -37,6 +37,12 @@ import { join, resolve } from 'node:path'
 import { readCatalog, rebuildCatalog } from './catalog.js'
 import type { CatalogChapter, CatalogReadResult } from './catalog.js'
 import { CATALOG_FILE, CHAPTER_STATUSES, CHAPTERS_DIR, DIR_KEEP_FILE } from './conventions.js'
+import {
+  compareExpectation,
+  fingerprintBytes,
+  fingerprintProjectFile,
+} from './file-cas.js'
+import type { FileChange, FileExpectation, FileFingerprint } from './file-cas.js'
 import { frontmatterLine, parseMarkdown, patchFrontmatter, splitFrontmatter, stringField } from './frontmatter.js'
 import { buildIndex, describeIndexBuildFailure } from './index-build.js'
 import {
@@ -68,6 +74,7 @@ export type ChapterErrorCode =
   | 'CHAPTER_SELECTOR_CONFLICT'
   | 'FILE_INVALID'
   | 'STATUS_INVALID'
+  | 'FILE_CHANGED'
   | 'CATALOG_REBUILD_FAILED'
   | 'ROLLBACK_INCOMPLETE'
 
@@ -90,6 +97,14 @@ export interface ChapterOpError {
   rollback?: RollbackStep[]
   /** The underlying write failure, when the code above came from `io.ts`. */
   io?: IoFailure
+  /** `FILE_CHANGED` only: the baseline the caller supplied. */
+  expected?: FileExpectation
+  /** `FILE_CHANGED` only: what is actually on disk now (`null` = the file is gone). */
+  current?: FileFingerprint | null
+  /** `FILE_CHANGED` only: which fields of the baseline no longer match. */
+  changed?: string[]
+  /** True when the refusal happened before the first byte was written. */
+  nothingWritten?: boolean
 }
 
 export interface ChapterOpFailure {
@@ -145,17 +160,23 @@ export interface ChapterWriteInput {
   title?: string
   body?: string
   status?: string
+  /** Baseline the caller last saw (issue #5): a mismatch is `FILE_CHANGED`, zero writes. */
+  expected?: FileExpectation
 }
 
 export interface ChapterMoveInput {
   chapterId?: string
   file?: string
   volumeId?: string | null
+  /** Baseline the caller last saw (issue #5). */
+  expected?: FileExpectation
 }
 
 export interface ChapterDeleteInput {
   chapterId?: string
   file?: string
+  /** Baseline the caller last saw (issue #5): a delete of an unknown edit is refused. */
+  expected?: FileExpectation
 }
 
 export interface VolumeCreateOk extends CommitInfo {
@@ -186,6 +207,8 @@ export interface ChapterWriteOk extends CommitInfo {
   chapter: ChapterView
   changed: string[]
   renamedFrom?: string
+  /** The file as it is now — the baseline for the next CAS write. */
+  fingerprint?: FileFingerprint
 }
 
 export interface ChapterMoveOk extends CommitInfo {
@@ -195,6 +218,8 @@ export interface ChapterMoveOk extends CommitInfo {
   moved: boolean
   movedFrom: string
   changed: string[]
+  /** The file as it is now (at its new path). */
+  fingerprint?: FileFingerprint
 }
 
 export interface ChapterDeleteOk extends CommitInfo {
@@ -320,6 +345,10 @@ interface FailureExtra {
   rolledBack?: boolean
   rollback?: RollbackStep[]
   io?: IoFailure
+  expected?: FileExpectation
+  current?: FileFingerprint | null
+  changed?: string[]
+  nothingWritten?: boolean
 }
 
 function fail(code: ChapterErrorCode | string, message: string, extra: FailureExtra = {}): ChapterOpFailure {
@@ -329,6 +358,10 @@ function fail(code: ChapterErrorCode | string, message: string, extra: FailureEx
   if (extra.rolledBack !== undefined) error.rolledBack = extra.rolledBack
   if (extra.rollback !== undefined) error.rollback = extra.rollback
   if (extra.io !== undefined) error.io = extra.io
+  if (extra.expected !== undefined) error.expected = extra.expected
+  if (extra.current !== undefined) error.current = extra.current
+  if (extra.changed !== undefined) error.changed = extra.changed
+  if (extra.nothingWritten !== undefined) error.nothingWritten = extra.nothingWritten
   return { ok: false, error }
 }
 
@@ -574,6 +607,74 @@ function readChapterText(root: string, file: string): string | undefined {
   } catch {
     return undefined
   }
+}
+
+// ---------------------------------------------------------------------------
+// Write-time compare-and-swap (issue #5)
+// ---------------------------------------------------------------------------
+
+/** One chapter read plus the fingerprint of the very bytes that were parsed. */
+interface ChapterRead {
+  text: string
+  fingerprint: FileFingerprint
+}
+
+/**
+ * Read a chapter **and** fingerprint it in one go.
+ *
+ * The sha256 is taken from the buffer that is decoded into `text`, not from a
+ * second read: a baseline that describes different bytes than the ones being
+ * patched is worse than no baseline at all.
+ */
+function readChapterWithFingerprint(root: string, file: string): ChapterRead | undefined {
+  const absolute = join(root, ...file.split('/'))
+  let bytes: Buffer
+  try {
+    bytes = readFileSync(absolute)
+  } catch {
+    return undefined
+  }
+  let mtimeMs: number
+  try {
+    mtimeMs = statSync(absolute).mtimeMs
+  } catch {
+    return undefined
+  }
+  return { text: bytes.toString('utf8'), fingerprint: fingerprintBytes(bytes, mtimeMs) }
+}
+
+/** The one refusal shape for "the file is not what you thought it was". */
+function fileChangedFailure(root: string, path: string, drift: FileChange, why: string): ChapterOpFailure {
+  return fail('FILE_CHANGED', `${path} ${why} (${drift.changed.join(', ')}); nothing was written`, {
+    root,
+    path,
+    expected: drift.expected,
+    current: drift.current,
+    changed: drift.changed,
+    nothingWritten: true,
+    hint: 're-read the chapter, then retry with its current size / mtimeMs / sha256 as `expected`',
+  })
+}
+
+/** 1) The caller's baseline, checked against the file this call is about to edit. */
+function callerBaselineRefusal(
+  root: string,
+  path: string,
+  current: FileFingerprint,
+  expected: FileExpectation | undefined,
+): ChapterOpFailure | undefined {
+  const drift = compareExpectation(current, expected)
+  return drift === undefined ? undefined : fileChangedFailure(root, path, drift, 'changed on disk since the baseline you passed')
+}
+
+/**
+ * 2) The baseline this call itself took, re-checked immediately before the
+ * write. The project write lock already excludes another *session* of this
+ * plugin; this catches the human's editor, which takes no lock.
+ */
+function driftedSinceRead(root: string, path: string, baseline: FileFingerprint): ChapterOpFailure | undefined {
+  const drift = compareExpectation(fingerprintProjectFile(root, path), baseline)
+  return drift === undefined ? undefined : fileChangedFailure(root, path, drift, 'changed on disk while this call was working on it')
 }
 
 function viewOf(chapterId: string, file: string, data: Record<string, unknown>, fallback: ChapterRef): ChapterView {
@@ -909,8 +1010,14 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
     const resolved = resolveChapter(root, input)
     if (!resolved.ok) return resolved
     const ref = resolved.value
-    const text = readChapterText(root, ref.file)
-    if (text === undefined) return fail('CHAPTER_NOT_FOUND', `${ref.file} could not be read`, { root, path: ref.file })
+    const read = readChapterWithFingerprint(root, ref.file)
+    if (read === undefined) return fail('CHAPTER_NOT_FOUND', `${ref.file} could not be read`, { root, path: ref.file })
+    const text = read.text
+    const baseline = read.fingerprint
+    // Issue #5: both baselines are checked, and both are checked *before* any
+    // byte is written, so a refusal leaves the tree byte-identical.
+    const callerRefusal = callerBaselineRefusal(root, ref.file, baseline, input.expected)
+    if (callerRefusal !== undefined) return callerRefusal
 
     const data = parseMarkdown(text).data
     const currentTitle = stringField(data, 'title') ?? ref.title
@@ -982,6 +1089,8 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
     }
 
     const catalogs = takeCatalogSnapshot(root)
+    const drifted = driftedSinceRead(root, ref.file, baseline)
+    if (drifted !== undefined) return drifted
     const written = writeTextAtomic(root, target, next)
     if (!written.ok) {
       return fromIo(written.error, { message: `the chapter file could not be written: ${written.error.message}` })
@@ -1006,6 +1115,7 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
       return afterCatalogFailure(root, rebuilt.error, steps)
     }
 
+    const fingerprint = fingerprintProjectFile(root, target)
     const finalData = parseMarkdown(readChapterText(root, target) ?? next).data
     return {
       ok: true,
@@ -1016,6 +1126,7 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
         changed,
         ...(target === ref.file ? {} : { renamedFrom: ref.file }),
         catalogRebuilt: true,
+        ...(fingerprint === undefined ? {} : { fingerprint }),
         ...UNTOUCHED_INDEX,
       },
     }
@@ -1057,13 +1168,16 @@ export async function moveChapter(projectRoot: string, input: ChapterMoveInput):
       targetDir = `${CHAPTERS_DIR}/${volume.dir}`
     }
 
-    const text = readChapterText(root, ref.file)
-    if (text === undefined) return fail('CHAPTER_NOT_FOUND', `${ref.file} could not be read`, { root, path: ref.file })
+    const read = readChapterWithFingerprint(root, ref.file)
+    if (read === undefined) return fail('CHAPTER_NOT_FOUND', `${ref.file} could not be read`, { root, path: ref.file })
+    const text = read.text
+    const baseline = read.fingerprint
+    const callerRefusal = callerBaselineRefusal(root, ref.file, baseline, input.expected)
+    if (callerRefusal !== undefined) return callerRefusal
     const data = parseMarkdown(text).data
 
     // A move relocates the file; the name (prefix + slug) travels unchanged.
     const targetFile = `${targetDir}/${fileNameOf(ref.file)}`
-
     if (targetVolumeId === ref.volumeId && targetFile === ref.file) {
       return {
         ok: true,
@@ -1110,6 +1224,8 @@ export async function moveChapter(projectRoot: string, input: ChapterMoveInput):
     if (targetFile !== ref.file) changed.push('file')
 
     const catalogs = takeCatalogSnapshot(root)
+    const drifted = driftedSinceRead(root, ref.file, baseline)
+    if (drifted !== undefined) return drifted
     const written = writeTextAtomic(root, targetFile, next)
     if (!written.ok) {
       return fromIo(written.error, { message: `the chapter could not be moved: ${written.error.message}` })
@@ -1134,6 +1250,7 @@ export async function moveChapter(projectRoot: string, input: ChapterMoveInput):
       return afterCatalogFailure(root, rebuilt.error, steps)
     }
 
+    const fingerprint = fingerprintProjectFile(root, targetFile)
     const finalData = parseMarkdown(readChapterText(root, targetFile) ?? next).data
     return {
       ok: true,
@@ -1145,6 +1262,7 @@ export async function moveChapter(projectRoot: string, input: ChapterMoveInput):
         movedFrom: ref.file,
         changed,
         catalogRebuilt: true,
+        ...(fingerprint === undefined ? {} : { fingerprint }),
         ...UNTOUCHED_INDEX,
       },
     }
@@ -1170,11 +1288,19 @@ export async function deleteChapter(projectRoot: string, input: ChapterDeleteInp
 
     // The text is captured *before* the deletion: it is the only copy the rollback
     // has, and re-reading after the unlink is impossible.
-    const text = readChapterText(root, ref.file)
-    if (text === undefined) return fail('CHAPTER_NOT_FOUND', `${ref.file} could not be read`, { root, path: ref.file })
+    const read = readChapterWithFingerprint(root, ref.file)
+    if (read === undefined) return fail('CHAPTER_NOT_FOUND', `${ref.file} could not be read`, { root, path: ref.file })
+    const text = read.text
+    const baseline = read.fingerprint
+    // Deleting a file the caller has not seen the latest version of is the one
+    // mistake git cannot undo for them: refuse it before the unlink (issue #5).
+    const callerRefusal = callerBaselineRefusal(root, ref.file, baseline, input.expected)
+    if (callerRefusal !== undefined) return callerRefusal
     const data = parseMarkdown(text).data
 
     const catalogs = takeCatalogSnapshot(root)
+    const drifted = driftedSinceRead(root, ref.file, baseline)
+    if (drifted !== undefined) return drifted
     const removed = removeProjectFile(root, ref.file)
     if (!removed.ok) {
       return fromIo(removed.error, { message: `the chapter could not be deleted: ${removed.error.message}` })

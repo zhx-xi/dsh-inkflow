@@ -36,6 +36,8 @@ import type { CatalogChapter, CatalogVolume } from './catalog.js'
 import { INDEX_SCHEMA_VERSION } from './conventions.js'
 import { parseMarkdown } from './frontmatter.js'
 import { countChars, indexPaths, readIndexMeta } from './indexer.js'
+import { ensureIndex } from './index-freshness.js'
+import type { EnsureIndexResult } from './index-freshness.js'
 import type { ProjectProbe, ProjectState } from './project.js'
 import { findProjectRoot, inspectProject, isWithin, projectLabel, realpathLoose } from './project.js'
 
@@ -373,8 +375,16 @@ export function buildStatus(target: ChannelTarget, version: string): JsonRecord 
   }
 }
 
-/** `GET /chapters`: the volume/chapter tree from the `.md` projection. */
-export function buildChapters(target: ChannelTarget, version: string): JsonRecord {
+/**
+ * `GET /chapters`: the volume/chapter tree from the `.md` projection.
+ *
+ * The tree itself comes from the catalog (files → projection, always current),
+ * but the index is made fresh first (issue #5) so that this call and a following
+ * `/search` cannot answer from two different generations of the cache. A failed
+ * rebuild is reported, never fatal: the projection still answers.
+ */
+export async function buildChapters(target: ChannelTarget, version: string): Promise<JsonRecord> {
+  const ensured = await ensureIndex(target.root)
   const catalog = readCatalog(target.root)
   const volumes = catalog.catalog.volumes.map((volume, index) => ({
     volumeId: volume.volumeId,
@@ -394,7 +404,23 @@ export function buildChapters(target: ChannelTarget, version: string): JsonRecor
     looseChapters,
     catalogStale: catalog.catalogStale,
     staleFiles: catalog.staleFiles,
-    indexBuilt: readIndexMeta(target.root).dbExists,
+    indexBuilt: ensured.ok,
+    indexRebuilt: ensured.rebuilt,
+    indexState: ensured.state,
+    ...indexFailureOf(ensured),
+  }
+}
+
+/** The freshness/build failure a panel response carries (never a throw). */
+function indexFailureOf(ensured: EnsureIndexResult): JsonRecord {
+  if (ensured.ok) return {}
+  return {
+    indexError: {
+      code: ensured.failure.code,
+      errno: ensured.failure.errno,
+      message: ensured.failure.message,
+    },
+    indexReasons: ensured.freshness.reasons,
   }
 }
 
@@ -516,11 +542,14 @@ function searchCatalog(root: string, query: string, limit: number): JsonRecord[]
 /**
  * `GET /search?q=`: chapter metadata search.
  *
- * The full-text body search depends on the index v2 tree (#22), so the answer is
- * explicitly marked `searchUnavailable: true` while still returning what the
- * chapter table can match.
+ * Issue #5: the index is made fresh first, so the panel cannot show a chapter
+ * list built from the files while searching an index from a previous
+ * generation. If the rebuild is refused (another process holds the lock, say),
+ * the old cache — or the catalog projection — still answers and the response
+ * says why in `indexError`.
  */
-export function buildSearch(target: ChannelTarget, version: string, query: string, limit = 50): JsonRecord {
+export async function buildSearch(target: ChannelTarget, version: string, query: string, limit = 50): Promise<JsonRecord> {
+  const ensured = await ensureIndex(target.root)
   const bounded = Math.min(Math.max(Math.trunc(limit), 1), 200)
   const results = searchIndex(target.root, query, bounded) ?? searchCatalog(target.root, query, bounded)
   return {
@@ -533,5 +562,8 @@ export function buildSearch(target: ChannelTarget, version: string, query: strin
     searchUnavailable: true,
     searchScope: 'chapter-metadata',
     reason: SEARCH_REASON,
+    indexRebuilt: ensured.rebuilt,
+    indexState: ensured.state,
+    ...indexFailureOf(ensured),
   }
 }

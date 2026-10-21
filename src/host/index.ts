@@ -89,6 +89,26 @@ export type { IndexBuildErrorCode, IndexBuildFailure } from './index-build.js'
 export type { IndexBuildResult } from './indexer.js'
 
 /**
+ * Index freshness (issue #5): `checkIndexFreshness` is the read-only verdict and
+ * `ensureIndex` is the **single** place that decides to rebuild. Exported for
+ * embedders and tests the same way `buildIndex` is — the tools and the panel
+ * channel both go through `ensureIndex`, so this is not a test-only surface.
+ */
+export { FRESHNESS_REASON_LIMIT, checkIndexFreshness, ensureIndex } from './index-freshness.js'
+export type { EnsureIndexOptions, EnsureIndexResult, IndexFreshness, IndexFreshnessState } from './index-freshness.js'
+export { walkProjectFiles } from './indexer.js'
+export type { WalkedFile } from './indexer.js'
+
+/**
+ * Write-time compare-and-swap (issue #5): a writer may state the baseline it
+ * expects, and a mismatch is the structured `FILE_CHANGED` error with zero
+ * writes. Exported so a caller can hand a test (or the panel) the same
+ * fingerprint shape the writers compare against.
+ */
+export { compareExpectation, fingerprintBytes, fingerprintFile, fingerprintProjectFile, normalizeExpectation } from './file-cas.js'
+export type { FileChange, FileChangeField, FileExpectation, FileFingerprint } from './file-cas.js'
+
+/**
  * Write-layer API (issue #14): the single door for project file writes.
  * Exported for the tests now and for the chapter/scaffolding writers next; no
  * tool registers against it yet, so this adds no model-facing surface.
