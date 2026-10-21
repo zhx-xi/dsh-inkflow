@@ -54,7 +54,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 重启 DSH 后应看到（**当前构建**）：
 
 - 左侧栏出现 **InkFlow** 图标（order 30）→ 打开整页工作台（章节列表 + 项目诊断 + 十项目录勾选）；
-- 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list`。
+- 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search`。
 
 > 目标入口是会话视图 `conversation.view`（[ADR-0008](.agents/adrs/0008-panel-data-channel.md)），**当前尚未实现**；在它落地前，面板只有左侧栏入口，且无法解析会话所属项目（`NO_SESSION_CONTEXT`）。
 
@@ -99,11 +99,12 @@ src/host/              Host 半（DSH Node 进程内）
   io.ts                唯一写入口（路径解析 + 原子替换 + 单项目写锁）
   indexer.ts           文件 → 派生索引 + 不变量校验（node:sqlite）
   index-build.ts       索引重建的原子替换与进程内单飞
+  search.ts            章正文检索（trigram FTS + 1–2 字 LIKE 兜底，只读）
   probe.ts             可选 Host 服务探测与降级
   skills.ts            5 个写作技能的 provider（按 cwd 门禁）
   preset.ts            写作 preset 声明与注册
   state.ts             插件自身状态（lastProjectRoot，仅展示），原子写
-  tools.ts             inkflow_* 工具（当前 5 个）
+  tools.ts             inkflow_* 工具（当前 6 个）
   routes.ts            面板私有通道（目标 /inkflow/internal/*；当前为 /inkflow/api/* fail-closed 占位）
 src/client/            Client 半（浏览器 React）
   index.tsx            面板视图与槽位注册（目标 conversation.view；当前 sidebar.panellist + main）

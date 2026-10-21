@@ -222,6 +222,7 @@
 | `src/host/frontmatter.ts` | 极简 frontmatter 解析（标量/内联数组/块数组/注释） | 完整 YAML |
 | `src/host/indexer.ts` | 扫描九目录 → 派生索引 + 不变量校验 | 写真相文件 |
 | `src/host/index-build.ts` | 索引重建的原子替换、进程内单飞、`index/.lock` | 解析文件格式 |
+| `src/host/search.ts` | 章正文检索（`chapters_fts`）：trigram `MATCH`、1–2 字 `LIKE` 兜底、片段裁剪；**只读**，不建库不修复 | 写盘、门禁判定（由工具层先过门禁） |
 | `src/host/io.ts` | **唯一写入口**：路径解析、原子写、单项目写锁 | 业务规则、索引 |
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
@@ -230,7 +231,7 @@
 | `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
-| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 5 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list`） | 直接扫目录（走 indexer/project/workspace） |
+| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 6 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search`） | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/routes.ts` | 私有内部通道 + 安全校验（目标形态；当前是 `/inkflow/api/*` 占位） | 业务规则、写真相文件 |
 | `src/client/index.tsx` | 视图、槽位注册、`fetch` 私有通道 | 业务规则、文件 IO |
 

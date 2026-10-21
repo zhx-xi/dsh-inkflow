@@ -249,9 +249,30 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 - 索引 schema 版本存在 `PRAGMA user_version`；与代码期望不一致 → **删库重建**，不做 ALTER 迁移。
 - 每次重建 = 清空 + 重扫 + 事务提交；文件名/结构变化由「重建」消化，因此**永远没有数据库迁移问题**。
 - 索引内容（v1）：`meta`、`files`、`chapters`、`characters`、`world_entries`、`outline_nodes`、`library_files`、`validation_issues`、`chapters_fts`（FTS5 trigram）。
-- 全文检索：trigram 命中 ≥3 字；2 字查询走 `LIKE` 兜底（ADR-0005）。
+- 全文检索：trigram 命中 ≥3 字；1–2 字查询走 `LIKE` 兜底（ADR-0005）；契约见 §4.1。
 - 校验器在重建后运行：duplicate id / 缺 `overall` / 卷中卷 / 角色名重复 / 悬空 `parent` / 非 `.md` 章文件 / frontmatter 不可解析 → 记入 `validation_issues` 并返回，**不阻断索引可用**（只读仍可用，写入类工具再拦）。
-- 索引内容（v2，规划）：覆盖九个内容目录的全部实体（伏笔/时间线/关系/账本/资料卡）+ `entity_mentions` + 全实体 FTS + catalog 一致性校验。**未实现**，归 #22 / #23；v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建（不写 ALTER）。
+- 索引内容（v2，规划）：覆盖九个内容目录的全部实体（伏笔/时间线/关系/账本/资料卡）+ `entity_mentions` + 全实体 FTS + catalog 一致性校验。**未实现**，归 #23；v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建（不写 ALTER）。
+
+### 4.1 章正文检索（`inkflow_chapter_search` / `searchChapters`）
+
+| 项 | 契约 |
+|---|---|
+| 工具 | `inkflow_chapter_search`：`{ projectRoot?, query, limit? }`；`query` 必填，项目根与门禁规则同 §6 |
+| 查询长度 | 以**折叠空白后的字符数**计：0 → `ok:true` + 空 `items`（`mode` 记为 `like`，未用 FTS）；1–2 → `LIKE`；≥3 → FTS5 `MATCH` |
+| 分词 | 按空白切分为多个词；**任一**词短于 3 字 → 整条查询走 `LIKE`（`LIKE ... AND LIKE ...`，每个词都必须出现，不静默丢词）；全部词 ≥3 字 → FTS `AND` |
+| 转义 | FTS：每个词包成双引号短语、内部 `"` 写成 `""`，故 `"` `*` `-` `OR` `NEAR(` 一律是字面文本；LIKE：`%` `_` `\` 加反斜杠并用 `ESCAPE '\'` |
+| 返回 | `{ ok:true, items:[{ chapterId, file, title, seq?, snippet }], total, mode }`，`mode` 取 `'fts'` 或 `'like'`；`total` 是命中总数（不是页大小），`file` 是项目内相对路径 |
+| 排序 | FTS 按 `rank`（bm25，升序）；`LIKE` 按 `seq` 升序、再按 `file`（`seq` 为空排最后） |
+| 片段 | 命中词前后各 40 字（`snippet` 选项可改，0 = 不生成）；连续空白折叠为单个空格；截断端加 `…`；**只取正文**，frontmatter 不进片段（索引存的就是 `parsed.body`） |
+| 上限 | `limit` 默认 20、上限 100；`query` 超过 200 字符 → `QUERY_INVALID` |
+| 只读 | 检索函数**不建库、不修复、不删库**；索引缺失或 `PRAGMA user_version` 不符 → `INDEX_UNAVAILABLE`，项目零变更。懒重建只在工具层做一次（与 §4 的缓存观一致） |
+
+**检索返回码**（与 §6 一样是结构化返回，不抛异常给模型）：
+
+| code | 含义 | 模型下一步 |
+|---|---|---|
+| `INDEX_UNAVAILABLE` | 索引不存在、`user_version` 不符或无法读取；附 `message`，`hint` 指向重建 | 先 `inkflow_index_rebuild`（工具自身已自动重试过一次）；仍失败则把原因转述给用户 |
+| `QUERY_INVALID` | `query` 缺失/空白、超过 200 字符，或（直接调用 `searchChapters` 时）不是字符串 | 换一个 1–200 字的查询；不要重试同一参数 |
 
 ## 5. 写入纪律
 
@@ -424,7 +445,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 卷章 catalog（`chapters/index.json`）与 `volumeId` | 无读写/校验/重建；卷归属仍按目录名推导 | #15 |
 | `.gitignore` 的 `index/.lock`、`index/.write.lock`、`.openviking/config.local.json` 三行 | 向导只写前三行 `index/*.db*` | #15 / #40 / #41 |
 | `inkflow.json.projectId` | 向导不生成；字段可缺省 | #40 |
-| 索引 v2（九目录全实体 + `entity_mentions` + 全实体 FTS） | 索引 v1 只覆盖章/角色/世界观/大纲/资料路径 | #22 / #23 |
+| 索引 v2（九目录全实体 + `entity_mentions` + 全实体 FTS） | 索引 v1 只覆盖章/角色/世界观/大纲/资料路径；章正文检索已可用（§4.1） | #23 |
 | 面板入口 `conversation.view` | Client 仍注册 `sidebar.panellist` + `main` | #17 |
 | `/inkflow/internal/*` 私有通道与 `sessionId` 解析 | 只有 `/inkflow/api/*` 的 fail-closed 占位 | #18 |
 | 插件级共享库（`$DSH_HOME/inkflow/shared/`、复制快照、`origin`） | 未实现 | #40 |

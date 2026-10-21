@@ -193,12 +193,13 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the five files-first tools and one prefix route', () => {
+test('registers the six files-first tools and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
     assert.deepEqual([...harness.tools.keys()].sort(), [
       'inkflow_chapter_list',
+      'inkflow_chapter_search',
       'inkflow_index_rebuild',
       'inkflow_project_init',
       'inkflow_project_plan',
