@@ -35,8 +35,9 @@
 
 - **项目根校验**：写入前必须确认目标是「git 仓库 + 六个约定目录 + `inkflow.json`」的项目根；不接受「看起来像」的路径。
 - **路径穿越**：所有相对路径拼接后必须校验仍在项目根内（`resolve` 后前缀比对）。
-- **`projectRoot` 参数边界**：工具允许显式传路径（便于跨目录调试），但 P1 起应收紧到会话工作区子树，或要求显式用户确认。
-- **loopback 校验**：`/inkflow/api/*` 只服务本机浏览器（见 [hard-constraints.md](hard-constraints.md) H8）。
+- **`projectRoot` / `root` 参数边界**：显式路径必须 `realpath` 后位于**会话工作区子树**内（工作区 = 会话工作目录），判定发生在任何写盘之前；盘符/卷根、家目录本身（及其祖先）、系统与安装目录硬拒，返回结构化 `PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`。跨会话状态（`state.json` 的 `lastProjectRoot`）只可用于展示，不得作为解析来源。
+- **脚手架再确认**：`init` 只在目标「不存在 / 空目录 / 已含 `inkflow.json`」时直接创建；其余情况零写入返回待确认清单，用户同意后才落盘。
+- **loopback 校验**：`/inkflow/api/*` 只服务本机浏览器（见 [hard-constraints.md](hard-constraints.md) H8）；请求无会话身份时不得猜测项目，返回 `NO_SESSION_CONTEXT`。
 
 ## 5. 密钥与隐私
 

@@ -11,16 +11,17 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, parse as parsePath } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { apply, inject, name } from '../lib/index.js'
 
 const ALL_DIRS = ['chapters', 'characters', 'world', 'outlines', 'index', 'library']
 
-function createHarness() {
+function createHarness(workspace) {
   const tools = new Map()
   const routes = []
   const logs = []
@@ -42,8 +43,14 @@ function createHarness() {
     inject(_deps, callback) {
       callback(ctx)
     },
-    get() {
-      return undefined // no workingDirectory service: resolution falls back to cwd
+    get(name) {
+      // The session workspace is the only trust anchor for path scope, so tests
+      // fake it explicitly instead of mutating process.cwd() (which would leak
+      // across tests). Without it the code degrades to process.cwd().
+      if (name === 'workingDirectory' && typeof workspace === 'string') {
+        return { ensure: async () => workspace }
+      }
+      return undefined
     },
     logger() {
       return {
@@ -111,8 +118,8 @@ function sampleProject(root) {
   writeFileSync(join(root, 'library', '参考.txt'), '资料正文', 'utf8')
 }
 
-function makeTools(dataDir) {
-  const harness = createHarness()
+function makeTools(dataDir, workspace) {
+  const harness = createHarness(workspace)
   apply(harness.ctx, { dataDir })
   return harness
 }
@@ -120,7 +127,26 @@ function makeTools(dataDir) {
 async function callTool(harness, toolName, args) {
   const tool = harness.tools.get(toolName)
   assert.ok(tool, `tool ${toolName} must be registered`)
-  return tool.execute(args, { signal: AbortSignal.timeout(5000) })
+  // A real call always comes from a session; passing the agent makes the fake
+  // workingDirectory service reachable (see createHarness).
+  return tool.execute(args, { signal: AbortSignal.timeout(5000), agent: { id: 'test-session' } })
+}
+
+/** Stable fingerprint of a directory tree: names, kinds, sizes, mtimes. */
+function hashTree(root) {
+  const hash = createHash('sha256')
+  const walk = (relative) => {
+    const dir = relative === '' ? root : join(root, relative)
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    for (const entry of entries) {
+      const child = relative === '' ? entry.name : `${relative}/${entry.name}`
+      const info = statSync(join(root, child))
+      hash.update(`${child}|${entry.isDirectory() ? 'd' : 'f'}|${info.size}|${info.mtimeMs}\n`)
+      if (entry.isDirectory()) walk(child)
+    }
+  }
+  walk('')
+  return hash.digest('hex')
 }
 
 function fakeRequest({ url, method = 'GET', host = '127.0.0.1:2149', origin }) {
@@ -184,7 +210,7 @@ test('registers the four files-first tools and one prefix route', () => {
 test('gate: a plain directory is rejected with a missing-item checklist', async () => {
   const dir = workdir()
   try {
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_status', { projectRoot: dir })
     assert.equal(result.ok, false)
     assert.equal(result.error.code, 'NOT_AN_INKFLOW_PROJECT')
@@ -200,7 +226,7 @@ test('gate: git repo missing two directories reports exactly those', async () =>
   const dir = workdir()
   try {
     scaffold(dir, { dirs: ['chapters', 'characters', 'index', 'library'] })
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_status', { projectRoot: dir })
     assert.equal(result.ok, false)
     assert.deepEqual([...result.error.missing].sort(), ['outlines', 'world'])
@@ -214,7 +240,7 @@ test('gate: a derived index directory is recreated, never a lockout', async () =
   try {
     scaffold(dir, { dirs: ['chapters', 'characters', 'world', 'outlines', 'library'] })
     assert.equal(existsSync(join(dir, 'index')), false)
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_status', { projectRoot: dir })
     assert.equal(result.ok, true)
     assert.equal(result.indexDirRecreated, true)
@@ -228,7 +254,7 @@ test('init scaffolds the convention tree without running git init', async () => 
   const dir = workdir()
   try {
     const root = join(dir, '我的新书')
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_init', { root, title: '新书', author: '作者' })
     assert.equal(result.gitInitNeeded, true)
     assert.equal(result.ok, false) // not usable until it is a git repository
@@ -252,7 +278,7 @@ test('index rebuild: counts, chapter order, word count, invariant issues', async
   try {
     const root = join(dir, 'book')
     sampleProject(root)
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
 
     assert.equal(result.ok, true)
@@ -285,7 +311,7 @@ test('index is a cache: a foreign schema version is rebuilt automatically', asyn
     const root = join(dir, 'book')
     scaffold(root)
     writeMarkdown(root, 'chapters/0001-甲.md', ['id: c1', 'seq: 1'], '一二三')
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
 
     // Simulate an old/new index built by a different plugin version.
@@ -314,7 +340,7 @@ test('invariants: missing overall outline and volume-in-volume are reported', as
     scaffold(root)
     writeMarkdown(root, 'outlines/vol-01.md', ['id: v1', 'kind: volume', 'title: 卷一', 'parent: ov'], '- 卷一')
     writeMarkdown(root, 'outlines/vol-02.md', ['id: v2', 'kind: volume', 'title: 卷二', 'parent: v1'], '- 卷二')
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
     const codes = new Set(result.issues.map((issue) => issue.code))
     assert.ok(codes.has('OUTLINE_NO_OVERALL'))
@@ -324,27 +350,49 @@ test('invariants: missing overall outline and volume-in-volume are reported', as
   }
 })
 
-test('http: loopback only, read-only, status and chapters projections', async () => {
+test('http: loopback only, method allowlist, and it never guesses a project', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
-    scaffold(root)
+    // No index/ yet: the OLD code called inspectProject(?root=) here, which
+    // creates index/ inside whatever directory the query string named.
+    scaffold(root, { dirs: ['chapters', 'characters', 'world', 'outlines', 'library'] })
     writeMarkdown(root, 'chapters/0001-甲.md', ['id: c1', 'seq: 1', 'title: 开篇'], '正文正文')
     const stateDir = join(dir, 'state')
-    const harness = makeTools(stateDir)
-    // Touch the project so the plugin remembers it, then drop the explicit root.
-    await callTool(harness, 'inkflow_project_status', { projectRoot: root })
+    const harness = makeTools(stateDir, dir)
+
+    // A session may touch the project; that populates state.json (display only).
+    const touched = await callTool(harness, 'inkflow_project_status', { projectRoot: root })
+    assert.equal(touched.ok, true)
     assert.equal(existsSync(join(stateDir, 'state.json')), true)
 
-    const status = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status' }))
-    assert.equal(status.status, 200)
-    assert.equal(status.json.ok, true)
-    assert.equal(status.json.value.project.usable, true)
-    assert.equal(status.headers['cache-control'], 'no-store')
+    // Drop the derived index the tool just recreated: if the route handler ever
+    // inspects a query-string path again, index/ reappears and the hash moves.
+    rmSync(join(root, 'index'), { recursive: true, force: true })
+    const before = hashTree(root)
+    const status = await callRoute(
+      harness,
+      fakeRequest({ url: `/inkflow/api/status?root=${encodeURIComponent(root)}` }),
+    )
+    const chapters = await callRoute(
+      harness,
+      fakeRequest({ url: `/inkflow/api/chapters?root=${encodeURIComponent(root)}` }),
+    )
 
-    const chapters = await callRoute(harness, fakeRequest({ url: '/inkflow/api/chapters' }))
+    assert.equal(status.status, 200)
+    assert.equal(status.json.ok, false)
+    assert.equal(status.json.error.code, 'NO_SESSION_CONTEXT')
+    assert.equal(status.headers['cache-control'], 'no-store')
     assert.equal(chapters.status, 200)
-    assert.equal(chapters.json.value.total, 1)
+    assert.equal(chapters.json.ok, false)
+    assert.equal(chapters.json.error.code, 'NO_SESSION_CONTEXT')
+
+    // Neither the query string nor the remembered state may leak into the body.
+    assert.equal(JSON.stringify(status.json).includes(root), false)
+    assert.equal(JSON.stringify(chapters.json).includes(root), false)
+    // and the target directory must be byte-for-byte untouched (no index/).
+    assert.equal(hashTree(root), before)
+    assert.equal(existsSync(join(root, 'index')), false)
 
     const rebind = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status', host: 'evil.example.com' }))
     assert.equal(rebind.status, 403)
@@ -366,16 +414,17 @@ test('http: loopback only, read-only, status and chapters projections', async ()
   }
 })
 
-test('http: no project remembered yields an empty projection, not an error', async () => {
+test('http: an untouched plugin state still refuses instead of inventing a project', async () => {
   const dir = workdir()
   try {
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const status = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status' }))
     assert.equal(status.status, 200)
-    assert.equal(status.json.value.project, null)
+    assert.equal(status.json.ok, false)
+    assert.equal(status.json.error.code, 'NO_SESSION_CONTEXT')
     const chapters = await callRoute(harness, fakeRequest({ url: '/inkflow/api/chapters' }))
     assert.equal(chapters.status, 200)
-    assert.equal(chapters.json.value.total, 0)
+    assert.equal(chapters.json.error.code, 'NO_SESSION_CONTEXT')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -401,7 +450,7 @@ test('frontmatter parsing survives the awkward forms used by hand-written files'
       ],
       '正文',
     )
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const list = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root })
     assert.equal(list.ok, true)
     assert.equal(list.chapters[0].title, '引号标题, 带逗号')
@@ -505,10 +554,190 @@ test('a UTF-8 BOM in inkflow.json does not break the gate', async () => {
     const root = join(dir, 'book')
     scaffold(root, { meta: false })
     writeFileSync(join(root, 'inkflow.json'), '\uFEFF' + JSON.stringify({ schemaVersion: 1, title: '带 BOM 的书' }), 'utf8')
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_status', { projectRoot: root })
     assert.equal(result.ok, true)
     assert.equal(result.label, '带 BOM 的书')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Issue #7 — identity and scope hardening
+// ---------------------------------------------------------------------------
+
+test('identity: a session outside a project never answers for a remembered book', async () => {
+  const dir = workdir()
+  try {
+    const bookA = join(dir, 'book-a')
+    sampleProject(bookA)
+    // The session sits in book-a's PARENT directory, which is not itself a
+    // project: this used to fall back to state.lastProjectRoot and return
+    // book-a with ok:true (issue #7).
+    const stateDir = join(dir, 'state')
+
+    const first = makeTools(stateDir, dir)
+    const touched = await callTool(first, 'inkflow_project_status', { projectRoot: bookA })
+    assert.equal(touched.ok, true)
+    assert.equal(existsSync(join(stateDir, 'state.json')), true)
+
+    const second = makeTools(stateDir, dir)
+    const status = await callTool(second, 'inkflow_project_status', {})
+    assert.equal(status.ok, false)
+    assert.equal(status.error.code, 'NOT_AN_INKFLOW_PROJECT')
+    assert.equal(status.error.needsSetup, true)
+    assert.equal(status.error.root, dir)
+    assert.notEqual(status.error.root, bookA)
+    assert.ok(status.error.missing.includes('.git'))
+    assert.ok(Array.isArray(status.error.reasons))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('scope: a projectRoot outside the session workspace is rejected untouched', async () => {
+  const inside = workdir()
+  const outside = workdir()
+  try {
+    const outsideBook = join(outside, 'book')
+    scaffold(outsideBook, { dirs: ['chapters', 'characters', 'world', 'outlines', 'library'] })
+    const harness = makeTools(join(inside, 'state'), inside)
+
+    const before = statSync(outsideBook).mtimeMs
+    const status = await callTool(harness, 'inkflow_project_status', { projectRoot: outsideBook })
+    assert.equal(status.ok, false)
+    assert.equal(status.error.code, 'PATH_OUT_OF_SCOPE')
+    assert.equal(status.error.root, outsideBook)
+    // The derived index directory is the observable side effect of the old code.
+    assert.equal(existsSync(join(outsideBook, 'index')), false)
+    assert.equal(statSync(outsideBook).mtimeMs, before)
+
+    const rebuild = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: outsideBook })
+    assert.equal(rebuild.error.code, 'PATH_OUT_OF_SCOPE')
+
+    const init = await callTool(harness, 'inkflow_project_init', { root: join(outside, 'new-book'), title: '越界' })
+    assert.equal(init.ok, false)
+    assert.equal(init.error.code, 'PATH_OUT_OF_SCOPE')
+    assert.equal(existsSync(join(outside, 'new-book')), false)
+
+    // A drive/volume root is refused even though it is "an existing directory".
+    // Read-only call: if the guard regressed, inspectProject still writes nothing
+    // there unless the root happens to be a full InkFlow project.
+    const driveRoot = parsePath(inside).root
+    const atRoot = await callTool(harness, 'inkflow_project_status', { projectRoot: driveRoot })
+    assert.equal(atRoot.ok, false)
+    assert.equal(atRoot.error.code, 'PATH_FORBIDDEN')
+  } finally {
+    rmSync(inside, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('scope: the user home directory itself is refused as a project root', async () => {
+  const dir = workdir()
+  const previous = process.env['USERPROFILE']
+  try {
+    const fakeHome = join(dir, 'home')
+    mkdirSync(fakeHome, { recursive: true })
+    // os.homedir() reads USERPROFILE on Windows, so this exercises the real
+    // "no scaffolding in your home directory" rule without touching the account.
+    process.env['USERPROFILE'] = fakeHome
+    const harness = makeTools(join(dir, 'state'), dir)
+    const result = await callTool(harness, 'inkflow_project_init', { root: fakeHome, title: '放家里' })
+    assert.equal(result.ok, false)
+    assert.equal(result.error.code, 'PATH_FORBIDDEN')
+    assert.deepEqual(readdirSync(fakeHome), [])
+  } finally {
+    if (previous === undefined) delete process.env['USERPROFILE']
+    else process.env['USERPROFILE'] = previous
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('scope: a path inside an install directory is refused even within the workspace', async () => {
+  const dir = workdir()
+  const previous = process.env['ProgramFiles']
+  try {
+    const fakeInstall = join(dir, 'FakeProgramFiles')
+    const target = join(fakeInstall, 'novel')
+    mkdirSync(target, { recursive: true })
+    process.env['ProgramFiles'] = fakeInstall
+    const harness = makeTools(join(dir, 'state'), dir)
+    const result = await callTool(harness, 'inkflow_project_init', { root: target, title: '装进安装目录' })
+    assert.equal(result.ok, false)
+    assert.equal(result.error.code, 'PATH_FORBIDDEN')
+    assert.deepEqual(readdirSync(target), []) // zero writes
+  } finally {
+    if (previous === undefined) delete process.env['ProgramFiles']
+    else process.env['ProgramFiles'] = previous
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('init: a non-empty directory without inkflow.json requires confirmation and writes nothing', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, '已有内容的目录')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, '草稿.txt'), '不能被覆盖\n', 'utf8')
+    mkdirSync(join(root, 'chapters'))
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    const before = hashTree(root)
+    const blocked = await callTool(harness, 'inkflow_project_init', { root, title: '旧稿整理' })
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.requiresConfirmation, true)
+    assert.equal(blocked.error.code, 'INIT_REQUIRES_CONFIRMATION')
+    assert.deepEqual(blocked.existing, ['chapters', '草稿.txt'])
+    assert.ok(blocked.willCreate.includes('inkflow.json'))
+    assert.ok(blocked.willCreate.includes('characters'))
+    assert.equal(blocked.willCreate.includes('chapters'), false) // already there
+    // Zero writes: no directory, file or mtime change.
+    assert.equal(hashTree(root), before)
+    assert.equal(existsSync(join(root, 'inkflow.json')), false)
+    assert.equal(existsSync(join(root, 'index')), false)
+
+    const confirmed = await callTool(harness, 'inkflow_project_init', { root, title: '旧稿整理', confirm: true })
+    assert.equal(confirmed.ok, false) // still not a git repository
+    assert.equal(confirmed.error, undefined)
+    for (const sub of ALL_DIRS) assert.ok(existsSync(join(root, sub)), `${sub}/ should exist`)
+    assert.equal(readFileSync(join(root, '草稿.txt'), 'utf8'), '不能被覆盖\n')
+    assert.equal(JSON.parse(readFileSync(join(root, 'inkflow.json'), 'utf8')).title, '旧稿整理')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('init: an empty directory still scaffolds without a confirmation round', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, '空目录')
+    mkdirSync(root)
+    const harness = makeTools(join(dir, 'state'), dir)
+    const result = await callTool(harness, 'inkflow_project_init', { root, title: '新书' })
+    assert.equal(result.requiresConfirmation, undefined)
+    assert.equal(existsSync(join(root, 'inkflow.json')), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('index: volume comes from a real volume directory, never from chapters/', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    writeMarkdown(root, 'chapters/0001-顶层.md', ['id: c1', 'seq: 1', 'title: 顶层'], '正文')
+    writeMarkdown(root, 'chapters/vol-01/0002-入卷.md', ['id: c2', 'seq: 2', 'title: 入卷'], '正文')
+    writeMarkdown(root, 'chapters/0003-显式.md', ['id: c3', 'seq: 3', 'title: 显式', 'volume: vol-09'], '正文')
+    const harness = makeTools(join(dir, 'state'), dir)
+    const list = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root })
+    assert.equal(list.ok, true)
+    const byId = new Map(list.chapters.map((chapter) => [chapter.id, chapter]))
+    assert.equal(byId.get('c1').volume, null) // used to be "chapters"
+    assert.equal(byId.get('c2').volume, 'vol-01')
+    assert.equal(byId.get('c3').volume, 'vol-09') // frontmatter still wins
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

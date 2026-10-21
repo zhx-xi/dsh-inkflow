@@ -85,6 +85,8 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 - **中栏**：正文区（编辑能力在后续版本）+ 项目诊断（项目路径、索引状态、统计）
 - **右栏**：六目录勾选状态 + 约定速览
 
+> 面板当前**不知道**你正开在哪个会话里，所以它会显示「无法确定当前会话的项目」而不是猜一本书。项目状态以工具返回为准：在小说目录的会话里让 AI 调 `inkflow_project_status`。面板与会话绑定在后续版本补上。
+
 ### 5.2 对 AI 说人话就行
 
 插件提供四个工具，DSH 里的 AI 会在需要时自己调用：
@@ -92,7 +94,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | 工具 | 作用 | 你可以这样说 |
 |---|---|---|
 | `inkflow_project_status` | 检查当前目录是不是 InkFlow 项目、缺什么、索引状态 | 「看看这个目录能不能写小说」 |
-| `inkflow_project_init` | 生成项目骨架（目录 + `inkflow.json`，**不会** `git init`） | 「在这里建一本新书叫《蜀山》」 |
+| `inkflow_project_init` | 生成项目骨架（目录 + `inkflow.json`，**不会** `git init`）；目标目录非空且没有 `inkflow.json` 时会先给你看「将创建什么」，你同意后才写 | 「在这里建一本新书叫《蜀山》」 |
 | `inkflow_index_rebuild` | 从文件重建索引并检查一致性 | 「重建一下索引」/「检查一下设定有没有冲突」 |
 | `inkflow_chapter_list` | 按阅读顺序列出章节 | 「列一下现在有哪些章」 |
 
@@ -172,8 +174,10 @@ title: 全书总纲
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 面板显示「未检测到 InkFlow 项目」 | 当前目录不是项目根 | 在项目目录里开会话，或先用 `inkflow_project_init` 建项目 |
+| 面板显示「无法确定当前会话的项目」 | 面板还不具备会话→目录的解析能力（`NO_SESSION_CONTEXT`） | 在小说目录的会话里调 `inkflow_project_status` 看项目状态；面板绑定会话在后续版本 |
 | 工具报 `NOT_AN_INKFLOW_PROJECT` | 缺 git / 缺目录 / `inkflow.json` 坏了 | 看返回里的 `missing` 清单逐条补齐 |
+| 工具报 `PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN` | 传的路径不在当前会话工作目录里（或是盘符根/家目录/安装目录） | 在会话工作目录内建项目，或先把会话切到书的目录 |
+| `init` 返回 `INIT_REQUIRES_CONFIRMATION` | 目标目录非空且没有 `inkflow.json` | 看返回的「将创建」清单，确认无误后让 AI 带确认再跑一次 |
 | 左侧栏没有 InkFlow 图标 | 插件未安装/未激活，或改了代码没重启 | 检查插件列表；重启 DSH |
 | 装了插件但工具列表里没有 `inkflow_*` | 还是旧版本代码在跑 | 重启 DSH |
 | 改了章文件，面板还是旧的 | 索引未重建 | 触发 `inkflow_index_rebuild` 或重启会话 |
@@ -186,7 +190,7 @@ title: 全书总纲
 不会。第一阶段完全本地：没有账号、没有服务端、没有同步。只有你主动调用模型生成内容时，相关上下文才会发送给你自己配置的模型服务。
 
 **Q：能多本书吗？**
-能。一本书一个目录（一个 git 仓库），互不干扰。面板显示的是当前会话所在的项目。
+能。一本书一个目录（一个 git 仓库），互不干扰。项目由**会话的工作目录**决定：在那个目录里问 AI，它读的就是那本书；跨到别的目录问，不会串到上一本书。
 
 **Q：怎么备份？**
 `git push` 到你的私有远端即可。这也是推荐做法：每完成一章提交一次。

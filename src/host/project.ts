@@ -7,8 +7,9 @@
  * registers projects anywhere: the filesystem *is* the registry.
  */
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, parse as parsePath, resolve } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, dirname, isAbsolute, join, parse as parsePath, relative as relativePath, resolve } from 'node:path'
 
 import {
   CONTENT_DIRS,
@@ -77,6 +78,110 @@ export function findProjectRoot(start: string): string | undefined {
     const parent = dirname(current)
     if (parent === current) break
     current = parent
+  }
+  return undefined
+}
+
+/**
+ * Resolve a path that may not exist yet (`init` creates it): realpath the
+ * nearest existing ancestor, then re-append the missing segments. Without this,
+ * a junction/symlink or a `..` text trick could smuggle a path out of the
+ * workspace while looking contained.
+ */
+function realpathLoose(input: string): string {
+  const absolute = resolve(input)
+  const missing: string[] = []
+  let current = absolute
+  for (let depth = 0; depth < 64; depth += 1) {
+    try {
+      const real = realpathSync.native(current)
+      const tail = missing.slice().reverse()
+      return tail.length === 0 ? real : join(real, ...tail)
+    } catch {
+      const parent = dirname(current)
+      if (parent === current) return absolute
+      missing.push(basename(current))
+      current = parent
+    }
+  }
+  return absolute
+}
+
+/**
+ * True when `child` is `parent` itself or sits below it. `path.relative` is
+ * case-insensitive on Windows, which is what we want for drive-letter/case
+ * variants of the same directory.
+ */
+function isWithin(parent: string, child: string): boolean {
+  const relative = relativePath(parent, child)
+  return relative === '' || (!relative.startsWith('..') && !isAbsolute(relative))
+}
+
+/** Directories that must never hold a novel project: writes there can damage the system. */
+function forbiddenRoots(): string[] {
+  const env = process.env
+  const candidates = [
+    env['SystemRoot'],
+    env['ProgramFiles'],
+    env['ProgramFiles(x86)'],
+    env['ProgramData'],
+    dirname(process.execPath),
+  ]
+  return candidates
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    .map(realpathLoose)
+}
+
+export interface ScopeRejection {
+  code: 'PATH_OUT_OF_SCOPE' | 'PATH_FORBIDDEN'
+  message: string
+  root: string
+  workspace: string
+  hint: string
+}
+
+const SCOPE_HINT =
+  'an InkFlow project must be one git repository inside the session working directory; ' +
+  'open the novel directory as the session workspace (or scaffold it there) instead of pointing at another path'
+
+/**
+ * Gate for every caller-supplied path (issue #7). The plugin runs un-sandboxed
+ * in the host process (hard-constraints H7), so an unchecked path is an
+ * arbitrary-directory read/write primitive: `inspectProject` creates `index/`
+ * and `initProject` creates a whole tree.
+ *
+ * The session workspace is the only trust anchor — it is the directory the user
+ * actually opened — so anything outside it, plus the filesystem root, the home
+ * directory itself and the install directories, is refused before any disk IO.
+ */
+export function checkProjectRootScope(candidate: string, workspace: string): ScopeRejection | undefined {
+  const root = realpathLoose(candidate)
+  const scope = realpathLoose(workspace)
+  const reject = (code: ScopeRejection['code'], message: string): ScopeRejection => ({
+    code,
+    message,
+    root,
+    workspace: scope,
+    hint: SCOPE_HINT,
+  })
+
+  if (root === parsePath(root).root) {
+    return reject('PATH_FORBIDDEN', 'refusing a drive/volume root as a project root')
+  }
+  const home = realpathLoose(homedir())
+  if (root === home) {
+    return reject('PATH_FORBIDDEN', `refusing the user home directory itself (${home}); use a subdirectory`)
+  }
+  if (isWithin(root, home)) {
+    return reject('PATH_FORBIDDEN', 'refusing a directory that contains the user home directory')
+  }
+  for (const directory of forbiddenRoots()) {
+    if (isWithin(directory, root)) {
+      return reject('PATH_FORBIDDEN', `refusing a path inside the installation directory ${directory}`)
+    }
+  }
+  if (!isWithin(scope, root)) {
+    return reject('PATH_OUT_OF_SCOPE', `the path is outside the session working directory ${scope}`)
   }
   return undefined
 }
@@ -182,7 +287,78 @@ export function inspectProject(root: string, options: InspectOptions = {}): Proj
   }
 }
 
-export interface InitResult {
+export interface InitPlan {
+  root: string
+  targetKind: 'absent' | 'directory' | 'other'
+  /** True when scaffolding cannot destroy anything the user made. */
+  safeToScaffold: boolean
+  /** Empty when scaffolding is safe; explains the confirmation requirement otherwise. */
+  blockedReason: string
+  /** First entries already present (capped; `existingCount` is the real total). */
+  existingEntries: string[]
+  existingCount: number
+  willCreate: string[]
+}
+
+/** Cap on how many pre-existing entries are echoed back to the model. */
+const MAX_PLANNED_ENTRIES = 50
+
+function listEntries(dir: string): string[] {
+  try {
+    return readdirSync(dir).sort()
+  } catch {
+    return []
+  }
+}
+
+/**
+ * What `initProject` would do, without writing anything. A non-empty directory
+ * without `inkflow.json` is someone's existing folder (a manuscript dump, a
+ * project of another app, a home directory by mistake): scaffolding it must be
+ * an explicit decision, never a side effect of a vague "create my novel" call.
+ */
+export function planInit(root: string): InitPlan {
+  const absolute = resolve(root)
+  const targetKind: InitPlan['targetKind'] = existsSync(absolute)
+    ? isDirectory(absolute)
+      ? 'directory'
+      : 'other'
+    : 'absent'
+  const entries = targetKind === 'directory' ? listEntries(absolute) : []
+  const hasMeta = targetKind === 'directory' && existsSync(join(absolute, ROOT_META_FILE))
+  const safeToScaffold = targetKind === 'absent' || (targetKind === 'directory' && (entries.length === 0 || hasMeta))
+  const blockedReason =
+    targetKind === 'other'
+      ? 'the target exists and is not a directory'
+      : safeToScaffold
+        ? ''
+        : `the directory is not empty and has no ${ROOT_META_FILE}`
+
+  const willCreate: string[] = []
+  for (const name of [...CONTENT_DIRS, INDEX_DIR]) {
+    if (targetKind !== 'directory' || !isDirectory(join(absolute, name))) willCreate.push(name)
+  }
+  if (targetKind !== 'directory' || !existsSync(join(absolute, INDEX_DIR, INDEX_KEEP_FILE))) {
+    willCreate.push(`${INDEX_DIR}/${INDEX_KEEP_FILE}`)
+  }
+  if (!hasMeta) willCreate.push(ROOT_META_FILE)
+  if (targetKind !== 'directory' || !existsSync(join(absolute, '.gitignore'))) willCreate.push('.gitignore')
+
+  return {
+    root: absolute,
+    targetKind,
+    safeToScaffold,
+    blockedReason,
+    existingEntries: entries.slice(0, MAX_PLANNED_ENTRIES),
+    existingCount: entries.length,
+    willCreate,
+  }
+}
+
+interface InitCreated {
+  kind: 'created'
+  root: string
+  plan: InitPlan
   probe: ProjectProbe
   createdDirs: string[]
   createdFiles: string[]
@@ -190,13 +366,57 @@ export interface InitResult {
   gitInitNeeded: boolean
 }
 
+interface InitNeedsConfirmation {
+  kind: 'requires-confirmation'
+  root: string
+  plan: InitPlan
+  /** A confirmation round is a refusal: nothing was written. */
+  createdDirs: []
+  createdFiles: []
+  gitignoreUpdated: false
+  gitInitNeeded: boolean
+}
+
+export type InitResult = InitCreated | InitNeedsConfirmation
+
+export interface InitOptions {
+  /** Set only after the user agreed to scaffold into a non-empty directory. */
+  confirm?: boolean
+}
+
 /**
  * Scaffold a project. Never runs `git init` on the user's behalf: the git
  * identity, remote and branch belong to the user, and a half-initialised repo
  * is worse than a clear "run git init" instruction.
+ *
+ * Writes only when `planInit` says the target is safe, or when the caller
+ * passed `confirm` after showing the plan to the user (issue #7).
  */
-export function initProject(root: string, input: { title: string; author?: string }): InitResult {
+export function initProject(root: string, input: { title: string; author?: string }, options: InitOptions = {}): InitResult {
   const absolute = resolve(root)
+  const plan = planInit(absolute)
+  if (plan.targetKind === 'other') {
+    throw new Error(`inkflow: ${absolute} exists and is not a directory`)
+  }
+
+  const metaFile = join(absolute, ROOT_META_FILE)
+  // Validate before any write so a rejected call leaves no trace at all.
+  if (!existsSync(metaFile) && input.title.trim() === '') {
+    throw new Error('inkflow: project title must not be empty')
+  }
+
+  if (!plan.safeToScaffold && options.confirm !== true) {
+    return {
+      kind: 'requires-confirmation',
+      root: absolute,
+      plan,
+      createdDirs: [],
+      createdFiles: [],
+      gitignoreUpdated: false,
+      gitInitNeeded: !isGitRoot(absolute),
+    }
+  }
+
   mkdirSync(absolute, { recursive: true })
 
   const createdDirs: string[] = []
@@ -215,10 +435,8 @@ export function initProject(root: string, input: { title: string; author?: strin
     createdFiles.push(`${INDEX_DIR}/${INDEX_KEEP_FILE}`)
   }
 
-  const metaFile = join(absolute, ROOT_META_FILE)
   if (!existsSync(metaFile)) {
     const title = input.title.trim()
-    if (title === '') throw new Error('inkflow: project title must not be empty')
     const meta: ProjectMeta = {
       schemaVersion: FILE_SCHEMA_VERSION,
       title,
@@ -242,6 +460,9 @@ export function initProject(root: string, input: { title: string; author?: strin
   }
 
   return {
+    kind: 'created',
+    root: absolute,
+    plan,
     probe: inspectProject(absolute),
     createdDirs,
     createdFiles,

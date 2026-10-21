@@ -131,6 +131,19 @@ function dirNameOf(relPath: string): string {
   return parts.length > 1 ? (parts[parts.length - 2] ?? '') : ''
 }
 
+/**
+ * `chapters/vol-01/0001-a.md` → `vol-01`; a chapter sitting directly in
+ * `chapters/` has no volume. Taking "the parent directory name" blindly gave
+ * every top-level chapter `volume: "chapters"`, which is not a volume but the
+ * container itself (issue #7).
+ */
+function volumeDirOf(relPath: string): string | undefined {
+  const parts = relPath.split('/')
+  if (parts.length !== 3 || parts[0] !== 'chapters') return undefined
+  const volume = parts[1]
+  return volume === undefined || volume === '' ? undefined : volume
+}
+
 function readText(path: string): string {
   try {
     return readFileSync(path, 'utf8')
@@ -254,7 +267,7 @@ export function buildIndex(root: string): IndexBuildResult {
         path: file.path,
         seq: intField(parsed.data, 'seq') ?? leadingNumber(file.path),
         title: stringField(parsed.data, 'title') ?? basename(file.path, '.md'),
-        volume: stringField(parsed.data, 'volume') ?? (dirNameOf(file.path) || undefined),
+        volume: stringField(parsed.data, 'volume') ?? volumeDirOf(file.path),
         status: (CHAPTER_STATUSES as readonly string[]).includes(status ?? '') ? (status as string) : 'draft',
         wordCount: countChars(parsed.body),
         body: parsed.body,

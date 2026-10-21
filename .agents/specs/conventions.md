@@ -64,7 +64,7 @@
 ---
 id: 6f1c2c1e-...        # 可选；缺省用相对路径生成稳定 id
 title: 第一章 入山
-volume: vol-01          # 可选；缺省取所在目录名
+volume: vol-01          # 可选；缺省取 chapters/<vol>/ 的目录名（顶层章为空，不会是 "chapters"）
 seq: 1                  # 可选；缺省取文件名前导数字
 status: draft           # draft | revised | final
 pov: 主角                # 可选
@@ -164,6 +164,31 @@ order: 0
   }
 }
 ```
+
+**返回码一览**（失败一律结构化返回，不抛异常给模型）：
+
+| code | 含义 | 模型下一步 |
+|---|---|---|
+| `NOT_AN_INKFLOW_PROJECT` | 会话工作目录（或显式 `projectRoot`）不是项目；附 `needsSetup: true` | 把 `missing` 转述给用户；用户同意后 `inkflow_project_init` |
+| `PATH_OUT_OF_SCOPE` | 显式路径不在**会话工作区子树**内 | 在会话工作目录内开项目，或先切会话工作目录 |
+| `PATH_FORBIDDEN` | 盘符/卷根、家目录本身（或其祖先）、系统与安装目录（`Windows`、`Program Files`、`ProgramData`、宿主可执行目录） | 换工作区内的子目录 |
+| `INIT_REQUIRES_CONFIRMATION` | 目标目录非空且无 `inkflow.json` | 展示 `willCreate`；用户同意后以 `confirm: true` 重调 |
+| `NO_SESSION_CONTEXT` | 面板 HTTP 请求无法得知所属会话工作区（见 §6.2） | 改用工具读；不要把面板结果当作项目真相 |
+
+### 6.1 路径作用域（`projectRoot` / `root`）
+
+- **信任锚点只有一个**：会话工作目录（`ctx.get('workingDirectory')`，缺失时降级 `process.cwd()`）。
+- 显式路径先 `realpath`（不存在时对最近存在祖先 `realpath` 再拼回剩余段），再做子树判定；判定在**任何写盘之前**（`inspectProject` 会创建 `index/`，`init` 会创建整棵树）。
+- 因此"越界路径"不仅被拒，目标目录**零变更**（mtime/条目不变）。
+- 拒绝盘符根与安装目录是硬规则：那里写入会破坏系统或宿主，且绝不可能是用户的书写目录。
+
+### 6.2 面板路由（`/inkflow/api/*`）
+
+浏览器请求不携带会话身份，因此在"会话 → 工作区"解析落地之前：
+
+- 不读 `?root=`（否则任意页面可让插件读写任意目录）；
+- 不读 `state.json` 的 `lastProjectRoot`（那是"某个会话最后碰过的书"，不代表当前会话）；
+- `/api/status`、`/api/chapters` 一律返回 **HTTP 200 + `ok:false` + `NO_SESSION_CONTEXT`**，且**不创建任何文件**。
 
 ## 7. 与旧 InkFlow 的关系
 
