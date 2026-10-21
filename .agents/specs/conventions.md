@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 1 | `needs-newer-plugin` | `inkflow.json` 可解析且 `schemaVersion` **高于**插件支持上限 | 拒绝（只读） | **无**：不改 meta、不重建索引、不「修复」 |
 | 2 | `usable` | 是 git 仓库 + 九个内容目录与 `index/` 齐全（每项含 `.gitkeep`；`index/` 缺失见放宽条款）+ `inkflow.json` 可解析且版本 ≤ 上限 | 正常 | 正常 |
-| 3 | `needs-repair` | 未达 1/2，但书目录**有 `inkflow.json`（哪怕不可解析）或有 `.git`** | 拒绝 | 仅修复向导（只补缺失项，不覆盖） |
+| 3 | `needs-repair` | 未达 1/2，但书目录**有 `inkflow.json`（哪怕不可解析）或已有任一内容目录（InkFlow 布局）** | 拒绝 | 仅修复向导（只补缺失项，不覆盖） |
 | 4 | `needs-setup` | 1/2/3 都不成立 | 拒绝 | 仅初始化向导（只建缺少项） |
 
 三条判据展开：
@@ -26,7 +26,7 @@
 
 - **缺 `.gitkeep` 等同于结构缺失**：git 不跟踪空目录，clone 后目录会消失，所以「目录在、`.gitkeep` 不在」进 `needs-repair`，由修复向导补一个空文件。除 `.gitkeep` 外，门禁**不**检查目录里有没有内容文件。
 - **`needs-newer-plugin` 是终态**：唯一出路是升级插件；旧插件不得以任何「修复」名义改写 meta 或删除索引。
-- **repair / setup 的判别信号**是「有 meta 或有 `.git`」，不是「有任一目录」——目录可能是用户手工先建的，也不说明书已经成立。
+- **repair / setup 的判别信号**是「有 meta（哪怕不可解析）或已有任一内容目录」；单纯有 `.git` 不算——任何源码仓库都有 `.git`，曾因此把普通仓库误判成「待修复的书」。
 - **唯一放宽**：`index/` 是派生物。当其余九项 + git + meta 全部满足而**仅 `index/` 目录缺失**时，门禁静默创建 `index/` 与 `index/.gitkeep` 并在结果里标 `indexDirRecreated: true`。这是判定路径上唯一的写操作。
 - **fail-closed**：非 `usable` 时业务工具一律拒绝，并返回结构化清单而不是一句错误——`state`、`root`、`checks`（`git` / `dirs` / `keeps` / `meta` 逐项布尔）、`missing[]`、`actions[]`（动作类型 + 目标路径 + 原因）、`readOnly`。拒绝路径**零写盘**（唯一例外是上面的 `index/` 放宽）。
 - **向导**：`needs-setup` 与 `needs-repair` 走同一套两段式流程（§6.3）——`plan` 只读列出将创建/补齐的项，`apply` 需显式确认后只执行清单里的动作；`git init` 边界见 §6.4。
@@ -158,6 +158,8 @@ always: false           # 是否常驻注入
 条目正文
 ```
 
+- **根与扁平分类书**：`world/` 第一层、无 `parent` 的条目是「根」，若有根则**恰一条**；全部条目都放在 `world/<category>/` 且都不写 `parent` 的「扁平分类书」**允许没有根**（校验码见 [data-model](data-model.md) §5 I-08）。
+
 ### 3.5 大纲 `outlines/*.md`
 
 ```markdown
@@ -215,6 +217,7 @@ catalog 是**派生结构投影**（[ADR-0006](../adrs/0006-workspace-contract-v
 | `chapters/<vol-dir>/index.json` | `{ schemaVersion, chapters[] }` | 该卷的章清单 |
 
 - 卷项：`{ volumeId, dir, title, order }`；章项：`{ chapterId, file, seq, title }`。
+- 卷项 `title` 优先取 `outlines/vol-NN*.md` 的 frontmatter `title`（无则首个 `# ` 标题），再退回目录 slug；`order` 取 `volumeId` 的数字部分。
 - **不写派生量**（字数、状态统计、更新时间）：统计由索引派生，写进 catalog 只会让 AI 与插件互相改同一字段。
 - `volumeId` 形如 `vol-NN`（两位起，超过 99 自然扩展），**稳定不复用**；卷目录名 `vol-NN-<slug>` 的 slug 可改。
 - 编码 UTF-8 无 BOM、LF；写入走「临时文件 + rename」原子替换。
@@ -222,7 +225,7 @@ catalog 是**派生结构投影**（[ADR-0006](../adrs/0006-workspace-contract-v
 - **不是门禁必需项**：删掉 catalog 不改变四态判定（重建即可），避免「删一个投影文件 = 项目损坏」。
 - 与 `index/` 的边界：catalog 入库、只含结构；`index/` 不入库、整库可删。
 
-**实现状态**：catalog 尚未落地（无读写、无校验、无重建），归 #15；卷归属仍按目录名推导（见 §3.2）。
+**实现状态**：读写/校验/重建已实现（`src/host/catalog.ts`）；卷归属以章 frontmatter 的 `volume`（存 volumeId）为准，目录名只作缺省推导。
 
 ### 3.9 伏笔 `foreshadowing/<slug>.md`
 
