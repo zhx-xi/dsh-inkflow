@@ -70,13 +70,8 @@ export type { WritingContextRegistration } from './prompt.js'
  * proposal writer uses the same pair in-process, so this is not a test-only
  * surface: `parseMarkdown` reads a file, `patchFrontmatter` rewrites one line.
  */
-export { frontmatterLine, parseMarkdown, patchFrontmatter, splitFrontmatter } from './frontmatter.js'
-export type {
-  FrontmatterPatchOptions,
-  FrontmatterPatchResult,
-  FrontmatterSplit,
-  ParsedMarkdown,
-} from './frontmatter.js'
+export { parseMarkdown, patchFrontmatter } from './frontmatter.js'
+export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
 
 /** Hard dependency: the tool registry. `webServer` is injected lazily. */
 export const inject = ['tools']
@@ -100,9 +95,6 @@ export type { IndexBuildResult } from './indexer.js'
  */
 export {
   acquireProjectWriteLock,
-  removeEmptyProjectDirectory,
-  removeProjectFile,
-  renameProjectDirectory,
   resolveWriteTarget,
   withProjectWriteLock,
   writeJsonAtomic,
@@ -115,8 +107,6 @@ export type {
   IoResult,
   ProjectLock,
   ProjectLockResult,
-  RemoveResult,
-  RenameResult,
   ResolveWriteTargetResult,
   WriteResult,
   WriteTarget,
@@ -147,7 +137,6 @@ export { inspectProject } from './project.js'
 export type { ProjectProbe, ProjectState } from './project.js'
 
 /**
-<<<<<<< HEAD
  * Chapter search (issue #22): the read-only query half of `chapters_fts`.
  * Exported because the panel's future search box reuses it in-process, so this
  * is not a test-only surface — the tool and the tests drive the same function.
@@ -162,35 +151,6 @@ export type {
   ChapterSearchSuccess,
   SearchMode,
 } from './search.js'
-=======
- * Volume/chapter CRUD (issue #16). The six `inkflow_volume_*` / `inkflow_chapter_*`
- * tools are thin adapters over these functions, so the contract tests drive the
- * same code path the model does; the panel's future chapter editor will reuse
- * them instead of re-implementing the cascade.
- */
-export { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
-export type {
-  ChapterCreateInput,
-  ChapterCreateResult,
-  ChapterDeleteInput,
-  ChapterDeleteResult,
-  ChapterErrorCode,
-  ChapterMoveInput,
-  ChapterMoveResult,
-  ChapterOpError,
-  ChapterOpFailure,
-  ChapterView,
-  ChapterWriteInput,
-  ChapterWriteResult,
-  CommitInfo,
-  RollbackStep,
-  VolumeCreateInput,
-  VolumeCreateResult,
-  VolumeRenameInput,
-  VolumeRenameResult,
-  VolumeView,
-} from './chapters.js'
->>>>>>> 748492d (feat(chapter): volume/chapter CRUD, uuid ids and rename cascades (#16))
 
 export function apply(ctx: HostContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig)
@@ -258,3 +218,35 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
     })
   }
 }
+
+/**
+ * 卷章 CRUD（issue #16）。
+ */
+export { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
+export type {
+  ChapterCreateInput,
+  ChapterCreateResult,
+  ChapterDeleteInput,
+  ChapterDeleteResult,
+  ChapterErrorCode,
+  ChapterMoveInput,
+  ChapterMoveResult,
+  ChapterOpError,
+  ChapterOpFailure,
+  ChapterView,
+  ChapterWriteInput,
+  ChapterWriteResult,
+  CommitInfo,
+  RollbackStep,
+  VolumeCreateInput,
+  VolumeCreateResult,
+  VolumeRenameInput,
+  VolumeRenameResult,
+  VolumeView,
+} from './chapters.js'
+
+/** issue #16: new frontmatter and io helpers (one export statement each). */
+export { frontmatterLine, splitFrontmatter } from './frontmatter.js'
+export type { FrontmatterPatchOptions, FrontmatterSplit } from './frontmatter.js'
+export { removeEmptyProjectDirectory, removeProjectFile, renameProjectDirectory } from './io.js'
+export type { RemoveResult, RenameResult } from './io.js'

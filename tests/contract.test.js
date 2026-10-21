@@ -193,11 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-<<<<<<< HEAD
-test('registers the six files-first tools and one prefix route', () => {
-=======
-test('registers the files-first tools and one prefix route', () => {
->>>>>>> 748492d (feat(chapter): volume/chapter CRUD, uuid ids and rename cascades (#16))
+test('registers the twelve files-first tools and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -205,12 +201,9 @@ test('registers the files-first tools and one prefix route', () => {
       'inkflow_chapter_create',
       'inkflow_chapter_delete',
       'inkflow_chapter_list',
-<<<<<<< HEAD
-      'inkflow_chapter_search',
-=======
       'inkflow_chapter_move',
+      'inkflow_chapter_search',
       'inkflow_chapter_write',
->>>>>>> 748492d (feat(chapter): volume/chapter CRUD, uuid ids and rename cascades (#16))
       'inkflow_index_rebuild',
       'inkflow_project_init',
       'inkflow_project_plan',
