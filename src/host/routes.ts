@@ -91,7 +91,11 @@ interface InternalRoute {
   readonly pattern: RegExp
   /** Declared per route. A verb outside this list is a 405 with `Allow`. */
   readonly methods: readonly HttpMethod[]
-  readonly handle: (input: RouteInput) => RouteReply
+  /**
+   * Read routes may have to make the derived index fresh first (issue #5), so a
+   * handler is allowed to be async; the dispatcher awaits it either way.
+   */
+  readonly handle: (input: RouteInput) => RouteReply | Promise<RouteReply>
 }
 
 function ok(value: JsonRecord): JsonRecord {
@@ -118,7 +122,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'chapters',
     pattern: /^\/chapters$/,
     methods: ['GET'],
-    handle: ({ target, version }) => ({ status: 200, body: ok(buildChapters(target, version)) }),
+    handle: async ({ target, version }) => ({ status: 200, body: ok(await buildChapters(target, version)) }),
   },
   {
     name: 'chapter',
@@ -147,12 +151,12 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'search',
     pattern: /^\/search$/,
     methods: ['GET'],
-    handle: ({ target, query, version }) => {
+    handle: async ({ target, query, version }) => {
       const q = (query.get('q') ?? '').trim()
       if (q === '') {
         return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text> to search the chapter tree' }) }
       }
-      return { status: 200, body: ok(buildSearch(target, version, q)) }
+      return { status: 200, body: ok(await buildSearch(target, version, q)) }
     },
   },
 ]
@@ -340,7 +344,7 @@ export function createHttpHandler(deps: HttpDeps) {
       return
     }
 
-    const reply = matched.route.handle({
+    const reply = await matched.route.handle({
       target: resolution.target,
       query: url.searchParams,
       version: deps.version,

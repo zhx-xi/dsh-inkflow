@@ -298,6 +298,32 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 - 校验器在重建后运行：duplicate id / 缺 `overall` / 卷中卷 / 角色名重复 / 悬空 `parent` / 非 `.md` 章文件 / frontmatter 不可解析 → 记入 `validation_issues` 并返回，**不阻断索引可用**（只读仍可用，写入类工具再拦）。
 - 索引内容（v2，规划）：覆盖九个内容目录的全部实体（伏笔/时间线/关系/账本/资料卡）+ `entity_mentions` + 全实体 FTS + catalog 一致性校验。**未实现**，归 #23；v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建（不写 ALTER）。
 
+### 4.0 新鲜度判定与唯一重建触发点
+
+索引是缓存，缓存必须自证「还跟得上文件」。**判定**与**动作**分成两层，读路径只允许经过这两层：
+
+| 层 | 实现 | 语义 |
+|---|---|---|
+| 判定（纯读） | `checkIndexFreshness(root)` → `{ state, reasons[], changes, checkedFiles, ms }` | 只判定，**不建库、不删库、不写锁、不写盘**。可用于每次读请求与断言「项目零变更」的测试 |
+| 动作（唯一） | `ensureIndex(root, { rebuild? })` → `{ ok, state, rebuilt, freshness, build?, failure? }` | `fresh` → 直接返回；`stale` / `missing` / `incompatible` → 调一次 `buildIndex`（#4 的锁 / 单飞 / 原子替换）；失败返回结构化 `failure`，**不抛栈** |
+
+**四态判据**（按序命中即停）：
+
+| 状态 | 条件 |
+|---|---|
+| `missing` | `index/inkflow.db` 不存在 |
+| `incompatible` | `PRAGMA user_version ≠ INDEX_SCHEMA_VERSION`，或数据库打不开 / 没有可读的 `files` 表 → 交给调用方决定重建，**判定阶段不删库** |
+| `stale` | `files` 表逐行 `(path, size, mtime)` 与磁盘对拍出现差异：新增文件、删除文件、`size` 变、`mtime` 变 |
+| `fresh` | 上述皆否 |
+
+- **对拍口径**：一次 `readdir`+`stat` 遍历（`walkProjectFiles`，与建索引同一个遍历，跳过 `index/`、`node_modules`、`.git`、点文件，深度 ≤ 8），**不读文件内容、不做全量 hash**。500 章 / ~3000 文件的判定实测 30–35 ms（预算 < 50 ms，见 `tests/index-freshness.test.js` 的性能用例）。
+- **为什么不用 `meta.builtAt` 对 `max(mtime)`**：删文件不会抬高任何 mtime；一删一增的「数量不变替换」也骗得过时间戳。因此 `builtAt` 只作诊断信息，**判定只认逐行对拍**。
+- `reasons` 最多列 `FRESHNESS_REASON_LIMIT`（5）条并附「… and N more」，`changes` 是未截断的真实差异数。
+
+**触发点唯一**：`inkflow_chapter_list`、`inkflow_chapter_search`、`GET /inkflow/internal/chapters`、`GET /inkflow/internal/search` 全部只调 `ensureIndex`，各自不再持有 `if (stale) build` 判断——所以「列表已新、搜索还旧」在结构上不可能发生。`inkflow_index_rebuild` 是**显式修复**（人/模型主动要求），`chapters.ts` 写路径成功后的重建是**写后失效**（文件刚变），两者都不是「读时判定」，不构成第二个判定点。
+
+**降级**：面板两条读路由在 `ensureIndex` 失败时仍返回数据（旧索引或 catalog 投影），并把 `indexState` / `indexError{code,errno,message}` / `indexReasons[]` 一并返回；工具侧则返回结构化失败（`INDEX_BUILD_FAILED` / `INDEX_BUSY`）。
+
 ### 4.1 章正文检索（`inkflow_chapter_search` / `searchChapters`）
 
 | 项 | 契约 |
@@ -310,13 +336,13 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 排序 | FTS 按 `rank`（bm25，升序）；`LIKE` 按 `seq` 升序、再按 `file`（`seq` 为空排最后） |
 | 片段 | 命中词前后各 40 字（`snippet` 选项可改，0 = 不生成）；连续空白折叠为单个空格；截断端加 `…`；**只取正文**，frontmatter 不进片段（索引存的就是 `parsed.body`） |
 | 上限 | `limit` 默认 20、上限 100；`query` 超过 200 字符 → `QUERY_INVALID` |
-| 只读 | 检索函数**不建库、不修复、不删库**；索引缺失或 `PRAGMA user_version` 不符 → `INDEX_UNAVAILABLE`，项目零变更。懒重建只在工具层做一次（与 §4 的缓存观一致） |
+| 只读 | 检索函数**不建库、不修复、不删库**；索引缺失或 `PRAGMA user_version` 不符 → `INDEX_UNAVAILABLE`，项目零变更。重建只由工具层的 `ensureIndex`（§4.0）决定并执行一次 |
 
 **检索返回码**（与 §6 一样是结构化返回，不抛异常给模型）：
 
 | code | 含义 | 模型下一步 |
 |---|---|---|
-| `INDEX_UNAVAILABLE` | 索引不存在、`user_version` 不符或无法读取；附 `message`，`hint` 指向重建 | 先 `inkflow_index_rebuild`（工具自身已自动重试过一次）；仍失败则把原因转述给用户 |
+| `INDEX_UNAVAILABLE` | 索引不存在、`user_version` 不符或无法读取；附 `message`，`hint` 指向重建 | 工具层的 `ensureIndex` 已先试过一次重建（§4.0）；仍失败则把原因转述给用户 |
 | `QUERY_INVALID` | `query` 缺失/空白、超过 200 字符，或（直接调用 `searchChapters` 时）不是字符串 | 换一个 1–200 字的查询；不要重试同一参数 |
 
 ## 5. 写入纪律
@@ -374,8 +400,25 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `PROJECT_NOT_FOUND` | 项目根不存在或不是目录 |
 | `PROJECT_BUSY` | 另一会话/进程持有写锁 |
 | `IO_FAILED` | 文件系统拒绝（权限、占用、磁盘），附 `errno` |
+| `FILE_CHANGED` | 调用方给的期望基线（`size` / `mtimeMs` / `sha256`）与磁盘不符；写路径见 §5.5，**零写入** |
 
 **验证**：`node --test tests/io-writer.test.js`（实现与契约逐条对拍）。
+
+### 5.5 写入 CAS（期望基线，`FILE_CHANGED`）
+
+文件是真相，意味着**用户可以在插件之外改文件**——包括在「模型读过一章」与「工具写这一章」之间。所以写操作可以带上它期望的基线，不符就拒绝：
+
+| 项 | 契约 |
+|---|---|
+| 参数 | `inkflow_chapter_write` / `_move` / `_delete` / `inkflow_project_init` 的 `expected`：`{ sha256?, size?, mtimeMs?, absent? }`，全部可选；**给了哪个字段就校验哪个** |
+| 语义 | `sha256` 是内容身份；`size` 是廉价佐证；`mtimeMs` 只在**只给时间戳**时生效（另两字段在时以内容为准，避免不同文件系统的精度差异误报）；`absent: true` = 「此刻还不该存在」（初始化用） |
+| 校验时机 | 两处：①调用方基线 vs 本次读到的字节（sha256 取自**将被替换的那份 buffer**，不是二次读）；②本次调用自己取的基线，在真正 `writeTextAtomic` / `removeProjectFile` 前再复核一次（抓「编辑器的保存不拿插件的写锁」这种情况）。两次都在项目写锁内、都在**第一个字节落盘前** |
+| 失败返回 | `{ ok:false, error:{ code:'FILE_CHANGED', path, expected, current, changed[], nothingWritten:true, hint } }`；`current` 为 `null` 表示文件已消失 |
+| 零写入 | 拒绝路径不改文件、不重建 catalog、不重建索引（项目树字节不变；写锁文件的建立/释放会移动 `index/` 目录 mtime，属既有行为） |
+| 初始化 | `inkflow_project_plan` 回传 `metaFingerprint`（`null` = 还没有 `inkflow.json`）；`apply` 用 `{ absent: true }` 或该指纹作 `expected`。`git init` 之后、覆盖 `inkflow.json` 之前还会再复核一次基线，两个会话同时初始化时后者收到 `FILE_CHANGED` 而不是悄悄覆盖前者 |
+| 写成功回传 | `inkflow_chapter_write` / `_move` 的返回里带 `fingerprint`（新文件的 `size`/`mtimeMs`/`sha256`），下一次 CAS 可直接用它 |
+
+**验证**：`node --test tests/file-cas.test.js`（外部改动被拒且目标文件不变、基线正确时正常写入、初始化的两会话竞争）。
 
 ## 6. 门禁与向导返回约定
 
@@ -442,9 +485,9 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 路由 | 方法 | 参数 | 成功值 `value` | 专属错误码 |
 |---|---|---|---|---|
 | `/inkflow/internal/status` | GET | `sessionId` | `root`、`label`、`state`、`checks`、`missing`、`actions`、`meta`、`index`（`dbExists`/`schemaMatches`/`builtAt`/`counts`）、`catalog`（`stale`/`volumes`/`chapters`）、`search` | `SESSION_ID_INVALID` |
-| `/inkflow/internal/chapters` | GET | `sessionId` | `volumes[]`（`volumeId`/`dir`/`title`/`order`/`chapters[]`）+ `looseChapters[]` + `catalogStale`、`indexBuilt` | — |
+| `/inkflow/internal/chapters` | GET | `sessionId` | `volumes[]`（`volumeId`/`dir`/`title`/`order`/`chapters[]`）+ `looseChapters[]` + `catalogStale`、`indexBuilt`、`indexRebuilt`、`indexState`（`indexError`/`indexReasons` 仅在重建失败时出现） | — |
 | `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId` | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
-| `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'` | `400 QUERY_REQUIRED` |
+| `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'`、`indexRebuilt`、`indexState`（+ 失败时的 `indexError`/`indexReasons`） | `400 QUERY_REQUIRED` |
 
 **错误码**（信封 `{ok:true,value}` / `{ok:false,error:{code}}`；失败一律结构化，不抛栈）：
 
@@ -464,7 +507,9 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 **加固**（继承 [ADR-0004](../adrs/0004-loopback-http.md)）：`Host` 必须 loopback；`Origin` 存在时必须 loopback；socket 对端地址非空时必须 loopback；不发 CORS 头；`Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；请求体 ≤64 KiB 且必须是 JSON 对象。
 
-**只读纪律**：通道不重建索引、不修复项目、不写 `state.json`。门禁以 `inspectProject(root, { recreateIndexDir: false })` 判定（关掉 `index/` 的自动放宽），卷章树走 `readCatalog` 的 `.md` 投影，索引只以 `readOnly` 打开，章节文件只读且必须落在 `chapters/` 内。
+**只读纪律**：通道**不修复项目结构**、不写 `state.json`、不写任何真相文件。门禁以 `inspectProject(root, { recreateIndexDir: false })` 判定（关掉 `index/` 的自动放宽），卷章树走 `readCatalog` 的 `.md` 投影，索引只以 `readOnly` 打开（检索函数本身不建库），章节文件只读且必须落在 `chapters/` 内。
+
+**唯一例外（issue #5）**：`/chapters` 与 `/search` 先调 `ensureIndex`（§4.0）刷新派生缓存——索引是**可重建的缓存**，不是真相，且只在 `usable` 项目的 `index/` 内发生；重建失败时通道降级作答并回 `indexError`（不把失败变成 4xx/5xx）。
 
 **写路由（本期没有）**：只允许 POST，必须 `Content-Type: application/json`（否则 415）且必须带 loopback `Origin`（否则 403）；写动作仍由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做自动修复。写真相仍只走工具 → `io.ts`。
 
