@@ -184,15 +184,20 @@ export function buildWritingContext(root: string, options: WritingContextOptions
     tailLimit: tailChars,
   }
   const shrunk = Math.min(SHRUNK_TAIL_CHARS, tailChars)
+  // Drop order: summary → current-chapter outline → world book → tail (shrink
+  // first, then drop). The world book goes before the tail because the tail is
+  // the only segment with no way back (the model cannot re-read the previous
+  // chapter, but it can fetch a world entry). The current chapter is never
+  // removed. See the matching rationale in renderWritingContext.
   const ladder: RenderState[] = [
     base,
     { ...base, dropSummary: true },
     { ...base, dropSummary: true, dropOutline: true },
-    // The summary and the outline go first; the tail shrinks before it is
-    // dropped; the world book is last. The current chapter is never removed.
-    ...(shrunk < tailChars ? [{ ...base, dropSummary: true, dropOutline: true, tailLimit: shrunk }] : []),
-    { ...base, dropSummary: true, dropOutline: true, tailLimit: shrunk, dropTail: true },
-    { ...base, dropSummary: true, dropOutline: true, tailLimit: shrunk, dropTail: true, dropWorld: true },
+    { ...base, dropSummary: true, dropOutline: true, dropWorld: true },
+    ...(shrunk < tailChars
+      ? [{ ...base, dropSummary: true, dropOutline: true, dropWorld: true, tailLimit: shrunk }]
+      : []),
+    { ...base, dropSummary: true, dropOutline: true, dropWorld: true, tailLimit: shrunk, dropTail: true },
   ]
 
   let chosen: RenderedContext | undefined
@@ -220,42 +225,48 @@ export function buildWritingContext(root: string, options: WritingContextOptions
 }
 
 function renderWritingContext(input: RenderInput): RenderedContext {
-  const { state } = input
   const segments: WritingContextSegment[] = []
   const trimmed: string[] = []
   const notes: string[] = []
 
-  if (state.dropSummary) {
-    trimmed.push(TRIM_SUMMARY)
-  } else {
+  // Trim order (the order this list is reported in) is a contract: summary →
+  // current-chapter outline → world book → previous tail. The world book comes
+  // before the tail because the tail has no side channel — a model that loses
+  // it cannot re-read the previous chapter, while world entries can be fetched
+  // again by the model (found in review after #20: the first ladder dropped the
+  // tail first, which contradicts that asymmetry).
+  if (input.state.dropSummary) trimmed.push(TRIM_SUMMARY)
+  if (input.state.dropOutline && input.outline !== undefined) trimmed.push(TRIM_OUTLINE)
+  if (input.state.dropWorld && input.world.shown.length > 0) trimmed.push(TRIM_WORLD)
+  if (input.tail !== undefined) {
+    if (input.state.dropTail) {
+      trimmed.push(TRIM_TAIL)
+      notes.push(`找回：读 ${input.tail.path} 的最后约 ${String(TAIL_RECOVERY_LINES)} 行`)
+    } else if (input.state.tailLimit < input.tailChars) {
+      // Clipping to the *configured* length is the segment's definition; only a
+      // shorter limit is a budget decision worth reporting.
+      trimmed.push(TRIM_TAIL)
+    }
+  }
+
+  if (!input.state.dropSummary) {
     segments.push({ name: 'project', text: renderProject(input.title, input.stats) })
   }
 
   if (input.pair.current !== undefined) {
     segments.push({
       name: 'chapter',
-      text: renderChapter(input.pair.current, state.dropOutline ? undefined : input.outline),
+      text: renderChapter(input.pair.current, input.state.dropOutline ? undefined : input.outline),
     })
-    if (state.dropOutline && input.outline !== undefined) trimmed.push(TRIM_OUTLINE)
   }
 
-  if (input.tail !== undefined && !state.dropTail) {
-    const body = clipTail(input.tail.body, state.tailLimit)
+  if (input.tail !== undefined && !input.state.dropTail) {
+    const body = clipTail(input.tail.body, input.state.tailLimit)
     segments.push({ name: 'tail', text: renderTail(input.tail, body.length, body) })
-    // Clipping to the *configured* length is the segment's definition; only a
-    // shorter limit is a budget decision worth reporting.
-    if (state.tailLimit < input.tailChars) trimmed.push(TRIM_TAIL)
-  } else if (input.tail !== undefined) {
-    trimmed.push(TRIM_TAIL)
-    notes.push(`找回：读 ${input.tail.path} 的最后约 ${String(TAIL_RECOVERY_LINES)} 行`)
   }
 
-  if (!state.dropWorld) {
-    if (input.world.shown.length > 0) {
-      segments.push({ name: 'world', text: renderWorld(input.world) })
-    }
-  } else if (input.world.shown.length > 0) {
-    trimmed.push(TRIM_WORLD)
+  if (!input.state.dropWorld && input.world.shown.length > 0) {
+    segments.push({ name: 'world', text: renderWorld(input.world) })
   }
 
   const marker = trimmed.length === 0 ? '' : renderTrimMarker(trimmed, notes)
