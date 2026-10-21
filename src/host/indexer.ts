@@ -2,15 +2,16 @@
  * Derived SQLite index (ADR-0005).
  *
  * The index is a **cache built from files**: nothing in here is authoritative,
- * and the whole database is deleted and rebuilt whenever the build runs. That
- * is deliberate — it means there is no database migration, ever: a new index
+ * and the whole database is rebuilt whenever the build runs. That is
+ * deliberate — it means there is no database migration, ever: a new index
  * layout is just a new `INDEX_SCHEMA_VERSION`, and the old file is discarded.
  *
- * All work is synchronous (`node:sqlite` is sync), so on Node's single thread a
- * build cannot interleave with a read of the same path.
+ * This module owns *what* goes into the index (scan, validate, schema). The
+ * atomic build — temp file, rename, lock, structured failures — lives in
+ * `index-build.ts`.
  */
 
-import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
@@ -49,6 +50,8 @@ export interface IndexBuildResult {
   issues: ValidationIssue[]
   ms: number
   builtAt: string
+  /** Identifies one physical build: concurrent single-flight callers share it. */
+  buildId: string
 }
 
 export interface IndexMeta {
@@ -218,15 +221,20 @@ function keepFirstById<T extends { id: string }>(rows: readonly T[]): T[] {
   return kept
 }
 
-/** Build (or rebuild) the derived index from the project's files. */
-export function buildIndex(root: string): IndexBuildResult {
-  const started = Date.now()
-  const paths = indexPaths(root)
-  for (const suffix of ['', '-wal', '-shm']) {
-    const target = `${paths.dbFile}${suffix}`
-    if (existsSync(target)) rmSync(target, { force: true })
-  }
+/** Everything one scan produced; consumed by `writeIndexDatabase`. */
+export interface ScanResult {
+  files: WalkedFile[]
+  issues: ValidationIssue[]
+  chapterRows: ChapterRecord[]
+  characterRows: CharacterRecord[]
+  worldRows: WorldRecord[]
+  outlineRows: OutlineRecord[]
+  libraryFiles: WalkedFile[]
+  counts: IndexCounts
+}
 
+/** Scan and validate the project files. Pure read: no index file is touched here. */
+export function scanProject(root: string): ScanResult {
   const files: WalkedFile[] = []
   walk(root, '', files)
   // Deterministic scan order: when two files claim the same id, "the first file
@@ -397,10 +405,22 @@ export function buildIndex(root: string): IndexBuildResult {
   counts.outlineNodes = outlineRows.length
   counts.libraryFiles = libraryFiles.length
 
-  // ---- write the database ----
-  const db = new DatabaseSync(paths.dbFile)
+  return { files, issues, chapterRows, characterRows, worldRows, outlineRows, libraryFiles, counts }
+}
+
+/**
+ * Write the whole index into `targetFile` (always a build temp file).
+ * The caller swaps it into place only after this returns and the file is
+ * fsynced; on any throw the temp file is thrown away by the caller.
+ */
+export function writeIndexDatabase(targetFile: string, root: string, scan: ScanResult): string {
+  const { files, chapterRows, characterRows, worldRows, outlineRows, libraryFiles, issues, counts } = scan
+  const db = new DatabaseSync(targetFile)
   try {
-    db.exec('PRAGMA journal_mode = WAL')
+    // DELETE journal: a WAL database brings `-wal`/`-shm` side files that would
+    // have to be renamed together with the database. The temp file is renamed
+    // alone, so it must be a single self-contained file.
+    db.exec('PRAGMA journal_mode = DELETE')
     db.exec('PRAGMA synchronous = NORMAL')
     db.exec('BEGIN')
     db.exec(`
@@ -465,17 +485,7 @@ CREATE VIRTUAL TABLE chapters_fts USING fts5(chapter_id UNINDEXED, title, body, 
     insertMeta.run('fileCount', String(counts.files))
     db.exec(`PRAGMA user_version = ${INDEX_SCHEMA_VERSION}`)
     db.exec('COMMIT')
-
-    return {
-      root,
-      dbFile: paths.dbFile,
-      schemaVersion: INDEX_SCHEMA_VERSION,
-      mode: 'rebuilt',
-      counts,
-      issues,
-      ms: Date.now() - started,
-      builtAt,
-    }
+    return builtAt
   } finally {
     db.close()
   }
