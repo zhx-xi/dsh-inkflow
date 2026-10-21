@@ -50,7 +50,25 @@ async function loadPanelModel() {
   return import(`data:text/javascript;base64,${code}`)
 }
 
+/** The hub's pure view model, bundled the same way (its own module, same rules). */
+async function loadHubModel() {
+  const esbuild = require('esbuild')
+  const result = await esbuild.build({
+    entryPoints: [join(ROOT, 'src/client', 'hub-model.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    target: 'node22',
+    write: false,
+    logLevel: 'silent',
+  })
+  const file = result.outputFiles[0]
+  const code = Buffer.from(file.text, 'utf8').toString('base64')
+  return import(`data:text/javascript;base64,${code}`)
+}
+
 const model = await loadPanelModel()
+const hub = await loadHubModel()
 
 // ---------------------------------------------------------------------------
 // 1. The built bundle: one registration, in the session-scoped View slot
@@ -69,18 +87,43 @@ test('client bundle registers conversation.view with id inkflow and order 40', (
   assert.match(text, /label:\s*\(\)\s*=>\s*"InkFlow"/)
 })
 
-test('client bundle registers nothing else: no root-scoped slots', () => {
+test('client bundle registers the book hub pair: sidebar.panellist icon + keyed main body', () => {
   const text = readBundle()
-  assert.equal(text.includes('sidebar.panellist'), false, 'the left sidebar icon must be gone (ADR-0008 D1)')
-  assert.equal(/name:\s*["']main["']/.test(text), false, 'the root-scoped main panel must be gone (ADR-0008 D1)')
-  assert.equal((text.match(/slots\.inject\(/g) ?? []).length, 1, 'exactly one slot injection')
-  assert.equal((text.match(/slots\.register\(/g) ?? []).length, 1, 'exactly one registration: no placeholder pages')
+  // ADR-0010 D1: the workbench stays in `conversation.view`, and the hub is a
+  // PAIR. The sidebar renders the glyph from `sidebar.panellist` and the body
+  // from the keyed `main` slot, so both must exist under the same id — one
+  // without the other is the "icon but no page" failure (AGENTS.md §8 陷阱 3).
+  assert.ok(text.includes('"sidebar.panellist"'), 'the icon slot must be injected by declaration, not assumed to exist yet')
+  assert.match(text, /"inkflow-hub"/, 'the panel id the sidebar selects by is literal in the bundle')
+  assert.match(text, /"InkFlow 书库"/, 'the label is the visible text, the accessible name and the tooltip')
+  assert.match(text, /order: 35|HUB_PANEL_ORDER = 35/, 'order 35 keeps the hub before the workbench view (40)')
+  // One symbol feeds both halves: an id/key mismatch cannot compile into the bundle.
+  assert.match(text, /id: HUB_PANEL_ID/, 'the icon entry carries the hub id')
+  assert.match(text, /name: "main", key: HUB_PANEL_ID/, 'the body is registered in main under the SAME id (main is keyed, not id-keyed)')
+  assert.equal((text.match(/slots\.inject\(/g) ?? []).length, 3, 'three injections: view, icon, body — no placeholder pages')
+  assert.equal((text.match(/slots\.register\(/g) ?? []).length, 3, 'three registrations: view, icon, body')
+})
+
+test('the hub ships the disabled placeholders for the wizard and the shared library', () => {
+  const text = readBundle()
+  // A clickable button that does nothing is worse than a disabled one, so the
+  // two entries #86/#87 own must be disabled AND carry their release note.
+  for (const marker of ['新开书', '共享内容', '0.1.0 后续项']) {
+    assert.ok(text.includes(marker), `bundle is missing the hub placeholder wording: ${marker}`)
+  }
+  assert.match(text, /title: HUB_PLACEHOLDER_NOTE, disabled: true|title: HUB_PLACEHOLDER_NOTE,\s*disabled/, 'the placeholders are really disabled')
+  assert.ok(text.includes('还没有书'), 'the empty state is shipped, not just the loaded list')
+  assert.ok(text.includes('用下面的「新开书」创建（#86 提供）'), 'the empty state points at the wizard that will fill it')
+  assert.ok(text.includes('刷新'), 'the hub refreshes on a user action, never on a timer')
+  assert.equal(/setInterval/.test(text), false, 'no polling: every answer costs a judgment per book (ADR-0010 D8)')
 })
 
 test('client bundle talks only to the private internal channel', () => {
   const text = readBundle()
   assert.equal(text.includes('/inkflow/api/'), false, 'the old /inkflow/api/* path is gone (ADR-0008 D3)')
   assert.ok(text.includes('/inkflow/internal'), 'the panel reads /inkflow/internal/*')
+  assert.ok(text.includes('/hub/books'), 'the hub reads the no-session hub route (ADR-0010 D3)')
+  assert.ok(text.includes('sessionless'), 'the hub call declares that it carries no session')
   assert.ok(text.includes('fetchInternal'), 'every read goes through fetchInternal')
   assert.ok(text.includes('setActiveSessionId'), 'the session id is handed to the channel, not a directory')
   // A path parameter would let any loopback page point the panel at another book.
@@ -122,16 +165,21 @@ test('the stale-build banner sits above the tabs, so every gate state shows it',
 })
 
 test('client sources draw every colour from theme tokens', () => {
+  for (const file of ['index.tsx', 'hub.tsx']) {
+    const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')
+    assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(source), false, `no hardcoded colour literals in ${file} (AGENTS.md §6)`)
+    assert.ok(source.includes('var(--dsw-alias-'), `colours come from --dsw-alias-* tokens in ${file}`)
+  }
   const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
-  assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(source), false, 'no hardcoded colour literals (AGENTS.md §6)')
-  assert.ok(source.includes('var(--dsw-alias-'), 'colours come from --dsw-alias-* tokens')
   assert.ok(source.includes('var(--dsw-alias-state-'), 'the badge tone is a theme state token')
 })
 
 test('panel-model has no runtime coupling to the channel', () => {
-  const source = readFileSync(join(ROOT, 'src/client', 'panel-model.ts'), 'utf8')
-  for (const match of source.matchAll(/import\s+(type\s+)?[^'\n]*from\s+'\.\/internal\.js'/g)) {
-    assert.ok(match[1] !== undefined, 'panel-model may only `import type` from ./internal.js (it stays pure)')
+  for (const file of ['panel-model.ts', 'hub-model.ts']) {
+    const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')
+    for (const match of source.matchAll(/import\s+(type\s+)?[^'\n]*from\s+'\.\/internal\.js'/g)) {
+      assert.ok(match[1] !== undefined, `${file} may only \`import type\` from ./internal.js (it stays pure)`)
+    }
   }
 })
 
@@ -430,4 +478,98 @@ test('staleWarning states the evidence, the action, and the thing that does NOT 
   // Both moments are rendered, so a user can see which build is which.
   assert.ok(text.includes(describeBuildTime(STAMP.slice(8))))
   assert.ok(text.includes(describeBuildTime(LOADED_AT)))
+})
+
+// ---------------------------------------------------------------------------
+// 3. The hub view model: badges, `~/` paths, counts, markers, envelopes
+// ---------------------------------------------------------------------------
+
+test('the hub badge names every gate state plus "no verdict this time"', () => {
+  const { HUB_STATE_BADGES, badgeOf } = hub
+  assert.deepEqual(Object.keys(HUB_STATE_BADGES).sort(), ['needs-newer-plugin', 'needs-repair', 'needs-setup', 'timeout', 'usable'])
+  assert.equal(HUB_STATE_BADGES.usable.tone, 'success')
+  assert.equal(HUB_STATE_BADGES['needs-setup'].tone, 'warn')
+  assert.equal(HUB_STATE_BADGES['needs-repair'].tone, 'warn')
+  assert.equal(HUB_STATE_BADGES['needs-newer-plugin'].tone, 'error')
+  // `timeout` is NOT a broken book: it reads as "unsure", never as an error.
+  assert.equal(HUB_STATE_BADGES.timeout.tone, 'idle')
+  assert.equal(badgeOf('timeout').label, '读取超时')
+  assert.equal(badgeOf('something-newer').label, '状态未知', 'a newer Host state must not break the panel')
+  assert.equal(badgeOf(undefined).tone, 'idle')
+})
+
+test('relativeToHome shortens a path to ~/… and leaves everything else alone', () => {
+  const { relativeToHome } = hub
+  assert.equal(relativeToHome('/home/me/novels/a', '/home/me'), '~/novels/a')
+  assert.equal(relativeToHome('/home/me', '/home/me'), '~')
+  assert.equal(relativeToHome('/home/me/novels/a/', '/home/me/'), '~/novels/a')
+  assert.equal(
+    relativeToHome(String.raw`C:\novels\shushan`, String.raw`c:\novels`),
+    '~/shushan',
+    'Windows paths compare case-insensitively and both separators are normalised',
+  )
+  assert.equal(relativeToHome('/books/other', '/home/me'), '/books/other', 'outside home: the real path, not a fake ~')
+  assert.equal(relativeToHome('/home/melon/a', '/home/me'), '/home/melon/a', 'a sibling that merely shares a prefix is not inside home')
+  assert.equal(relativeToHome('/books/a', null), '/books/a', 'no home from the Host: no shortening')
+  assert.equal(relativeToHome(undefined, '/home/me'), '')
+})
+
+test('describeCounts says "unknown" instead of inventing zeroes', () => {
+  const { describeCounts } = hub
+  assert.equal(describeCounts({ volumes: 3, chapters: 128 }), '3 卷 · 128 章')
+  assert.equal(describeCounts({ volumes: 0, chapters: 0 }), '0 卷 · 0 章')
+  assert.equal(describeCounts(undefined), '卷章数未知', 'no committed catalog means unknown, not empty')
+  assert.equal(describeCounts(null), '卷章数未知')
+  assert.equal(describeCounts({}), '卷章数未知')
+  assert.equal(describeCounts({ volumes: 2 }), '2 卷 · 0 章')
+})
+
+test('rowMarkers names the missing directory, the non-book and the duplicate registration', () => {
+  const { rowMarkers, rowTitle, isBookRow } = hub
+  assert.deepEqual(rowMarkers({ dirStatus: 'ok', state: 'usable' }), [])
+  assert.deepEqual(rowMarkers({ dirStatus: 'missing-dir' }), ['目录不在了'])
+  assert.deepEqual(rowMarkers({ notABook: true }), ['不是书目录'])
+  assert.deepEqual(rowMarkers({ dirStatus: 'missing-dir', notABook: true, duplicates: 2 }), ['目录不在了', '不是书目录', '重复注册 2 次'])
+  assert.equal(rowTitle({ title: '蜀山' }), '蜀山')
+  assert.equal(rowTitle({ path: String.raw`D:\novels\shushan` }), 'shushan', 'no title: the directory name')
+  assert.equal(rowTitle({ path: '/books/shushan/' }), 'shushan', 'a trailing separator is not part of the name')
+  assert.equal(rowTitle({}), '（未命名）')
+  assert.equal(isBookRow({ state: 'usable' }), true)
+  assert.equal(isBookRow({ notABook: true }), false)
+  assert.equal(isBookRow({ dirStatus: 'missing-dir' }), false)
+})
+
+test('readHubBooks folds the channel envelope into a renderable state', () => {
+  const { readHubBooks } = hub
+  const ready = readHubBooks({
+    ok: true,
+    status: 200,
+    value: { home: '/home/me', total: 2, truncated: true, capped: false, readOnly: true, books: [{ path: '/home/me/a' }, { path: '/home/me/b' }] },
+  })
+  assert.equal(ready.status, 'ready')
+  assert.equal(ready.books.length, 2)
+  assert.equal(ready.home, '/home/me')
+  assert.equal(ready.truncated, true)
+
+  const empty = readHubBooks({ ok: true, status: 200, value: {} })
+  assert.equal(empty.status, 'ready')
+  assert.deepEqual(empty.books, [], 'an empty answer is an empty list, not an error')
+  assert.equal(empty.total, 0)
+
+  const failed = readHubBooks({ ok: false, status: 200, error: { code: 'HUB_UNAVAILABLE' } })
+  assert.equal(failed.status, 'error')
+  assert.match(failed.message, /工作区注册表/, 'the code is translated, not printed raw')
+  assert.match(hub.describeHubError({ code: 'not-found' }), /还没有书库路由/)
+  assert.equal(hub.describeHubError(undefined), '书库通道没有返回内容')
+})
+
+test('hubSummary reports an incomplete list instead of hiding it', () => {
+  const { hubSummary, readHubBooks } = hub
+  const complete = readHubBooks({ ok: true, status: 200, value: { total: 2, books: [{}, {}] } })
+  assert.equal(hubSummary(complete), '共 2 本')
+  const cappedState = readHubBooks({ ok: true, status: 200, value: { total: 250, capped: true, truncated: true, books: [{}] } })
+  assert.match(hubSummary(cappedState), /共 250 本/)
+  assert.match(hubSummary(cappedState), /最多显示 1 本/)
+  assert.match(hubSummary(cappedState), /本次未列全/)
+  assert.equal(hubSummary({ status: 'error', message: 'x' }), '书库读不到')
 })

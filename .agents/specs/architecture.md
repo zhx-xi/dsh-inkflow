@@ -88,20 +88,36 @@
 
 路由清单与错误码见 [conventions.md](conventions.md) §6.2。投影实现在 `src/host/internal.ts`，全部只读真相文件：关掉 `index/` 的自动放宽、卷章树走 `readCatalog` 的 `.md` 投影、索引只以 `readOnly` 打开（检索函数本身不建库）、章节文件只读且必须落在 `chapters/` 内。**唯一允许的写是派生缓存**：`/chapters` 与 `/search` 先经 `ensureIndex` 把索引弄新鲜（issue #5，§7），失败则降级——继续用旧索引或 catalog 投影作答并回 `indexError`。面板**从不修复项目结构**（`needs-repair` / `needs-setup` 下的写入只能由用户确认后的向导触发）；`index/` 缺失时 `/status` 报 `index.dbExists: false`，卷章树仍从文件投影得到。
 
+**书库通道 `/inkflow/internal/hub/*`：无会话、独立路由组**（[ADR-0010](../adrs/0010-book-hub-entry.md) D3/D6）。左侧栏书库是 root 作用域面板，拿不到会话，所以这条通道**不改动上面的会话路由一行**，而是在同一个 `/inkflow` 前缀下先按段分发（`internalPath` 以 `/hub` 开头即进 hub 分派器）：
+
+| 项 | 会话通道 | 书库通道 |
+|---|---|---|
+| 信任锚点 | 会话 → 工作区 → 目录 | **工作区注册表**（`workspaceRegistry.list()`）+ 绝对拒绝集；写动作另加一次性 `planToken` |
+| 路径从哪来 | Host 从会话推出 | 读：注册表；写：只有 `planToken`（调用方永远拼不出路径） |
+| `sessionId` | 必需（缺 → `NO_SESSION_CONTEXT`） | **不适用**：不读、不要求；带了也忽略 |
+| 方法 | 逐路由声明 | 逐路由声明（`/hub/books` 只有 GET） |
+| 写守卫 | 写路由要 loopback `Origin` + JSON | 写路由要 **`Origin` 与 `Host` 同源** + JSON（更严，ADR-0010 D6 #6） |
+| 错误码 | `NO_SESSION_CONTEXT` / 门禁码 | `HUB_UNAVAILABLE`（无注册表）、`ROOT_PARAM_NOT_ALLOWED`（同一个码）、预留 `HUB_CAPABILITY_DENIED` |
+
+`/hub/books` 的投影实现在 `src/host/hub.ts`（不是 `internal.ts`）：每行 `state`/`missing`/`actions` 与工作台、工具**同一份** `inspectProject(root, { recreateIndexDir: false })`，另加 `dirStatus`（注册还在但目录已删）、`counts`（只读**已提交** catalog，缺失即未知）、`notABook`（无 meta 且无内容目录）。成本上限：并发 4、单本 2 s → 该行 `state:'timeout'` 不重试、整次预算 3 s → `truncated`、单次 200 行 → `capped`（ADR-0010 D8）。客户端**不轮询**：打开取一次 + 手动「刷新」。
+
 ### 4.3 Client 槽位 — `ctx.slots`
 
-**唯一入口**（[ADR-0008](../adrs/0008-panel-data-channel.md) D1）：
+**两个入口，两个作用域**（[ADR-0010](../adrs/0010-book-hub-entry.md) D1，收窄 [ADR-0008](../adrs/0008-panel-data-channel.md) D1 的"唯一入口"）：
 
-| 槽位 | 类型 | 作用域 | 注册参数 | 说明 |
+| 槽位 | 类型 | 作用域 | 注册参数 | 职责 |
 |---|---|---|---|---|
-| `conversation.view` | list | **session** | `{name:'conversation.view', id:'inkflow', order:40, label: () => 'InkFlow'}` | 与「对话 / 轨迹」同栏（chat 0、trajectory 10 之后），是唯一入口 |
+| `sidebar.panellist` | list | **root** | `{name:'sidebar.panellist', id:'inkflow-hub', order:35, label: () => 'InkFlow 书库'}` | 书库**图标**（该槽位只渲染图标：occupant props `{size, active}`，`label` 同时是可见文字、无障碍名与折叠态 tooltip） |
+| `main` | **keyed** | **root** | `{name:'main', key:'inkflow-hub'}` | 书库**主体**（`PanelRow` 选中后由 `renderSlot('main', {}, {entryKey})` 渲染；`main` 只认 `key`，用 `id` 注册等于没注册） |
+| `conversation.view` | list | **session** | `{name:'conversation.view', id:'inkflow', order:40, label: () => 'InkFlow'}` | 创作**工作台**：与「对话 / 轨迹」同栏（chat 0、trajectory 10 之后） |
 
 实测契约（DSH 0.2.1-rc.2 打包产物：`cordis_inspect_query` 的 client/Slots 在本机超时，改读 `dsh-cordis-client-runner/lib/client.js` 的槽位目录与各 `dsh-client-ui-<包>/lib/client.js` 的注册调用）：
 
 - register options 只有 `id`（必填）、`order`、`label`；**没有图标位**——`label` 是页签文字，thunk 形式跟随当前语言。
 - standardProps 中本面板用到的是：`sessionId`（会话 id）、`useSessions`（快照 `{ids, byId}`，`byId[id].cwd`）、`useWorkspaces`（快照 `items[]`，含 `path`/`title`/`sessionIds`）、`useSession`（会话快照，`openState` 等）。owner props（`inspectCall` / `viewRequest` / `openView` / `completeViewRequest`）骨架不使用。
-- `sidebar.panellist`（root，`id`/`order`/`label` + 图标组件）与 `main`（root，`key`）**不注册**：root 作用域拿不到会话，只剩"上次打开的书"这条已删除的捷径（ADR-0006 D5）。
-- 注册包在 `ctx.effect(() => ctx.slots.inject('conversation.view', () => ctx.slots.register(...)))` 里；整个 Client 半只有这一处注册，也只有这一处 `slots.inject`。
+- **`sidebar.panellist` 只渲染图标，主体必须落在 `main`**（0.2.1-rc.2 打包产物实测，`dsh-client-ui-sidebar/lib/client.js`）：`PanelRow` 用 `renderSlot('sidebar.panellist', {size, active}, {only: id})` 取**图标**，点击时只调 `selectPanel(id)`；`dsh-client-ui-layout` 的 `MainPanel` 再用 `renderSlot('main', {}, {entryKey: activePanelId ?? 'conversation'})` 渲染**主体**。两侧共用同一个 id：`main` 是 `kind:'keyed'`，注册参数是 **`key`**（写 `id` 无效），且 `layout.selectPanel(id)` 在 `main` 没有该 key 时**抛错**「main panel "…" is not registered」，当前选中不变。因此书库是**一对**注册（`id:'inkflow-hub'` + `key:'inkflow-hub'`），少任何一个都是"有图标没页面"（AGENTS.md §8 陷阱 3）。
+- 注册包在 `ctx.effect(() => ctx.slots.inject(<slot>, () => ctx.slots.register(...)))` 里；Client 半共三处注册（工作台页签、书库图标、书库主体）与三处 `slots.inject`，**没有** `main` 的作品数据视图（书库主体只列书与门禁状态）。
+- 书库拿不到会话，所以它不读 `useWorkspaces`/`useSessions`，也不拼任何路径：数据只经 `fetchInternal('/hub/books', { sessionless: true })`（`sessionless` 在 `internal.ts` 里被钉死为只允许 `/hub/*`）。
 
 **槽位数据 → 面板区域**（`src/client/index.tsx`）：
 
@@ -112,7 +128,7 @@
 | 会话 `cwd`（工作区缺失时的相对化基准） | `useSessions((s) => s.byId)` |
 | 会话是否仍在打开（不抢在会话之前报空态） | `useSession((s) => s.openState)` |
 
-纯视图逻辑（四态徽标文案、卷章树、空态判定、`root` 相对化、页签表、`previewText` / `describeAction`）在 `src/client/panel-model.ts`：不碰 React、不发请求，由 `tests/panel-bundle.test.js` 直接打这个模块（`node --test` 无 DOM，组件本身只按构建产物做静态断言）。
+纯视图逻辑（四态徽标文案、卷章树、空态判定、`root` 相对化、页签表、`previewText` / `describeAction`）在 `src/client/panel-model.ts`：不碰 React、不发请求，由 `tests/panel-bundle.test.js` 直接打这个模块（`node --test` 无 DOM，组件本身只按构建产物做静态断言）。书库同理：徽标（含 `timeout` 的"无判定"档）、`~/…` 路径、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案全在 `src/client/hub-model.ts`。
 
 ### 4.4 主题
 
@@ -267,7 +283,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 
 ### 5.4 面板通道：私有、按路由声明方法
 
-面板与 Host 之间只有一条**私有内部通道**（[ADR-0008](../adrs/0008-panel-data-channel.md)）：不对外、不版本化、不接受路径参数、逐路由声明方法（读 GET / 写 POST + JSON）。写操作（如"确认并应用一次向导动作"）必须是 POST + `Content-Type: application/json` + 带 loopback `Origin`，并由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做只读模式下的自动修复。写入真相仍走工具 → `io.ts`。
+面板与 Host 之间只有一条**私有内部通道**（[ADR-0008](../adrs/0008-panel-data-channel.md)，书库部分见 [ADR-0010](../adrs/0010-book-hub-entry.md)）：不对外、不版本化、不接受路径参数、逐路由声明方法（读 GET / 写 POST + JSON）。写操作（如"确认并应用一次向导动作"）必须是 POST + `Content-Type: application/json` + 带 loopback `Origin`，并由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做只读模式下的自动修复。写入真相仍走工具 → `io.ts`。通道内部分两组路由：**会话路由**（有会话锚点）与**书库路由 `/hub/*`**（无会话锚点），后者不参与下面的会话解析链。
 
 面板侧的数据流（`sessionId` → Host 解析 → 四态 → 投影）：
 
@@ -284,6 +300,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - **脏检查 / 防抖 / 撤销 / 冲突态是纯逻辑**：`src/client/editor-model.ts`（无 React、无 IO），React 只渲染与接键位；自动保存 1500ms 防抖、撤销 500ms 合并、保存成功清栈；**冲突永远要用户显式二选一**（重新载入＝丢弃本地改动 / 仍要保存＝覆盖），面板不静默覆盖外部改动。
 - **向导仍只读**：向导按钮只重读 `/status` 的计划，不调 `inkflow_project_init`；项目结构与修复写入只能由用户确认后的工具调用完成。
 - Client 侧永不拼 `root`/`path`/`cwd`（`tests/panel-bundle.test.js` 对产物断言这三种查询参数都不存在）。
+- **通道有两类锚点**（[ADR-0010](../adrs/0010-book-hub-entry.md) D3/D7）：**有会话锚点**的会话路由（上面这张表 + [conventions.md](conventions.md) §6.2）与**无会话锚点**的书库路由（`/hub/*`：注册表 + 一次性 token + 绝对拒绝集，见 §4.2）。书库面板只调后者：`fetchInternal('/hub/books', { sessionless: true })`，一次打开取一次 + 手动「刷新」，不轮询（每次请求都要对每本书跑一次门禁判定）。
 
 
 ## 6. 模块边界
@@ -312,10 +329,13 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete`） | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError` | HTTP 加固、写作品文件、自己决定是否重建 |
-| `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封 | 业务规则、写真相文件 |
-| `src/client/index.tsx` | `conversation.view` 注册（唯一入口）、面板骨架（四态徽章 / 章节树 / 只读正文预览 / 向导清单）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
+| `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE` | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
+| `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封；另含**书库路由组** `/hub/*` 的独立分派（无会话，写路由要同源 `Origin`） | 业务规则、写真相文件、解析会话 |
+| `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 章节树 / 编辑器 / 向导清单）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
+| `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、两个禁用占位入口（#86/#87） | 写动作、轮询、拼路径参数 |
 | `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
-| `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路 | 拼路径参数、文件 IO |
+| `src/client/hub-model.ts` | 书库的纯视图模型：徽标（含 `timeout`）、`~/…` 相对化、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案、信封折叠 | React、网络、IO |
+| `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路；`sessionless: true` 只放行 `/hub/*` | 拼路径参数、文件 IO |
 
 ## 7. 数据流
 
@@ -349,6 +369,8 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `node:sqlite` 的 `PRAGMA user_version` | 只能 `prepare().get()` 读、`exec()` 写 | 已封装在 indexer |
 | 用 `ctx.skills.register()` 注册随包技能 | 落到**全局层**：所有会话（含代码会话）的技能目录都被塞进小说技能 | 走 `registerProvider` + `cwd` 门禁（§4.6） |
 | 技能 provider 的 `list()` 返回「不完整观测」 | `dsh-tool-skill` 会**停发整个技能目录**，不是只少几个技能 | 无技能时返回空数组 |
+| 只注册 `sidebar.panellist` 就以为有了全局面板 | 侧栏只渲染图标；点击时 `layout.selectPanel(id)` 在 `main` 没有该 `key` 时**抛错**，页面不出现 | 图标与主体成对注册（`id` + `key` 同值），主体必须用 `key`（§4.3） |
+| 书库用 `readCatalog()` 数卷章 | 它会重扫整本书的 `.md` 并解析 frontmatter，N 本书就是首屏成本 | 只读已提交的 catalog 文件，缺失即"未知"（§4.2、ADR-0010 D8） |
 
 ## 9. 未验证 / 未实现
 
@@ -364,6 +386,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | OVK 语义检索（peer / 分块 / 按章重建 / 降级） | 未落地；当前只有 FTS5 | #41 |
 | 写入器之上的提案制（改写正文需确认） | `io.ts` 已落地，提案制未落地 | #45 |
 | 增量重建 / 大文件流式解析 | 未落地 | 随索引 v2 |
+| 书库的新开书向导与共享内容页 | `/hub/plan`、`/hub/apply`、`/hub/shared` 三条路由与两个入口位（「新开书」「共享内容」）均未落地；书库本期只有只读书单 | #86 / #87 |
 
 ### 9.2 未验证（已实现但未观测）
 
@@ -371,6 +394,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 |---|---|---|
 | 新 Host 代码在**运行中的 DSH** 里生效 | 未验证（需重启加载新 generation） | 重启后复核工具表 |
 | 面板视觉（四态徽章、章节树、只读正文预览、禁用页签） | 未验证（契约测试打构建产物，未在运行中的 DSH 里看过） | 重启后目视：会话的「对话 / 轨迹」栏第三个页签 InkFlow |
+| 左侧栏书库面板的渲染与选中态 | 未验证：注册形状（`sidebar.panellist` 只渲染图标、`main` 按 `key` 渲染主体、缺 key 会抛错）来自 0.2.1-rc.2 打包产物的代码读取，**没有在运行中的 DSH 里点开过**；`cordis_inspect_query` 的 client/Slots 在本机 10 s 超时 | 重启 DSH 后点左侧栏「InkFlow 书库」图标：书库主体出现、卡片状态与 `inkflow_project_status` 一致、空态与刷新按钮可用、两个占位入口为禁用态 |
 | 向导在运行中的 DSH 里的交互（plan → apply、`git init`） | 契约测试全绿（打 `lib/index.js`），未在重启后的会话里跑过 | 重启后手动跑一次全流程 |
 | 59 万字全量重建耗时 | 未验证 | 用真实库基准（当前样例 7 文件 10ms） |
 | 面板的项目来源（会话 → 工作区） | 契约测试全绿（打 `lib/index.js`，含 registry → workingDirectory → header 三级链）；运行中 DSH 未观测 | 重启后在小说会话打开面板，确认 `/inkflow/internal/status` 的 `resolvedFrom` 与 `root` 指向该书 |

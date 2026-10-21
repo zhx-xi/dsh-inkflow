@@ -1,25 +1,33 @@
 /**
- * dsh-inkflow — Client half: the `conversation.view` panel skeleton (issue #17).
+ * dsh-inkflow — Client half: the writing workbench panel (`conversation.view`,
+ * issue #17) and the book hub entry (`sidebar.panellist` + `main`, issue #85).
  *
  * The build wraps this module in `window.__ModuleLoader__.load({id, factory})`
  * (see scripts/build.mjs); this file therefore exports the standard Client
  * plugin shape `{inject, apply}` and never touches the module loader itself.
  *
- * WHY `conversation.view` AND NOTHING ELSE (ADR-0008 D1): the panel means "this
- * book's cockpit", and "this book" can only be derived from the conversation it
- * is opened in. `sidebar.panellist` and `main` are root-scoped — no session, so
- * the only way to name a directory from them would be a remembered path, which
- * is exactly the shortcut ADR-0006 D5 deleted.
+ * TWO ENTRIES, TWO SCOPES (ADR-0010 D1, which narrows ADR-0008 D1):
  *
- * WHAT TRAVELS TO THE HOST: the session id and nothing else. `setActiveSessionId`
- * hands it to `fetchInternal`, which appends `?sessionId=` to
- * `/inkflow/internal/*`; the Host resolves the directory itself (D4). No `root`,
+ *   - the WORKBENCH is `conversation.view`: "this book's cockpit", and "this
+ *     book" can only be derived from the conversation it is opened in.
+ *   - the BOOK HUB is root-scoped (`sidebar.panellist` icon + `main` body). It
+ *     has no session, so it names nothing: the book list comes from the Host's
+ *     own workspace registry over `/inkflow/internal/hub/*` (ADR-0010 D2/D3).
+ *     A remembered "last project" is still never a resolution source
+ *     (ADR-0006 D5) — the registry is.
+ *
+ * WHAT TRAVELS TO THE HOST: a session id for the workbench routes, and nothing
+ * at all for the hub routes. `setActiveSessionId` hands the id to
+ * `fetchInternal`, which appends `?sessionId=` (D4); the hub calls
+ * `fetchInternal(..., { sessionless: true })`, which `internal.ts` pins to
+ * `/hub/*` so no session route can lose its session requirement. No `root`,
  * `path` or `cwd` is ever built here.
  *
- * WHAT THIS ISSUE DOES NOT DO: no editor, no write route, no placeholder pages.
- * Tabs that do not exist yet are rendered disabled with their release note, and
- * the wizard button only re-reads the read-only plan (`GET /status`), never
- * applies it (D5 / ADR-0006 D3).
+ * WHAT IS STILL NOT HERE: the hub's new-book wizard (#86) and shared-content page
+ * (#87) are disabled placeholders with their release note; the workbench's
+ * setting/outline/foreshadowing tabs are the same. The wizard button in the
+ * workbench only re-reads the read-only plan (`GET /status`), never applies it
+ * (D5 / ADR-0006 D3).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -28,6 +36,8 @@ import { fetchInternal, setActiveSessionId, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
 import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
+import { HubIcon, HubView } from './hub.js'
+import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
 import {
   EMPTY_MESSAGES,
   PANEL_TABS,
@@ -669,18 +679,38 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
 export const inject = ['slots']
 
 /**
- * The ONLY registration: `conversation.view` (ADR-0008 D1).
+ * TWO entries, each with its own job (ADR-0010 D1):
  *
- * `id: 'inkflow'` puts the view beside 对话 / 轨迹, right after them
- * (`order: 40`; the shipped entries are chat 0 and trajectory 10). The id is
- * stable — user patches elsewhere address this view by it. No `sidebar.panellist`
- * and no `main` registration: those are root-scoped and would reintroduce the
- * "panel points at another book" path ADR-0006 D5 deleted.
+ *   `conversation.view` / id `inkflow` / order 40 — the **writing workbench** for
+ *     the book the session belongs to. `id: 'inkflow'` puts it beside
+ *     对话 / 轨迹 (chat 0, trajectory 10) and is stable: user patches address it
+ *     by that id.
+ *
+ *   `sidebar.panellist` / id `inkflow-hub` / order 35 + `main` / key `inkflow-hub`
+ *     — the **book hub**. A root-scoped icon is only half an entry point: the
+ *     sidebar renders the glyph from `sidebar.panellist` and the BODY from the
+ *     keyed `main` slot under the same id, so registering one without the other
+ *     is exactly the "有图标没页面" failure (AGENTS.md §8 陷阱 3; measured on
+ *     0.2.1-rc.2 — selecting a missing `main` key throws "main panel … is not
+ *     registered"). The hub carries no content view and no write action: it lists
+ *     books and their gate state, and every write stays in the workbench or the
+ *     wizard (#86/#87).
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() =>
     ctx.slots.inject('conversation.view', () =>
       ctx.slots.register({ name: 'conversation.view', id: 'inkflow', order: 40, label: () => 'InkFlow' }, InkflowView),
     ),
+  )
+  ctx.effect(() =>
+    ctx.slots.inject('sidebar.panellist', () =>
+      ctx.slots.register(
+        { name: 'sidebar.panellist', id: HUB_PANEL_ID, order: HUB_PANEL_ORDER, label: () => HUB_PANEL_LABEL },
+        HubIcon,
+      ),
+    ),
+  )
+  ctx.effect(() =>
+    ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: HUB_PANEL_ID }, HubView)),
   )
 }

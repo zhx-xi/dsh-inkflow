@@ -9,6 +9,11 @@
  * This is not an API: there is no version segment and no compatibility promise.
  * The path is same-origin and relative so no CORS header is needed (the channel
  * sends none on purpose).
+ *
+ * THE HUB EXCEPTION (ADR-0010 D3): the root-scoped book hub has no session at
+ * all, so `fetchInternal` accepts `sessionless: true` — pinned to `/hub/*` right
+ * here, never left to the call sites, so the session routes cannot lose their
+ * "a session is mandatory" property by accident.
  */
 
 /** Internal prefix. Not exported to users; both halves ship in one version. */
@@ -60,12 +65,52 @@ function localRefusal(): InternalResult<never> {
   }
 }
 
+/** The hub segment (ADR-0010 D3): the only routes that may be called sessionless. */
+const HUB_ROUTE_PREFIX = '/hub'
+
+/** The route part of a path, whatever spelling the caller used. */
+function routeOf(path: string): string {
+  const suffix = path.startsWith('/') ? path : `/${path}`
+  return suffix.startsWith(INTERNAL_PREFIX) ? suffix.slice(INTERNAL_PREFIX.length) : suffix
+}
+
+/** `true` for `/hub/books` and anything else under the hub segment. */
+function isHubRoute(path: string): boolean {
+  const route = routeOf(path)
+  return route === HUB_ROUTE_PREFIX || route.startsWith(`${HUB_ROUTE_PREFIX}/`)
+}
+
+/**
+ * Why a sessionless call is refused: the hub is a whitelist, not a bypass.
+ *
+ * `sessionless` exists because a root-scoped panel has no session at all
+ * (ADR-0010 D1/D3). Letting it address a *session* route would be a way around
+ * the "the browser names a session, never a directory" rule, so the option is
+ * pinned to `/hub/*` here rather than at the call sites.
+ */
+function sessionlessRefusal(): InternalResult<never> {
+  return {
+    ok: false,
+    status: 0,
+    error: {
+      code: 'HUB_ROUTE_REQUIRED',
+      message: 'a sessionless request may only address /hub/*',
+      hint: 'session routes need a sessionId; only the book hub has no session',
+    },
+  }
+}
+
 /** Normalise a route path: `/status` and `status` both become `/status`. */
 function internalUrl(path: string, sessionId: string): string {
-  const suffix = path.startsWith('/') ? path : `/${path}`
-  const route = suffix.startsWith(INTERNAL_PREFIX) ? suffix : `${INTERNAL_PREFIX}${suffix}`
+  const route = internalRoute(path)
   const separator = route.includes('?') ? '&' : '?'
   return `${route}${separator}sessionId=${encodeURIComponent(sessionId)}`
+}
+
+/** The absolute internal URL for a route, without a session parameter. */
+function internalRoute(path: string): string {
+  const suffix = path.startsWith('/') ? path : `/${path}`
+  return suffix.startsWith(INTERNAL_PREFIX) ? suffix : `${INTERNAL_PREFIX}${suffix}`
 }
 
 /** Verbs this half ever sends: reads are GET, writes are POST/DELETE. */
@@ -75,6 +120,12 @@ export interface InternalRequest {
   sessionId?: string | null
   signal?: AbortSignal
   method?: InternalMethod
+  /**
+   * The hub channel has no session (ADR-0010 D3), so it must not send one and
+   * must not need one. Only `/hub/*` accepts this; every other route keeps
+   * requiring a session id.
+   */
+  sessionless?: boolean
   /** Serialised as JSON; writes always send an object (the `{}` case included). */
   body?: unknown
   /** Writes are bounded so a stuck request cannot hold the editor in "saving". */
@@ -93,8 +144,13 @@ export const WRITE_TIMEOUT_MS = 15_000
  * error body too — and a 409 `FILE_CHANGED` is the editor's conflict signal.
  */
 async function requestInternal<T>(path: string, options: InternalRequest): Promise<InternalResult<T>> {
+  const sessionless = options.sessionless === true
   const sessionId = options.sessionId ?? activeSessionId
-  if (sessionId === null || sessionId === undefined || sessionId === '') return localRefusal()
+  if (sessionless) {
+    if (!isHubRoute(path)) return sessionlessRefusal()
+  } else if (sessionId === null || sessionId === undefined || sessionId === '') {
+    return localRefusal()
+  }
 
   const method: InternalMethod = options.method ?? 'GET'
   const isWrite = method !== 'GET'
@@ -112,7 +168,7 @@ async function requestInternal<T>(path: string, options: InternalRequest): Promi
 
   let response: Response
   try {
-    response = await fetch(internalUrl(path, sessionId), {
+    response = await fetch(sessionless ? internalRoute(path) : internalUrl(path, sessionId as string), {
       method,
       headers,
       credentials: 'same-origin',
@@ -153,10 +209,10 @@ async function requestInternal<T>(path: string, options: InternalRequest): Promi
   return { ok: false, status: response.status, error }
 }
 
-/** GET one projection of the session's book. */
+/** GET one projection of the session's book (or, sessionless, of the hub). */
 export function fetchInternal<T>(
   path: string,
-  options: { sessionId?: string | null; signal?: AbortSignal } = {},
+  options: { sessionId?: string | null; signal?: AbortSignal; sessionless?: boolean } = {},
 ): Promise<InternalResult<T>> {
   return requestInternal<T>(path, { ...options, method: 'GET' })
 }

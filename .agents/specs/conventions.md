@@ -494,6 +494,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 - 显式路径先 `realpath`（不存在时对最近存在祖先 `realpath` 再拼回剩余段），再做子树判定；判定在**任何写盘之前**（`inspectProject` 的 `index/` 放宽会建目录，向导 apply 会建整棵树并 `git init`）。
 - 因此"越界路径"不仅被拒，目标目录**零变更**（mtime/条目不变）。
 - 拒绝盘符根与安装目录是硬规则：那里写入会破坏系统或宿主，且绝不可能是用户的书写目录。
+- **无会话场景的锚点**（root 作用域书库，[ADR-0010](../adrs/0010-book-hub-entry.md) D6）：书库没有会话，锚点改为 ①**已注册工作区注册表**（`workspaceRegistry.list()`，路径已 `realpath` 规范化）②一次性 `planToken`（写动作，绑定 canonical 路径与动作集合）③**绝对拒绝集**（盘符/卷根、家目录本身与其祖先、系统与安装目录，判定在路由匹配与任何 IO 之前）。请求里出现 `root`/`path`/`cwd`/`workspace`/`projectRoot` 仍是 400（§6.2 的同一个 `ROOT_PARAM_NOT_ALLOWED`），因此书库读路由**不接受任何调用方路径**：书单只能来自注册表。
 
 ### 6.2 面板通道（`/inkflow/internal/*`）
 
@@ -553,6 +554,51 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 - **派生缓存**：写成功后由 `chapters.ts` 的写路径重建 catalog 并 `commitIndex`——通道**不**重复建索引，也不在拒绝路径重建。
 - **面板不静默覆盖**：客户端拿到 409 后必须由用户显式二选一（重新载入＝丢弃本地改动，或仍要保存＝不带 `expected` 的覆盖写），默认不覆盖。
 - **门禁**：非 `usable` 项目上四条写路由与读路由一样回结构化门禁清单（`200 + ok:false`），零写入；写路由不做任何"修复"。写真相仍只走工具 → `io.ts`，面板不是第二条写入实现（ADR-0006 D3 的"用户确认"在面板里由「保存 / 仍要保存」这两个显式动作承担）。
+
+#### 6.2.1 书库通道（`/inkflow/internal/hub/*`，**无会话**）
+
+书库是 root 作用域面板（左侧栏 `sidebar.panellist` 图标 + `main` 主体），拿不到会话，因此这条通道**不解析会话、不要求 `sessionId`**，锚点改为**已注册工作区注册表 + 绝对拒绝集**（§6.1，[ADR-0010](../adrs/0010-book-hub-entry.md) D2/D3/D6）。浏览器依然"什么都不点名"：书单只能来自注册表，请求里出现路径参数仍是 400。
+
+| 路由 | 方法 | 参数 | 成功值 `value` | 状态 |
+|---|---|---|---|---|
+| `/inkflow/internal/hub/books` | GET | **无**（不读 `sessionId`；带了也忽略） | `books[]`（见下）、`total`（去重后的工作区数）、`capped`、`truncated`、`readOnly: true`、`home`（供客户端渲染 `~/…`）、`pluginVersion` | 已落地 |
+| `/inkflow/internal/hub/plan` | POST | `candidate`、`outsideRegistry?`、`title?` | `path`、`anchor`、`state`、`checks`、`missing[]`、`actions[]`、`notices[]`、`metaRaw`、`planToken`、`canApply` | 未落地（#86） |
+| `/inkflow/internal/hub/apply` | POST | `planToken`、`confirm: true`、`title?` | `created[]`、`updated[]`、`skipped[]`、`workspace`、`nextStep` | 未落地（#86） |
+| `/inkflow/internal/hub/shared` | GET | `kind?`（`world`/`library`/`snippets`/`series`）、`q?` | `entries[]`、`created: false`、`indexSource: 'scan'` | 未落地（#87） |
+
+**`books[]` 行形状**（每行 = 一个已注册工作区）：
+
+| 字段 | 含义 |
+|---|---|
+| `workspaceId` | 注册表 id；宿主不提供时为 `null` |
+| `path` | 注册表里的 canonical 路径（展示数据，客户端不会把它发回来） |
+| `title` | 注册表标题，缺失取目录名 |
+| `state` | 四态门禁之一，另加 `'timeout'`（本次没拿到判定：单本 2 s 超时或判定抛错，**不重试**） |
+| `usable` / `missing[]` / `actions[]` | 与工具、工作台**同一份** `inspectProject` 判定（ADR-0008 D5） |
+| `dirStatus` | `'ok'` / `'missing-dir'`：注册还在但目录已被删/搬走（来自 `Workspace.status()`，缺失时退化为一次 `stat`）。**不重建、不自动移除注册** |
+| `counts?` | `{chapters, volumes}`，取自**已提交的** catalog（`chapters/index.json` + 每卷 `index.json`）；缺失或读不完整则**不带该字段**（未知），绝不扫正文、绝不重建 |
+| `notABook?` | `true` = 无 `inkflow.json` 且无任何内容目录：这是用户打开过的工作区，不是坏书，动作归「新开书」向导（#86）。**不自动初始化** |
+| `duplicates?` | 同一 canonical 目录被注册多次时被折叠的条数（只列首行） |
+
+**守卫顺序**（fail-closed，与 §6.2 会话路由同一套，另加"无会话"差异）：
+
+1. `Host` loopback → 403 `forbidden-host`；`Origin` 存在时必须 loopback → 403 `forbidden-origin`；对端地址非空时必须 loopback → 403 `forbidden-remote`。
+2. 路径参数禁令（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`，**判定在路由匹配与任何文件 IO 之前**。
+3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET）。
+4. 写路由（`plan`/`apply`）额外要求 **`Origin` 与 `Host` 同源**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `origin-required`；`Content-Type: application/json` → 415；体积 ≤64 KiB → 413。
+5. 不解析会话：缺 `sessionId` **不是**错误，`NO_SESSION_CONTEXT` 在 hub 上**不适用**。
+
+**错误码**：
+
+| HTTP | code | 触发条件 |
+|---|---|---|
+| 200 | `HUB_UNAVAILABLE` | 宿主没有可用的 `workspaceRegistry`（服务缺失、`list()` 不是函数或抛错）：`ok:false` + `message`/`hint`，**不抛**、不降级成空书单 |
+| 200 | `HUB_CAPABILITY_DENIED` | 预留：将来若出现白名单外能力（正文/设定读写、任意文件操作、索引重建）一律回它，而不是新增路由（当前无路由可触发） |
+| 400 | `ROOT_PARAM_NOT_ALLOWED` | 与会话路由同一个码：请求里出现路径参数名 |
+
+**成本与规模**（[ADR-0010](../adrs/0010-book-hub-entry.md) D8）：判定并发 **4**；单本 **2 s** 超时 → 该行 `state: 'timeout'`，不重试；整次预算 **3 s** → 返回已完成行 + `truncated: true`；单次最多 **200** 行 → `capped: true`（`total` 仍是注册表总书数）。客户端**不做轮询**：打开时取一次 + 用户点「刷新」。
+
+**只读纪律**：`inspectProject(root, { recreateIndexDir: false })`（关掉 `index/` 放宽）、catalog 只读已提交文件、`state.json` 不写、目录缺失只报告不创建。拒绝路径与只读路径都要求**零写盘**（整树 hash 前后一致）。
 
 ### 6.3 初始化 / 修复向导（plan → apply）
 
