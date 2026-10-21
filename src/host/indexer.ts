@@ -184,6 +184,27 @@ function inferOutlineKind(relPath: string): string | undefined {
   return undefined
 }
 
+/**
+ * Keep only the first row per id.
+ *
+ * The id columns are PRIMARY KEYs and the whole rebuild runs in one transaction,
+ * so one duplicate id aborts the build, leaves no index behind, and makes every
+ * later read — and every retry — fail the same way. A duplicate id is content
+ * the author can still fix, so the index reports it as `DUPLICATE_ID` and keeps
+ * the first file instead of locking the project out (conventions.md §4: issues
+ * never block the index).
+ */
+function keepFirstById<T extends { id: string }>(rows: readonly T[]): T[] {
+  const seen = new Set<string>()
+  const kept: T[] = []
+  for (const row of rows) {
+    if (seen.has(row.id)) continue
+    seen.add(row.id)
+    kept.push(row)
+  }
+  return kept
+}
+
 /** Build (or rebuild) the derived index from the project's files. */
 export function buildIndex(root: string): IndexBuildResult {
   const started = Date.now()
@@ -195,6 +216,10 @@ export function buildIndex(root: string): IndexBuildResult {
 
   const files: WalkedFile[] = []
   walk(root, '', files)
+  // Deterministic scan order: when two files claim the same id, "the first file
+  // wins" has to mean the same file on every rebuild — readdir order is not
+  // guaranteed by the OS or the filesystem.
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
 
   const issues: ValidationIssue[] = []
   const chapters: ChapterRecord[] = []
@@ -234,7 +259,6 @@ export function buildIndex(root: string): IndexBuildResult {
         wordCount: countChars(parsed.body),
         body: parsed.body,
       })
-      counts.chapters += 1
     } else if (kindDir === 'characters') {
       const name = stringField(parsed.data, 'name') ?? basename(file.path, '.md')
       characters.push({
@@ -245,7 +269,6 @@ export function buildIndex(root: string): IndexBuildResult {
         group: stringField(parsed.data, 'group'),
         role: stringField(parsed.data, 'role'),
       })
-      counts.characters += 1
     } else if (kindDir === 'world') {
       worldEntries.push({
         id,
@@ -254,7 +277,6 @@ export function buildIndex(root: string): IndexBuildResult {
         category: stringField(parsed.data, 'category') ?? (dirNameOf(file.path) || undefined),
         parent: stringField(parsed.data, 'parent'),
       })
-      counts.worldEntries += 1
     } else if (kindDir === 'outlines') {
       const declaredKind = stringField(parsed.data, 'kind')
       const kind = (OUTLINE_KINDS as readonly string[]).includes(declaredKind ?? '')
@@ -276,7 +298,6 @@ export function buildIndex(root: string): IndexBuildResult {
         parent: stringField(parsed.data, 'parent'),
         order: intField(parsed.data, 'order'),
       })
-      counts.outlineNodes += 1
     }
   }
 
@@ -346,7 +367,21 @@ export function buildIndex(root: string): IndexBuildResult {
     }
   }
 
+  // The validator above already reported every collision; the writer must not
+  // be handed two rows with the same primary key, so the later files are dropped
+  // from the index (their paths stay visible in the DUPLICATE_ID details).
+  const chapterRows = keepFirstById(chapters)
+  const characterRows = keepFirstById(characters)
+  const worldRows = keepFirstById(worldEntries)
+  const outlineRows = keepFirstById(outlineNodes)
+
+  // Counts describe what is actually queryable in the index, so they follow the
+  // kept rows — readIndexMeta counts rows too and the two must agree.
   counts.files = files.length
+  counts.chapters = chapterRows.length
+  counts.characters = characterRows.length
+  counts.worldEntries = worldRows.length
+  counts.outlineNodes = outlineRows.length
   counts.libraryFiles = libraryFiles.length
 
   // ---- write the database ----
@@ -375,28 +410,33 @@ CREATE VIRTUAL TABLE chapters_fts USING fts5(chapter_id UNINDEXED, title, body, 
     for (const file of files) {
       insertFile.run(file.path, file.dir, file.dir === '' ? 'root' : file.dir, file.size, file.mtime)
     }
+    // `INSERT OR REPLACE` is the second net below the `keepFirstById` prefilter:
+    // a derived index must never be able to brick a project, so an unforeseen
+    // duplicate replaces the earlier row instead of aborting the transaction.
     const insertChapter = db.prepare(
-      'INSERT INTO chapters (id, path, seq, title, volume, status, word_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO chapters (id, path, seq, title, volume, status, word_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
     const insertChapterFts = db.prepare('INSERT INTO chapters_fts (chapter_id, title, body) VALUES (?, ?, ?)')
-    for (const chapter of chapters) {
+    for (const chapter of chapterRows) {
       insertChapter.run(chapter.id, chapter.path, chapter.seq ?? null, chapter.title, chapter.volume ?? null, chapter.status, chapter.wordCount)
       insertChapterFts.run(chapter.id, chapter.title, chapter.body)
     }
     const insertCharacter = db.prepare(
-      'INSERT INTO characters (id, path, name, name_key, group_name, role) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO characters (id, path, name, name_key, group_name, role) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    for (const character of characters) {
+    for (const character of characterRows) {
       insertCharacter.run(character.id, character.path, character.name, character.key, character.group ?? null, character.role ?? null)
     }
-    const insertWorld = db.prepare('INSERT INTO world_entries (id, path, title, category, parent) VALUES (?, ?, ?, ?, ?)')
-    for (const entry of worldEntries) {
+    const insertWorld = db.prepare(
+      'INSERT OR REPLACE INTO world_entries (id, path, title, category, parent) VALUES (?, ?, ?, ?, ?)',
+    )
+    for (const entry of worldRows) {
       insertWorld.run(entry.id, entry.path, entry.title, entry.category ?? null, entry.parent ?? null)
     }
     const insertOutline = db.prepare(
-      'INSERT INTO outline_nodes (id, path, kind, title, parent, order_index) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO outline_nodes (id, path, kind, title, parent, order_index) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    for (const node of outlineNodes) {
+    for (const node of outlineRows) {
       insertOutline.run(node.id, node.path, node.kind, node.title, node.parent ?? null, node.order ?? null)
     }
     const insertLibrary = db.prepare('INSERT INTO library_files (path, size, mtime) VALUES (?, ?, ?)')

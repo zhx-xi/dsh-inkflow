@@ -9,7 +9,8 @@
  * Supported value forms:
  *   key: plain text            -> "plain text"
  *   key: "quoted text"         -> "quoted text"
- *   key: 42 / 3.5 / true/false -> number / boolean
+ *   key: 42 / 3.5              -> "42" / "3.5" (scalars stay strings)
+ *   key: true / false          -> boolean
  *   key: null / ~              -> null
  *   key: [a, "b", 3]           -> string[]
  *   key:
@@ -43,7 +44,10 @@ function parseScalar(raw: string): unknown {
   if (value === '' || value === 'null' || value === '~') return null
   if (value === 'true') return true
   if (value === 'false') return false
-  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value)
+  // Numbers stay strings on purpose. `id: 001` and `id: 1` are two different
+  // ids in the author's files; turning them into 1 and 1 made them collide on
+  // the index PRIMARY KEY and bricked every read. Fields that really are
+  // numbers (`seq`, `order`) go through intField, which accepts numeric strings.
   return stripQuotes(value)
 }
 
