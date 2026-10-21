@@ -17,6 +17,7 @@
 
 import type { HostContext } from './context.js'
 import { resolveConfig } from './config.js'
+import { readState } from './state.js'
 import { buildTools } from './tools.js'
 import { createHttpHandler } from './routes.js'
 
@@ -32,6 +33,12 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
   const log = ctx.logger('dsh-inkflow')
 
   log.info(`ready: files-first mode, plugin state=${config.dataDir}`)
+
+  // state.json is display-only (issue #7): it records the last project some
+  // session touched, purely so a human can see it in the logs. It is never used
+  // to resolve a project — one plugin-wide value cannot speak for a session.
+  const remembered = readState(config.dataDir).lastProjectRoot
+  if (remembered !== undefined) log.info(`last touched project (display only, not used for resolution): ${remembered}`)
 
   const tools = ctx.tools
   if (tools === undefined) {

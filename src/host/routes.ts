@@ -10,23 +10,27 @@
  *   3. Only an explicit method allowlist is served; everything else is 405.
  *   4. No CORS headers are ever emitted.
  *
- * Both routes here are read-only projections of the filesystem, so a browser
- * compromise cannot corrupt novel data through this surface.
+ * WHY BOTH ROUTES FAIL CLOSED WITH `NO_SESSION_CONTEXT` (issue #7): a browser
+ * request carries no session identity, so this surface cannot know which book it
+ * should project. Two shortcuts were removed on purpose:
+ *   - `?root=<path>` — any page on 127.0.0.1 could point the plugin at an
+ *     arbitrary directory, and `inspectProject` even creates `index/` there.
+ *   - `state.json`'s `lastProjectRoot` — one plugin-wide value written by
+ *     whichever session ran last; it may belong to a completely different book.
+ * Resolving sessionId → workspace lands in #18. Until then the page gets a
+ * structured refusal instead of another novel's data, and nothing is written.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { HostContext } from './context.js'
-import { INDEX_SCHEMA_VERSION } from './conventions.js'
-import { buildIndex, listChapters, readIndexMeta } from './indexer.js'
-import { inspectProject, projectLabel } from './project.js'
-import { readState } from './state.js'
 
 const LOOPBACK_AUTHORITY = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
 const LOOPBACK_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i
 const PREFIX = '/inkflow'
 
 export interface HttpDeps {
+  /** Kept for #18, where a request will be resolved to its session's workspace. */
   ctx: HostContext
   dataDir: string
   version: string
@@ -47,6 +51,19 @@ function headerValue(req: IncomingMessage, name: string): string {
   return typeof raw === 'string' ? raw : ''
 }
 
+function noSessionContext(version: string): unknown {
+  return {
+    ok: false,
+    pluginVersion: version,
+    error: {
+      code: 'NO_SESSION_CONTEXT',
+      message: 'the workbench page has no session → workspace mapping yet, so its project cannot be named',
+      hint:
+        'use inkflow_project_status from the novel session; the panel shows its project once session resolution lands (#18)',
+    },
+  }
+}
+
 export function createHttpHandler(deps: HttpDeps) {
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const host = headerValue(req, 'host')
@@ -60,6 +77,8 @@ export function createHttpHandler(deps: HttpDeps) {
       return
     }
 
+    // Only the pathname is trusted; the query string is never read, so a
+    // crafted `?root=` cannot reach the filesystem at all.
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     const path = url.pathname
     if (!path.startsWith(PREFIX)) {
@@ -73,71 +92,10 @@ export function createHttpHandler(deps: HttpDeps) {
       return
     }
 
-    const rootParam = url.searchParams.get('root')
-    const remembered = readState(deps.dataDir).lastProjectRoot
-    const root = rootParam !== null && rootParam !== '' ? rootParam : remembered
-
-    if (route === '/api/status') {
-      if (root === undefined || root === '') {
-        sendJson(res, 200, {
-          ok: true,
-          value: {
-            pluginVersion: deps.version,
-            project: null,
-            hint: 'no project touched yet: run inkflow_project_status in a novel session',
-          },
-        })
-        return
-      }
-      const probe = inspectProject(root)
-      const index = readIndexMeta(probe.root, probe)
-      sendJson(res, 200, {
-        ok: true,
-        value: {
-          pluginVersion: deps.version,
-          project: {
-            root: probe.root,
-            label: projectLabel(probe),
-            usable: probe.usable,
-            checks: probe.checks,
-            missing: probe.missing,
-            reasons: probe.reasons,
-          },
-          index: {
-            dbFile: index.dbFile,
-            dbExists: index.dbExists,
-            schemaVersion: index.schemaVersion ?? null,
-            schemaMatches: index.schemaMatches,
-            builtAt: index.builtAt ?? null,
-            counts: index.counts,
-          },
-          indexSchemaVersion: INDEX_SCHEMA_VERSION,
-        },
-      })
-      return
-    }
-
-    if (route === '/api/chapters') {
-      if (root === undefined || root === '') {
-        sendJson(res, 200, { ok: true, value: { total: 0, chapters: [], hint: 'no project yet' } })
-        return
-      }
-      const probe = inspectProject(root)
-      if (!probe.usable) {
-        sendJson(res, 200, {
-          ok: false,
-          error: { code: 'NOT_AN_INKFLOW_PROJECT', missing: probe.missing, reasons: probe.reasons },
-        })
-        return
-      }
-      let chapters = listChapters(probe.root, 200)
-      let rebuilt = false
-      if (chapters === undefined) {
-        buildIndex(probe.root)
-        chapters = listChapters(probe.root, 200) ?? []
-        rebuilt = true
-      }
-      sendJson(res, 200, { ok: true, value: { total: chapters.length, indexRebuilt: rebuilt, chapters } })
+    if (route === '/api/status' || route === '/api/chapters') {
+      // HTTP 200 with ok:false: this is a "cannot answer yet" state, not a
+      // transport failure, and the client treats ok:false as a display hint.
+      sendJson(res, 200, noSessionContext(deps.version))
       return
     }
 

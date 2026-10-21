@@ -61,10 +61,11 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 |---|---|---|
 | 作品（正文/设定/大纲/资料） | 每个小说自己的 git 仓库 | ✅ 全部 |
 | 派生索引 | `<book>/index/inkflow.db`（WAL） | ❌ 只 `.gitkeep` |
-| 插件自身状态（lastProjectRoot） | `$DSH_HOME/inkflow/state.json` | — |
-| HTTP 路由 | `/inkflow/api/status`、`/api/chapters`（只读） | — |
+| 插件自身状态（lastProjectRoot，**仅展示、不用于解析项目**） | `$DSH_HOME/inkflow/state.json` | — |
+| HTTP 路由 | `/inkflow/api/status`、`/api/chapters`（只读；无会话身份时返回 `NO_SESSION_CONTEXT`） | — |
 
-没有「作品库目录」这个配置：**项目在哪由 git 仓库和六个目录自己声明**。
+没有「作品库目录」这个配置：**项目在哪由 git 仓库和六个目录自己声明**，由会话的工作目录定位。
+显式传路径的工具参数（`projectRoot` / `root`）必须位于该工作目录子树内，越界或指向系统目录会被拒（`PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`）。
 
 ## 插件配置
 
@@ -89,14 +90,14 @@ src/host/              Host 半（DSH Node 进程内）
   project.ts           门禁检测、inkflow.json 读写、项目脚手架
   frontmatter.ts       极简 frontmatter 解析（标量/内联数组/块数组/注释）
   indexer.ts           文件 → 派生索引 + 不变量校验（node:sqlite）
-  state.ts             插件自身状态（lastProjectRoot），原子写
+  state.ts             插件自身状态（lastProjectRoot，仅展示），原子写
   tools.ts             inkflow_project_status / _init / _index_rebuild / _chapter_list
-  routes.ts            /inkflow/api/*（只读投影，仅 loopback，fail-closed）
+  routes.ts            /inkflow/api/*（仅 loopback、fail-closed；无会话身份时不猜项目）
 src/client/            Client 半（浏览器 React）
   index.tsx            侧栏图标 + 工作台整页
   context.ts           本插件用到的 DSH Client 表面（slots / layout）
 scripts/build.mjs      esbuild 双半构建（Host ESM + Client module-loader factory）
-tests/                 node:test 契约测试（不依赖 DSH 进程，13 条）
+tests/                 node:test 契约测试（不依赖 DSH 进程，20 条）
 .agents/constitution/  项目章程、DSH 硬约束、工程纪律、数据安全政策
 .agents/specs/         规范：产品范围 / 架构 / 目录约定 / 数据模型 / 路线图 + spec 索引
 .agents/adrs/          决策记录 + 索引与决策速览

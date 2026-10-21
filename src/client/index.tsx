@@ -66,6 +66,20 @@ async function getJson<T>(path: string): Promise<RouteResult<T>> {
   return body
 }
 
+/**
+ * Route failures that deserve a sentence instead of a bare code. Until the host
+ * can map a request to its session's workspace, every projection answers
+ * NO_SESSION_CONTEXT — showing a raw code there would look like a plugin bug.
+ */
+const ERROR_HINTS: Record<string, string> = {
+  NO_SESSION_CONTEXT: '无法确定当前会话的项目，请在小说会话里用 inkflow_project_status 查看',
+}
+
+function describeRouteError(error: { code: string; message?: string } | undefined): string {
+  if (error === undefined) return 'status-unavailable'
+  return ERROR_HINTS[error.code] ?? error.message ?? error.code
+}
+
 /** Sidebar icon: a page with a falling ink drop. Monochrome via currentColor. */
 function InkflowIcon({ size }: SidebarPanelIconProps) {
   const edge = typeof size === 'number' && size > 0 ? size : 20
@@ -164,7 +178,7 @@ export function Workbench() {
     try {
       const result = await getJson<StatusValue>('/inkflow/api/status')
       if (!result.ok || result.value === undefined) {
-        setError(result.error?.code ?? 'status-unavailable')
+        setError(describeRouteError(result.error))
         setStatus(null)
         setChapters([])
       } else {

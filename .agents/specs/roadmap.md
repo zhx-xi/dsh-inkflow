@@ -47,7 +47,7 @@
 | **合计** | — | — | **123–175（逐项）/ 125–185（规格口径）** | **24.6–35.0 周** | — | — | — | 【已定】+【推断】 |
 
 > 折周按 5 工作日 / 周换算；24.6–35.0 周 ≈ 5.7–8.1 月，与规格「4–6 个月」不一致，见 §8 RM-P-02。
-> 仓库当前状态（本次文件核对）：P0 骨架已落——`src/host/{conventions,project,frontmatter,indexer,state,tools,routes,index}.ts`、`src/client/index.tsx`、构建产物 `lib/index.js`（约 17 KB）/`lib/client.js`（约 13 KB）、契约测试 `tests/contract.test.js`（13 条）、5 篇 ADR 与 `.agents/specs/architecture.md`；P0 DoD 尚未逐条签收，故记「进行中」。【实测】
+> 仓库当前状态（本次文件核对）：P0 骨架已落——`src/host/{conventions,project,frontmatter,indexer,state,tools,routes,index}.ts`、`src/client/index.tsx`、构建产物 `lib/index.js`（约 17 KB）/`lib/client.js`（约 13 KB）、契约测试 `tests/contract.test.js`（20 条）、5 篇 ADR 与 `.agents/specs/architecture.md`；P0 DoD 尚未逐条签收，故记「进行中」。【实测】
 
 ---
 
@@ -114,7 +114,7 @@
 | 数据层 | 已落：`app_settings` / `projects` / `change_log` 三表，`PRAGMA user_version = 1`，WAL + busy_timeout=5000 | `src/host/db.ts` 第 69–108、148–163 行；ADR-0002 |
 | 工具面 | 已落 3 个：`inkflow_health` / `inkflow_project_list` / `inkflow_project_create` | `src/host/tools.ts` 第 90 / 130 / 184 行 |
 | HTTP 路由 | 已落：`/inkflow/api/*` 前缀，loopback fail-closed，P0 只读 GET | ADR-0004；`src/host/routes.ts` |
-| 契约测试 | `tests/contract.test.js`（13 条），覆盖门禁/索引重建/不变量/HTTP 安全 | 文件核对 |
+| 契约测试 | `tests/contract.test.js`（20 条），覆盖门禁/索引重建/不变量/HTTP 安全/路径作用域 | 文件核对 |
 | 构建产物 | `lib/index.js`（约 17 KB ESM）、`lib/client.js`（约 13 KB CJS + loader 包装） | ADR-0003 验证段 |
 | 偏离项 | 构建链用 esbuild 单工具链，偏离用户原建议的 tsdown | ADR-0003；见 §8 RM-P-17 |
 | 未完成 | P0-6（卸载/升级闭环）、P0-2（iframe 的 DOM 实测）、P0-5 的 20 条检索用例、P0-1 的面板视觉确认 | 对照 DoD 逐条；P0-7 的证据改走 PR 评论（§9.5 D7） |

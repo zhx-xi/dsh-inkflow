@@ -52,7 +52,7 @@
 
 失败一律返回结构化清单（`checks` / `missing` / `reasons` / `hint`），不抛异常、不静默兜底、不在随机目录建库。
 
-**会话目录来源**：优先 `ctx.get('workingDirectory').ensure(agent)`（公共服务，缺失时降级 `process.cwd()`）。工具也接受显式 `projectRoot` 参数。
+**会话目录来源**：优先 `ctx.get('workingDirectory').ensure(agent)`（公共服务，缺失时降级 `process.cwd()`）。工具也接受显式 `projectRoot`，但该路径必须 `realpath` 后落在**会话工作区子树**内；盘符根、家目录本身、系统与安装目录硬拒（`PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`，写盘前拒绝）。跨会话状态 `state.json` 的 `lastProjectRoot` 只用于展示（启动日志），**不作为任何解析来源**——它是"某个会话最后碰过的书"，拿来兜底会把别人的书当成当前项目。
 
 ## 4. DSH 集成点（实测签名）
 
@@ -63,6 +63,8 @@
 ### 4.2 HTTP — `ctx.webServer`
 
 `ctx.webServer.register({kind:'prefix', path:'/inkflow', handler})`。**零鉴权**，因此 fail-closed（ADR-0004）：`Host` 必须 loopback、`Origin` 若存在必须 loopback、只允许 GET、不发 CORS 头、统一 `no-store` + `nosniff`。
+
+请求不携带会话身份，所以在"会话 → 工作区"解析落地前，`/api/status` 与 `/api/chapters` **一律返回 `200 + ok:false + NO_SESSION_CONTEXT`**，且不读查询串、不读插件状态、不创建任何文件（详见 [conventions.md](conventions.md) §6.2）。这样面板在拿到解析能力前只会"不知道"，不会显示另一本书。
 
 ### 4.3 Client 槽位 — `ctx.slots`
 
@@ -142,6 +144,6 @@
 | 新 Host 代码在**运行中的 DSH** 里生效 | **未验证**（需重启加载新 generation） | 用户重启后复核工具表 |
 | 面板视觉（六目录勾选、章节列表） | 未验证 | 重启后目视 |
 | 59 万字全量重建耗时 | 未验证 | P1 用真实库基准（当前样例 7 文件 10ms） |
-| 工具 `projectRoot` 参数的路径边界 | 未加固 | P1：限制在会话工作区子树内，或要求显式用户确认 |
+| 面板的项目来源（会话 → 工作区） | 未做：路由当前 fail-closed 返回 `NO_SESSION_CONTEXT` | 按会话解析工作区后再镜像工具侧的作用域规则 |
 | 增量重建 / 大文件流式解析 | 未做 | P1 |
 | 写入器（原子替换 + 提案制） | 未做 | P1（P0 无写正文能力） |
