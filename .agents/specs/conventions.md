@@ -512,7 +512,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `.gitignore` 的 `index/.lock`、`index/.write.lock`、`.openviking/config.local.json` 三行 | 向导只写前三行 `index/*.db*` | #15 / #40 / #41 |
 | `inkflow.json.projectId` | 向导不生成；字段可缺省 | #40 |
 | 索引 v2（九目录全实体 + `entity_mentions` + 全实体 FTS） | 索引 v1 只覆盖章/角色/世界观/大纲/资料路径；章正文检索已可用（§4.1） | #23 |
-| 面板入口 `conversation.view` | Client 仍注册 `sidebar.panellist` + `main` | #17 |
+| 面板编辑器与提案制修订 | 面板只有章节树与只读正文预览，写入仍走工具 | #45 |
 | 搜索的正文全文检索 | `/search` 只匹配章节元数据，并标 `searchUnavailable: true` | #22 |
 | 插件级共享库（`$DSH_HOME/inkflow/shared/`、复制快照、`origin`） | 未实现 | #40 |
 | OVK 语义检索（peer 只读、按章重建、降级 FTS5） | 未实现；当前只有 FTS5 | #41 |

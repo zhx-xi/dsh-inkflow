@@ -78,6 +78,11 @@ async function buildClient() {
     target: 'es2022',
     external: CLIENT_EXTERNALS,
     jsx: 'automatic',
+    // esbuild defaults to `charset: 'ascii'`, which would escape every Chinese
+    // label in the panel into `\uXXXX`. The bundle is served as UTF-8 anyway, so
+    // keeping the characters literal makes the shipped UI text inspectable —
+    // tests/panel-bundle.test.js asserts the wording the user actually sees.
+    charset: 'utf8',
     define: {
       'process.env.NODE_ENV': '"production"',
     },
