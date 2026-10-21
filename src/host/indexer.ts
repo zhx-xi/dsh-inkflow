@@ -23,7 +23,7 @@ import {
   INDEX_SCHEMA_VERSION,
   OUTLINE_KINDS,
 } from './conventions.js'
-import { intField, parseMarkdown, stringField } from './frontmatter.js'
+import { boolField, intField, parseMarkdown, stringField } from './frontmatter.js'
 import type { ProjectProbe } from './project.js'
 
 export interface IndexCounts {
@@ -129,9 +129,21 @@ function leadingNumber(file: string): number | undefined {
   return match?.[1] === undefined ? undefined : Number(match[1])
 }
 
-function dirNameOf(relPath: string): string {
+/**
+ * `world/<category>/<slug>.md` → `<category>`; a file sitting directly in
+ * `world/` has no category directory.
+ *
+ * Taking "the parent directory name" blindly gave every root entry
+ * `category: "world"` — the container itself, not a category. That also hid
+ * I-08's "a child entry must carry a category" check, because the bogus value
+ * looked like a category (found by the issue #8 parity fixture). Same class of
+ * bug as `volume: "chapters"` (issue #7).
+ */
+function worldCategoryOf(relPath: string): string | undefined {
   const parts = relPath.split('/')
-  return parts.length > 1 ? (parts[parts.length - 2] ?? '') : ''
+  if (parts.length !== 3 || parts[0] !== 'world') return undefined
+  const category = parts[1]
+  return category === undefined || category === '' ? undefined : category
 }
 
 /**
@@ -295,7 +307,7 @@ export function scanProject(root: string): ScanResult {
         id,
         path: file.path,
         title: stringField(parsed.data, 'title') ?? basename(file.path, '.md'),
-        category: stringField(parsed.data, 'category') ?? (dirNameOf(file.path) || undefined),
+        category: stringField(parsed.data, 'category') ?? worldCategoryOf(file.path),
         parent: stringField(parsed.data, 'parent'),
       })
     } else if (kindDir === 'outlines') {
@@ -319,6 +331,19 @@ export function scanProject(root: string): ScanResult {
         parent: stringField(parsed.data, 'parent'),
         order: intField(parsed.data, 'order'),
       })
+    } else if (kindDir === 'foreshadowing') {
+      // I-09 (data-model.md §5): "resolved" is only checkable against the
+      // manuscript when the file also names the chapter that pays it off.
+      // Documented in conventions.md §3.8; there is no table for it yet, so this
+      // is a validation-only pass over the frontmatter.
+      const resolvedChapter = stringField(parsed.data, 'resolvedChapter')
+      if (boolField(parsed.data, 'resolved') && (resolvedChapter ?? '').trim() === '') {
+        issues.push({
+          code: 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER',
+          path: file.path,
+          detail: 'resolved: true requires resolvedChapter (the chapter that pays the setup off)',
+        })
+      }
     }
   }
 
@@ -368,6 +393,38 @@ export function scanProject(root: string): ScanResult {
       })
     } else {
       seenCharacterKeys.set(character.key, character.path)
+    }
+  }
+
+  // I-08 (data-model.md §5): exactly one world root, and every entry below it is
+  // pinned into the tree. "Root" means "no parent" — so the two checks together
+  // say "exactly one entry has no parent; every other entry has one". The
+  // category is the directory name when the field is absent (conventions.md
+  // §3.4), so only an entry that claims a parent but carries neither a field nor
+  // a category directory is incomplete.
+  if (worldEntries.length > 0) {
+    const roots = worldEntries.filter((entry) => entry.parent === undefined || entry.parent === '')
+    if (roots.length === 0) {
+      issues.push({
+        code: 'WORLD_ROOT_MISSING',
+        detail: 'no world entry is a root; exactly one entry without parent is required',
+      })
+    } else if (roots.length > 1) {
+      const shown = roots.slice(0, 3).map((entry) => entry.path).join(', ')
+      issues.push({
+        code: 'WORLD_ROOT_MULTIPLE',
+        detail: `${roots.length} world entries have no parent (${shown}${roots.length > 3 ? ', …' : ''}); exactly one root is allowed`,
+      })
+    }
+    for (const entry of worldEntries) {
+      const hasParent = entry.parent !== undefined && entry.parent !== ''
+      if (hasParent && (entry.category === undefined || entry.category === '')) {
+        issues.push({
+          code: 'WORLD_CATEGORY_REQUIRED',
+          path: entry.path,
+          detail: 'a world entry with a parent must also carry a category (or live under world/<category>/)',
+        })
+      }
     }
   }
 

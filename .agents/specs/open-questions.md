@@ -12,6 +12,7 @@
 | Q3 | 目录名是否就按 `chapters/characters/world/outlines/library/index` | 按此套（「资料」用 `library`） | 全部 | 待定 |
 | Q4 | 每部小说一个 git 仓库与外层仓库的嵌套关系 | 外层 `.gitignore` 忽略各书目录（不用 submodule） | 仓库结构 | 待定 |
 | Q5 | `inkflow_project_init` 是否需要自动 `git init` | 不需要——仓库身份/远端由用户决定 | 工具边界 | 待定 |
+| Q6 | frontmatter 的键是否允许非 ASCII（如 `作者备注: 待改`） | 暂不允许：现存语法是 `^[A-Za-z_][A-Za-z0-9_-]*:`，中文键行会被记成 `FRONTMATTER_ISSUE`（不影响正文与索引可用）。若要支持，需先定键名规范化与写回规则，否则 `patchFrontmatter` 无法保留该行 | frontmatter 语法 / 老稿导入（issue #8 实测发现） | 待定 |
 
 ## 已裁决（裁决记录）
 
