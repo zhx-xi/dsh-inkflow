@@ -97,7 +97,11 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
+<<<<<<< HEAD
 插件提供六个工具，DSH 里的 AI 会在需要时自己调用：
+=======
+插件提供 11 个工具，DSH 里的 AI 会在需要时自己调用：
+>>>>>>> 748492d (feat(chapter): volume/chapter CRUD, uuid ids and rename cascades (#16))
 
 | 工具 | 作用 | 你可以这样说 |
 |---|---|---|
@@ -106,13 +110,24 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_project_init` | 执行上面那份清单（建目录 + `.gitkeep` + `inkflow.json` + `.gitignore` + 必要时 `git init`）；**只补缺的，不覆盖已有文件**；必须带确认 | 「就按这个清单建」/「把缺的补齐」 |
 | `inkflow_index_rebuild` | 从文件重建索引并检查一致性 | 「重建一下索引」/「检查一下设定有没有冲突」 |
 | `inkflow_chapter_list` | 按阅读顺序列出章节 | 「列一下现在有哪些章」 |
+<<<<<<< HEAD
 | `inkflow_chapter_search` | 在章节正文里找关键词，返回命中的章与前后各 40 字的片段（1–2 个字也能搜） | 「哪一章写过云海翻涌」/「搜一下『宝剑』」 |
+=======
+| `inkflow_volume_create` | 建卷：分配 `vol-NN`、建 `chapters/vol-NN-<slug>/` 并刷新卷章清单 | 「开一个第一卷」 |
+| `inkflow_volume_rename` | 改卷名：目录与清单一起改，**章的归属和章 id 不变** | 「把第一卷改名叫入山卷」 |
+| `inkflow_chapter_create` | 建章：分配 uuid `id` 和章号，写 frontmatter 与空正文 | 「加一章，标题叫第一章 入山」 |
+| `inkflow_chapter_write` | 改标题 / 正文 / 状态；只改你指定的字段，改标题会同时改文件名 | 「把这一章改成《夜行》，状态标成 revised」 |
+| `inkflow_chapter_move` | 移卷或移出卷（`volume` 跟着改，章 id 不变） | 「把第三章挪到第二卷」/「把这篇外传移出卷」 |
+| `inkflow_chapter_delete` | 删章（**物理删除**，恢复靠 git 历史） | 「删掉那一章」 |
+>>>>>>> 748492d (feat(chapter): volume/chapter CRUD, uuid ids and rename cascades (#16))
 
 向导的两段式是刻意设计的：先看清单（`plan`），你点头之后才落盘（`init` + 确认）。修复老项目时它只补缺失项——已有的正文、设定、`inkflow.json` 一个字节都不会动；唯一例外是**坏掉的** `inkflow.json`：它会先把原文（超长会截断并标注）给你看，你确认后才重建。
 
 ### 5.3 自己改文件后
 
 用 VSCode/记事本直接改 `.md` 文件是**允许且推荐**的。改完让 AI「重建索引」，或手动调用 `inkflow_index_rebuild`。
+
+卷章结构记在 `chapters/index.json` 与 `chapters/<卷目录>/index.json` 两份 **catalog** 里，它们是 `.md` 的投影：手改会被下一次写入覆盖，删掉也会自动重建，所以不用管。**改文件名/挪文件建议让 AI 用工具做**（`inkflow_chapter_write` 改标题、`inkflow_chapter_move` 移卷）：工具会同步 frontmatter 与 catalog，而手工挪文件只会在下次写入时被纠正，中间的 `git diff` 会显得脏。章的身份是 frontmatter 里的 `id`（uuid），所以改名不会让引用断链。
 
 索引是缓存：删掉 `index/inkflow.db` 也不会丢任何内容，下次使用时自动重建。
 
@@ -151,9 +166,9 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ```markdown
 ---
-id: ch-1
+id: 6f1c2c1e-...      # 建章时由插件生成的 uuid；改名 / 移卷都不变
 title: 第一章 入山
-volumeId: vol-01     # 卷归属（vol-NN 稳定标识；catalog 尚未实现）
+volume: vol-01       # 卷归属（vol-NN 稳定标识；改卷名也不变）
 seq: 1
 status: final        # draft | revised | final
 ---

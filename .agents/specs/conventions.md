@@ -111,9 +111,9 @@
 
 ```markdown
 ---
-id: 6f1c2c1e-...        # 可选；缺省用相对路径生成稳定 id
+id: 6f1c2c1e-...        # 建章时由插件生成的 uuid（randomUUID），改名/移卷不变
 title: 第一章 入山
-volumeId: vol-01        # 可选；卷归属由 volumeId 决定（不靠目录名推导）
+volume: vol-01          # 可选；卷归属由它（= volumeId）决定，不靠目录名推导
 seq: 1                  # 可选；缺省取文件名前导数字
 status: draft           # draft | revised | final
 pov: 主角                # 可选
@@ -123,12 +123,15 @@ pov: 主角                # 可选
 ```
 
 - **正文就是 Markdown 正文**（frontmatter 之后），不加任何包装标记。
-- **卷归属用 `volumeId`**（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D6）：`vol-NN` 稳定标识，改卷目录的 slug 不改归属；卷目录名 `vol-NN-<slug>` 只用于定位文件。目录名不再参与归属推导。
+- **文件名 = `NNNN-<slug>.md`**（散章直接放 `chapters/`，入卷放 `chapters/vol-NN-<slug>/`）；`NNNN` 是补零到 4 位的 `seq`，删章不重排（允许空号）。
+- **卷归属用 frontmatter 的 `volume` 字段**（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D6）：值就是 `vol-NN` 稳定标识，改卷目录的 slug 不改归属；目录名只用于定位文件。字段名沿用 `volume`（ADR D6 的 `volumeId` 指语义，不另起字段），解析器与 catalog 都按此实现。
+- **`id` 是 uuid 且稳定**：由建章工具 `randomUUID()` 生成并写入文件；工具寻址只认 id 或相对路径，**目录名不是 id**。改名（见下）与移卷都不换 id，因此 `resolvedChapter`、伏笔的 `resolvedChapter` 一类引用不断链。
+- **改标题 = 文件名 + frontmatter + catalog 一起改**：`inkflow_chapter_write` 拿到新 `title` 时同步把文件名换成 `<原前缀>-<新 slug>.md`（id/volume/seq 不变），旧路径删除、新旧路径都在同一把写锁内处理，catalog 随之重建。
 - **frontmatter 解析规则**（实现见 `src/host/frontmatter.ts`）：`#` 只有在引号外、且前面是行首或空白时才算注释；结束符必须是独立成行的 `---`（`----`、`--- x` 不算）；首块内不含任何 `key:` 行时判为「无 frontmatter」，正文优先——宁可丢元数据，也不吞正文。
-- **写回规则**：只做**行级补丁**（只替换目标 key 所在行及其块列表项），未知字段、行内注释、键序、引号风格原样保留；原子写盘由调用方负责（临时文件 + rename）。
+- **写回规则**：只做**行级补丁**（只替换目标 key 所在行及其块列表项），未知字段、行内注释、键序、引号风格原样保留；原子写盘由调用方负责（临时文件 + rename）。写 `body` 时只替换 frontmatter 之后的字节，块本身逐字节保留。
 - 字数由插件派生（非空白字符数），不写回文件——避免 AI 与插件互相改字数字段。
-- 章号派生规则：`seq`（显式）> 文件名前导数字 > 文件名排序；**删章不重排**，允许空号。
-- 【未实现】现行解析器（`KNOWN_FRONTMATTER`）用 `volume` 字段存 `volumeId`（字段名不变），catalog 已按此实现（#15）。
+- 章号派生规则：`seq`（显式）> 文件名前导数字 > 文件名排序；**删章不重排**，允许空号。建章缺省取同卷（或散章集合）最大 `seq` + 1。
+- 卷/章增删改的工具、级联与错误码见 §3.10。
 
 ### 3.3 角色 `characters/<slug>.md`
 
@@ -225,7 +228,7 @@ catalog 是**派生结构投影**（[ADR-0006](../adrs/0006-workspace-contract-v
 - **不是门禁必需项**：删掉 catalog 不改变四态判定（重建即可），避免「删一个投影文件 = 项目损坏」。
 - 与 `index/` 的边界：catalog 入库、只含结构；`index/` 不入库、整库可删。
 
-**实现状态**：读写/校验/重建已实现（`src/host/catalog.ts`）；卷归属以章 frontmatter 的 `volume`（存 volumeId）为准，目录名只作缺省推导。
+**实现状态**：读写/校验/重建已实现（`src/host/catalog.ts`）；卷归属以章 frontmatter 的 `volume`（存 volumeId）为准，目录名只作缺省推导。卷章增删改的工具与级联见 §3.10。
 
 ### 3.9 伏笔 `foreshadowing/<slug>.md`
 
@@ -242,6 +245,48 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 - `resolved: true` 而缺 `resolvedChapter` → 重建期校验报 `FORESHADOW_RESOLVED_WITHOUT_CHAPTER`，**不阻断索引**（data-model §5 I-09）。
 - 章 id 取自章 frontmatter 的 `id`（缺省为章的相对路径），本文件不复制章标题或章号。
 - 字段字典（`status` 状态机、`threads`、`characters`）见 [data-model.md §3.2](data-model.md)。
+
+### 3.10 卷章 CRUD（工具、级联与错误码）
+
+卷与章的增删改都走同一个写入口（§5）与同一把写锁：业务规则在 `src/host/chapters.ts`，`tools.ts` 只做门禁、参数收窄与渲染。
+
+| 工具 | 作用 | 写什么 | 成功后的投影 |
+|---|---|---|---|
+| `inkflow_volume_create` | 建卷 | `chapters/vol-NN-<slug>/` + `.gitkeep` | 两份 catalog + 索引 |
+| `inkflow_volume_rename` | 改卷名 | 目录改名（保留 `vol-NN` 前缀） | 两份 catalog + 索引；**章 frontmatter 不动** |
+| `inkflow_chapter_create` | 建章 | `chapters/[<卷目录>/]NNNN-<slug>.md`（uuid `id`、`status: draft`、空正文） | 两份 catalog + 索引 |
+| `inkflow_chapter_write` | 改标题 / 正文 / 状态 | 目标字段行级补丁；改标题同时改文件名 | 两份 catalog + 索引 |
+| `inkflow_chapter_move` | 移卷 / 移出卷 | 移动文件 + 改/删 `volume` | 两份 catalog + 索引 |
+| `inkflow_chapter_delete` | 删章 | 删除 `.md` | 两份 catalog + 索引 |
+
+- **id 稳定**：`chapterId` 是建章时 `randomUUID()` 写入 frontmatter 的 uuid；工具寻址只认 id 或 `chapters/**/*.md` 相对路径，**目录名不是 id**（拿卷目录名当 id → `CHAPTER_NOT_FOUND`）。改标题、移卷都不换 id。
+- **seq**：建章缺省取同卷（入卷）或散章集合的最大 `seq` + 1；显式 `seq` 必须是正整数，撞号 → `SEQ_CONFLICT`；**移卷跨卷撞号也拒**（catalog 的 `CATALOG_DUPLICATE` 前移到写入侧）。删章不重排。
+- **slug**：目录名与文件名里的 slug 由 `title` 归一化得到（NFKC、空白与 Windows 非法字符 → `-`、最长 60 字符）；调用方显式给 `slug` 时按给的来，非法即 `SLUG_INVALID`（空串也算给了）。
+- **失败回滚**：多文件级联不是文件系统级事务，所以每一步都可能失败，回滚 = **文件级撤销**（原文写回 / 新文件删除 / 目录改回）+ **catalog 文件按调用前快照逐字节还原**（失败的 rebuild 可能已经写了前几份 catalog），每一步记入 `error.rollback[]`。回滚本身失败 → `ROLLBACK_INCOMPLETE`（同样附步骤）；全部成功 → `CATALOG_REBUILD_FAILED`。
+- **卷改名级联**：**投影读取 → 目录改名 → 两份 catalog 重建**全部在同一把项目写锁内（先读后写会让并发写者在旧快照上分配 `seq`/文件名）；派生索引在锁释放后重建（它是缓存，不进事务）。章文件随目录移动，**不改一个字节**。
+- **删章可回溯靠 git**：工具物理删除 `.md`（插件不建回收站副本），失败时用内存里的原文原子写回。
+- **索引是缓存**：索引重建失败只报 `indexError`，不回滚真相文件——回滚文件去救缓存是反的。
+- **路径安全**：所有写入经 `io.ts`（`resolveWriteTarget` / `writeTextAtomic` / `removeProjectFile` / `renameProjectDirectory`），不直接 `fs.writeFileSync` 到项目文件；`chapters/` 以外的路径一律 `FILE_INVALID`。
+
+| code | 含义 |
+|---|---|
+| `TITLE_REQUIRED` | 卷/章标题缺失，或卷改名既没给 `title` 也没给 `slug` |
+| `VOLUME_ID_INVALID` | 不是 `vol-NN`（两位起）；`vol-7` 这类一位数会被拒 |
+| `VOLUME_EXISTS` | 该 `volumeId` 已有卷，或目标目录已存在（改名不合并目录） |
+| `VOLUME_NOT_FOUND` | 没有该卷 |
+| `SLUG_INVALID` | slug 为空 / 含非法字符 / 以点或空格收尾 / 超长 |
+| `SEQ_INVALID` | `seq` 不是正整数 |
+| `SEQ_CONFLICT` | 同卷（或散章集合）内 `seq` 重复 |
+| `CHAPTER_EXISTS` | 目标文件已存在 |
+| `CHAPTER_NOT_FOUND` | id 或路径未命中任何章 |
+| `CHAPTER_AMBIGUOUS` | 同一 id 命中多个章 |
+| `CHAPTER_SELECTOR_REQUIRED` / `CHAPTER_SELECTOR_CONFLICT` | `chapterId` / `file` 二选一：都没给 / 都给了 |
+| `FILE_INVALID` | 不是 `chapters/**/*.md` 相对路径 |
+| `STATUS_INVALID` | 状态不在 `draft` / `revised` / `final` |
+| `CATALOG_REBUILD_FAILED` | 变更后 catalog 写失败，已回滚 |
+| `ROLLBACK_INCOMPLETE` | 回滚本身未完成（`error.rollback[]` 逐条列出） |
+
+写层失败码（§5.4 的 `PATH_*` / `PROJECT_BUSY` / `IO_FAILED`）原样透出，便于模型区分「名字不合法」与「另一个会话在写」。
 
 ## 4. 索引（派生层）
 
@@ -301,8 +346,8 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 崩溃残留可清扫 | 崩溃遗留的 `*.tmp-<pid>-<rand>`（持有者已死或超过 10 分钟）在下次持锁写入时清扫 |
 | 编码在写入口规范化 | 写入前剥 BOM、`CRLF`/`CR` → LF（`.gitattributes` 固定 LF）；读取侧仍须容忍 BOM 与 CRLF |
 | JSON | `JSON.stringify(value, null, 2)` + 单个结尾 LF；不可序列化（BigInt / 循环引用 / `undefined`）→ `IO_FAILED`，不写半截文件 |
-| 不静默覆盖 | 改写既有正文必须走「提案 → 用户确认」（提案制归 M19，尚未实现）；当前无写正文工具 |
-| 删除可回溯 | 删文件交给 git（`git rm` 后可 `git revert`）；插件不物理删正文 |
+| 不静默覆盖 | 改写既有正文必须走「提案 → 用户确认」（提案制归 M19，尚未实现）；`inkflow_chapter_write` 是显式的改写工具，调用方（模型）须先征得作者同意 |
+| 删除可回溯 | `inkflow_chapter_delete` 物理删除 `.md`（插件不建回收站副本）：恢复手段是项目 git 历史；删除前把原文读进内存，catalog 写失败时原子写回 |
 | 只追加审计 | 审计/事件写在 `index/`（派生）或 DSH 会话日志，不污染正文 |
 
 ### 5.3 单项目写锁
@@ -324,6 +369,8 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `PATH_NOT_WRITABLE` | 目录不在白名单内，或目标是插件自己的锁文件 |
 | `PATH_RESERVED` | Windows 保留设备名 |
 | `PATH_TOO_LONG` | 超过长度上限 |
+| `PATH_NOT_FOUND` | 移动/删除的源不存在，或类型不符（如目标是目录） |
+| `TARGET_EXISTS` | 移动/改名的目标已存在（永不覆盖、永不合并目录） |
 | `PROJECT_NOT_FOUND` | 项目根不存在或不是目录 |
 | `PROJECT_BUSY` | 另一会话/进程持有写锁 |
 | `IO_FAILED` | 文件系统拒绝（权限、占用、磁盘），附 `errno` |
@@ -462,7 +509,6 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 | 契约 | 现状 | 落地归属 |
 |---|---|---|
-| 卷章 catalog（`chapters/index.json`）与 `volumeId` | 无读写/校验/重建；卷归属仍按目录名推导 | #15 |
 | `.gitignore` 的 `index/.lock`、`index/.write.lock`、`.openviking/config.local.json` 三行 | 向导只写前三行 `index/*.db*` | #15 / #40 / #41 |
 | `inkflow.json.projectId` | 向导不生成；字段可缺省 | #40 |
 | 索引 v2（九目录全实体 + `entity_mentions` + 全实体 FTS） | 索引 v1 只覆盖章/角色/世界观/大纲/资料路径；章正文检索已可用（§4.1） | #23 |

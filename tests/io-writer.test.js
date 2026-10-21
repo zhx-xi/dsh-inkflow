@@ -38,6 +38,9 @@ import { dirname, join } from 'node:path'
 
 import {
   acquireProjectWriteLock,
+  removeEmptyProjectDirectory,
+  removeProjectFile,
+  renameProjectDirectory,
   resolveWriteTarget,
   withProjectWriteLock,
   writeJsonAtomic,
@@ -603,7 +606,117 @@ test('io: a temp file left by a dead writer is swept by the next write', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 7. The capability layer stays off the tool registry (issue #14 is capability
-// only; the tool wiring belongs to #15/#16). The exact tool list is asserted in
+// 7. The non-textual half of the same door: rename, remove, verbatim restore
+// ---------------------------------------------------------------------------
+
+test('io: a directory rename stays inside the allowed dirs and never overwrites', () => {
+  const dir = workdir()
+  try {
+    const root = project(dir)
+    const from = 'chapters/vol-01-入山'
+    mkdirSync(join(root, from), { recursive: true })
+    writeFileSync(join(root, from, '0001-第一章.md'), '正文\n', 'utf8')
+
+    const renamed = renameProjectDirectory(root, from, 'chapters/vol-01-入山卷')
+    assert.equal(renamed.ok, true, JSON.stringify(renamed))
+    assert.equal(existsSync(join(root, from)), false)
+    assert.equal(readFileSync(join(root, 'chapters/vol-01-入山卷', '0001-第一章.md'), 'utf8'), '正文\n')
+
+    // An occupied destination is refused, not merged.
+    mkdirSync(join(root, 'chapters', 'vol-02-出海'), { recursive: true })
+    const occupied = renameProjectDirectory(root, 'chapters/vol-01-入山卷', 'chapters/vol-02-出海')
+    assert.equal(occupied.ok, false)
+    assert.equal(occupied.error.code, 'TARGET_EXISTS')
+
+    // A rename out of the project (or into itself) is refused before any IO.
+    const escape = renameProjectDirectory(root, 'chapters/vol-01-入山卷', '../outside')
+    assert.equal(escape.ok, false)
+    assert.equal(escape.error.code, 'PATH_INVALID')
+    const intoItself = renameProjectDirectory(root, 'chapters/vol-01-入山卷', 'chapters/vol-01-入山卷/inner')
+    assert.equal(intoItself.ok, false)
+    assert.ok(intoItself.error.code === 'PATH_INVALID' || intoItself.error.code === 'PATH_NOT_WRITABLE')
+
+    const missing = renameProjectDirectory(root, 'chapters/vol-09-none', 'chapters/vol-09-other')
+    assert.equal(missing.ok, false)
+    assert.equal(missing.error.code, 'PATH_NOT_FOUND')
+
+    assert.equal(existsSync(join(dir, 'outside')), false)
+    assert.equal(existsSync(join(root, 'chapters', 'vol-01-入山卷', '0001-第一章.md')), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('io: removing a file is structured; a directory or a missing file is refused', () => {
+  const dir = workdir()
+  try {
+    const root = project(dir)
+    const relative = 'chapters/0001-删我.md'
+    writeTextAtomic(root, relative, '正文\n')
+
+    const volumeDirectory = 'chapters/vol-01-入山'
+    mkdirSync(join(root, volumeDirectory), { recursive: true })
+    writeTextAtomic(root, `${volumeDirectory}/0001-别删.md`, '正文\n')
+    const refused = removeProjectFile(root, volumeDirectory)
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error.code, 'IO_FAILED')
+    assert.equal(existsSync(join(root, volumeDirectory)), true, 'a chapter delete must never take a volume with it')
+
+    const missing = removeProjectFile(root, 'chapters/9999-没有.md')
+    assert.equal(missing.ok, false)
+    assert.equal(missing.error.code, 'PATH_NOT_FOUND')
+
+    const removed = removeProjectFile(root, relative)
+    assert.equal(removed.ok, true)
+    assert.equal(removed.path, relative)
+    assert.equal(existsSync(join(root, relative)), false)
+
+    // An empty directory can be removed (rollback of a created volume)…
+    const empty = 'chapters/vol-08-空卷'
+    mkdirSync(join(root, empty), { recursive: true })
+    const gone = removeEmptyProjectDirectory(root, empty)
+    assert.equal(gone.ok, true)
+    assert.equal(existsSync(join(root, empty)), false)
+
+    // …but a directory with a chapter in it cannot.
+    const occupied = removeEmptyProjectDirectory(
+      root,
+      'chapters/vol-01-入山',
+    )
+    assert.equal(occupied.ok, false)
+    assert.equal(occupied.error.code, 'IO_FAILED')
+    assert.equal(existsSync(join(root, 'chapters/vol-01-入山')), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('io: a verbatim write restores the previous bytes exactly (rollback path)', () => {
+  const dir = workdir()
+  try {
+    const root = project(dir)
+    const relative = 'chapters/0001-原样.md'
+    const original = '\uFEFF---\r\ntitle: 原样\r\n---\r\n正文\r\n'
+    writeFileSync(join(root, relative), original, 'utf8')
+    const before = digest(join(root, relative))
+
+    // A normal write normalizes.…
+    const normalized = writeTextAtomic(root, relative, original)
+    assert.equal(normalized.ok, true)
+    assert.notEqual(digest(join(root, relative)), before)
+    assert.equal(readFileSync(join(root, relative), 'utf8').includes('\r'), false)
+
+    // …and a verbatim write puts the original bytes back (what a rollback uses).
+    const restored = writeTextAtomic(root, relative, original, { verbatim: true })
+    assert.equal(restored.ok, true)
+    assert.equal(digest(join(root, relative)), before)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 8. The capability layer stays off the tool registry (issue #14 is capability
+// only; the tool wiring belongs to #16). The exact tool list is asserted in
 // contract.test.js, which would fail if a tool were registered here.
 // ---------------------------------------------------------------------------

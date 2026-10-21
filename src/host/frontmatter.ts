@@ -238,8 +238,43 @@ export interface FrontmatterPatchResult {
   replaced: string[]
   /** Keys inserted at the end of the block, in the order given. */
   appended: string[]
+  /** Keys whose line (and block-list items) were deleted, in the order given. */
+  removed: string[]
   /** Keys not written because the document has no frontmatter block. */
   skipped: string[]
+}
+
+/** Options for `patchFrontmatter`. */
+export interface FrontmatterPatchOptions {
+  /**
+   * Keys to delete. Used when a chapter leaves a volume: leaving `volume:` empty
+   * would be read back as an empty block list, and leaving the old value behind
+   * would keep the old owner (declared ownership wins over the directory).
+   */
+  remove?: readonly string[]
+}
+
+/** Raw halves of a document, split at the closing frontmatter delimiter. */
+export interface FrontmatterSplit {
+  hasFrontmatter: boolean
+  /** The block including both delimiter lines, byte-identical to the input. */
+  head: string
+  /** Everything after the closing delimiter, byte-identical to the input. */
+  body: string
+}
+
+/**
+ * Split a document without rewriting either half.
+ *
+ * `patchFrontmatter` works line-level inside the block; a body replacement (the
+ * chapter writer) needs the exact byte boundary so the frontmatter keeps its
+ * comments, key order and line endings while the body is swapped wholesale.
+ */
+export function splitFrontmatter(text: string): FrontmatterSplit {
+  const scan = scanDocument(text)
+  const close = scan.block === undefined ? undefined : scan.lines[scan.block.closeLine]
+  if (scan.block === undefined || close === undefined) return { hasFrontmatter: false, head: '', body: text }
+  return { hasFrontmatter: true, head: text.slice(0, close.end), body: text.slice(close.end) }
 }
 
 /** The line terminator of `line`, or the document's usual one at EOF. */
@@ -300,6 +335,40 @@ function rewriteKeyLine(line: string, value: string): string {
 }
 
 /**
+ * The end offset of the block-list items that follow a `key:` line, or the key
+ * line's own end when there are none. Replacing or deleting a key must take its
+ * items with it, or they become orphaned array items the parser reports.
+ */
+function blockListEnd(scan: DocumentScan, keyLine: number, closeLine: number): number {
+  const line = scan.lines[keyLine]
+  let end = line === undefined ? 0 : line.end
+  for (let cursor = keyLine + 1; cursor < closeLine; cursor += 1) {
+    const item = scan.lines[cursor]
+    if (item === undefined || !/^\s*-(\s|$)/.test(item.text)) break
+    end = item.end
+  }
+  return end
+}
+
+/**
+ * Render one `key: value` line, quoting the value when the parser would read it
+ * back differently (a title containing ` # ` would otherwise lose its tail as a
+ * comment, and a leading `-`/`[`/quote would change the value's type).
+ *
+ * Throws on a key that could never be parsed back and on a multi-line value:
+ * both would silently corrupt the file, and the caller is at the write boundary.
+ */
+export function frontmatterLine(key: string, value: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) {
+    throw new TypeError(`frontmatterLine: "${key}" is not a valid frontmatter key`)
+  }
+  if (/[\r\n]/.test(value)) {
+    throw new TypeError(`frontmatterLine: the value of "${key}" must be a single line`)
+  }
+  return `${key}: ${renderScalar(value)}`
+}
+
+/**
  * Rewrite the values of `entries` in a Markdown document.
  *
  * This is a line-level patch on purpose: parsing into `data` and serialising it
@@ -317,12 +386,13 @@ function rewriteKeyLine(line: string, value: string): string {
 export function patchFrontmatter(
   text: string,
   entries: Readonly<Record<string, string>>,
+  options: FrontmatterPatchOptions = {},
 ): FrontmatterPatchResult {
   const keys = Object.keys(entries)
   const scan = scanDocument(text)
   const closeLine = scan.block === undefined ? undefined : scan.lines[scan.block.closeLine]
   if (scan.block === undefined || closeLine === undefined) {
-    return { text, replaced: [], appended: [], skipped: keys }
+    return { text, replaced: [], appended: [], removed: [], skipped: keys }
   }
 
   // Last assignment wins, matching the parser: patching a duplicate key must
@@ -337,6 +407,7 @@ export function patchFrontmatter(
   const edits: Array<{ start: number; end: number; text: string }> = []
   const replaced: string[] = []
   const appended: string[] = []
+  const removed: string[] = []
   const eol = lineTerminator(text, closeLine)
   let insertion = ''
 
@@ -354,7 +425,7 @@ export function patchFrontmatter(
     }
     const target = keyLines.get(key)
     if (target === undefined) {
-      insertion += `${key}: ${renderScalar(value)}${eol}`
+      insertion += `${frontmatterLine(key, value)}${eol}`
       appended.push(key)
       continue
     }
@@ -364,11 +435,7 @@ export function patchFrontmatter(
     // scalar replacement has to remove them or they are left orphaned.
     let end = line.end
     if (valueOfLine(line.text) === '') {
-      for (let cursor = target + 1; cursor < scan.block.closeLine; cursor += 1) {
-        const item = scan.lines[cursor]
-        if (item === undefined || !/^\s*-(\s|$)/.test(item.text)) break
-        end = item.end
-      }
+      end = blockListEnd(scan, target, scan.block.closeLine)
     }
     edits.push({
       start: line.start,
@@ -376,6 +443,18 @@ export function patchFrontmatter(
       text: `${rewriteKeyLine(line.text, value)}${lineTerminator(text, line)}`,
     })
     replaced.push(key)
+  }
+
+  // Deletions come last so a key that is both rewritten and removed (a caller
+  // mistake) still ends up removed, matching "the last instruction wins".
+  for (const key of options.remove ?? []) {
+    if (Object.hasOwn(entries, key)) continue
+    const target = keyLines.get(key)
+    const line = target === undefined ? undefined : scan.lines[target]
+    if (target === undefined || line === undefined) continue
+    const end = valueOfLine(line.text) === '' ? blockListEnd(scan, target, scan.block.closeLine) : line.end
+    edits.push({ start: line.start, end, text: '' })
+    removed.push(key)
   }
 
   if (insertion !== '') {
@@ -387,7 +466,7 @@ export function patchFrontmatter(
   for (const edit of edits.sort((left, right) => right.start - left.start)) {
     output = output.slice(0, edit.start) + edit.text + output.slice(edit.end)
   }
-  return { text: output, replaced, appended, skipped: [] }
+  return { text: output, replaced, appended, removed, skipped: [] }
 }
 
 export function parseMarkdown(text: string): ParsedMarkdown {

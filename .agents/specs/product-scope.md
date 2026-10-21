@@ -197,7 +197,14 @@
 
 ### 4.5 DSH 工具面清单（数量 20–30 为【已定】，命名与切分为【推断】）
 
-当前构建注册 6 个（`inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search`）；下表是目标切分，共 27 个，落在「约 20–30」区间内。
+当前构建注册 12 个（`inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search`）；下表是目标切分，共 27 个，落在「约 20–30」区间内。
+| 卷 / 章 | `inkflow_chapter_create` | 建章（uuid `id` + seq 分配 + frontmatter） | 现行 | 【推断】 |
+| 卷 / 章 | `inkflow_chapter_write` | 改标题 / 正文 / 状态（只改目标字段；改标题同时改文件名） | 现行 | 【推断】 |
+| 卷 / 章 | `inkflow_chapter_move` | 移卷 / 移出卷（`volume` 同步，id 不变） | 现行 | 【推断】 |
+| 卷 / 章 | `inkflow_chapter_delete` | 删章（恢复靠项目 git 历史） | 现行 | 【推断】 |
+| 卷 / 章 | `inkflow_volume_create` | 建卷（`vol-NN` + 目录 + catalog） | 现行 | 【推断】 |
+| 卷 / 章 | `inkflow_volume_rename` | 改卷名（目录 + catalog；章归属与 id 不变） | 现行 | 【推断】 |
+当前构建注册 12 个（另含 `inkflow_volume_create` / `inkflow_volume_rename` / `inkflow_chapter_create` / `inkflow_chapter_write` / `inkflow_chapter_move` / `inkflow_chapter_delete`）；下表是目标切分。
 
 | 工具组 | 工具名 | 用途 | 落地 | 来源 |
 | --- | --- | --- | --- | --- |

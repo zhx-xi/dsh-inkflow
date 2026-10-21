@@ -17,7 +17,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { apply, parseMarkdown, patchFrontmatter } from '../lib/index.js'
+import { apply, frontmatterLine, parseMarkdown, patchFrontmatter, splitFrontmatter } from '../lib/index.js'
 
 // The chapter example from .agents/specs/conventions.md §3.2, comments and all:
 // the spec's own examples are the contract, so they must parse here.
@@ -342,4 +342,47 @@ test('write-back: a multi-line value is rejected instead of corrupting the block
 
 test('write-back: an unreadable key is rejected instead of writing a dead line', () => {
   assert.throws(() => patchFrontmatter(HAND_WRITTEN, { 'bad key': 'x' }), /not a valid frontmatter key/)
+})
+
+test('write-back: removing a key takes its block list and keeps every other line', () => {
+  const doc = [
+    '---',
+    'id: x',
+    'title: 第一章',
+    'keywords:',
+    '  - 白鹤',
+    '  - 鹤鸣',
+    'status: draft   # 作者标注',
+    '---',
+    '',
+    '正文',
+    '',
+  ].join('\n')
+  const patched = patchFrontmatter(doc, {}, { remove: ['keywords', 'volume'] })
+  assert.deepEqual(patched.removed, ['keywords'], 'a key that is not there is not reported')
+  assert.equal(patched.text.includes('keywords'), false)
+  assert.equal(patched.text.includes('鹤鸣'), false, 'the list items belong to the removed key')
+  assert.equal(patched.text.includes('status: draft   # 作者标注'), true)
+  const after = parseMarkdown(patched.text)
+  assert.equal(after.data.title, '第一章')
+  assert.equal(Object.hasOwn(after.data, 'keywords'), false)
+  assert.equal(after.body.trim(), '正文')
+})
+
+test('split: the two halves are byte-identical to the input', () => {
+  const text = '---\r\ntitle: x\r\n---\r\n\r\n正文\r\n'
+  const parts = splitFrontmatter(text)
+  assert.equal(parts.hasFrontmatter, true)
+  assert.equal(parts.head + parts.body, text)
+  assert.equal(parts.body, '\r\n正文\r\n')
+  const prose = '没有 frontmatter 的正文'
+  assert.deepEqual(splitFrontmatter(prose), { hasFrontmatter: false, head: '', body: prose })
+})
+
+test('write-back: frontmatterLine quotes a value the parser would misread', () => {
+  assert.equal(frontmatterLine('title', '第一章'), 'title: 第一章')
+  assert.equal(frontmatterLine('title', '第一章 # 入山'), 'title: "第一章 # 入山"')
+  assert.equal(parseMarkdown(`---\n${frontmatterLine('title', '第一章 # 入山')}\n---\n`).data.title, '第一章 # 入山')
+  assert.throws(() => frontmatterLine('bad key', 'x'), /not a valid frontmatter key/)
+  assert.throws(() => frontmatterLine('title', 'a\nb'), /single line/)
 })
