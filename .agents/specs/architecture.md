@@ -240,7 +240,8 @@
 | `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
-| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 6 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search`） | 直接扫目录（走 indexer/project/workspace） |
+| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete`） | 直接扫目录（走 indexer/project/workspace） |
+| `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建 | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个只读投影 | HTTP 加固、写任何文件、重建索引 |
 | `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封 | 业务规则、写真相文件 |
 | `src/client/index.tsx` | 视图、槽位注册、`fetchInternal` 调私有通道 | 业务规则、文件 IO |

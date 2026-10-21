@@ -218,3 +218,35 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
     })
   }
 }
+
+/**
+ * 卷章 CRUD（issue #16）。
+ */
+export { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
+export type {
+  ChapterCreateInput,
+  ChapterCreateResult,
+  ChapterDeleteInput,
+  ChapterDeleteResult,
+  ChapterErrorCode,
+  ChapterMoveInput,
+  ChapterMoveResult,
+  ChapterOpError,
+  ChapterOpFailure,
+  ChapterView,
+  ChapterWriteInput,
+  ChapterWriteResult,
+  CommitInfo,
+  RollbackStep,
+  VolumeCreateInput,
+  VolumeCreateResult,
+  VolumeRenameInput,
+  VolumeRenameResult,
+  VolumeView,
+} from './chapters.js'
+
+/** issue #16: new frontmatter and io helpers (one export statement each). */
+export { frontmatterLine, splitFrontmatter } from './frontmatter.js'
+export type { FrontmatterPatchOptions, FrontmatterSplit } from './frontmatter.js'
+export { removeEmptyProjectDirectory, removeProjectFile, renameProjectDirectory } from './io.js'
+export type { RemoveResult, RenameResult } from './io.js'

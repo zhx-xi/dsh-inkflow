@@ -107,6 +107,12 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_index_rebuild` | 从文件重建索引并检查一致性 | 「重建一下索引」/「检查一下设定有没有冲突」 |
 | `inkflow_chapter_list` | 按阅读顺序列出章节 | 「列一下现在有哪些章」 |
 | `inkflow_chapter_search` | 在章节正文里找关键词，返回命中的章与前后各 40 字的片段（1–2 个字也能搜） | 「哪一章写过云海翻涌」/「搜一下『宝剑』」 |
+| `inkflow_volume_create` | 建卷：分配 `vol-NN`、建 `chapters/vol-NN-<slug>/` 并刷新卷章清单 | 「开一个第一卷」 |
+| `inkflow_volume_rename` | 改卷名：目录与清单一起改，**章的归属和章 id 不变** | 「把第一卷改名叫入山卷」 |
+| `inkflow_chapter_create` | 建章：分配 uuid `id` 和章号，写 frontmatter 与空正文 | 「加一章，标题叫第一章 入山」 |
+| `inkflow_chapter_write` | 改标题 / 正文 / 状态；只改你指定的字段，改标题会同时改文件名 | 「把这一章改成《夜行》，状态标成 revised」 |
+| `inkflow_chapter_move` | 移卷或移出卷（`volume` 跟着改，章 id 不变） | 「把第三章挪到第二卷」/「把这篇外传移出卷」 |
+| `inkflow_chapter_delete` | 删章（**物理删除**，恢复靠 git 历史） | 「删掉那一章」 |
 
 向导的两段式是刻意设计的：先看清单（`plan`），你点头之后才落盘（`init` + 确认）。修复老项目时它只补缺失项——已有的正文、设定、`inkflow.json` 一个字节都不会动；唯一例外是**坏掉的** `inkflow.json`：它会先把原文（超长会截断并标注）给你看，你确认后才重建。
 

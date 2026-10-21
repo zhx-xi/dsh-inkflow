@@ -54,7 +54,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 重启 DSH 后应看到（**当前构建**）：
 
 - 左侧栏出现 **InkFlow** 图标（order 30）→ 打开整页工作台（章节列表 + 项目诊断 + 十项目录勾选）；
-- 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search`。
+- 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search` / `inkflow_chapter_create` / `inkflow_chapter_write` / `inkflow_chapter_move` / `inkflow_chapter_delete` / `inkflow_volume_create` / `inkflow_volume_rename`。
 
 > 目标入口是会话视图 `conversation.view`（[ADR-0008](.agents/adrs/0008-panel-data-channel.md)），**当前尚未实现**；在它落地前，面板只有左侧栏入口，且无法解析会话所属项目（`NO_SESSION_CONTEXT`）。
 

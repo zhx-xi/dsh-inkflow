@@ -197,7 +197,7 @@
 
 ### 4.5 DSH 工具面清单（数量 20–30 为【已定】，命名与切分为【推断】）
 
-当前构建注册 6 个（`inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search`）；下表是目标切分，共 27 个，落在「约 20–30」区间内。
+当前构建注册 12 个（`inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search`）；下表是目标切分，共 27 个，落在「约 20–30」区间内。
 
 | 工具组 | 工具名 | 用途 | 落地 | 来源 |
 | --- | --- | --- | --- | --- |

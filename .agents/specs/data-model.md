@@ -26,7 +26,7 @@
 |---|---|---|---|---|
 | 1 | 项目（book） | `inkflow.json` | JSON | 唯一元信息文件（`schemaVersion` / `title` / `author` / `projectId` / `seriesId`，见 [conventions.md](conventions.md) §3.1） |
 | 2 | 卷 volume | `chapters/index.json` 的 `volumes[]` + 卷大纲节点 | JSON + MD | 卷的稳定身份是 `volumeId`（`vol-NN`）；卷标题/顺序的文学内容在大纲 `kind: volume` 节点 |
-| 3 | 章 chapter | `chapters/**/<seq>-<slug>.md` | MD + frontmatter | 正文即 body；章归属由 frontmatter `volumeId` 决定 |
+| 3 | 章 chapter | `chapters/**/<seq>-<slug>.md` | MD + frontmatter | 正文即 body；章归属由 frontmatter `volume`（值=volumeId）决定；`id` 是建档时生成的 uuid |
 | 4 | 章版本 | git 提交历史 | git | 不建 `chapter_versions`；版本 = commit |
 | 5 | 大纲节点 outline | `outlines/*.md` | MD + frontmatter | `kind: overall\|volume\|chapter`，`parent` 挂接 |
 | 6 | 情节点 plot_point | 大纲文件正文的列表项 | MD 列表 | 结构化语法未定；当前自由文本 |
@@ -64,12 +64,12 @@
 
 | 字段 | 类型 | 适用 | 语义 |
 |---|---|---|---|
-| `id` | string | 全部 | 稳定标识；缺省用相对路径（改名即换 id，建议显式写） |
-| `title` | string | 章/世界观/大纲/伏笔/时间线/关系 | 显示名 |
+| `id` | string | 全部 | 稳定标识。章：建章时由插件写入 uuid（`randomUUID()`），**改名与移卷都不变**，引用一律用它；其余实体：缺省用相对路径（改名即换 id，建议显式写） |
+| `title` | string | 章/世界观/大纲/伏笔/时间线/关系 | 显示名；章改标题会同时改文件名（`NNNN-<新 slug>.md`） |
 | `name` | string | 角色 | 角色名（唯一性按归一化 name 判定） |
 | `aliases` | string[] | 角色 | 别名（索引用于提及扫描） |
-| `volumeId` | string | 章 | 卷归属（`vol-NN`），**不从目录名推导** |
-| `seq` | int | 章 | 卷内序号；缺省取文件名前导数字 |
+| `volume` | string | 章 | 卷归属，值就是稳定 `vol-NN`（[conventions.md](conventions.md) §3.2），**不从目录名推导**；移出卷时整行删除 |
+| `seq` | int | 章 | 卷内序号；缺省取文件名前导数字。建章缺省 = 同卷（或散章）最大 `seq` + 1；删章不重排 |
 | `status` | enum | 章 | `draft` / `revised` / `final`；伏笔/提案另有自己的状态枚举 |
 | `kind` | enum | 大纲/关系 | 大纲：`overall` / `volume` / `chapter`；关系：见 §3.3 |
 | `parent` | string | 世界观/大纲 | 上级 id（树结构） |
@@ -225,7 +225,7 @@ v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本
 | I-13 | 卷目录名与 `volumeId` / 卷大纲一致 | 拒绝 | `VOLUME_DIR_MISMATCH` |
 | I-14 | catalog 引用的章文件必须存在 | 拒绝 | `CHAPTER_FILE_MISSING` |
 
-**与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 的实现随 catalog 落地（归 #15），当前**没有任何一条 catalog 校验在跑**。
+**与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 
 ## 6. 2.0 同步为什么更容易了
 
@@ -245,7 +245,6 @@ v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本
 
 | 契约 | 现状 | 归属 |
 |---|---|---|
-| 卷章 catalog + `volumeId` + I-11–I-14 | 未落地；卷归属仍按目录名推导 | #15 |
 | 索引 v2（伏笔/时间线/关系/账本/提及/全实体 FTS） | 未落地 | #22 / #23 |
 | 故事线 / 场景契约 / 角色分组独立文件 | 未落地 | 对应功能 issue |
 | 共享库与 `origin` 溯源 | 未落地 | #40 |

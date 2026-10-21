@@ -45,6 +45,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -72,6 +73,10 @@ export type IoErrorCode =
   | 'PATH_TOO_LONG'
   /** `projectRoot` is missing or not a directory. */
   | 'PROJECT_NOT_FOUND'
+  /** The source of a move/delete does not exist (or is not the kind it must be). */
+  | 'PATH_NOT_FOUND'
+  /** The destination of a move already exists; moves never overwrite a file. */
+  | 'TARGET_EXISTS'
   /** Another session/process holds the project write lock. */
   | 'PROJECT_BUSY'
   /** The filesystem refused the operation (permissions, sharing violation, disk). */
@@ -130,6 +135,14 @@ export interface AtomicWriteOptions {
    * needs `chapters/vol-01/` to exist even though the volume has no file yet.
    */
   createParents?: boolean
+  /**
+   * Write the string exactly as given instead of the normalised form.
+   *
+   * The normal path strips a BOM and rewrites CRLF to LF (one place for the
+   * encoding invariant). A rollback has the opposite job: it must put the
+   * *previous bytes* back, so it passes `verbatim: true` and skips both steps.
+   */
+  verbatim?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -728,7 +741,8 @@ export function writeTextAtomic(
   const { target, lock } = opened
   try {
     const created = !existsSync(target.absolute)
-    const result = writeAtomically(target, normalizeText(text), options)
+    const payload = options.verbatim === true ? text : normalizeText(text)
+    const result = writeAtomically(target, payload, options)
     return { ok: true, target: { ...target, exists: true }, bytes: result.bytes, created }
   } catch (cause) {
     return { ok: false, error: toFailure(cause, target.root, target.relative) }
@@ -759,4 +773,163 @@ export function writeJsonAtomic(
     })
   }
   return writeTextAtomic(projectRoot, relativePath, `${payload}\n`, options)
+}
+
+// ---------------------------------------------------------------------------
+// Remove / rename (the non-textual half of the same door)
+// ---------------------------------------------------------------------------
+
+/**
+ * A write payload can be expressed as text; a deletion and a directory rename
+ * cannot. They are still project-scoped filesystem mutations, so they live here
+ * — next to the path parser and the write lock — instead of in a business module
+ * that would have to re-implement both. Every function below takes the same
+ * `resolveWriteTarget` routes and the same single-writer lock as `writeTextAtomic`.
+ */
+export type RemoveResult = { ok: true; root: string; path: string; bytes: number } | { ok: false; error: IoFailure }
+
+export type RenameResult = { ok: true; root: string; from: string; to: string } | { ok: false; error: IoFailure }
+
+/**
+ * Delete one project file. The manuscript has no second copy, so this is the
+ * primitive the delete tool calls *after* it has captured the text for its own
+ * rollback; recovery of an already deleted chapter is git's job, not ours.
+ *
+ * A directory is refused (`IO_FAILED`/`EISDIR`): deleting a chapter must never be
+ * able to take a volume's whole directory with it.
+ */
+export function removeProjectFile(projectRoot: string, relativePath: string): RemoveResult {
+  const opened = openForWrite(projectRoot, relativePath)
+  if (!opened.ok) return { ok: false, error: opened.error }
+  const { target, lock } = opened
+  try {
+    if (!target.exists) {
+      return { ok: false, error: failure('PATH_NOT_FOUND', `${target.relative} does not exist`, { root: target.root, path: target.relative }) }
+    }
+    const info = statSync(target.absolute)
+    if (info.isDirectory()) {
+      return {
+        ok: false,
+        error: failure('IO_FAILED', `${target.relative} is a directory, not a file`, {
+          root: target.root,
+          path: target.relative,
+          errno: 'EISDIR',
+        }),
+      }
+    }
+    unlinkSync(target.absolute)
+    return { ok: true, root: target.root, path: target.relative, bytes: info.size }
+  } catch (cause) {
+    return { ok: false, error: toFailure(cause, target.root, target.relative) }
+  } finally {
+    lock.release()
+  }
+}
+
+/**
+ * Remove an **empty** directory (used to roll back a half-created volume). A
+ * non-empty directory is refused (`ENOTEMPTY`): the caller must never be able to
+ * erase chapters as a side effect of undoing a directory creation.
+ */
+export function removeEmptyProjectDirectory(projectRoot: string, relativePath: string): RemoveResult {
+  const opened = openForWrite(projectRoot, relativePath)
+  if (!opened.ok) return { ok: false, error: opened.error }
+  const { target, lock } = opened
+  try {
+    if (!target.exists || !isDirectory(target.absolute)) {
+      return {
+        ok: false,
+        error: failure('PATH_NOT_FOUND', `${target.relative} is not an existing directory`, {
+          root: target.root,
+          path: target.relative,
+        }),
+      }
+    }
+    rmdirSync(target.absolute)
+    return { ok: true, root: target.root, path: target.relative, bytes: 0 }
+  } catch (cause) {
+    return { ok: false, error: toFailure(cause, target.root, target.relative) }
+  } finally {
+    lock.release()
+  }
+}
+
+/**
+ * Rename a directory inside the project (a volume directory, in practice).
+ *
+ * Both ends go through `resolveWriteTarget`, so a rename cannot leave the
+ * allowed directories or the project subtree, and the source must be an existing
+ * directory while the destination must not exist yet: `renameSync` over an
+ * existing directory behaves differently on Windows and POSIX, and a silently
+ * merged directory is exactly the kind of half-state the catalog cannot express.
+ */
+export function renameProjectDirectory(projectRoot: string, fromRelative: string, toRelative: string): RenameResult {
+  if (typeof fromRelative !== 'string' || typeof toRelative !== 'string') {
+    return { ok: false, error: failure('PATH_INVALID', 'both the source and the destination are required') }
+  }
+  const from = resolveWriteTarget(projectRoot, fromRelative)
+  if (!from.ok) return { ok: false, error: from.error }
+  const to = resolveWriteTarget(from.target.root, toRelative)
+  if (!to.ok) return { ok: false, error: to.error }
+
+  const locked = acquireProjectWriteLock(from.target.root)
+  if (!locked.ok) return { ok: false, error: locked.error }
+  const lock = locked.value
+  try {
+    const source = from.target
+    const destination = to.target
+    if (source.absolute === destination.absolute) {
+      return {
+        ok: false,
+        error: failure('PATH_INVALID', 'the source and the destination are the same directory', {
+          root: source.root,
+          path: source.relative,
+        }),
+      }
+    }
+    if (!source.exists || !isDirectory(source.absolute)) {
+      return {
+        ok: false,
+        error: failure('PATH_NOT_FOUND', `${source.relative} is not an existing directory`, {
+          root: source.root,
+          path: source.relative,
+        }),
+      }
+    }
+    if (destination.exists) {
+      return {
+        ok: false,
+        error: failure('TARGET_EXISTS', `${destination.relative} already exists`, {
+          root: source.root,
+          path: destination.relative,
+          hint: 'pick another slug; a rename never merges two directories',
+        }),
+      }
+    }
+    // `chapters/vol-01` → `chapters/vol-01/inner` would need an infinite move.
+    if (isWithin(source.absolute, destination.absolute)) {
+      return {
+        ok: false,
+        error: failure('PATH_INVALID', 'a directory cannot be moved inside itself', {
+          root: source.root,
+          path: destination.relative,
+        }),
+      }
+    }
+    try {
+      mkdirSync(destination.parent, { recursive: true })
+    } catch (cause) {
+      throw new IoWriteError('IO_FAILED', `cannot create ${destination.parent}: ${messageOf(cause)}`, errnoOf(cause))
+    }
+    const realParent = realpathLoose(destination.parent)
+    if (!isWithin(source.root, realParent)) {
+      throw new IoWriteError('PATH_OUT_OF_SCOPE', `${destination.parent} resolves outside the project root (${realParent})`, 'EACCES')
+    }
+    renameSync(source.absolute, join(realParent, basename(destination.absolute)))
+    return { ok: true, root: source.root, from: source.relative, to: destination.relative }
+  } catch (cause) {
+    return { ok: false, error: toFailure(cause, from.target.root, from.target.relative) }
+  } finally {
+    lock.release()
+  }
 }
