@@ -36,6 +36,7 @@ import {
   describeAction,
   describeFacts,
   describeRouteError,
+  describeTitleSuspicion,
   emptyKindOf,
   projectFacts,
   readGate,
@@ -104,6 +105,16 @@ const cardStyle = {
 } as const
 
 const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
+
+/**
+ * The "title looks garbled" marker (issue #89): theme warning colour, no badge —
+ * it annotates the title next to it and must not compete with the state badge.
+ */
+const titleWarningStyle = {
+  color: 'var(--dsw-alias-state-warn-primary)',
+  fontSize: 12,
+  cursor: 'help',
+} as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
 
@@ -253,6 +264,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   // absolute path, the workspace came from the Client store.
   const rootLabel = relativeProjectRoot(gate.root, workspace?.path ?? sessionCwd)
   const projectTitle = gate.projectTitle ?? workspace?.title ?? null
+  // Issue #89: a hand-written meta can carry a GBK-misread title. One marker and
+  // one tooltip — the panel has no way to fix the file itself, so it says so.
+  const titleWarning = describeTitleSuspicion(gate)
   const routeHint = status !== null && !status.ok ? describeRouteError(status.error) : null
 
   /**
@@ -281,6 +295,11 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       <div style={headerStyle}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>InkFlow</span>
         <span style={muted}>{projectTitle ?? '长篇小说创作工作台'}</span>
+        {titleWarning === null ? null : (
+          <span style={titleWarningStyle} title={titleWarning} aria-label={titleWarning} role="img">
+            ⚠
+          </span>
+        )}
         <Badge label={gate.label} tone={gate.tone} />
         <span style={{ ...muted, ...mono }} title={gate.root ?? undefined}>
           {rootLabel ?? '—'}

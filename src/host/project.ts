@@ -41,6 +41,7 @@ import {
   REQUIRED_GITIGNORE_LINES,
   ROOT_META_FILE,
 } from './conventions.js'
+import { looksLikeGbkMojibake } from './encoding.js'
 
 export interface ProjectMeta {
   schemaVersion: number
@@ -104,6 +105,15 @@ export interface ProjectProbe {
   meta?: ProjectMeta
   metaError?: string
   metaRaw?: MetaRaw
+  /**
+   * The meta parses and its `title` carries GBK round-trip artifacts (issue #89):
+   * the file was very likely written by something other than this plugin.
+   *
+   * A hint, never a gate input: the book stays `usable`. Absent (not `false`)
+   * when there is no parseable title to judge, so "not judged" and "judged fine"
+   * stay distinguishable at the wire.
+   */
+  titleSuspicious?: boolean
   /** True when `index/` was absent and got created because the rest checked out. */
   indexDirRecreated: boolean
   usable: boolean
@@ -384,6 +394,12 @@ export function inspectProject(root: string, options: InspectOptions = {}): Proj
   const missing: string[] = []
   const reasons: string[] = []
 
+  // Issue #89: judge the title only once it parses, and only to *say* something.
+  // `reasons` deliberately does not mention it: a suspicious title is not a
+  // gate failure, and the checklist must keep meaning "what blocks usable".
+  const metaTitle = metaResult.meta?.title
+  const titleSuspicious = metaTitle !== undefined && looksLikeGbkMojibake(metaTitle)
+
   if (!checks.git) {
     missing.push('.git')
     reasons.push('directory is not a git repository')
@@ -490,6 +506,7 @@ export function inspectProject(root: string, options: InspectOptions = {}): Proj
     ...(metaResult.meta === undefined ? {} : { meta: metaResult.meta }),
     ...(metaError === undefined ? {} : { metaError }),
     ...(metaExists && !checks.meta ? { metaRaw: readMetaRaw(metaFile) } : {}),
+    ...(titleSuspicious ? { titleSuspicious: true } : {}),
     indexDirRecreated,
     usable,
     reasons,

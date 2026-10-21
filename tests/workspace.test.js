@@ -615,3 +615,105 @@ test('wizard: an existing .gitignore only gains the missing derived-index rules'
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 13. Write-back verification of inkflow.json (issue #89)
+//
+// "Written" is not "readable as written": a hand-written or foreign-encoding meta
+// used to be discovered only when the next tool call refused the directory. The
+// wizard now re-reads the file it just wrote and reports what landed, without
+// ever rewriting or rolling back the author's file.
+// ---------------------------------------------------------------------------
+
+test('wizard: a written title is read back and verified', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, '回读书')
+    mkdirSync(root)
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    const applied = await callTool(harness, 'inkflow_project_init', { root, title: '人在蜀山，我是掌门', confirm: true })
+    assert.equal(applied.ok, true)
+    assert.equal(applied.metaVerified, true)
+    assert.deepEqual(applied.warnings, [])
+
+    // No title asked for → nothing to verify: the field stays absent rather than
+    // claiming a verification that never happened.
+    const noTitle = await callTool(harness, 'inkflow_project_init', { root, confirm: true })
+    assert.equal(noTitle.ok, true)
+    assert.equal(noTitle.metaVerified, undefined)
+    assert.deepEqual(noTitle.warnings, [])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('wizard: a title that does not land on disk is META_READBACK_MISMATCH and the file is not touched', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, '不改写')
+    scaffold(root, { title: '原来的名字' })
+    const metaFile = join(root, 'inkflow.json')
+    const before = readFileSync(metaFile, 'utf8')
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    // The wizard never replaces a usable meta, so this title cannot land. Saying
+    // so beats answering "ok" while the disk holds something else.
+    const applied = await callTool(harness, 'inkflow_project_init', { root, title: '另一个名字', confirm: true })
+    assert.equal(applied.ok, true)
+    assert.equal(applied.metaVerified, false)
+    assert.equal(applied.warnings.length, 1)
+    const [warning] = applied.warnings
+    assert.equal(warning.code, 'META_READBACK_MISMATCH')
+    assert.equal(warning.requested, '另一个名字')
+    assert.equal(warning.onDisk, '原来的名字')
+    assert.equal(typeof warning.message, 'string')
+
+    assert.equal(readFileSync(metaFile, 'utf8'), before, 'a mismatch never rewrites or rolls back the file')
+    assert.equal(JSON.parse(readFileSync(metaFile, 'utf8')).title, '原来的名字')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('wizard: a title that is itself GBK mojibake is flagged, written as asked, and never rewritten', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, '乱码书')
+    mkdirSync(root)
+    const harness = makeTools(join(dir, 'state'), dir)
+    // The exact shape from the field report (issue #89).
+    const garbled = '浜哄湪铚€灞憋紝鏄帉闂?'
+
+    const applied = await callTool(harness, 'inkflow_project_init', { root, title: garbled, confirm: true })
+    assert.equal(applied.ok, true)
+    assert.equal(applied.metaVerified, true, 'the bytes that landed are the bytes we asked for')
+    assert.equal(applied.warnings.length, 1)
+    assert.equal(applied.warnings[0].code, 'META_ENCODING_SUSPECT')
+    assert.equal(applied.warnings[0].title, garbled)
+    assert.ok(applied.warnings[0].hits.length >= 2, 'the warning carries the matched artifact groups')
+    assert.equal(applied.warnings[0].hint.includes('UTF-8'), true, 'the hint names the fix')
+
+    // Warning only: the author's title is never silently "repaired".
+    assert.equal(JSON.parse(readFileSync(join(root, 'inkflow.json'), 'utf8')).title, garbled)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('wizard: whitespace and NFC differences are not a mismatch', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, '空白归一')
+    // U+3000 IDEOGRAPHIC SPACE: what a Windows IME or a copy-paste produces.
+    scaffold(root, { title: '蜀山\u3000剑仙' })
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    const applied = await callTool(harness, 'inkflow_project_init', { root, title: '  蜀山 剑仙  ', confirm: true })
+    assert.equal(applied.ok, true)
+    assert.equal(applied.metaVerified, true, 'trim + whitespace folding + NFC make these the same title')
+    assert.deepEqual(applied.warnings, [])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

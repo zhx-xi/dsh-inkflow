@@ -656,3 +656,54 @@ test('internal channel: a session id resolves with or without the `session-` pre
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 15. A hand-written meta with a mojibake title: hint only, never a state change
+// (issue #89)
+// ---------------------------------------------------------------------------
+
+test('internal channel: /status flags a mojibake title without changing the gate', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'garbled-book')
+    bookProject(root)
+    // The field case: `inkflow.json` written by hand through PowerShell's default
+    // ANSI code page, so the UTF-8 title bytes were read back as GBK.
+    writeFileSync(
+      join(root, 'inkflow.json'),
+      `${JSON.stringify({ schemaVersion: 1, title: '浜哄湪铚€灞憋紝鏄帉闂?', author: 'tester' }, null, 2)}\n`,
+      'utf8',
+    )
+    const harness = createHarness({ workspace: root })
+    const before = hashTree(root)
+
+    const status = await internalCall(harness, '/status')
+    assert.equal(status.status, 200)
+    assert.equal(status.json.ok, true)
+    const value = status.json.value
+    assert.equal(value.titleSuspicious, true)
+    // A hint is not a verdict: the book stays usable and writable.
+    assert.equal(value.state, 'usable')
+    assert.equal(value.usable, true)
+    assert.equal(value.readOnly, false)
+    assert.equal(hashTree(root), before, 'reading the panel never rewrites the meta it flags')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('internal channel: /status omits titleSuspicious for an ordinary title', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'plain-book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    const status = await internalCall(harness, '/status')
+    assert.equal(status.json.ok, true)
+    assert.equal(status.json.value.titleSuspicious, undefined, 'no key at all: the panel renders nothing')
+    assert.equal(status.json.value.meta.title, '通道之书')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

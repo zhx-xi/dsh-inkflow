@@ -11,9 +11,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, rmdirSync, st
 import { dirname, join, relative as relativePath, resolve } from 'node:path'
 
 import { DIR_KEEP_FILE, FILE_SCHEMA_VERSION, REQUIRED_DIRS, ROOT_META_FILE } from './conventions.js'
+import { describeEncodingSuspicion } from './encoding.js'
 import { compareExpectation, fingerprintFile, fingerprintProjectFile } from './file-cas.js'
 import type { FileChange, FileExpectation, FileFingerprint } from './file-cas.js'
-import { inspectProject, isDirectory, isGitRoot, missingGitignoreLines } from './project.js'
+import { inspectProject, isDirectory, isGitRoot, missingGitignoreLines, readMeta } from './project.js'
 import type { MetaRaw, ProjectChecks, ProjectMeta, ProjectProbe, ProjectState, WorkspaceAction } from './project.js'
 
 /** Nearest ancestor (excluding `start` itself) that is a git repository. */
@@ -128,6 +129,30 @@ export type WorkspaceErrorCode =
   | 'FILE_CHANGED'
   | 'APPLY_FAILED'
 
+/**
+ * Non-blocking findings about `inkflow.json` after a successful apply (issue #89).
+ *
+ * These are not errors: the call did what it promised, and reporting a problem
+ * the user can fix is better than pretending the file is fine. Two shapes:
+ * the title this call asked for is not what is on disk, or what is on disk looks
+ * like a GBK round-trip accident (a hand-written file).
+ */
+export type WorkspaceWarningCode = 'META_READBACK_MISMATCH' | 'META_ENCODING_SUSPECT'
+
+export interface WorkspaceWarning {
+  code: WorkspaceWarningCode
+  message: string
+  hint: string
+  /** `META_READBACK_MISMATCH`: the title this call asked for (truncated). */
+  requested?: string
+  /** `META_READBACK_MISMATCH`: the title `inkflow.json` holds (truncated). */
+  onDisk?: string
+  /** `META_ENCODING_SUSPECT`: the title that looks garbled (truncated). */
+  title?: string
+  /** `META_ENCODING_SUSPECT`: the matched artifact groups (evidence, not prose). */
+  hits?: string[]
+}
+
 export interface WorkspaceApplyInput {
   /** Set only after the user saw the plan and agreed (ADR-0006 D3). */
   confirm?: boolean
@@ -156,6 +181,14 @@ export interface WorkspaceApplyResult {
   skipped: string[]
   gitInit: 'created' | 'already-initialised' | 'not-run'
   notices: string[]
+  /**
+   * `inkflow.json` read back after the call, compared with the title this call
+   * asked for (issue #89). `undefined` when no title was asked for: nothing to
+   * verify, and saying `true` would be a claim that was never tested.
+   */
+  metaVerified?: boolean
+  /** Findings about the meta on disk that must not fail the call. */
+  warnings: WorkspaceWarning[]
   error?: {
     code: WorkspaceErrorCode
     message: string
@@ -199,6 +232,74 @@ function metaBody(title: string, author?: string): string {
   return `${JSON.stringify(meta, null, 2)}\n`
 }
 
+/** Cap on how much of a title is echoed back in a warning. */
+const MAX_TITLE_ECHO_CHARS = 120
+
+function echoTitle(value: string): string {
+  return value.length > MAX_TITLE_ECHO_CHARS ? `${value.slice(0, MAX_TITLE_ECHO_CHARS)}…` : value
+}
+
+/**
+ * Comparison form of a title (issue #89).
+ *
+ * Reformatting is not renaming: a trailing newline, doubled spaces, a full-width
+ * space from a Chinese IME or a different Unicode normalisation must not read as
+ * "the write failed". Only the printable content is compared.
+ */
+function normalizeMetaTitle(value: string): string {
+  return value.normalize('NFC').replace(/\s+/gu, ' ').trim()
+}
+
+/**
+ * Re-read `inkflow.json` and report what actually landed (issue #89).
+ *
+ * The plugin's own writer is UTF-8, so a mismatch means either another writer
+ * (a session, a shell, the author) moved the file, or the bytes on disk are not
+ * what this plugin wrote. Either way the file stays untouched: the wizard's job
+ * is to report, never to "repair" a title the author may have chosen on purpose.
+ */
+function verifyWrittenMeta(root: string, requested: string): { metaVerified?: boolean; warnings: WorkspaceWarning[] } {
+  const warnings: WorkspaceWarning[] = []
+  const onDisk = readMeta(root).meta?.title
+  const onDiskText = onDisk ?? ''
+
+  const outcome: { metaVerified?: boolean; warnings: WorkspaceWarning[] } = { warnings }
+  if (requested !== '') {
+    const verified = onDisk !== undefined && normalizeMetaTitle(onDisk) === normalizeMetaTitle(requested)
+    outcome.metaVerified = verified
+    if (!verified) {
+      warnings.push({
+        code: 'META_READBACK_MISMATCH',
+        message:
+          `${ROOT_META_FILE} does not hold the title this call asked for: requested "${echoTitle(requested)}", ` +
+          `on disk "${echoTitle(onDiskText)}"`,
+        requested: echoTitle(requested),
+        onDisk: echoTitle(onDiskText),
+        hint:
+          'nothing was rewritten: the wizard only replaces an unusable inkflow.json. To rename the book, edit ' +
+          `${ROOT_META_FILE} yourself (UTF-8, no BOM) or rewrite it through the tool surface`,
+      })
+    }
+  }
+
+  const suspicion = onDiskText === '' ? undefined : describeEncodingSuspicion(onDiskText)
+  if (suspicion !== undefined && suspicion.suspicious) {
+    warnings.push({
+      code: 'META_ENCODING_SUSPECT',
+      message:
+        `${ROOT_META_FILE} title looks like UTF-8 bytes read back as GBK ("${echoTitle(onDiskText)}"): ` +
+        `matched ${suspicion.hits.join(', ')}`,
+      title: echoTitle(onDiskText),
+      hits: suspicion.hits,
+      hint:
+        'this is what PowerShell 5 Set-Content/echo (default ANSI code page) or a GBK-default editor writes, so ' +
+        'the file was probably not written by this plugin. Rewrite the title through the tool surface, or save ' +
+        `${ROOT_META_FILE} as UTF-8 without BOM; the file itself was left exactly as it is`,
+    })
+  }
+  return outcome
+}
+
 /**
  * Apply a plan. Requires `confirm: true` and only ever fills gaps in the current
  * plan: existing directories and files are skipped, and an existing
@@ -222,6 +323,7 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
     skipped: [],
     gitInit,
     notices: plan.notices,
+    warnings: [],
     error: { code, message, rolledBack },
   })
 
@@ -392,6 +494,7 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
       skipped: [],
       gitInit: createdGit ? 'not-run' : gitInit,
       notices: plan.notices,
+      warnings: [],
       error: {
         code: cause instanceof ApplyFailure ? cause.code : 'APPLY_FAILED',
         message: cause instanceof Error ? cause.message : String(cause),
@@ -414,6 +517,7 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
       skipped: [],
       gitInit: createdGit ? 'created' : gitInit,
       notices: plan.notices,
+      warnings: [],
       error: {
         code: 'APPLY_FAILED',
         message: `the project is still not usable after applying the plan (state ${probe.state}): ${probe.missing.join(', ')}`,
@@ -428,6 +532,10 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
     (item) => !createdSet.has(item) && !updatedSet.has(item) && existsSync(join(absolute, item)),
   )
 
+  // Issue #89: read the meta back and report what landed. Never a failure, never
+  // a rewrite — the author's file stays theirs, and the caller gets the evidence.
+  const verification = verifyWrittenMeta(absolute, title)
+
   return {
     ok: true,
     root: absolute,
@@ -439,6 +547,8 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
     skipped,
     gitInit: createdGit ? 'created' : gitInit,
     notices: plan.notices,
+    ...(verification.metaVerified === undefined ? {} : { metaVerified: verification.metaVerified }),
+    warnings: verification.warnings,
   }
 }
 

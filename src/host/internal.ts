@@ -366,6 +366,10 @@ export function buildStatus(target: ChannelTarget, version: string): JsonRecord 
     actions: target.probe.actions,
     reasons: target.probe.reasons,
     meta: target.probe.meta ?? {},
+    // Issue #89: a hand-written file with a GBK-misread title is a hint for the
+    // panel, not a verdict on the book — `state`/`usable`/`readOnly` above stay
+    // exactly what the gate said.
+    ...(target.probe.titleSuspicious === true ? { titleSuspicious: true } : {}),
     index: {
       dbFile: index.dbFile,
       dbExists: index.dbExists,

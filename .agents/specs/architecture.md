@@ -345,4 +345,5 @@
 | 写作上下文四段在真实会话 system prompt 里的位置与内容 | 未验证：`cordis_inspect_query` 只给签名，本次没跑真实会话（HMR 不热替换已加载插件，需重启 DSH） | 重启后在写作会话首轮看四段齐全、非项目会话看不到任何注入 |
 | `context.agent` 在 section `text` 回调里存在 | 未验证（未写进公开类型；本机两个第三方插件依赖它） | 重启后若取不到 → 只是不注入（有降级）；届时改走 `variable()`（回调同样拿 `AssembleContext`）或等宿主给出 scope→session 映射 |
 | 预算裁剪在真实书稿上的手感（1200 token 够不够） | 未验证 | 重启后用一本有正文的书看首轮 `[trimmed: …]`，再决定 `promptBudgetTokens` 默认值 |
+| 真实 GBK 现场的乱码检测（`src/host/encoding.ts`，issue #89） | 【未验证】判据与阈值是在真实中文语料上学得并测得的（另取一份语料做留出验证：2/3/4/6/10 字窗口误报 0/783，GBK 误读召回 31% / 75% / 82% / 92% / 94%），但**没有在真实的 Windows GBK 事故文件上复核**——`PowerShell 5 Set-Content` 产出的字节与 `TextDecoder('gbk')` 的解码结果可能不同（配对偏移、非法字节被替换成 `?`） | 在中文 Windows 上用 PowerShell 5 以默认 ANSI 写一个含中文标题的 `inkflow.json`，跑 `inkflow_project_status` 看 `titleSuspicious` 与 `inkflow_project_init` 的 `warnings[]` 是否出现 `META_ENCODING_SUSPECT` |
 | 外部参考（本机可复跑） | `huangziyuan-general/dsh-novel-forge@1f1af8a`：`lib/contextpack.js`（分层预算 / `dropped` 列表 / `clipTail` 保留结尾并把截断标记计入上限）、`lib/index.js`（`systemPrompt.section` 静态段 order 110 + 动态上下文走 briefing 工具） | 只借这几个结构，不搬代码；差异见 §4.7 |

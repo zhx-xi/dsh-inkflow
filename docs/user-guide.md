@@ -242,6 +242,7 @@ title: 全书总纲
 | 改了章文件，面板还是旧的 | 索引未重建 | 触发 `inkflow_index_rebuild` 或重启会话 |
 | 中文两字词搜不到 | trigram 分词限制 | 用 3 字以上关键词，或直接全文搜文件 |
 | 文档乱码 / 项目识别失败 | 文件被写入了 UTF-8 BOM | 用「UTF-8 无 BOM」重新保存；插件读取时会容忍 BOM，但建议统一 |
+| 书名/正文乱码（如 `浜哄湪铚€灞憋紝鏄帉闂?`） | 文件根本不是 UTF-8：PowerShell 5 的 `Set-Content` / `echo` 默认 ANSI，在中文 Windows 上写出的是 GBK；插件自己的写入路径不会这样 | 用「UTF-8 无 BOM」重写这个文件，书名可以让 AI 用工具重新写一次。插件会发现并提示（`inkflow_project_status` 的 `titleSuspicious`、`inkflow_project_init` 的 `META_ENCODING_SUSPECT`、面板标题旁的 ⚠），但**不会自动改你的文件** |
 | `git clone` 后插件说缺目录 | 空目录被 git 丢了（`.gitkeep` 被删） | 删掉过 `.gitkeep` 就会这样：让 AI 走修复向导补回来，或手动补空文件 |
 
 ## 9. FAQ
