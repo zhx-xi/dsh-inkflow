@@ -295,10 +295,13 @@ test('index build: a replace failure after the scan keeps the previous index rea
     })
 
     assert.equal(existsSync(join(root, DB_RELATIVE)), true, 'the previous db is not deleted')
-    assert.equal(readChapterCount(root), 2, 'the previous index is still readable')
     assert.deepEqual(buildLeftovers(root), [])
 
+    // The blocker is only there to force the replace failure. SQLite on POSIX
+    // refuses to open the db while a directory occupies the -wal name, so drop
+    // it before proving the old generation still has its rows.
     rmSync(blockedSideFile, { recursive: true, force: true })
+    assert.equal(readChapterCount(root), 2, 'the previous index is still readable')
     const retry = await buildIndex(root)
     assert.equal(retry.counts.chapters, 2, 'the next build succeeds once the blocker is gone')
   } finally {
