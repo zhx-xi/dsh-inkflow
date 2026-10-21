@@ -475,6 +475,18 @@ export function intField(data: Record<string, unknown>, key: string): number | u
   return undefined
 }
 
+/**
+ * Read a boolean field.
+ *
+ * `parseScalar` turns a bare `true`/`false` into a boolean; a quoted `"true"`
+ * stays a string (the author asked for a literal, and the index must not
+ * disagree with the file about whether a foreshadow is resolved).
+ */
+export function boolField(data: Record<string, unknown>, key: string): boolean {
+  const value = data[key]
+  return value === true || value === 'true'
+}
+
 /** Read a string array field, accepting a single scalar as a one-element array. */
 export function stringArrayField(data: Record<string, unknown>, key: string): string[] {
   const value = data[key]

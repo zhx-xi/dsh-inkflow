@@ -238,6 +238,21 @@ catalog 入库（与 `index/` 相反），因此卷章结构可 `git diff` 审�
 
 另有漂移码 `CATALOG_STALE`：清单缺失 / 不可解析 / 与 `.md` 投影不一致。它不是不变量，而是「该重建了」的信号。插件**不删除**任何文件（正文没有第二份），因此非卷目录下的同名 `index.json` 只当作普通文件，不报漂移——否则会出现「重建也修不掉」的告警。
 
+### 3.9 伏笔 `foreshadowing/*.md`
+
+```markdown
+---
+id: fs-01
+title: 断剑
+resolved: false          # 是否已回收
+resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章的 id
+---
+伏笔正文（埋设位置、回收条件、读者提示强度…自由格式）
+```
+
+- `resolved: true` 而缺 `resolvedChapter` → 重建校验记 `FORESHADOW_RESOLVED_WITHOUT_CHAPTER`（data-model §5 I-09），**不阻断索引**。理由：没有回收章，「已回收」就无法与正文对账。
+- 章 id 取自章 frontmatter 的 `id`（缺省为章的相对路径），本文件不复制章标题或章号。
+
 ## 4. 索引（派生层）
 
 - 引擎：`node:sqlite`（宿主 Node 24 内置，无原生依赖）。

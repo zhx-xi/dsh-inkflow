@@ -29,7 +29,7 @@
 | 12 | 角色关系 relation | `world/relations.json` | JSON | 建议归属（待拍板 C2） |
 | 13 | 角色语言基因 voice | 角色 frontmatter + body 段 | MD | P1 定字段 |
 | 14 | 角色状态 state | 角色 frontmatter `states`（按章） | JSON 片段 | P1 定字段 |
-| 15 | 伏笔 foreshadowing | `outlines/foreshadowing/<slug>.md` | MD + frontmatter | 建议归属（待拍板 C2） |
+| 15 | 伏笔 foreshadowing | `foreshadowing/<slug>.md` | MD + frontmatter | 一级目录自证归属（[conventions.md §3.8](conventions.md#38-伏笔-foreshadowingmd)）；`resolved` 必须带 `resolvedChapter` |
 | 16 | 时间线事件 timeline_event | `world/timeline/<slug>.md` | MD + frontmatter | 建议归属（待拍板 C2） |
 | 17 | 知识关系 knowledge_relation | `world/relations.json` | JSON | 与 #12 共用文件、按 `kind` 区分 |
 | 18 | 事实账本 facts_ledger | `world/facts/<subject>.md` | MD + frontmatter | 建议归属（待拍板 C2） |
@@ -57,10 +57,12 @@
 | `status` | enum | 章 | `draft` / `revised` / `final` |
 | `kind` | enum | 大纲 | `overall` / `volume` / `chapter` |
 | `parent` | string | 世界观/大纲 | 上级 id（树结构） |
-| `category` | string | 世界观 | 分类名，应与所在目录一致 |
+| `category` | string | 世界观 | 分类名，应与所在目录一致；缺省取 `world/<category>/` 的目录名，直接放在 `world/` 下的条目没有分类 |
 | `keywords` | string[] | 世界观 | 世界书触发词 |
 | `always` | bool | 世界观 | 是否常驻注入 |
 | `group` / `role` / `pov` / `firstAppearance` | string/int | 角色/章 | 创作辅助字段 |
+| `resolved` | bool | 伏笔 | 是否已回收；`true` 时必须同时写 `resolvedChapter`（I-09） |
+| `resolvedChapter` | string | 伏笔 | 回收所在章的 id（章 frontmatter 的 `id`） |
 
 未知字段：**保留在文件里，索引忽略**——这样加字段不需要改插件，也不会因为插件旧而丢用户数据。
 
@@ -93,8 +95,8 @@
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |
 | I-06 | 章状态取值合法 | 拒绝 | 非法值降级为 `draft`（不阻断） |
 | I-07 | 正文文件必须是 `.md` | 拒绝 | `CHAPTER_NOT_MARKDOWN` |
-| I-08 | 世界观根唯一、非根必须有 parent + category | 拒绝 | P1 补校验 |
-| I-09 | 伏笔 resolved 必须带 resolved 章 | 拒绝 | P1 补校验 |
+| I-08 | 世界观根唯一、非根必须有 parent + category | 拒绝 | `WORLD_ROOT_MISSING` / `WORLD_ROOT_MULTIPLE` / `WORLD_CATEGORY_REQUIRED` |
+| I-09 | 伏笔 resolved 必须带 resolved 章 | 拒绝 | `FORESHADOW_RESOLVED_WITHOUT_CHAPTER` |
 | I-10 | JSON 字段可解析 | 写入前序列化 | `FRONTMATTER_ISSUE` |
 | I-11 | 同卷 `(volumeId, seq)` 唯一 | 拒绝重号（P1 章写入工具） | `CATALOG_DUPLICATE` |
 | I-12 | `looseChapters` 的 `seq` 唯一 | 同上 | `CATALOG_DUPLICATE` |
@@ -103,7 +105,11 @@
 
 I-11–I-14 由 `validateCatalog` 报码，**不阻断**（同 `validation_issues`）。catalog 与 `.md` 投影不一致另报 `CATALOG_STALE`——那是「该重建了」的漂移信号，不是不变量；重建即修复，不是数据损坏。
 
+「世界观根」= 不带 `parent` 的条目：重建校验要求**恰有一条**（零条 `WORLD_ROOT_MISSING`、多条 `WORLD_ROOT_MULTIPLE`），于是「非根条目必须有 parent」随之成立；非根条目还必须有分类（`category` 字段，或位于 `world/<category>/` 下），否则 `WORLD_CATEGORY_REQUIRED`。判定结果只进 `validation_issues`，不阻断索引。
+
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。代价是不变量要靠代码纪律兜住——因此每条不变量都必须在重建校验里有对应 code，可作为「代码没兜住」的第二道网。
+
+**验证**：`node --test tests/invariants.test.js`（I-01…I-10 每条一个能 FAIL 的 fixture）与 `node --test tests/index-parity.test.js`（索引集合 == 磁盘集合、预埋 issues == 返回 issues、连续两次 rebuild 幂等）。
 
 ## 6. 2.0 同步为什么更容易了
 
