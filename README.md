@@ -2,11 +2,11 @@
 
 > One [DeepSeek Harness](https://github.com/deepseek-ai) plugin for the **entire** long-form novel writing workflow — projects, volumes, chapters, outlines, characters, world settings, foreshadowing, timelines, an in-Harness workbench, and `inkflow_*` tools. Local-first, pure TypeScript, MIT.
 
-**Why one plugin:** installing five writing plugins to get five features means five chances of plugin conflict and five upgrade paths to babysit. dsh-inkflow is deliberately a single bundle: one sidebar icon, one workbench page, one data model, one upgrade.
+**Why one plugin:** installing five writing plugins to get five features means five chances of plugin conflict and five upgrade paths to babysit. dsh-inkflow is deliberately a single bundle: one panel, one data model, one upgrade.
 
 **Storage: files are the truth.** Every novel is its own git repository; the plugin reads and writes Markdown/JSON files, and keeps `index/inkflow.db` only as a **rebuildable query cache**. That is why plugin upgrades never touch existing projects and why there is no database migration to run — see [ADR-0005](.agents/adrs/0005-files-first-with-derived-index.md) and the directory contract in [.agents/specs/conventions.md](.agents/specs/conventions.md).
 
-**Status: P0 (files-first skeleton, not usable for writing yet).** [已验证] against a real DSH 0.2.1-rc.2 install: project gate, derived index rebuild with invariant checks, loopback-only HTTP projection, workbench panel. [已验证] by the contract suite against the built bundle (`lib/index.js`): the nine content directories + `index/` + `.gitkeep` gate, the four-state verdict (`needs-setup` / `needs-repair` / `usable` / `needs-newer-plugin`), and the plan → apply setup/repair wizard including `git init`. [未验证] the wizard inside a live DSH generation (needs a restart). Five `inkflow_*` tools. Write tools and the editor land in P1 — see [.agents/specs/roadmap.md](.agents/specs/roadmap.md).
+**Status: files-first skeleton (not usable for writing yet).** [已验证] against a real DSH 0.2.1-rc.2 install: project gate, derived index rebuild with invariant checks, loopback-only panel projection. [已验证] by the contract suite against the built bundle (`lib/index.js`): the nine content directories + `index/` + `.gitkeep` gate, the four-state verdict (`needs-setup` / `needs-repair` / `usable` / `needs-newer-plugin`), and the plan → apply setup/repair wizard including `git init`. [未验证] the wizard and the workbench view inside a live DSH generation (needs a restart). Five `inkflow_*` tools. Not implemented yet: write tools and the editor, volume/chapter catalog, `conversation.view` entry + `/inkflow/internal/*`, shared library, OVK search — see [.agents/specs/roadmap.md](.agents/specs/roadmap.md).
 
 ---
 
@@ -51,11 +51,12 @@ pnpm.cmd test
 dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 ```
 
-重启 DSH 后应看到：
+重启 DSH 后应看到（**当前构建**）：
 
-- 左侧栏出现 **InkFlow** 图标（order 30，排在已有面板之后）；
-- 点击打开整页「InkFlow 工作台」（章节列表 + 项目诊断 + 十项目录勾选）；
+- 左侧栏出现 **InkFlow** 图标（order 30）→ 打开整页工作台（章节列表 + 项目诊断 + 十项目录勾选）；
 - 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list`。
+
+> 目标入口是会话视图 `conversation.view`（[ADR-0008](.agents/adrs/0008-panel-data-channel.md)），**当前尚未实现**；在它落地前，面板只有左侧栏入口，且无法解析会话所属项目（`NO_SESSION_CONTEXT`）。
 
 > ⚠️ 改完 `src/**` 必须 `pnpm run build` **并重启 DSH**：实测 HMR 只对新装 bundle 生效，改动已加载插件的 `lib/` 不会热替换（旧 generation 会继续跑）。
 
@@ -66,7 +67,8 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | 作品（正文/设定/大纲/资料） | 每个小说自己的 git 仓库 | ✅ 全部 |
 | 派生索引 | `<book>/index/inkflow.db`（WAL） | ❌ 只 `.gitkeep` |
 | 插件自身状态（lastProjectRoot，**仅展示、不用于解析项目**） | `$DSH_HOME/inkflow/state.json` | — |
-| HTTP 路由 | `/inkflow/api/status`、`/api/chapters`（只读；无会话身份时返回 `NO_SESSION_CONTEXT`） | — |
+| 共享库（插件级，跨书复用） | `$DSH_HOME/inkflow/shared/`（【未实现】） | 由用户自建 |
+| 面板通道 | `/inkflow/internal/*`（私有内部通道，**不是对外 API**；【未实现】，当前为 `/inkflow/api/*` fail-closed 占位） | — |
 
 没有「作品库目录」这个配置：**项目在哪由 git 仓库和十个目录自己声明**，由会话的工作目录定位。
 显式传路径的工具参数（`projectRoot` / `root`）必须位于该工作目录子树内，越界或指向系统目录会被拒（`PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`）。
@@ -80,28 +82,34 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
   name: 'dsh-inkflow'
   config:
     dataDir: 'D:\\somewhere\\inkflow-state'  # 插件自身状态目录（默认 ~/.dsh/inkflow）
-    serveHttp: true                          # 关闭则不注册 /inkflow/api/*
+    serveHttp: true                          # 关闭则不注册面板私有通道（/inkflow/internal/*）
 ```
 
 ## 仓库结构
 
 ```
 src/host/              Host 半（DSH Node 进程内）
-  index.ts             apply(ctx, config)：注册工具与 HTTP 路由
+  index.ts             apply(ctx, config)：注册工具与面板通道
   context.ts           本插件用到的 DSH Host 表面（手写结构类型，零运行时依赖）
   config.ts            配置解析（dataDir / serveHttp）
   conventions.ts       ★ 目录/文件约定的唯一常量来源（改约定先改这里）
-  project.ts           门禁检测、inkflow.json 读写、项目脚手架
+  project.ts           四态门禁、inkflow.json 读写、路径作用域
+  workspace.ts         初始化/修复向导（plan → apply、git init、失败回滚）
   frontmatter.ts       极简 frontmatter 解析（标量/内联数组/块数组/注释）
+  io.ts                唯一写入口（路径解析 + 原子替换 + 单项目写锁）
   indexer.ts           文件 → 派生索引 + 不变量校验（node:sqlite）
+  index-build.ts       索引重建的原子替换与进程内单飞
+  probe.ts             可选 Host 服务探测与降级
+  skills.ts            5 个写作技能的 provider（按 cwd 门禁）
+  preset.ts            写作 preset 声明与注册
   state.ts             插件自身状态（lastProjectRoot，仅展示），原子写
-  tools.ts             inkflow_project_status / _init / _index_rebuild / _chapter_list
-  routes.ts            /inkflow/api/*（仅 loopback、fail-closed；无会话身份时不猜项目）
+  tools.ts             inkflow_* 工具（当前 5 个）
+  routes.ts            面板私有通道（目标 /inkflow/internal/*；当前为 /inkflow/api/* fail-closed 占位）
 src/client/            Client 半（浏览器 React）
-  index.tsx            侧栏图标 + 工作台整页
+  index.tsx            面板视图与槽位注册（目标 conversation.view；当前 sidebar.panellist + main）
   context.ts           本插件用到的 DSH Client 表面（slots / layout）
 scripts/build.mjs      esbuild 双半构建（Host ESM + Client module-loader factory）
-tests/                 node:test 契约测试（不依赖 DSH 进程，20 条）
+tests/                 node:test 契约测试（不依赖 DSH 进程）
 .agents/constitution/  项目章程、DSH 硬约束、工程纪律、数据安全政策
 .agents/specs/         规范：产品范围 / 架构 / 目录约定 / 数据模型 / 路线图 + spec 索引
 .agents/adrs/          决策记录 + 索引与决策速览

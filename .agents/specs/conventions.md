@@ -1,7 +1,9 @@
 # InkFlow 项目目录约定（约定大于配置）
 
-> 状态：**已定（用户拍板 2026-10-21）**。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。
-> 决策依据：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 + 派生索引）与 [ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 四态门禁 / 向导；0006 修改了 0005 的目录与门禁条款）。
+> **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 + 派生索引）、[ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 四态门禁 / catalog / 向导）、[ADR-0007](../adrs/0007-plugin-shared-library.md)（共享库字段与 `.gitignore`）、[ADR-0008](../adrs/0008-panel-data-channel.md)（面板通道）。
+> **依赖**：[data-model.md](data-model.md)（字段字典与不变量）、[architecture.md](architecture.md)（模块边界）。
+> **相关 ADR**：0004（loopback 加固，继承）、0006（目录与门禁，修改 0005 条款）、0007、0008。
+> **状态**：活跃。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。契约已定而尚未落地的部分见 §9。
 
 ## 1. 什么算一个 InkFlow 项目
 
@@ -34,12 +36,15 @@
 ```
 <book-root>/                     ← git 仓库根，项目根
 ├── inkflow.json                 ← 项目元信息（唯一配置入口）
-├── .gitignore                   ← 至少忽略 index/*.db*
+├── .gitignore                   ← 见 §3.7 的必需行
+├── .openviking/                 ← 语义检索的 peer 配置（可选，见 §9；私有层不入库）
+│   ├── config.json              ← 团队层（可提交）
+│   └── config.local.json        ← 机器私有层（.gitignore）
 ├── chapters/                    ← 正文
 │   ├── .gitkeep
-│   ├── index.json               ← 卷列表 + 散章（派生投影，入库）
-│   └── vol-01-<slug>/           ← 卷目录（volumeId = vol-01）
-│       ├── index.json           ← 该卷章清单（派生投影，入库）
+│   ├── index.json               ← 卷章 catalog（派生投影，入库，见 §3.8）
+│   └── vol-01/
+│       ├── index.json           ← 该卷的章清单（派生投影，入库）
 │       └── 0001-<slug>.md
 ├── characters/                  ← 角色
 │   ├── .gitkeep
@@ -53,18 +58,24 @@
 │   ├── vol-01.md
 │   └── ch-0001.md
 ├── foreshadowing/               ← 伏笔
-│   └── .gitkeep
+│   ├── .gitkeep
+│   └── <slug>.md
 ├── timeline/                    ← 时间线
-│   └── .gitkeep
+│   ├── .gitkeep
+│   └── <slug>.md
 ├── relations/                   ← 知识关系
-│   └── .gitkeep
+│   ├── .gitkeep
+│   └── <slug>.md
 ├── facts/                       ← 事实账本
-│   └── .gitkeep
+│   ├── .gitkeep
+│   └── <subject>.md
 ├── library/                     ← 资料（原始参考材料，任意文件）
 │   └── .gitkeep
 └── index/                       ← 派生索引（可由文件重建，禁止手改）
     ├── .gitkeep                 ← 入版本控制，保证 clone 后目录存在
-    └── inkflow.db               ← 派生 SQLite（.gitignore）
+    ├── inkflow.db               ← 派生 SQLite（.gitignore）
+    ├── .lock                    ← 索引重建锁（.gitignore）
+    └── .write.lock              ← 单项目写锁（.gitignore）
 ```
 
 九个内容目录各自是一级目录、**互不嵌套**：伏笔、时间线、知识关系、事实账本不再挂在 `world/`、`outlines/` 之下，域归属由目录自证，门禁与工具都不必猜层级。
@@ -80,13 +91,21 @@
   "schemaVersion": 1,
   "title": "蜀山",
   "author": "zhx-xi",
+  "projectId": "8b1f3a6e-2c4d-4e7a-9f10-5b6c7d8e9f01",
   "seriesId": null,
   "createdAt": "2026-10-21T06:40:00.000Z"
 }
 ```
 
-- `schemaVersion`：**文件契约**版本。升级只增不改；读不懂的高版本 → 拒绝写入（只读提示），不静默降级。
-- 其余字段可缺省；缺省即为「未填」，不编默认值。
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| `schemaVersion` | int | ✅ | **文件契约**版本。升级只增不改；读不懂的高版本 → 拒绝写入（只读提示），不静默降级 |
+| `title` / `author` | string | — | 显示用；缺省即「未填」，不编默认值 |
+| `projectId` | UUID string | — | 项目身份（[ADR-0007](../adrs/0007-plugin-shared-library.md) C3）：初始化向导生成、随仓库走。**可选，不参与门禁**——缺失合法，只让共享库副本的 `origin.projectId` 为 `null` |
+| `seriesId` | string \| null | — | 指向共享库 `series/<slug>.json` 的 `seriesId`（[ADR-0007](../adrs/0007-plugin-shared-library.md) C5）；不复制系列文件 |
+| `createdAt` | ISO 8601 | — | 生成时间，仅展示 |
+
+**实现状态**：向导当前只写 `schemaVersion` / `title` / `author` / `createdAt`（`src/host/workspace.ts` 的 `metaBody`）；`projectId` 的生成尚未落地（归 #40，共享库需要它区分来源）。
 
 ### 3.2 正文 `chapters/**/*.md`
 
@@ -94,7 +113,7 @@
 ---
 id: 6f1c2c1e-...        # 可选；缺省用相对路径生成稳定 id
 title: 第一章 入山
-volume: vol-01          # 可选；卷 id（volumeId，不是目录名）；缺省从所在卷目录推导
+volumeId: vol-01        # 可选；卷归属由 volumeId 决定（不靠目录名推导）
 seq: 1                  # 可选；缺省取文件名前导数字
 status: draft           # draft | revised | final
 pov: 主角                # 可选
@@ -104,10 +123,12 @@ pov: 主角                # 可选
 ```
 
 - **正文就是 Markdown 正文**（frontmatter 之后），不加任何包装标记。
+- **卷归属用 `volumeId`**（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D6）：`vol-NN` 稳定标识，改卷目录的 slug 不改归属；卷目录名 `vol-NN-<slug>` 只用于定位文件。目录名不再参与归属推导。
 - **frontmatter 解析规则**（实现见 `src/host/frontmatter.ts`）：`#` 只有在引号外、且前面是行首或空白时才算注释；结束符必须是独立成行的 `---`（`----`、`--- x` 不算）；首块内不含任何 `key:` 行时判为「无 frontmatter」，正文优先——宁可丢元数据，也不吞正文。
 - **写回规则**：只做**行级补丁**（只替换目标 key 所在行及其块列表项），未知字段、行内注释、键序、引号风格原样保留；原子写盘由调用方负责（临时文件 + rename）。
 - 字数由插件派生（非空白字符数），不写回文件——避免 AI 与插件互相改字数字段。
 - 章号派生规则：`seq`（显式）> 文件名前导数字 > 文件名排序；**删章不重排**，允许空号。
+- 【未实现】现行解析器（`KNOWN_FRONTMATTER`）用 `volume` 字段存 `volumeId`（字段名不变），catalog 已按此实现（#15）。
 
 ### 3.3 角色 `characters/<slug>.md`
 
@@ -131,7 +152,7 @@ id: ...
 title: 白鹤门
 category: 门派          # 目录名与 category 应一致，不一致以 category 为准并告警
 parent: null            # 上级条目 id 或 path
-keywords: [白鹤, 鹤鸣剑]  # 世界书触发词（P1 摘要注入用）
+keywords: [白鹤, 鹤鸣剑]  # 世界书触发词（注入尚未实现）
 always: false           # 是否常驻注入
 ---
 条目正文
@@ -155,7 +176,7 @@ order: 0
 
 ### 3.6 资料 `library/**`
 
-任意文件（TXT/MD/PDF/图片）。插件只登记路径与大小，不解析内容（P1 起做导入与提取）。
+任意文件（TXT/MD/PDF/图片）。插件只登记路径与大小，不解析内容（导入与提取归 M16，尚未实现）。
 
 ### 3.7 `.gitkeep` 与 `index/`
 
@@ -164,104 +185,72 @@ order: 0
 | 文件 | 进 git？ | 说明 |
 |---|---|---|
 | `<必建目录>/.gitkeep` | ✅ | 十份（九个内容目录 + `index/`），保证 clone 后目录仍在 |
-| `chapters/index.json`、`chapters/<vol-dir>/index.json` | ✅ | 卷章清单投影（§3.8）：可 `git diff` 审阅、跨机器一致 |
+| `chapters/index.json`、`chapters/<vol-dir>/index.json` | ✅ | 卷章 catalog：可审阅的结构投影（§3.8） |
 | `index/inkflow.db` | ❌ | 派生 SQLite（含 `-wal`/`-shm`），可随时删除重建 |
+| `index/.lock` | ❌ | 索引重建锁（单飞与陈旧判定用） |
+| `index/.write.lock` | ❌ | 单项目写锁（§5.3） |
+| `.openviking/config.local.json` | ❌ | 语义检索的 peer 私有层：入库会让协作者继承错误的 peer（[ADR-0007](../adrs/0007-plugin-shared-library.md) C7） |
+| `.openviking/config.json` | ✅ | 团队层，可提交 |
 
-### 3.8 卷章清单 catalog（`chapters/index.json` 与 `chapters/<vol-dir>/index.json`）
+`.gitignore` 的必需行（初始化 / 修复向导写入，已存在则只补缺失行）：
 
-三份文件的关系：**`.md` 是真相，两份 catalog 是投影**。写入时自上而下、读取时用投影核对全部三份：
-
-| # | 文件 | 是什么 | 写入时机 |
-|---|---|---|---|
-| 1 | `chapters/**/*.md` | **真相**：文件名 + frontmatter 决定卷归属与章号 | 章写入工具（P1） |
-| 2 | `chapters/<vol-dir>/index.json` | 该卷的章清单（投影） | 章写入后重建 / 显式重建 |
-| 3 | `chapters/index.json` | 卷列表 + 不属于任何卷的散章（投影） | 章写入后重建 / 显式重建 |
-
-catalog 入库（与 `index/` 相反），因此卷章结构可 `git diff` 审阅、跨机器一致；它不是第二真相：手改会在下一次重建时被覆盖。
-
-`chapters/index.json`（卷列表 + 散章）：
-
-```json
-{
-  "schemaVersion": 1,
-  "volumes": [{ "volumeId": "vol-01", "dir": "vol-01-入山", "title": "入山", "order": 1 }],
-  "looseChapters": [
-    { "chapterId": "chapters/0001-序章.md", "file": "chapters/0001-序章.md", "seq": 1, "title": "序章" }
-  ]
-}
+```gitignore
+index/*.db
+index/*.db-wal
+index/*.db-shm
+index/.lock
+index/.write.lock
+.openviking/config.local.json
 ```
 
-`chapters/<vol-dir>/index.json`（该卷章清单）：
+**实现状态**：向导当前只写前三行（`REQUIRED_GITIGNORE_LINES`）；后三行随 §3.8 catalog、§9 共享库/OVK 一起补，归 #15 / #40 / #41。
 
-```json
-{
-  "schemaVersion": 1,
-  "volumeId": "vol-01",
-  "chapters": [
-    {
-      "chapterId": "chapters/vol-01-入山/0001-入山.md",
-      "file": "chapters/vol-01-入山/0001-入山.md",
-      "seq": 1,
-      "title": "第一章 入山"
-    }
-  ]
-}
-```
+### 3.8 卷章 catalog（`chapters/index.json`）
 
-| 字段 | 类型 | 语义 |
+catalog 是**派生结构投影**（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D6）：`.md`（文件名 + frontmatter）是真相，catalog 与真相不一致时以 `.md` 重建并覆盖。
+
+| 文件 | 形状 | 内容 |
 |---|---|---|
-| `schemaVersion` | int | 固定 `1`；不同即判为漂移并重建 |
-| `volumeId` | string | 稳定卷 id，形如 `vol-NN`（两位起，`vol-7` 规范化为 `vol-07`） |
-| `dir` | string | 卷目录名；**必须以 `volumeId` 开头**（`vol-NN-<slug>`）。slug 可改、`volumeId` 不变 |
-| `title` | string | 卷：目录 slug；章：frontmatter `title`，缺省取文件名（去 `.md`） |
-| `order` | int | 卷序号，取 `volumeId` 的数字部分（自然排序） |
-| `chapterId` | string | frontmatter `id`，缺省用项目相对路径 |
-| `file` | string | 项目相对路径、`/` 分隔、必在 `chapters/` 下（例 `chapters/vol-01-入山/0001-入山.md`） |
-| `seq` | int | 可选：frontmatter `seq` > 文件名前导数字；都没有时**省略该字段**（不编造 `0`，否则与真实第 0 章冲突） |
+| `chapters/index.json` | `{ schemaVersion, volumes[], looseChapters[] }` | 卷列表 + 不属于任何卷的散章 |
+| `chapters/<vol-dir>/index.json` | `{ schemaVersion, chapters[] }` | 该卷的章清单 |
 
-- **不写派生统计**：字数、状态统计等由 SQLite 派生索引给出；写进 catalog 只会让 AI 与插件互相改同一字段。
-- **章归属**：frontmatter `volume`（存 `volumeId`，**不是目录名**）优先；缺省时取章所在卷目录的 `volumeId`；两者都不可用时进 `looseChapters`。因此改卷目录 slug 不改变任何章的归属。
-- **什么算卷**：只有 `chapters/` 的一级子目录、且名字匹配 `vol-NN[-slug]` 才算卷。其他目录里的 `.md` 仍是章，按上面的归属规则落到某卷或散章（不会从清单里消失）。
-- **读路径不写盘**：catalog 缺失、不可解析或与 `.md` 不一致时返回 `catalogStale: true` 与内存投影（以 `.md` 为准），供面板/诊断使用。
-- **写路径**：章写入后重建受影响的 catalog（结果标 `catalogRebuilt: true`）；另可显式重建。重建持项目写锁（§5.3）、原子替换（§5.2），**先写卷清单、后写顶层清单**——中途失败时顶层清单保持旧内容，读路径因此继续报 stale，下次重建修复。
-- **幂等**：同一批 `.md` 连续重建两次得到字节相同的文件（卷按 `order`/`dir` 排序，章按 `seq`/`file` 排序）。
-- **不是门禁必需项**：删掉 catalog 不改变 §1 的四态判定（重建即可），避免「删一个投影 = 项目损坏」。
+- 卷项：`{ volumeId, dir, title, order }`；章项：`{ chapterId, file, seq, title }`。
+- **不写派生量**（字数、状态统计、更新时间）：统计由索引派生，写进 catalog 只会让 AI 与插件互相改同一字段。
+- `volumeId` 形如 `vol-NN`（两位起，超过 99 自然扩展），**稳定不复用**；卷目录名 `vol-NN-<slug>` 的 slug 可改。
+- 编码 UTF-8 无 BOM、LF；写入走「临时文件 + rename」原子替换。
+- **读写分工**：读路径不写盘（缺失/漂移时返回 `catalogStale: true` 并以 `.md` 为准）；写路径在写入时重建受影响的 catalog 并标 `catalogRebuilt: true`；另提供显式重建动作。
+- **不是门禁必需项**：删掉 catalog 不改变四态判定（重建即可），避免「删一个投影文件 = 项目损坏」。
+- 与 `index/` 的边界：catalog 入库、只含结构；`index/` 不入库、整库可删。
 
-四条不变量（`validateCatalog` 报码，**不阻断**；与派生索引的 `validation_issues` 同策略）：
+**实现状态**：catalog 尚未落地（无读写、无校验、无重建），归 #15；卷归属仍按目录名推导（见 §3.2）。
 
-| # | 不变量 | 失败码 |
-|---|---|---|
-| C-1 | 同一 `volumeId` 内 `(volumeId, seq)` 唯一 | `CATALOG_DUPLICATE` |
-| C-2 | `looseChapters` 内 `seq` 唯一 | `CATALOG_DUPLICATE` |
-| C-3 | 卷目录 `dir` 以 `volumeId` 开头（且目录存在） | `VOLUME_DIR_MISMATCH` |
-| C-4 | 清单指向的 `file` 必须存在且是 `.md` | `CHAPTER_FILE_MISSING` |
-
-另有漂移码 `CATALOG_STALE`：清单缺失 / 不可解析 / 与 `.md` 投影不一致。它不是不变量，而是「该重建了」的信号。插件**不删除**任何文件（正文没有第二份），因此非卷目录下的同名 `index.json` 只当作普通文件，不报漂移——否则会出现「重建也修不掉」的告警。
-
-### 3.9 伏笔 `foreshadowing/*.md`
+### 3.9 伏笔 `foreshadowing/<slug>.md`
 
 ```markdown
 ---
 id: fs-01
 title: 断剑
 resolved: false          # 是否已回收
-resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章的 id
+resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 ---
-伏笔正文（埋设位置、回收条件、读者提示强度…自由格式）
+伏笔正文（埋设位置、回收条件、读者提示强度，自由格式）
 ```
 
-- `resolved: true` 而缺 `resolvedChapter` → 重建校验记 `FORESHADOW_RESOLVED_WITHOUT_CHAPTER`（data-model §5 I-09），**不阻断索引**。理由：没有回收章，「已回收」就无法与正文对账。
+- `resolved: true` 而缺 `resolvedChapter` → 重建期校验报 `FORESHADOW_RESOLVED_WITHOUT_CHAPTER`，**不阻断索引**（data-model §5 I-09）。
 - 章 id 取自章 frontmatter 的 `id`（缺省为章的相对路径），本文件不复制章标题或章号。
+- 字段字典（`status` 状态机、`threads`、`characters`）见 [data-model.md §3.2](data-model.md)。
 
 ## 4. 索引（派生层）
 
 - 引擎：`node:sqlite`（宿主 Node 24 内置，无原生依赖）。
 - 索引 schema 版本存在 `PRAGMA user_version`；与代码期望不一致 → **删库重建**，不做 ALTER 迁移。
 - 每次重建 = 清空 + 重扫 + 事务提交；文件名/结构变化由「重建」消化，因此**永远没有数据库迁移问题**。
-- 索引内容（v1）：`meta`、`files`、`chapters`、`characters`、`world_entries`、`outline_nodes`、`chapters_fts`（FTS5 trigram）。
-- 校验器在重建后运行：duplicate id / 缺 `overall` / 卷中卷 / 角色名重复 / 悬空 `parent` → 记入 `validation_issues` 并返回，**不阻断索引可用**（只读仍可用，写入类工具 P1 再拦）。
+- 索引内容（v1）：`meta`、`files`、`chapters`、`characters`、`world_entries`、`outline_nodes`、`library_files`、`validation_issues`、`chapters_fts`（FTS5 trigram）。
+- 全文检索：trigram 命中 ≥3 字；2 字查询走 `LIKE` 兜底（ADR-0005）。
+- 校验器在重建后运行：duplicate id / 缺 `overall` / 卷中卷 / 角色名重复 / 悬空 `parent` / 非 `.md` 章文件 / frontmatter 不可解析 → 记入 `validation_issues` 并返回，**不阻断索引可用**（只读仍可用，写入类工具再拦）。
+- 索引内容（v2，规划）：覆盖九个内容目录的全部实体（伏笔/时间线/关系/账本/资料卡）+ `entity_mentions` + 全实体 FTS + catalog 一致性校验。**未实现**，归 #22 / #23；v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建（不写 ALTER）。
 
-## 5. 写入纪律（P1 实现，P0 已定原则）
+## 5. 写入纪律
 
 **单一写入口**：所有落盘都经过 `src/host/io.ts`（路径解析 + 原子替换 + 写锁「三件套」只实现一次）。业务代码不得自行拼接项目内路径，也不得直接调用 `fs.writeFileSync` 写项目文件。
 
@@ -288,7 +277,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章的 id
 | 崩溃残留可清扫 | 崩溃遗留的 `*.tmp-<pid>-<rand>`（持有者已死或超过 10 分钟）在下次持锁写入时清扫 |
 | 编码在写入口规范化 | 写入前剥 BOM、`CRLF`/`CR` → LF（`.gitattributes` 固定 LF）；读取侧仍须容忍 BOM 与 CRLF |
 | JSON | `JSON.stringify(value, null, 2)` + 单个结尾 LF；不可序列化（BigInt / 循环引用 / `undefined`）→ `IO_FAILED`，不写半截文件 |
-| 不静默覆盖 | 改写既有正文必须走「提案 → 用户确认」（P1 提案制），P0 无写正文工具 |
+| 不静默覆盖 | 改写既有正文必须走「提案 → 用户确认」（提案制归 M19，尚未实现）；当前无写正文工具 |
 | 删除可回溯 | 删文件交给 git（`git rm` 后可 `git revert`）；插件不物理删正文 |
 | 只追加审计 | 审计/事件写在 `index/`（派生）或 DSH 会话日志，不污染正文 |
 
@@ -373,13 +362,20 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章的 id
 - 因此"越界路径"不仅被拒，目标目录**零变更**（mtime/条目不变）。
 - 拒绝盘符根与安装目录是硬规则：那里写入会破坏系统或宿主，且绝不可能是用户的书写目录。
 
-### 6.2 面板路由（`/inkflow/api/*`）
+### 6.2 面板通道（`/inkflow/internal/*`）
 
-浏览器请求不携带会话身份，因此在"会话 → 工作区"解析落地之前：
+面板与 Host 之间的数据通道是**内部实现**，不是对外 API（[ADR-0008](../adrs/0008-panel-data-channel.md) D2）：不版本化、不提供 OpenAPI、不承诺兼容；`/inkflow/api/*` 一律 404，不留兼容别名。
 
-- 不读 `?root=`（否则任意页面可让插件读写任意目录）；
-- 不读 `state.json` 的 `lastProjectRoot`（那是"某个会话最后碰过的书"，不代表当前会话）；
-- `/api/status`、`/api/chapters` 一律返回 **HTTP 200 + `ok:false` + `NO_SESSION_CONTEXT`**，且**不创建任何文件**。
+| 规则 | 说明 |
+|---|---|
+| 路径 | `/inkflow/internal/<域>`；信封 `{ok:true,value}` / `{ok:false,error:{code}}` |
+| 方法 | **逐路由声明**：读路由只 GET；写路由只 POST，且必须 `Content-Type: application/json`（否则 415）、请求体必须是对象 |
+| 会话来源 | Client 只传 `sessionId`；Host 依次用 ①`workspaceRegistry` 的 `sessionIds → Workspace.path` ②`workingDirectory.get(sessions.get(id))` 解析；都失败 → HTTP 200 + `ok:false` + `NO_SESSION_CONTEXT`，**零写盘** |
+| 路径参数 | `root` / `path` / `cwd` 出现在 query 或 body → 400 `unexpected-path-param`，且不触达文件系统 |
+| 加固 | 继承 [ADR-0004](../adrs/0004-loopback-http.md)：`Host` 必须 loopback；`Origin` 存在时必须 loopback（写路由强制要求存在）；无 CORS 头；`no-store` + `nosniff`；未知路径 404 |
+| 与门禁一致 | 解析出的根仍过四态门禁；非 `usable` 返回同一份结构化清单，面板不自己兜底 |
+
+**实现状态**：`/inkflow/internal/*` 尚未落地（归 #18），客户端入口仍是 `sidebar.panellist` + `main`（归 #17 改为 `conversation.view`）。当前构建的 `/inkflow/api/status`、`/inkflow/api/chapters` 一律返回 `200 + ok:false + NO_SESSION_CONTEXT`，且不读查询串、不读插件状态、不创建任何文件——这是过渡期的 fail-closed 占位，不在 ADR-0008 的目标契约内。
 
 ### 6.3 初始化 / 修复向导（plan → apply）
 
@@ -406,7 +402,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章的 id
 
 ## 7. 与旧 InkFlow 的关系
 
-旧库（43 表 / 59 万字）不再是真相源；**迁移 = 生成上述文件树**。逐章、逐实体落盘后可直接 `git commit` 审阅，比跨 schema ETL 更容易核对（P4 执行）。
+旧库（43 表 / 59 万字）不再是真相源；**迁移 = 生成上述文件树**。逐章、逐实体落盘后可直接 `git commit` 审阅，比跨 schema ETL 更容易核对（归 roadmap 的 M/W 波次）。
 
 ## 8. 已裁决事项（原 3 条待拍板）
 
@@ -415,3 +411,19 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章的 id
 | C1 | `index/` 缺失时自动重建（§1 的放宽）是否接受？ | **采纳**，成为 §1 的唯一放宽（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D2） |
 | C2 | 伏笔 / 时间线 / 知识关系 / 账本 的归属目录 | **被取代**：四个域各自独立成一级目录（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D1） |
 | C3 | 新书创建是否提供 `inkflow_project_init`？是否代跑 `git init`？ | **被取代**：向导可 `git init`，但不 commit / 不配 remote / 不设身份（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3/D4） |
+
+## 9. 契约已定但尚未落地的部分
+
+本节只登记**本文已写进契约、实现还没有**的条目；不要把它当成时间表（排期见 [roadmap.md](roadmap.md)）。
+
+| 契约 | 现状 | 落地归属 |
+|---|---|---|
+| 卷章 catalog（`chapters/index.json`）与 `volumeId` | 无读写/校验/重建；卷归属仍按目录名推导 | #15 |
+| `.gitignore` 的 `index/.lock`、`index/.write.lock`、`.openviking/config.local.json` 三行 | 向导只写前三行 `index/*.db*` | #15 / #40 / #41 |
+| `inkflow.json.projectId` | 向导不生成；字段可缺省 | #40 |
+| 索引 v2（九目录全实体 + `entity_mentions` + 全实体 FTS） | 索引 v1 只覆盖章/角色/世界观/大纲/资料路径 | #22 / #23 |
+| 面板入口 `conversation.view` | Client 仍注册 `sidebar.panellist` + `main` | #17 |
+| `/inkflow/internal/*` 私有通道与 `sessionId` 解析 | 只有 `/inkflow/api/*` 的 fail-closed 占位 | #18 |
+| 插件级共享库（`$DSH_HOME/inkflow/shared/`、复制快照、`origin`） | 未实现 | #40 |
+| OVK 语义检索（peer 只读、按章重建、降级 FTS5） | 未实现；当前只有 FTS5 | #41 |
+| 旧库 ETL（43 表 → 文件树） | 未实现 | #51 |

@@ -85,13 +85,15 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.1 工作台面板
 
-左侧栏点 **InkFlow** 图标打开工作台：
+**目标形态**（[ADR-0008](../.agents/adrs/0008-panel-data-channel.md)）：面板入口在**会话视图**（与「对话 / 轨迹」同栏）的 InkFlow 页签——它只显示当前会话所在的那本书，不需要你选项目。
+
+**当前构建**：入口仍在**左侧栏**（点 InkFlow 图标打开整页工作台）；面板还无法解析会话所属项目，会显示「无法确定当前会话的项目」（`NO_SESSION_CONTEXT`）。在两个入口与私有通道落地前，项目状态以工具返回为准：在小说目录的会话里让 AI 调 `inkflow_project_status`。
+
+工作台内容（当前）：
 
 - **左栏**：章节列表（章号 / 标题 / 状态 / 字数，来自索引）
 - **中栏**：正文区（编辑能力在后续版本）+ 项目诊断（项目路径、索引状态、统计）
 - **右栏**：十项目录（九个内容目录 + `index/`）勾选状态 + 约定速览
-
-> 面板当前**不知道**你正开在哪个会话里，所以它会显示「无法确定当前会话的项目」而不是猜一本书。项目状态以工具返回为准：在小说目录的会话里让 AI 调 `inkflow_project_status`。面板与会话绑定在后续版本补上。
 
 ### 5.2 对 AI 说人话就行
 
@@ -150,7 +152,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 ---
 id: ch-1
 title: 第一章 入山
-volume: vol-01
+volumeId: vol-01     # 卷归属（vol-NN 稳定标识；catalog 尚未实现）
 seq: 1
 status: final        # draft | revised | final
 ---
@@ -212,7 +214,7 @@ title: 全书总纲
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 面板显示「无法确定当前会话的项目」 | 面板还不具备会话→目录的解析能力（`NO_SESSION_CONTEXT`） | 在小说目录的会话里调 `inkflow_project_status` 看项目状态；面板绑定会话在后续版本 |
+| 面板显示「无法确定当前会话的项目」 | 面板还不具备会话→目录的解析能力（`NO_SESSION_CONTEXT`）；目标形态是会话视图入口 + 私有通道，尚未实现 | 在小说目录的会话里调 `inkflow_project_status` 看项目状态 |
 | 工具报 `NOT_AN_INKFLOW_PROJECT`（`needs-setup`） | 这里还不是项目：缺 git / 缺目录 / 缺 `inkflow.json` | 看返回的 `missing` 与 `actions`；确认后让 AI 走 `inkflow_project_plan` → `inkflow_project_init`（`confirm: true`） |
 | 工具报 `PROJECT_NEEDS_REPAIR`（`needs-repair`） | 书已经存在，但缺目录/缺 `.gitkeep`/`inkflow.json` 坏了 | 先看 `actions`（只补缺失项，不覆盖已有文件）；坏 meta 会先回原文再重建 |
 | 工具报 `PROJECT_NEEDS_NEWER_PLUGIN` | `inkflow.json` 的 `schemaVersion` 比你装的插件新 | **升级插件**；不要试图修复或重建——旧版本写入会破坏新版本写下的数据 |
@@ -235,7 +237,7 @@ title: 全书总纲
 不会。第一阶段完全本地：没有账号、没有服务端、没有同步。只有你主动调用模型生成内容时，相关上下文才会发送给你自己配置的模型服务。
 
 **Q：能多本书吗？**
-能。一本书一个目录（一个 git 仓库），互不干扰。项目由**会话的工作目录**决定：在那个目录里问 AI，它读的就是那本书；跨到别的目录问，不会串到上一本书。
+能，但**一个会话工作区只管一本书**：一本书 = 一个目录 = 一个 git 仓库；在不同书的目录里分别开会话即可，插件不会跨目录串数据。
 
 **Q：怎么备份？**
 `git push` 到你的私有远端即可。这也是推荐做法：每完成一章提交一次。

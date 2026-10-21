@@ -20,7 +20,7 @@
 1. **原子替换**：写文件走「同目录 `<file>.tmp-<pid>-<rand>` → `fsync` → `rename` 覆盖」，禁止原地截断写入（崩溃会留下半截正文）。
 2. **失败不落半截（可检验）**：写失败时①目标文件字节不变（sha256 不变）②临时文件被删除（目录里不残留 `*.tmp-<pid>-<rand>`）③写锁释放④返回结构化错误（附 `code`、`errno`、`tempFile`）。禁止「先删后写」或「先截断再补」。
 3. **崩溃残留可清扫**：持有者已死（pid 不存在）或存在超过 10 分钟的 `*.tmp-<pid>-<rand>`，由下一次持锁写入清扫；清扫只在项目根内、且只在持锁期间进行。
-4. **不静默覆盖**：改写既有正文必须走「提案 → 用户确认」（提案制）；P0 不提供任何写正文能力。
+4. **不静默覆盖**：改写既有正文必须走「提案 → 用户确认」（提案制）；提案制尚未落地，当前不提供任何写正文工具。
 5. **删除交给 git**：不物理删除正文；删除 = `git rm`（可 `git revert`）。
 6. **编码固定**：UTF-8 无 BOM、LF 行尾；写入口负责剥 BOM、把 `CRLF`/`CR` 归一为 LF。读取用户文件时必须容忍 BOM 与 CRLF（用户会用任意工具编辑）。
 7. **幂等**：同一操作重跑不应产生重复数据（重复标题、重复文件、重复索引行）。
@@ -49,8 +49,8 @@
 - **单一路径解析**：写目标一律经 `resolveWriteTarget(projectRoot, relativePath)`（[S-03 §5](../specs/conventions.md)）：只接受相对路径；只允许九个内容目录 + `index/`；拒绝 `..`、绝对路径、UNC、Windows 保留名、结尾点/空格、超长路径（绝对路径 > 240 字符或单段 > 255）、以及 `realpath` 后逃出项目根的符号链接/junction。拒绝时**零写入**。
 - **路径穿越**：所有相对路径拼接后必须校验仍在项目根内（`realpath` 后子树比对）；`resolveWriteTarget` 与门禁共用 `realpathLoose`/`isWithin`，避免两套判定在同一路径上给出相反结论。
 - **`projectRoot` / `root` 参数边界**：显式路径必须 `realpath` 后位于**会话工作区子树**内（工作区 = 会话工作目录），判定发生在任何写盘之前；盘符/卷根、家目录本身（及其祖先）、系统与安装目录硬拒，返回结构化 `PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`。跨会话状态（`state.json` 的 `lastProjectRoot`）只可用于展示，不得作为解析来源。
-- **脚手架再确认**：`init` 只在目标「不存在 / 空目录 / 已含 `inkflow.json`」时直接创建；其余情况零写入返回待确认清单，用户同意后才落盘。
-- **loopback 校验**：`/inkflow/api/*` 只服务本机浏览器（见 [hard-constraints.md](hard-constraints.md) H8）；请求无会话身份时不得猜测项目，返回 `NO_SESSION_CONTEXT`。
+- **脚手架再确认**：向导一律两段式——`inkflow_project_plan` 只读列出将创建/补齐的项，`inkflow_project_init` 必须带 `confirm: true` 才落盘，且只补缺失项、不覆盖；已有文件只进 `skipped[]`（[S-03 §6.3](../specs/conventions.md)）。
+- **loopback 校验**：面板内部通道 `/inkflow/internal/*` 只服务本机浏览器（见 [hard-constraints.md](hard-constraints.md) H8）；请求只带 `sessionId`，无会话身份时不得猜测项目，返回 `NO_SESSION_CONTEXT`。
 
 ## 5. 密钥与隐私
 
