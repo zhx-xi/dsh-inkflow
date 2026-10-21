@@ -19,6 +19,7 @@ import type { HostContext } from './context.js'
 import { resolveConfig } from './config.js'
 import { BUNDLED_SKILL_NAMES, bundledSkillsDir, registerInkflowSkills } from './skills.js'
 import { buildWritingPreset, registerWritingPreset } from './preset.js'
+import { registerWritingContext } from './prompt.js'
 import { describeError } from './probe.js'
 import { readState } from './state.js'
 import { buildTools } from './tools.js'
@@ -46,6 +47,22 @@ export {
 export type { BundledSkill, SkillFileProblem, SkillRegistration } from './skills.js'
 export { WRITING_PRESET_ID, buildWritingPreset, registerWritingPreset, writingPersona } from './preset.js'
 export type { PresetRegistration } from './preset.js'
+
+/**
+ * The writing context (issue #20) is exported the same way: `buildWritingContext`
+ * is the whole projection, and the contract tests assert it directly instead of
+ * scraping a fake prompt pipeline. The panel's future briefing preview reuses
+ * the same entry point, so this is not a test-only surface.
+ */
+export { DEFAULT_BUDGET_TOKENS, DEFAULT_TAIL_CHARS, buildWritingContext, estimateTokens } from './writing-context.js'
+export type {
+  WritingContextOptions,
+  WritingContextResult,
+  WritingContextSegment,
+  WritingContextSegmentName,
+} from './writing-context.js'
+export { PROMPT_SECTION_NAME, PROMPT_SECTION_ORDER, registerWritingContext } from './prompt.js'
+export type { WritingContextRegistration } from './prompt.js'
 
 /**
  * The frontmatter reader/writer is re-exported from the bundle entry so the
@@ -145,6 +162,19 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
     )
   } catch (error) {
     log.warn(`writing surface skipped: ${describeError(error)}`)
+  }
+
+  // Writing context (issue #20): the four facts a writing session needs before
+  // its first tool call. Optional service, own degradation, and its own
+  // try/catch — a broken prompt section must never cost the user their tools.
+  try {
+    registerWritingContext(ctx, {
+      log,
+      budgetTokens: config.promptBudgetTokens,
+      tailChars: config.promptTailChars,
+    })
+  } catch (error) {
+    log.warn(`writing context skipped: ${describeError(error)}`)
   }
 
   const tools = ctx.tools
