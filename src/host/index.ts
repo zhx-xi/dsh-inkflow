@@ -37,6 +37,16 @@ export const inject = ['tools']
 
 const VERSION = '0.0.2'
 
+/**
+ * Index-build API for embedders and tests. Tools/routes use these too; exporting
+ * them from the entry point keeps the structured error contract addressable
+ * without pulling in plugin assembly (`IndexBuildError` is the documented
+ * failure type for `buildIndex`).
+ */
+export { buildIndex, describeIndexBuildFailure, IndexBuildError } from './index-build.js'
+export type { IndexBuildErrorCode, IndexBuildFailure } from './index-build.js'
+export type { IndexBuildResult } from './indexer.js'
+
 export function apply(ctx: HostContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig)
   const log = ctx.logger('dsh-inkflow')

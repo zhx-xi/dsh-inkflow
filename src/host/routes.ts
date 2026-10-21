@@ -19,6 +19,11 @@
  *     whichever session ran last; it may belong to a completely different book.
  * Resolving sessionId → workspace lands in #18. Until then the page gets a
  * structured refusal instead of another novel's data, and nothing is written.
+ *
+ * CONSEQUENCE FOR THE ATOMIC INDEX BUILD (issue #4): with no project to resolve,
+ * this surface never rebuilds the index, so there is no `IndexBuildError` to map
+ * here. The mapping lives in `tools.ts` (`indexBuildFailure`), and whoever
+ * restores a project lookup in #18 must route the rebuild through it too.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'

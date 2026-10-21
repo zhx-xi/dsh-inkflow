@@ -13,7 +13,8 @@ import { resolve as resolvePath } from 'node:path'
 
 import type { ContentBlock, HostContext, JsonSchemaNode, ToolDefinition, ToolRunContext } from './context.js'
 import { FILE_SCHEMA_VERSION, INDEX_SCHEMA_VERSION, REQUIRED_DIRS, ROOT_META_FILE } from './conventions.js'
-import { buildIndex, listChapters, readIndexMeta } from './indexer.js'
+import { buildIndex, describeIndexBuildFailure } from './index-build.js'
+import { listChapters, readIndexMeta } from './indexer.js'
 import { checkProjectRootScope, findProjectRoot, initProject, inspectProject, projectLabel } from './project.js'
 import type { ProjectProbe, ScopeRejection } from './project.js'
 import { rememberProject } from './state.js'
@@ -111,6 +112,27 @@ function gateFailure(value: Resolution): Json {
 }
 
 const OBJECT_SCHEMA: JsonSchemaNode = { type: 'object', additionalProperties: true }
+
+/**
+ * The model-facing shape of a failed rebuild. The index is a cache, so a failed
+ * rebuild is reported as data — never as a thrown stack trace (issue #4).
+ */
+function indexBuildFailure(cause: unknown, root: string): Json {
+  const failure = describeIndexBuildFailure(cause)
+  return {
+    ok: false,
+    root,
+    error: {
+      code: failure.code,
+      errno: failure.errno,
+      message: failure.message,
+      hint:
+        failure.code === 'INDEX_BUSY'
+          ? 'another session or process is already rebuilding this index; retry in a moment'
+          : 'the previous index (if any) is still readable; fix the cause and rebuild',
+    },
+  }
+}
 
 const PROJECT_ROOT_PARAM = {
   type: 'string',
@@ -249,17 +271,21 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
       }
       const probe = resolved.probe
       rememberProject(deps.dataDir, probe.root)
-      const result = buildIndex(probe.root)
-      return {
-        ok: true,
-        root: result.root,
-        dbFile: result.dbFile,
-        schemaVersion: result.schemaVersion,
-        mode: result.mode,
-        counts: result.counts,
-        issues: result.issues,
-        ms: result.ms,
-        builtAt: result.builtAt,
+      try {
+        const result = await buildIndex(probe.root)
+        return {
+          ok: true,
+          root: result.root,
+          dbFile: result.dbFile,
+          schemaVersion: result.schemaVersion,
+          mode: result.mode,
+          counts: result.counts,
+          issues: result.issues,
+          ms: result.ms,
+          builtAt: result.builtAt,
+        }
+      } catch (cause) {
+        return indexBuildFailure(cause, probe.root)
       }
     },
   }
@@ -309,7 +335,11 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
       let chapters = listChapters(probe.root, limit)
       let indexRebuilt = false
       if (chapters === undefined) {
-        buildIndex(probe.root)
+        try {
+          await buildIndex(probe.root)
+        } catch (cause) {
+          return indexBuildFailure(cause, probe.root)
+        }
         chapters = listChapters(probe.root, limit) ?? []
         indexRebuilt = true
       }
