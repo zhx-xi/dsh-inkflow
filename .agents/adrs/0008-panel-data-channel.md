@@ -1,7 +1,8 @@
 # ADR-0008：面板入口只在 `conversation.view`，数据走私有内部通道
 
-- 状态：**已采纳（2026-10-21）**。本文**取代/收窄 [ADR-0004](0004-loopback-http.md)**：其路由加固条款继续有效，其"对外接口"定位与 `/inkflow/api/*` 路径命名由本文取代（0004 头部已按 A3 标注，正文未改）
+- 状态：**已采纳（2026-10-21）**；**D1 的入口范围被 [ADR-0010](0010-book-hub-entry.md) 收窄（root 侧栏书库，2026-10-21）**。本文**取代/收窄 [ADR-0004](0004-loopback-http.md)**：其路由加固条款继续有效，其"对外接口"定位与 `/inkflow/api/*` 路径命名由本文取代（0004 头部已按 A3 标注，正文未改）
 - 日期：2026-10-21
+- 取代与收窄：[ADR-0010](0010-book-hub-entry.md) 在本文之上加了一处 **root 作用域书库入口**（`sidebar.panellist`）与一条**无会话**内部通道 `/inkflow/internal/hub/*`。本文 D1 的"唯一入口"因此收窄为"**创作工作台**的唯一入口"；本文 **D2–D7 全部继续有效**并对 hub 通道同样适用（0010 D7 负责边界）。
 - 关系：遵守 [ADR-0006](0006-workspace-contract-v2.md) D5（单工作区单项目）与 D2（四态门禁）；与 [ADR-0005](0005-files-first-with-derived-index.md) 不冲突（面板只读投影）
 - 影响：`src/client/index.tsx`（插槽注册）、`src/host/routes.ts`（路由与拒绝语义）、`src/host/config.ts`（`serveHttp` 语义）、[S-02 architecture](../specs/architecture.md) 的路由与集成点章节、[docs/user-guide.md](../../docs/user-guide.md) 的面板入口描述
 
