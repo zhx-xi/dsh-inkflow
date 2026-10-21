@@ -14,8 +14,9 @@
 │                                                                        │
 │ dsh-inkflow                                                            │
 │ ├─ Host (lib/index.js)                                                 │
-│ │    ctx.tools.register          → inkflow_project_status / _init /     │
-│ │                                   _index_rebuild / _chapter_list      │
+│ │    ctx.tools.register          → inkflow_project_status / _plan /     │
+│ │                                   _init / _index_rebuild /            │
+│ │                                   _chapter_list                       │
 │ │    ctx.webServer.register      → /inkflow/api/status|chapters         │
 │ │    node:fs  ← 读写文件（真相）                                         │
 │ │    node:sqlite ← 只写 <project>/index/inkflow.db（缓存）               │
@@ -24,7 +25,8 @@
 └────────────────────────────────────────────────────────────────────────┘
         │ 每个小说一个 git 仓库
         ▼
-  <book>/ { inkflow.json, chapters/ characters/ world/ outlines/ library/ index/ }
+  <book>/ { inkflow.json, chapters/ characters/ world/ outlines/
+            foreshadowing/ timeline/ relations/ facts/ library/ index/ }
 ```
 
 ## 2. 存储决策（ADR-0005）
@@ -40,17 +42,20 @@
 
 ## 3. 项目门禁（约定大于配置）
 
-`findProjectRoot(start)` 从会话工作目录向上走，判定条件（[.agents/specs/conventions.md](conventions.md) §1）：
+`findProjectRoot(start)` 从会话工作目录**向上**找最近的「已经有书」信号——存在 `inkflow.json` 或 `.git`（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D5）；内容目录**不**参与信号，否则六目录旧书或半成品会被跳过，答成上一层仓库。命中后 `inspectProject(root)` 产出**四态之一**（[conventions.md](conventions.md) §1，按序命中即停）：
 
-| 条件 | 检测 | 不满足时 |
-|---|---|---|
-| G1 是 git 仓库 | 根目录存在 `.git`（目录或 worktree 文件） | 返回 `NOT_AN_INKFLOW_PROJECT`，`missing` 含 `.git` |
-| G2 六个目录齐全 | `chapters characters world outlines index library` | 同上，`missing` 列出具体目录 |
-| G3 `inkflow.json` 可解析 | 存在 + `schemaVersion` 为整数（容忍 UTF-8 BOM） | 同上，`missing` 含 `inkflow.json` |
+| # | 状态 | 检测 | 不满足时 |
+|---|---|---|---|
+| 1 | `needs-newer-plugin` | `inkflow.json` 可解析且 `schemaVersion` > 插件上限 | 业务工具只读拒绝；**零写入**（不改 meta、不重建索引） |
+| 2 | `usable` | git + 九个内容目录与 `index/`（每项带 `.gitkeep`）+ meta 可解析且版本 ≤ 上限 | — |
+| 3 | `needs-repair` | 有 meta（哪怕不可解析）或有 `.git` | 返回 `PROJECT_NEEDS_REPAIR` + 结构化清单；只能走修复向导 |
+| 4 | `needs-setup` | 都不成立 | 返回 `NOT_AN_INKFLOW_PROJECT` + `needsSetup: true`；只能走初始化向导 |
 
-**唯一放宽**：`index/` 是派生物。当其余五项 + git + meta 齐全而 `index/` 缺失时，插件自动创建 `index/`（含 `.gitkeep`）并在结果里标 `indexDirRecreated: true`——否则删一次索引目录就等于永久锁死插件。
+**唯一放宽**：`index/` 是派生物。当其余九项 + git + meta 齐全而 `index/` 目录缺失时，插件自动创建 `index/`（含 `.gitkeep`）并在结果里标 `indexDirRecreated: true`——否则删一次索引目录就等于永久锁死插件。判定路径上只有这一个写操作。
 
-失败一律返回结构化清单（`checks` / `missing` / `reasons` / `hint`），不抛异常、不静默兜底、不在随机目录建库。
+失败一律返回结构化清单（`state` / `checks` / `missing` / `actions` / `readOnly` / `reasons` / `hint`），不抛异常、不静默兜底、不在随机目录建库。
+
+**向导**（[conventions.md](conventions.md) §6.3）：`inkflow_project_plan`（只读）列出动作 → `inkflow_project_init`（`confirm: true`）只补缺失项；坏 `inkflow.json` 先回原文（截断标注）再允许重建；`git init` 是唯一允许的 git 写操作（不 add/commit/remote/身份）。
 
 **会话目录来源**：优先 `ctx.get('workingDirectory').ensure(agent)`（公共服务，缺失时降级 `process.cwd()`）。工具也接受显式 `projectRoot`，但该路径必须 `realpath` 后落在**会话工作区子树**内；盘符根、家目录本身、系统与安装目录硬拒（`PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`，写盘前拒绝）。跨会话状态 `state.json` 的 `lastProjectRoot` 只用于展示（启动日志），**不作为任何解析来源**——它是"某个会话最后碰过的书"，拿来兜底会把别人的书当成当前项目。
 
@@ -141,8 +146,9 @@
 | 模块 | 只做 | 不做 |
 |---|---|---|
 | `src/host/index.ts` | 装配、生命周期、日志 | 业务逻辑 |
-| `src/host/conventions.ts` | **目录/文件约定的唯一常量来源** | 任何 IO |
-| `src/host/project.ts` | 门禁检测、`inkflow.json` 读写、脚手架 | 索引 |
+| `src/host/conventions.ts` | **目录/文件约定的唯一常量来源**（九目录 + `index/` + `.gitkeep`） | 任何 IO |
+| `src/host/project.ts` | 四态门禁判定、逐项清单（`missing` / `actions`）、`inkflow.json` 读写、路径作用域 | 执行动作、索引 |
+| `src/host/workspace.ts` | 向导 plan（只读）/ apply（`confirm`）、只补缺失项、`git init`（唯一 git 写）、失败回滚 | 门禁判定（读 `inspectProject`） |
 | `src/host/frontmatter.ts` | 极简 frontmatter 解析（标量/内联数组/块数组/注释） | 完整 YAML |
 | `src/host/indexer.ts` | 扫描 → 派生索引 + 不变量校验 | 写真相文件 |
 | `src/host/index-build.ts` | 索引重建的原子替换、进程内单飞、`index/.lock` | 解析文件格式 |
@@ -151,7 +157,7 @@
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
 | `src/host/skills.ts` | 5 个写作技能的读取与校验、按 cwd 门禁的 provider、注册与降级 | 写作品数据、生成正文 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
-| `src/host/tools.ts` | 工具 schema/执行/渲染 | 直接扫目录（走 indexer/project） |
+| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单 | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/routes.ts` | 只读投影 + 安全校验 | 写操作 |
 | `src/client/index.tsx` | 视图、槽位注册、fetch | 业务规则、文件 IO |
 
@@ -184,7 +190,8 @@
 | 项 | 状态 | 计划 |
 |---|---|---|
 | 新 Host 代码在**运行中的 DSH** 里生效 | **未验证**（需重启加载新 generation） | 用户重启后复核工具表 |
-| 面板视觉（六目录勾选、章节列表） | 未验证 | 重启后目视 |
+| 面板视觉（十项目录勾选、章节列表） | 未验证 | 重启后目视 |
+| 向导在**运行中的 DSH** 里的交互（plan → apply、`git init`） | 契约测试全绿（打 `lib/index.js`），但未在重启后的 DSH 会话里跑过 | 重启后手动跑一次全流程 |
 | 59 万字全量重建耗时 | 未验证 | P1 用真实库基准（当前样例 7 文件 10ms） |
 | 面板的项目来源（会话 → 工作区） | 未做：路由当前 fail-closed 返回 `NO_SESSION_CONTEXT` | 按会话解析工作区后再镜像工具侧的作用域规则 |
 | 增量重建 / 大文件流式解析 | 未做 | P1 |

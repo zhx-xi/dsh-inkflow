@@ -17,21 +17,38 @@ export const ROOT_META_FILE = 'inkflow.json'
 /** Derived-index directory (never hand-edited, never committed except .gitkeep). */
 export const INDEX_DIR = 'index'
 export const INDEX_DB_FILE = 'inkflow.db'
-export const INDEX_KEEP_FILE = '.gitkeep'
 
-/** Content directories every project must have (besides INDEX_DIR). */
-export const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'library'] as const
-export type ContentDir = (typeof CONTENT_DIRS)[number]
+/**
+ * Empty marker carried by **every** required directory (ADR-0006 D1).
+ *
+ * git does not track empty directories, so without it a fresh `git clone`
+ * makes the directory disappear and the gate reports a complete book as broken.
+ * "directory present but `.gitkeep` missing" therefore counts as structure
+ * missing and lands in `needs-repair`.
+ */
+export const DIR_KEEP_FILE = '.gitkeep'
 
-/** All six directories the gate requires (docs/conventions.md §1 G2). */
-export const REQUIRED_DIRS = [
+/**
+ * Content directories every project must have (ADR-0006 D1: nine of them).
+ * Each domain owns a first-level directory so the gate and every tool can prove
+ * membership without guessing nest levels.
+ */
+export const CONTENT_DIRS = [
   'chapters',
   'characters',
   'world',
   'outlines',
-  INDEX_DIR,
+  'foreshadowing',
+  'timeline',
+  'relations',
+  'facts',
   'library',
 ] as const
+export type ContentDir = (typeof CONTENT_DIRS)[number]
+
+/** The ten directories the gate requires: the nine content dirs plus `index/`. */
+export const REQUIRED_DIRS = [...CONTENT_DIRS, INDEX_DIR] as const
+export type RequiredDir = (typeof REQUIRED_DIRS)[number]
 
 /**
  * Directories a **write target** may live under (ADR-0006 D1): the nine content

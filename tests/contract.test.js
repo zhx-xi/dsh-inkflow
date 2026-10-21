@@ -19,7 +19,13 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { apply, inject, name } from '../lib/index.js'
 
-const ALL_DIRS = ['chapters', 'characters', 'world', 'outlines', 'index', 'library']
+// ADR-0006 D1: nine content directories plus the derived index/, each with a
+// `.gitkeep` (git does not track empty directories).
+const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
+const INDEX_DIR = 'index'
+const ALL_DIRS = [...CONTENT_DIRS, INDEX_DIR]
+const KEEP = '.gitkeep'
+const ROOT_META_NAME = 'inkflow.json'
 
 function createHarness(workspace) {
   const tools = new Map()
@@ -81,10 +87,13 @@ function workdir() {
   return mkdtempSync(join(tmpdir(), 'inkflow-contract-'))
 }
 
-function scaffold(root, { git = true, dirs = ALL_DIRS, title = '测试之书', meta = true } = {}) {
+function scaffold(root, { git = true, dirs = ALL_DIRS, keeps = true, title = '测试之书', meta = true } = {}) {
   mkdirSync(root, { recursive: true })
   if (git) mkdirSync(join(root, '.git'))
-  for (const dir of dirs) mkdirSync(join(root, dir), { recursive: true })
+  for (const dir of dirs) {
+    mkdirSync(join(root, dir), { recursive: true })
+    if (keeps) writeFileSync(join(root, dir, KEEP), '', 'utf8')
+  }
   if (meta) {
     writeFileSync(
       join(root, 'inkflow.json'),
@@ -184,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the four files-first tools and one prefix route', () => {
+test('registers the five files-first tools and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -192,6 +201,7 @@ test('registers the four files-first tools and one prefix route', () => {
       'inkflow_chapter_list',
       'inkflow_index_rebuild',
       'inkflow_project_init',
+      'inkflow_project_plan',
       'inkflow_project_status',
     ])
     assert.equal(harness.routes.length, 1)
@@ -214,9 +224,13 @@ test('gate: a plain directory is rejected with a missing-item checklist', async 
     const result = await callTool(harness, 'inkflow_project_status', { projectRoot: dir })
     assert.equal(result.ok, false)
     assert.equal(result.error.code, 'NOT_AN_INKFLOW_PROJECT')
-    for (const item of ['.git', 'chapters', 'characters', 'world', 'outlines', 'library', 'inkflow.json']) {
-      assert.ok(result.error.missing.includes(item), `missing list should contain ${item}`)
+    assert.equal(result.error.state, 'needs-setup')
+    assert.ok(result.error.missing.includes('.git'))
+    for (const name of CONTENT_DIRS) {
+      assert.ok(result.error.missing.includes(name), `missing list should contain ${name}`)
+      assert.ok(result.error.missing.includes(`${name}/${KEEP}`), `missing list should contain ${name}/${KEEP}`)
     }
+    assert.ok(result.error.missing.includes(ROOT_META_NAME))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -225,11 +239,14 @@ test('gate: a plain directory is rejected with a missing-item checklist', async 
 test('gate: git repo missing two directories reports exactly those', async () => {
   const dir = workdir()
   try {
-    scaffold(dir, { dirs: ['chapters', 'characters', 'index', 'library'] })
+    // A legacy-shaped book: every directory carries .gitkeep, two are missing.
+    scaffold(dir, { dirs: ALL_DIRS.filter((name) => name !== 'world' && name !== 'outlines') })
     const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_status', { projectRoot: dir })
     assert.equal(result.ok, false)
-    assert.deepEqual([...result.error.missing].sort(), ['outlines', 'world'])
+    assert.equal(result.error.state, 'needs-repair')
+    assert.equal(result.error.code, 'PROJECT_NEEDS_REPAIR')
+    assert.deepEqual([...result.error.missing].sort(), ['outlines', `outlines/${KEEP}`, 'world', `world/${KEEP}`])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -238,33 +255,42 @@ test('gate: git repo missing two directories reports exactly those', async () =>
 test('gate: a derived index directory is recreated, never a lockout', async () => {
   const dir = workdir()
   try {
-    scaffold(dir, { dirs: ['chapters', 'characters', 'world', 'outlines', 'library'] })
+    scaffold(dir, { dirs: CONTENT_DIRS })
     assert.equal(existsSync(join(dir, 'index')), false)
     const harness = makeTools(join(dir, 'state'), dir)
     const result = await callTool(harness, 'inkflow_project_status', { projectRoot: dir })
     assert.equal(result.ok, true)
     assert.equal(result.indexDirRecreated, true)
-    assert.equal(existsSync(join(dir, 'index', '.gitkeep')), true)
+    assert.equal(existsSync(join(dir, 'index', KEEP)), true)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('init scaffolds the convention tree without running git init', async () => {
+test('init scaffolds the convention tree, runs git init, and never commits', async () => {
   const dir = workdir()
   try {
     const root = join(dir, '我的新书')
     const harness = makeTools(join(dir, 'state'), dir)
-    const result = await callTool(harness, 'inkflow_project_init', { root, title: '新书', author: '作者' })
-    assert.equal(result.gitInitNeeded, true)
-    assert.equal(result.ok, false) // not usable until it is a git repository
-    for (const sub of ALL_DIRS) assert.ok(existsSync(join(root, sub)), `${sub}/ should exist`)
+    // ADR-0006 D3: apply always runs after an explicit confirmation.
+    const blocked = await callTool(harness, 'inkflow_project_init', { root, title: '新书' })
+    assert.equal(blocked.requiresConfirmation, true)
+    assert.equal(existsSync(root), false)
+
+    const result = await callTool(harness, 'inkflow_project_init', { root, title: '新书', author: '作者', confirm: true })
+    assert.equal(result.ok, true)
+    assert.equal(result.state, 'usable')
+    assert.equal(result.gitInit, 'created')
+    assert.equal(existsSync(join(root, '.git')), true)
+    for (const sub of ALL_DIRS) {
+      assert.ok(existsSync(join(root, sub)), `${sub}/ should exist`)
+      assert.ok(existsSync(join(root, sub, KEEP)), `${sub}/${KEEP} should exist`)
+    }
     const meta = JSON.parse(readFileSync(join(root, 'inkflow.json'), 'utf8'))
     assert.equal(meta.title, '新书')
     assert.equal(meta.schemaVersion, 1)
     assert.match(readFileSync(join(root, '.gitignore'), 'utf8'), /index\/\*\.db/)
 
-    mkdirSync(join(root, '.git'))
     const status = await callTool(harness, 'inkflow_project_status', { projectRoot: root })
     assert.equal(status.ok, true)
     assert.equal(status.label, '新书')
@@ -356,7 +382,7 @@ test('http: loopback only, method allowlist, and it never guesses a project', as
     const root = join(dir, 'book')
     // No index/ yet: the OLD code called inspectProject(?root=) here, which
     // creates index/ inside whatever directory the query string named.
-    scaffold(root, { dirs: ['chapters', 'characters', 'world', 'outlines', 'library'] })
+    scaffold(root, { dirs: CONTENT_DIRS })
     writeMarkdown(root, 'chapters/0001-甲.md', ['id: c1', 'seq: 1', 'title: 开篇'], '正文正文')
     const stateDir = join(dir, 'state')
     const harness = makeTools(stateDir, dir)
@@ -696,18 +722,21 @@ test('init: a non-empty directory without inkflow.json requires confirmation and
     assert.equal(blocked.requiresConfirmation, true)
     assert.equal(blocked.error.code, 'INIT_REQUIRES_CONFIRMATION')
     assert.deepEqual(blocked.existing, ['chapters', '草稿.txt'])
-    assert.ok(blocked.willCreate.includes('inkflow.json'))
-    assert.ok(blocked.willCreate.includes('characters'))
-    assert.equal(blocked.willCreate.includes('chapters'), false) // already there
+    assert.ok(blocked.willCreate.some((path) => path.endsWith('inkflow.json')))
+    assert.ok(blocked.willCreate.some((path) => path.endsWith('characters')))
+    assert.equal(blocked.willCreate.some((path) => /[\\/]chapters$/.test(path)), false) // already there
     // Zero writes: no directory, file or mtime change.
     assert.equal(hashTree(root), before)
     assert.equal(existsSync(join(root, 'inkflow.json')), false)
     assert.equal(existsSync(join(root, 'index')), false)
 
     const confirmed = await callTool(harness, 'inkflow_project_init', { root, title: '旧稿整理', confirm: true })
-    assert.equal(confirmed.ok, false) // still not a git repository
+    assert.equal(confirmed.ok, true) // git init ran: the directory is a project now
     assert.equal(confirmed.error, undefined)
-    for (const sub of ALL_DIRS) assert.ok(existsSync(join(root, sub)), `${sub}/ should exist`)
+    for (const sub of ALL_DIRS) {
+      assert.ok(existsSync(join(root, sub)), `${sub}/ should exist`)
+      assert.ok(existsSync(join(root, sub, KEEP)), `${sub}/${KEEP} should exist`)
+    }
     assert.equal(readFileSync(join(root, '草稿.txt'), 'utf8'), '不能被覆盖\n')
     assert.equal(JSON.parse(readFileSync(join(root, 'inkflow.json'), 'utf8')).title, '旧稿整理')
   } finally {
@@ -715,14 +744,18 @@ test('init: a non-empty directory without inkflow.json requires confirmation and
   }
 })
 
-test('init: an empty directory still scaffolds without a confirmation round', async () => {
+test('init: even an empty directory needs exactly one confirmation round', async () => {
   const dir = workdir()
   try {
     const root = join(dir, '空目录')
     mkdirSync(root)
     const harness = makeTools(join(dir, 'state'), dir)
-    const result = await callTool(harness, 'inkflow_project_init', { root, title: '新书' })
-    assert.equal(result.requiresConfirmation, undefined)
+    const blocked = await callTool(harness, 'inkflow_project_init', { root, title: '新书' })
+    // ADR-0006 D3: apply is confirmed, not implicit — even with nothing to lose.
+    assert.equal(blocked.requiresConfirmation, true)
+    assert.equal(existsSync(join(root, 'inkflow.json')), false)
+    const result = await callTool(harness, 'inkflow_project_init', { root, title: '新书', confirm: true })
+    assert.equal(result.ok, true)
     assert.equal(existsSync(join(root, 'inkflow.json')), true)
   } finally {
     rmSync(dir, { recursive: true, force: true })

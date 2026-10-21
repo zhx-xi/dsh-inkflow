@@ -12,7 +12,7 @@
 | [.agents/constitution/engineering-discipline.md](.agents/constitution/engineering-discipline.md) | SDD/TDD/评审/证据的执行细则（治理规则见 §9） | 写代码与提交前 |
 | [.agents/constitution/data-safety.md](.agents/constitution/data-safety.md) | 数据边界、写入纪律、危险操作、路径与密钥安全 | 任何会写文件的操作前 |
 | [.agents/specs/README.md](.agents/specs/README.md) | **spec 索引**（S-01…S-06）+ 编写规范 | 接新功能前 |
-| [.agents/specs/conventions.md](.agents/specs/conventions.md) | **项目目录/文件契约**（六目录 + `inkflow.json` + 门禁） | 碰数据/路径/工具前 |
+| [.agents/specs/conventions.md](.agents/specs/conventions.md) | **项目目录/文件契约**（九内容目录 + `index/` + `.gitkeep` + 四态门禁 + 向导） | 碰数据/路径/工具前 |
 | [.agents/specs/data-model.md](.agents/specs/data-model.md) | 实体→文件映射、字段字典、派生索引表、不变量 | 碰数据结构前 |
 | [.agents/specs/architecture.md](.agents/specs/architecture.md) | 模块边界、DSH 集成点实测签名、数据流 | 改结构/加模块前 |
 | [.agents/specs/open-questions.md](.agents/specs/open-questions.md) | **待裁决清单**（唯一允许频繁更新的规范类文件） | 开工前 / 决策卡住时 |
@@ -41,8 +41,8 @@
 
 ## 3. 目录约定（文件的真相）
 
-一部小说 = 一个 git 仓库 = 一个项目根：`inkflow.json` + `chapters/ characters/ world/ outlines/ library/ index/`。
-门禁三条全中才算项目：① 是 git 仓库 ② 六个目录齐全 ③ `inkflow.json` 可解析。
+一部小说 = 一个 git 仓库 = 一个项目根：`inkflow.json` + `chapters/ characters/ world/ outlines/ foreshadowing/ timeline/ relations/ facts/ library/` + `index/`（十项，每项带一个空的 `.gitkeep`）。
+门禁四态（[ADR-0006](.agents/adrs/0006-workspace-contract-v2.md)）：`needs-newer-plugin` / `usable` / `needs-repair` / `needs-setup`，按序命中即停；非 `usable` 只允许向导（plan 只读 → apply 带 `confirm: true`，只补缺失项，`git init` 但不 commit/不配远端）。
 目录名**固定英文、不可配置**——改约定必须**同一提交**内改 `src/host/conventions.ts` 与 [S-03](.agents/specs/conventions.md)。
 
 ## 4. 架构规则（不可违反）

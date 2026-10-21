@@ -1,21 +1,42 @@
 /**
- * Project detection, gating and scaffolding — the "convention over
- * configuration" half of ADR-0005.
+ * Project detection and the four-state gate — the "convention over
+ * configuration" half of ADR-0005, revised by ADR-0006.
  *
- * A directory is an InkFlow project when it is a git repository AND every
- * required directory exists (docs/conventions.md §1). The plugin never
- * registers projects anywhere: the filesystem *is* the registry.
+ * A directory is an InkFlow project when it is a git repository, carries the
+ * nine content directories plus `index/` (each with a `.gitkeep`) and has a
+ * parseable `inkflow.json` whose `schemaVersion` this plugin understands
+ * (docs/conventions.md §1). The plugin never registers projects anywhere: the
+ * filesystem *is* the registry.
+ *
+ * The gate answers "what should happen next" instead of "yes/no" (ADR-0006 D2),
+ * with a fixed precedence — the first matching state wins:
+ *
+ *   1 needs-newer-plugin  meta parses but is newer than us   → upgrade, zero writes
+ *   2 usable              git + ten dirs (+ .gitkeep) + meta → read/write
+ *   3 needs-repair        meta file and/or `.git` exists     → repair (fill gaps only)
+ *   4 needs-setup         none of the above                  → set up from scratch
+ *
+ * This module only *judges*: it builds the checklist (`missing[]`) and the
+ * action list (`actions[]`) and never writes beyond the `index/` relaxation.
+ * Executing the list lives in `workspace.ts` (plan → apply).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, parse as parsePath, relative as relativePath, resolve } from 'node:path'
 
 import {
   CONTENT_DIRS,
+  DIR_KEEP_FILE,
   FILE_SCHEMA_VERSION,
   INDEX_DIR,
-  INDEX_KEEP_FILE,
   REQUIRED_DIRS,
   REQUIRED_GITIGNORE_LINES,
   ROOT_META_FILE,
@@ -29,26 +50,68 @@ export interface ProjectMeta {
   createdAt?: string
 }
 
+/** The four gate states, in decision order (ADR-0006 D2). */
+export type ProjectState = 'usable' | 'needs-setup' | 'needs-repair' | 'needs-newer-plugin'
+
+export type WorkspaceActionType =
+  | 'git-init'
+  | 'create-dir'
+  | 'create-gitkeep'
+  | 'create-meta'
+  | 'create-gitignore'
+  /** Not executable by this plugin: the state is terminal until the user upgrades. */
+  | 'manual'
+
+/** One executable step of the wizard: what, where, why. */
+export interface WorkspaceAction {
+  type: WorkspaceActionType
+  /** Absolute target; the project root itself for `git-init` / `manual`. */
+  path: string
+  reason: string
+}
+
 export interface ProjectChecks {
   git: boolean
+  /** Presence of each required directory (nine content dirs + `index/`). */
   dirs: Record<string, boolean>
+  /** Presence of `<dir>/.gitkeep` per required directory (ADR-0006 D1). */
+  keeps: Record<string, boolean>
   meta: boolean
+}
+
+/**
+ * Original text of an `inkflow.json` this plugin cannot use, so a rebuild shows
+ * the user what is about to be replaced instead of silently overwriting it.
+ */
+export interface MetaRaw {
+  text: string
+  truncated: boolean
+  bytes: number
 }
 
 export interface ProjectProbe {
   root: string
+  state: ProjectState
   checks: ProjectChecks
+  /** Missing directory names (`chapters`). */
   missingDirs: string[]
+  /** Full checklist: `.git`, directories, `<dir>/.gitkeep`, `inkflow.json`. */
   missing: string[]
+  /** What the wizard would do about it (`planWorkspace` adds the notices). */
+  actions: WorkspaceAction[]
+  /** `true` for `needs-newer-plugin`: no write is allowed in that state. */
+  readOnly: boolean
   meta?: ProjectMeta
   metaError?: string
+  metaRaw?: MetaRaw
   /** True when `index/` was absent and got created because the rest checked out. */
   indexDirRecreated: boolean
   usable: boolean
   reasons: string[]
 }
 
-function isDirectory(path: string): boolean {
+/** Shared with the wizard: "the target exists and is a directory". */
+export function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory()
   } catch {
@@ -61,20 +124,19 @@ export function isGitRoot(dir: string): boolean {
   return existsSync(join(dir, '.git'))
 }
 
-export function hasContentDirs(dir: string): boolean {
-  return CONTENT_DIRS.every((name) => isDirectory(join(dir, name)))
-}
-
 /**
- * Walk up from `start` to find the nearest directory that looks like an
- * InkFlow project. Intentionally lenient about `index/` (it is derived) so a
- * deleted index never hides the project; `inspectProject` applies the strict
- * gate and recreates the index directory.
+ * Walk up from `start` to the nearest directory that already signals "a book
+ * lives here": it has an `inkflow.json` or a `.git` (ADR-0006 D5).
+ *
+ * Content directories are deliberately *not* part of the signal. A legacy
+ * six-directory book or a half-scaffolded one must be reported as
+ * `needs-repair`; requiring a full tree would make the walk skip past it and
+ * answer for whatever repository happens to sit above.
  */
 export function findProjectRoot(start: string): string | undefined {
   let current = resolve(start)
-  for (let depth = 0; depth < 16; depth += 1) {
-    if (isGitRoot(current) && hasContentDirs(current)) return current
+  for (let depth = 0; depth < 32; depth += 1) {
+    if (existsSync(join(current, ROOT_META_FILE)) || isGitRoot(current)) return current
     const parent = dirname(current)
     if (parent === current) break
     current = parent
@@ -154,7 +216,7 @@ const SCOPE_HINT =
  * Gate for every caller-supplied path (issue #7). The plugin runs un-sandboxed
  * in the host process (hard-constraints H7), so an unchecked path is an
  * arbitrary-directory read/write primitive: `inspectProject` creates `index/`
- * and `initProject` creates a whole tree.
+ * and the wizard creates a whole tree and runs `git init`.
  *
  * The session workspace is the only trust anchor — it is the directory the user
  * actually opened — so anything outside it, plus the filesystem root, the home
@@ -229,10 +291,36 @@ export function readMeta(root: string): { meta?: ProjectMeta; error?: string } {
   return { meta }
 }
 
+/** Cap on how much of a broken `inkflow.json` is echoed back to the model. */
+const MAX_META_RAW_CHARS = 4096
+
+function readMetaRaw(file: string): MetaRaw {
+  try {
+    const raw = readFileSync(file, 'utf8')
+    const truncated = raw.length > MAX_META_RAW_CHARS
+    return {
+      text: truncated ? raw.slice(0, MAX_META_RAW_CHARS) : raw,
+      truncated,
+      bytes: Buffer.byteLength(raw, 'utf8'),
+    }
+  } catch {
+    return { text: '', truncated: false, bytes: 0 }
+  }
+}
+
+/** `index/*.db*` lines a project's `.gitignore` is still missing (shared with the wizard). */
+export function missingGitignoreLines(root: string): string[] {
+  const file = join(root, '.gitignore')
+  const existing = existsSync(file) ? readFileSync(file, 'utf8') : ''
+  const lines = existing.split('\n')
+  return REQUIRED_GITIGNORE_LINES.filter((line) => !lines.includes(line))
+}
+
 export interface InspectOptions {
   /**
-   * Create `index/` when it is the only missing directory. Default true: a
-   * derived directory must never be able to lock the user out (ADR-0005).
+   * Create `index/` when it is the only problem. Default true: a derived
+   * directory must never be able to lock the user out (ADR-0005 / ADR-0006 D2).
+   * The wizard's read-only `plan` passes false so planning never writes.
    */
   recreateIndexDir?: boolean
 }
@@ -240,243 +328,165 @@ export interface InspectOptions {
 export function inspectProject(root: string, options: InspectOptions = {}): ProjectProbe {
   const recreateIndexDir = options.recreateIndexDir ?? true
   const absolute = resolve(root)
-  const checks: ProjectChecks = { git: isGitRoot(absolute), dirs: {}, meta: false }
-  const missingDirs: string[] = []
-  let indexDirRecreated = false
+  const checks: ProjectChecks = { git: isGitRoot(absolute), dirs: {}, keeps: {}, meta: false }
 
   for (const name of REQUIRED_DIRS) {
-    checks.dirs[name] = isDirectory(join(absolute, name))
+    const directory = join(absolute, name)
+    const present = isDirectory(directory)
+    checks.dirs[name] = present
+    checks.keeps[name] = present && existsSync(join(directory, DIR_KEEP_FILE))
   }
 
-  if (!checks.dirs[INDEX_DIR] && recreateIndexDir) {
-    const othersPresent = CONTENT_DIRS.every((name) => checks.dirs[name] === true)
-    if (checks.git && othersPresent) {
+  const metaFile = join(absolute, ROOT_META_FILE)
+  const metaExists = existsSync(metaFile)
+  const metaResult = readMeta(absolute)
+  const newer =
+    metaResult.meta !== undefined && metaResult.meta.schemaVersion > FILE_SCHEMA_VERSION
+  checks.meta = metaResult.meta !== undefined && !newer
+
+  // Everything the gate requires except the derived `index/` directory.
+  const contentComplete = CONTENT_DIRS.every(
+    (name) => checks.dirs[name] === true && checks.keeps[name] === true,
+  )
+
+  // The single write on the gate path (ADR-0006 D2): `index/` is derived, so a
+  // deleted index directory must never read as "this is not a project".
+  let indexDirRecreated = false
+  let indexRelaxed = false
+  if (!newer && checks.meta && checks.git && contentComplete && checks.dirs[INDEX_DIR] !== true) {
+    indexRelaxed = true
+    if (recreateIndexDir) {
       try {
         mkdirSync(join(absolute, INDEX_DIR), { recursive: true })
-        writeFileSync(join(absolute, INDEX_DIR, INDEX_KEEP_FILE), '', 'utf8')
+        writeFileSync(join(absolute, INDEX_DIR, DIR_KEEP_FILE), '', 'utf8')
         checks.dirs[INDEX_DIR] = true
+        checks.keeps[INDEX_DIR] = true
         indexDirRecreated = true
       } catch {
         checks.dirs[INDEX_DIR] = false
+        checks.keeps[INDEX_DIR] = false
       }
     }
   }
 
-  for (const name of REQUIRED_DIRS) {
-    if (checks.dirs[name] !== true) missingDirs.push(name)
-  }
+  const usable =
+    checks.git &&
+    checks.meta &&
+    contentComplete &&
+    (indexRelaxed || (checks.dirs[INDEX_DIR] === true && checks.keeps[INDEX_DIR] === true))
 
-  const metaResult = readMeta(absolute)
-  checks.meta = metaResult.meta !== undefined
-  if (metaResult.meta !== undefined && metaResult.meta.schemaVersion > FILE_SCHEMA_VERSION) {
-    checks.meta = false
-    metaResult.error = `project file schema v${metaResult.meta.schemaVersion} is newer than this plugin (v${FILE_SCHEMA_VERSION})`
-  }
+  const metaError = newer
+    ? `${ROOT_META_FILE} schema v${String(metaResult.meta?.schemaVersion)} is newer than this plugin ` +
+      `(v${FILE_SCHEMA_VERSION}): upgrade the plugin — nothing will be written`
+    : metaResult.error
 
+  const missingDirs: string[] = []
   const missing: string[] = []
-  if (!checks.git) missing.push('.git')
-  missing.push(...missingDirs)
-  if (!checks.meta) missing.push(ROOT_META_FILE)
-
   const reasons: string[] = []
-  if (!checks.git) reasons.push('directory is not a git repository')
-  for (const name of missingDirs) reasons.push(`missing directory: ${name}/`)
-  if (!checks.meta) reasons.push(metaResult.error ?? `${ROOT_META_FILE} is invalid`)
+
+  if (!checks.git) {
+    missing.push('.git')
+    reasons.push('directory is not a git repository')
+  }
+  for (const name of REQUIRED_DIRS) {
+    if (checks.dirs[name] !== true) {
+      missingDirs.push(name)
+      // A missing directory implies a missing marker; both are part of the
+      // checklist the user has to satisfy.
+      missing.push(name, `${name}/${DIR_KEEP_FILE}`)
+      reasons.push(`missing directory: ${name}/`)
+      continue
+    }
+    if (checks.keeps[name] !== true) {
+      missing.push(`${name}/${DIR_KEEP_FILE}`)
+      reasons.push(
+        `missing ${name}/${DIR_KEEP_FILE}: git does not track empty directories, ` +
+          `so ${name}/ would disappear after a clone`,
+      )
+    }
+  }
+  if (!checks.meta && !newer) {
+    missing.push(ROOT_META_FILE)
+    reasons.push(metaError ?? `${ROOT_META_FILE} is invalid`)
+  }
+
+  const state: ProjectState = newer
+    ? 'needs-newer-plugin'
+    : usable
+      ? 'usable'
+      : metaExists || checks.git
+        ? 'needs-repair'
+        : 'needs-setup'
+  const readOnly = state === 'needs-newer-plugin'
+
+  const actions: WorkspaceAction[] = []
+  if (readOnly) {
+    // A terminal state: the only way out is a newer plugin. Offering a write
+    // here is how an old plugin overwrites files a new one wrote.
+    actions.push({ type: 'manual', path: absolute, reason: metaError ?? 'upgrade the plugin' })
+  } else {
+    if (!checks.git) {
+      actions.push({
+        type: 'git-init',
+        path: absolute,
+        reason: 'a book is one git repository; init only — never add, commit, remote or identity config',
+      })
+    }
+    for (const name of REQUIRED_DIRS) {
+      const directory = join(absolute, name)
+      if (checks.dirs[name] !== true) {
+        actions.push({ type: 'create-dir', path: directory, reason: `missing required directory ${name}/` })
+        actions.push({
+          type: 'create-gitkeep',
+          path: join(directory, DIR_KEEP_FILE),
+          reason: `every required directory carries ${DIR_KEEP_FILE} so a clone keeps it`,
+        })
+        continue
+      }
+      if (checks.keeps[name] !== true) {
+        actions.push({
+          type: 'create-gitkeep',
+          path: join(directory, DIR_KEEP_FILE),
+          reason: `${name}/${DIR_KEEP_FILE} is missing: git would drop the empty directory on a fresh clone`,
+        })
+      }
+    }
+    if (!checks.meta) {
+      actions.push({
+        type: 'create-meta',
+        path: metaFile,
+        reason: metaExists
+          ? `${ROOT_META_FILE} is invalid (${metaResult.error ?? 'unknown reason'}); confirming replaces it — ` +
+            `its current text is returned as metaRaw`
+          : `the project has no ${ROOT_META_FILE}`,
+      })
+    }
+    const missingLines = missingGitignoreLines(absolute)
+    if (missingLines.length > 0) {
+      actions.push({
+        type: 'create-gitignore',
+        path: join(absolute, '.gitignore'),
+        reason: existsSync(join(absolute, '.gitignore'))
+          ? `add the missing derived-index ignore rules: ${missingLines.join(', ')}`
+          : 'ignore the derived SQLite index (index/*.db*)',
+      })
+    }
+  }
 
   return {
     root: absolute,
+    state,
     checks,
     missingDirs,
     missing,
+    actions,
+    readOnly,
     ...(metaResult.meta === undefined ? {} : { meta: metaResult.meta }),
-    ...(metaResult.error === undefined ? {} : { metaError: metaResult.error }),
+    ...(metaError === undefined ? {} : { metaError }),
+    ...(metaExists && !checks.meta ? { metaRaw: readMetaRaw(metaFile) } : {}),
     indexDirRecreated,
-    usable: missing.length === 0,
+    usable,
     reasons,
-  }
-}
-
-export interface InitPlan {
-  root: string
-  targetKind: 'absent' | 'directory' | 'other'
-  /** True when scaffolding cannot destroy anything the user made. */
-  safeToScaffold: boolean
-  /** Empty when scaffolding is safe; explains the confirmation requirement otherwise. */
-  blockedReason: string
-  /** First entries already present (capped; `existingCount` is the real total). */
-  existingEntries: string[]
-  existingCount: number
-  willCreate: string[]
-}
-
-/** Cap on how many pre-existing entries are echoed back to the model. */
-const MAX_PLANNED_ENTRIES = 50
-
-function listEntries(dir: string): string[] {
-  try {
-    return readdirSync(dir).sort()
-  } catch {
-    return []
-  }
-}
-
-/**
- * What `initProject` would do, without writing anything. A non-empty directory
- * without `inkflow.json` is someone's existing folder (a manuscript dump, a
- * project of another app, a home directory by mistake): scaffolding it must be
- * an explicit decision, never a side effect of a vague "create my novel" call.
- */
-export function planInit(root: string): InitPlan {
-  const absolute = resolve(root)
-  const targetKind: InitPlan['targetKind'] = existsSync(absolute)
-    ? isDirectory(absolute)
-      ? 'directory'
-      : 'other'
-    : 'absent'
-  const entries = targetKind === 'directory' ? listEntries(absolute) : []
-  const hasMeta = targetKind === 'directory' && existsSync(join(absolute, ROOT_META_FILE))
-  const safeToScaffold = targetKind === 'absent' || (targetKind === 'directory' && (entries.length === 0 || hasMeta))
-  const blockedReason =
-    targetKind === 'other'
-      ? 'the target exists and is not a directory'
-      : safeToScaffold
-        ? ''
-        : `the directory is not empty and has no ${ROOT_META_FILE}`
-
-  const willCreate: string[] = []
-  for (const name of [...CONTENT_DIRS, INDEX_DIR]) {
-    if (targetKind !== 'directory' || !isDirectory(join(absolute, name))) willCreate.push(name)
-  }
-  if (targetKind !== 'directory' || !existsSync(join(absolute, INDEX_DIR, INDEX_KEEP_FILE))) {
-    willCreate.push(`${INDEX_DIR}/${INDEX_KEEP_FILE}`)
-  }
-  if (!hasMeta) willCreate.push(ROOT_META_FILE)
-  if (targetKind !== 'directory' || !existsSync(join(absolute, '.gitignore'))) willCreate.push('.gitignore')
-
-  return {
-    root: absolute,
-    targetKind,
-    safeToScaffold,
-    blockedReason,
-    existingEntries: entries.slice(0, MAX_PLANNED_ENTRIES),
-    existingCount: entries.length,
-    willCreate,
-  }
-}
-
-interface InitCreated {
-  kind: 'created'
-  root: string
-  plan: InitPlan
-  probe: ProjectProbe
-  createdDirs: string[]
-  createdFiles: string[]
-  gitignoreUpdated: boolean
-  gitInitNeeded: boolean
-}
-
-interface InitNeedsConfirmation {
-  kind: 'requires-confirmation'
-  root: string
-  plan: InitPlan
-  /** A confirmation round is a refusal: nothing was written. */
-  createdDirs: []
-  createdFiles: []
-  gitignoreUpdated: false
-  gitInitNeeded: boolean
-}
-
-export type InitResult = InitCreated | InitNeedsConfirmation
-
-export interface InitOptions {
-  /** Set only after the user agreed to scaffold into a non-empty directory. */
-  confirm?: boolean
-}
-
-/**
- * Scaffold a project. Never runs `git init` on the user's behalf: the git
- * identity, remote and branch belong to the user, and a half-initialised repo
- * is worse than a clear "run git init" instruction.
- *
- * Writes only when `planInit` says the target is safe, or when the caller
- * passed `confirm` after showing the plan to the user (issue #7).
- */
-export function initProject(root: string, input: { title: string; author?: string }, options: InitOptions = {}): InitResult {
-  const absolute = resolve(root)
-  const plan = planInit(absolute)
-  if (plan.targetKind === 'other') {
-    throw new Error(`inkflow: ${absolute} exists and is not a directory`)
-  }
-
-  const metaFile = join(absolute, ROOT_META_FILE)
-  // Validate before any write so a rejected call leaves no trace at all.
-  if (!existsSync(metaFile) && input.title.trim() === '') {
-    throw new Error('inkflow: project title must not be empty')
-  }
-
-  if (!plan.safeToScaffold && options.confirm !== true) {
-    return {
-      kind: 'requires-confirmation',
-      root: absolute,
-      plan,
-      createdDirs: [],
-      createdFiles: [],
-      gitignoreUpdated: false,
-      gitInitNeeded: !isGitRoot(absolute),
-    }
-  }
-
-  mkdirSync(absolute, { recursive: true })
-
-  const createdDirs: string[] = []
-  for (const name of [...CONTENT_DIRS, INDEX_DIR]) {
-    const path = join(absolute, name)
-    if (!isDirectory(path)) {
-      mkdirSync(path, { recursive: true })
-      createdDirs.push(name)
-    }
-  }
-
-  const createdFiles: string[] = []
-  const keep = join(absolute, INDEX_DIR, INDEX_KEEP_FILE)
-  if (!existsSync(keep)) {
-    writeFileSync(keep, '', 'utf8')
-    createdFiles.push(`${INDEX_DIR}/${INDEX_KEEP_FILE}`)
-  }
-
-  if (!existsSync(metaFile)) {
-    const title = input.title.trim()
-    const meta: ProjectMeta = {
-      schemaVersion: FILE_SCHEMA_VERSION,
-      title,
-      createdAt: new Date().toISOString(),
-    }
-    if (input.author !== undefined && input.author.trim() !== '') meta.author = input.author.trim()
-    writeFileSync(metaFile, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
-    createdFiles.push(ROOT_META_FILE)
-  }
-
-  const gitignore = join(absolute, '.gitignore')
-  let gitignoreUpdated = false
-  const existing = existsSync(gitignore) ? readFileSync(gitignore, 'utf8') : ''
-  const missingLines = REQUIRED_GITIGNORE_LINES.filter((line) => !existing.split('\n').includes(line))
-  if (missingLines.length > 0) {
-    const prefix = existing === '' ? '' : existing.endsWith('\n') ? existing : `${existing}\n`
-    const header = existing === '' ? '# InkFlow derived index — rebuildable, never committed\n' : ''
-    writeFileSync(gitignore, `${prefix}${header}${missingLines.join('\n')}\n`, 'utf8')
-    gitignoreUpdated = true
-    if (existing === '') createdFiles.push('.gitignore')
-  }
-
-  return {
-    kind: 'created',
-    root: absolute,
-    plan,
-    probe: inspectProject(absolute),
-    createdDirs,
-    createdFiles,
-    gitignoreUpdated,
-    gitInitNeeded: !isGitRoot(absolute),
   }
 }
 
