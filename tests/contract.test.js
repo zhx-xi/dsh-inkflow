@@ -474,7 +474,7 @@ test('bugs: ids 001 and 1 are two distinct chapters, not a UNIQUE crash', async 
     // `id: 001` used to be parsed as the number 1, colliding with `id: 1`.
     writeMarkdown(root, 'chapters/vol-01/0001-甲.md', ['id: 001', 'seq: 5', 'title: 甲'], '正文一')
     writeMarkdown(root, 'chapters/vol-01/0002-乙.md', ['id: 1', 'seq: 6', 'title: 乙'], '正文二')
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
 
     const rebuild = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
     assert.equal(rebuild.ok, true)
@@ -499,7 +499,7 @@ test('bugs: a copied chapter keeps its id — first file wins, DUPLICATE_ID, lis
     writeMarkdown(root, 'chapters/vol-01/0001-甲.md', ['id: dup', 'seq: 1', 'title: 原章'], '正文一')
     // A copy whose id was never changed: same id, different file.
     writeMarkdown(root, 'chapters/vol-01/0002-甲的副本.md', ['id: dup', 'seq: 2', 'title: 副本'], '正文二')
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
 
     // The lazy rebuild inside chapter_list is the path that used to throw on
     // every call, because no index could ever be built.
@@ -536,7 +536,7 @@ test('bugs: the same id in two tables is reported but neither row is dropped', a
     scaffold(root)
     writeMarkdown(root, 'chapters/0001-甲.md', ['id: shared', 'seq: 1'], '正文')
     writeMarkdown(root, 'outlines/overall.md', ['id: shared', 'kind: overall', 'title: 总纲'], '- 情节点')
-    const harness = makeTools(join(dir, 'state'))
+    const harness = makeTools(join(dir, 'state'), dir)
     const rebuild = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
     assert.equal(rebuild.ok, true)
     assert.ok(rebuild.issues.some((issue) => issue.code === 'DUPLICATE_ID'))
