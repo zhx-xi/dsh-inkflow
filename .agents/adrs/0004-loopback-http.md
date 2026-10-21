@@ -1,7 +1,11 @@
 # ADR-0004：面板 HTTP 接口只绑 loopback 并自校验
 
-- 状态：已采纳
+- 状态：已采纳（**部分条款被 [ADR-0008](0008-panel-data-channel.md) 取代/收窄**，见下）
 - 日期：2026-10-21
+- 取代与收窄（2026-10-21，[ADR-0008](0008-panel-data-channel.md)；按 A3 只改头部，正文保留原文作证据）：
+  - **继续有效**：决策 1（`Host` 必须 loopback）、决策 2（`Origin` 校验）、决策 5（不发 CORS 头）、决策 6（`no-store` / `nosniff` / JSON 信封）、决策 7（密钥永不下发浏览器），以及「本机其他进程不在威胁模型内」的边界。
+  - **被收窄**：决策 3（「P0 仅 GET」）→ 0008 D3 改为**逐路由声明方法**（内部通道含写路由）；决策 4（写接口要求 `Content-Type: application/json`）→ 0008 D3 另加"写路由必须带 loopback `Origin`"的同源校验。
+  - **被取代**：「对外接口」这一层定位与 `/inkflow/api/*` 路径命名 → 0008 D2/D3：路由改为 `/inkflow/internal/*`，明确**不是 API**（不版本化、不对外文档化、无兼容承诺），旧 `/inkflow/api/*` 一律 404。正文「后果」里"只能用同源相对路径 fetch（`/inkflow/api/...`）"的路径串按此改写为 `/inkflow/internal/...`。
 
 ## 背景
 
