@@ -176,6 +176,43 @@ export interface AgentPresetRegistryLike {
 }
 
 /**
+ * `@deepseek-ai/dsh-system-prompt` PromptSection, reduced to the fields we set.
+ *
+ * The `text` thunk receives the assembly context, which the public type declares
+ * as `{ scope?, signal? }` — a session is *not* part of that declaration. It is
+ * therefore typed `unknown` here: the plugin narrows it defensively (see
+ * `src/host/prompt.ts`) and degrades to "no injection" if a Host upgrade ever
+ * stops passing an agent through. Type-lying it as `{ agent }` would turn that
+ * upgrade into a crash inside the prompt pipeline.
+ */
+export interface PromptSectionLike {
+  readonly name: string
+  readonly order: number
+  readonly text: string | ((context: unknown) => string)
+  readonly interpolate?: boolean
+  readonly complete?: boolean
+}
+
+export interface SystemPromptServiceLike {
+  section(section: PromptSectionLike): () => void
+}
+
+/** The slice of a Session that carries its directory. */
+export interface PromptSessionLike {
+  readonly header?: { readonly cwd?: string }
+}
+
+/**
+ * `@deepseek-ai/dsh-working-directory` service, reduced to the sync reader.
+ *
+ * `get()` answers the *committed* directory without filesystem IO, which is the
+ * only session-scoped directory readable from a synchronous prompt provider.
+ */
+export interface WorkingDirectoryLike {
+  get(session: PromptSessionLike): string
+}
+
+/**
  * The Cordis context as seen by a Host plugin.
  *
  * `ctx.effect(setup)` owns a resource for the lifetime of the plugin; the
@@ -188,12 +225,6 @@ export interface HostContext {
   logger(namespace: string): LogSink
   readonly tools?: ToolRegistryLike
   readonly webServer?: WebServerLike
-  readonly systemPrompt?: {
-    section(section: {
-      name: string
-      order: number
-      text: string | ((context: unknown) => string)
-      interpolate?: boolean
-    }): () => void
-  }
+  readonly systemPrompt?: SystemPromptServiceLike
+  readonly workingDirectory?: WorkingDirectoryLike
 }

@@ -31,3 +31,11 @@
         # page. They never leave this machine: the handler rejects any
         # Host/Origin that is not loopback.
         serveHttp: true
+        # Writing context injected into the system prompt of sessions opened
+        # inside a usable project (book/chapter/previous-tail/world-book).
+        # Estimated-token budget for the whole block; when it does not fit, the
+        # block is trimmed in a fixed order and says so in the text.
+        promptBudgetTokens: 1200
+        # Characters taken from the previous chapter's ending (the tail keeps
+        # its END, not its head: the hook lives in the last sentences).
+        promptTailChars: 300

@@ -14,9 +14,23 @@ export interface ResolvedConfig {
   dataDir: string
   /** Whether the loopback-only /inkflow/api/* routes are registered. */
   serveHttp: boolean
+  /** Estimated-token budget for the injected writing context (issue #20). */
+  promptBudgetTokens: number
+  /** Characters taken from the previous chapter into that context. */
+  promptTailChars: number
 }
 
-const DEFAULTS = { serveHttp: true } as const
+const DEFAULTS = { serveHttp: true, promptBudgetTokens: 1200, promptTailChars: 300 } as const
+
+/**
+ * Budgets are user-facing numbers in a YAML patch, so a typo must not decide
+ * whether the chat works: out-of-range values are clamped, non-numbers fall
+ * back to the default.
+ */
+const PROMPT_LIMITS = {
+  tokens: { min: 200, max: 8000 },
+  tailChars: { min: 60, max: 2000 },
+} as const
 
 /** $DSH_HOME, defaulting to ~/.dsh (the value DSH itself uses). */
 export function dshHome(): string {
@@ -45,5 +59,24 @@ export function resolveConfig(raw: unknown): ResolvedConfig {
     : join(dshHome(), 'inkflow')
   const serveHttp =
     typeof config['serveHttp'] === 'boolean' ? config['serveHttp'] : DEFAULTS.serveHttp
-  return { dataDir, serveHttp }
+  return {
+    dataDir,
+    serveHttp,
+    promptBudgetTokens: clampedInt(
+      config['promptBudgetTokens'],
+      DEFAULTS.promptBudgetTokens,
+      PROMPT_LIMITS.tokens,
+    ),
+    promptTailChars: clampedInt(config['promptTailChars'], DEFAULTS.promptTailChars, PROMPT_LIMITS.tailChars),
+  }
+}
+
+/** A finite integer clamped into `limits`, or the default when it is not a number. */
+function clampedInt(
+  value: unknown,
+  fallback: number,
+  limits: { readonly min: number; readonly max: number },
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.min(Math.max(Math.trunc(value), limits.min), limits.max)
 }

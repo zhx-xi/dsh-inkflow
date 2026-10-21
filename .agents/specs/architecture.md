@@ -136,6 +136,60 @@
 - 没有 `agentPresets` 服务：只打一行日志；技能与 `inkflow_*` 工具照常工作。
 - 某个 `SKILL.md` 缺失或 frontmatter 与目录名不一致：逐条 warn，其余技能照常注册；一个都读不出来时**什么都不注册**（不注册空目录）。
 
+### 4.7 写作上下文注入 — `ctx.systemPrompt`
+
+`ctx.systemPrompt.section(section: PromptSection): () => void`，`PromptSection = { name, order, text: string | ((context: AssembleContext) => string), interpolate?, complete? }`；同名 section 在**同一层**重复注册会抛 `already registered`。本插件注册一个段 `inkflow:writing-context`（order 120，位置只是建议值：宿主按 order 排序，具体邻居到重启后目视才算验证）：写作会话的 system prompt 里直接带上「这是哪本书、写到哪一章、上一章怎么收尾、本章该记起哪些设定」，让模型在**第一次工具调用之前**就知道处境。
+
+**为什么不用 `inject: ['systemPrompt']`**：硬注入会让服务缺失直接拖死整个插件（与 skills/preset 同一条纪律，§4.6）。
+
+#### 注入源与门禁
+
+| 步骤 | 实现 | 失败时 |
+|---|---|---|
+| 会话目录（同步） | `ctx.get('workingDirectory').get(session)`（提交值，无文件 IO）→ `session.header.cwd` → `process.cwd()` | 取不到 → 空 section |
+| 项目根 | `findProjectRoot(cwd)`（向上找 `inkflow.json` / `.git`，§3） | 未命中 → 空 section |
+| 四态门禁 | `inspectProject(root)`；只有 `usable` 才注入 | 其余三态 → 空 section（一个字节都不注入） |
+
+`AssembleContext` 的**公开**声明只有 `{ scope?, signal? }`；会话身份 `context.agent` 是运行时实际传入、但没写进类型声明的字段（本机 `dsh-memory-evolve` 与 `dsh-novel-forge` 两个插件的实现都依赖它）。因此本插件把 `context` 当 `unknown` 收窄后逐层可选读取，取不到就退回 `process.cwd()`：宿主哪天改掉这个字段，最坏结果是「某些会话不注入」，不是抛错。
+
+#### 四段
+
+| # | 段 | 取数 | 依据 |
+|---|---|---|---|
+| 1 | 项目摘要 | 书名（`inkflow.json` 的 `title`，缺省目录名）、卷数（`outline_nodes.kind='volume'`）、章数与总字数（`chapters` 行数 / `SUM(word_count)`）——全部来自派生索引 | [data-model](data-model.md) §4 |
+| 2 | 当前章 | 章号最大的章（`seq` 降序；`seq` 缺省取文件名前导数字）：标题 + `volume`/`seq`/`status` + 该章大纲 `outlines/ch-<seq>.md`（也认 `chapter-` 前缀与不补零写法）的正文 | [conventions](conventions.md) §3.2 / §3.5 |
+| 3 | 上一章结尾 | 次大 `seq` 章的正文**最后 300 字**（`config.promptTailChars`；截断标记计入上限，保留结尾而不是开头——「结尾」的价值全在最后几句） | P1 F-P1-06 的「上章结尾」 |
+| 4 | 命中的世界书条目 | 以「本章大纲 + 上章结尾」为关键词串，匹配 `world/**` 的 `keywords`；`always: true` 常驻；命中注入 `title` + 正文前 200 字；排序 `always` 降序 → `priority` 降序 → 路径升序 | [conventions](conventions.md) §3.4、[data-model](data-model.md) §2 #9 |
+
+只出现书名与**相对路径**（`outlines/ch-0012.md`、`world/门派/白鹤门.md`），绝不出现项目绝对路径——提示词会进会话日志，日志可能被分享。
+
+#### 预算与裁剪
+
+预算按**估算 token** 计（默认 1200，`config.promptBudgetTokens`）：CJK 1 字 ≈ 1 token、其余 4 字符 ≈ 1 token【推断，无 tokenizer 依赖】。超预算按固定阶梯退化，**第一个装得下的阶梯胜出**：
+
+| 级 | 丢什么 | 保留 |
+|---|---|---|
+| L0 | 不丢 | 四段全量 |
+| L1 | 项目摘要 | 章 / 尾 / 世界书 |
+| L2 | 当前章的大纲正文 | **当前章的标题 + frontmatter 永不丢** |
+| L3 | 上章结尾缩到 120 字 | |
+| L4 | 上章结尾 | |
+| L5 | 世界书 | 当前章（硬地板；只剩它仍超预算就照发并标注） |
+
+裁剪结果写进文本末尾一行 `[trimmed: …]`，并在上章结尾被丢/缩短时附一句「怎么精确找回（读哪个相对路径的尾部）」。**为什么必须让模型看见丢了什么**：不写这件事，模型会把「没注入」读成「本来就没有」，然后凭记忆编，或者整章 `read` 反而把上下文挤爆（`novel-forge` 真机事故同型，见 §9 末行的对照记录）。本版**不用**它那套「衔接保留额」两层预算：本插件只有四段、段内没有可均摊的卡片集合，1200 token 的规模上加保留额是多余机制；P1 F-P1-06 做九段简报时再引入。
+
+#### 降级
+
+- 任何异常（读文件、索引、frontmatter）→ 一行 `log.warn` + 返回 `''`：**提示词绝不影响对话**。
+- 全链路同步，不 `await`。索引缺失或 schema 不符时**不重建**（重建是异步的）：项目摘要退化成一行「索引未建立」提示，章节段改用文件名派生——因此**首轮**（索引还没建）也有内容。
+- 注册失败（同层已注册，例如组件被装配两次）→ 一行 warn + 跳过，其余能力不受影响。
+
+#### 可观测
+
+`buildWritingContext(root, opts)` 是这一段的唯一取数入口：纯投影（无缓存，除门禁文档化的 `index/` 自愈外无副作用），返回 `{ text, segments, trimmed, tokens, budgetTokens }`。取数规则集中在 `writing-sources.ts`（同步、失败即「缺这一段」），装配在 `prompt.ts`，section 回调只做「取 cwd → build → 返回 text」，所以测试直接断言纯函数；面板的「简报预览」将来复用它（当前版本只提供函数，没有面板入口）。
+
+不在范围内：九段写作简报与「承诺书 / 场景契约 / 人物卡 / 账本 / 伏笔」（P1 F-P1-06）、面板预览与编辑。
+
 ## 5. 四个工程决策
 
 ### 5.1 零运行时依赖
@@ -170,6 +224,9 @@
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
 | `src/host/skills.ts` | 5 个写作技能的读取与校验、按 cwd 门禁的 provider、注册与降级 | 写作品数据、生成正文 |
+| `src/host/writing-context.ts` | 写作上下文的**纯投影**：四段渲染、单段上限、预算阶梯、裁剪标记 | 会话/服务/日志、写任何作品数据 |
+| `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
+| `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
 | `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 5 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list`） | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/routes.ts` | 私有内部通道 + 安全校验（目标形态；当前是 `/inkflow/api/*` 占位） | 业务规则、写真相文件 |
@@ -227,7 +284,14 @@
 | 面板视觉（十项目录勾选、章节列表） | 未验证 | 重启后目视 |
 | 向导在运行中的 DSH 里的交互（plan → apply、`git init`） | 契约测试全绿（打 `lib/index.js`），未在重启后的会话里跑过 | 重启后手动跑一次全流程 |
 | 59 万字全量重建耗时 | 未验证 | 用真实库基准（当前样例 7 文件 10ms） |
+| 面板的项目来源（会话 → 工作区） | 未做：路由当前 fail-closed 返回 `NO_SESSION_CONTEXT` | 按会话解析工作区后再镜像工具侧的作用域规则 |
+| 增量重建 / 大文件流式解析 | 未做 | P1 |
+| 提案制（改正文需审批） | 未做（原子写入器已由 #14 落地；提案流程在 P3） | P3 |
 | 写作 preset 在真实会话里挂载成功 | 未验证：签名与行名来自 `cordis_inspect_query` 与官方 preset 声明，缺少重启后的名册观测 | 重启后看模式选择里是否出现「InkFlow 写作」，确认工具表无 shell、技能目录有 5 个 `inkflow-*` |
 | 每个会话的 `cwd` 都非空 | 代码路径已确认（`dsh-tool-skill` 用 `workingDirectory.ensure`），真实会话未观测 | 在工作区外的会话里确认技能目录不含 `inkflow-*` |
 | 5 个技能的实际写作效果 | 未验证（未跑真实章节生成） | 用一章真实任务书跑 架构→起草→审校，人工判读 |
 | OVK 首建成本 / 体积 / 块参数 | 未验证（只有量级推断） | 按 [ADR-0009](../adrs/0009-ovk-semantic-search.md) P10 先估算再实测 |
+| 写作上下文四段在真实会话 system prompt 里的位置与内容 | 未验证：`cordis_inspect_query` 只给签名，本次没跑真实会话（HMR 不热替换已加载插件，需重启 DSH） | 重启后在写作会话首轮看四段齐全、非项目会话看不到任何注入 |
+| `context.agent` 在 section `text` 回调里存在 | 未验证（未写进公开类型；本机两个第三方插件依赖它） | 重启后若取不到 → 只是不注入（有降级）；届时改走 `variable()`（回调同样拿 `AssembleContext`）或等宿主给出 scope→session 映射 |
+| 预算裁剪在真实书稿上的手感（1200 token 够不够） | 未验证 | 重启后用一本有正文的书看首轮 `[trimmed: …]`，再决定 `promptBudgetTokens` 默认值 |
+| 外部参考（本机可复跑） | `huangziyuan-general/dsh-novel-forge@1f1af8a`：`lib/contextpack.js`（分层预算 / `dropped` 列表 / `clipTail` 保留结尾并把截断标记计入上限）、`lib/index.js`（`systemPrompt.section` 静态段 order 110 + 动态上下文走 briefing 工具） | 只借这几个结构，不搬代码；差异见 §4.7 |
