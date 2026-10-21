@@ -46,6 +46,19 @@ export const CONTENT_DIRS = [
 ] as const
 export type ContentDir = (typeof CONTENT_DIRS)[number]
 
+/** The chapter tree: the only directory whose immediate subdirectories are volumes. */
+export const CHAPTERS_DIR = 'chapters' satisfies ContentDir
+
+/**
+ * Volume/chapter catalog file (ADR-0006 D6): one in `chapters/` for the volume
+ * list plus loose chapters, and one in every volume directory for its chapters.
+ * It is a committed **projection** of the `.md` files, not a second truth.
+ */
+export const CATALOG_FILE = 'index.json'
+
+/** Version of the catalog file shape; a different value means "rebuild from `.md`". */
+export const CATALOG_SCHEMA_VERSION = 1
+
 /** The ten directories the gate requires: the nine content dirs plus `index/`. */
 export const REQUIRED_DIRS = [...CONTENT_DIRS, INDEX_DIR] as const
 export type RequiredDir = (typeof REQUIRED_DIRS)[number]

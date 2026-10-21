@@ -96,6 +96,29 @@ export type {
 } from './io.js'
 export { WRITE_DIRS } from './conventions.js'
 
+/**
+ * Volume/chapter catalog (issue #15, ADR-0006 D6): a reviewable, committed
+ * projection of the `.md` structure. The read path never writes; rebuilds take
+ * the project write lock and replace both files atomically; validation reports
+ * drift instead of blocking. No tool registers against it yet.
+ */
+export { readCatalog, rebuildCatalog, validateCatalog } from './catalog.js'
+export type {
+  CatalogChapter,
+  CatalogIssue,
+  CatalogIssueCode,
+  CatalogReadResult,
+  CatalogRebuildResult,
+  CatalogValidateResult,
+  CatalogVolume,
+  RootCatalog,
+  VolumeCatalog,
+} from './catalog.js'
+
+/** Exported for the tests (and embedders) so the gate can be asserted after a catalog change. */
+export { inspectProject } from './project.js'
+export type { ProjectProbe, ProjectState } from './project.js'
+
 export function apply(ctx: HostContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig)
   const log = ctx.logger('dsh-inkflow')

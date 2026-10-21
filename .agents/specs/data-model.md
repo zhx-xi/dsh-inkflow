@@ -15,7 +15,8 @@
 | # | 实体组 | 位置 | 形态 | 说明 |
 |---|---|---|---|---|
 | 1 | 项目（book） | `inkflow.json` | JSON | 唯一元信息文件（schemaVersion/title/author/seriesId） |
-| 2 | 卷 volume | 目录名 `chapters/vol-XX/` 或章 frontmatter `volume` | 隐式 | 不为卷单独建文件；卷信息在大纲 `kind: volume` 节点里 |
+| 2 | 卷 volume | `chapters/<vol-dir>/` + `chapters/index.json` 的卷项 | 目录 + JSON 投影 | 目录名携带 `volumeId`（`vol-NN-<slug>`）；卷的展示信息在大纲 `kind: volume` 节点里，catalog 只记 `title`/`order` |
+| 2b | 卷章清单 catalog | `chapters/index.json`、`chapters/<vol-dir>/index.json` | JSON（派生投影） | `.md` 的投影（ADR-0006 D6）：入库、可审阅、不含派生统计 |
 | 3 | 章 chapter | `chapters/**/<seq>-<slug>.md` | MD + frontmatter | 正文即 body |
 | 4 | 章版本 | git 提交历史 | git | 不建 `chapter_versions` 表；版本 = commit |
 | 5 | 大纲节点 outline | `outlines/*.md` | MD + frontmatter | `kind: overall\|volume\|chapter`，`parent` 挂接 |
@@ -41,7 +42,7 @@
 | 25 | 变更日志 change_log | git 历史 | git | 不再自建 outbox：**git 就是变更日志** |
 | 26 | 资料 library | `library/**` | 任意文件 | 只索引路径/大小 |
 
-> 「22 个实体组」与原清单一致；#23–#26 是系统/检索类，不是业务实体。
+> 「22 个实体组」与原清单一致（2b 是 `.md` 的派生投影，不新增业务实体组）；#23–#26 是系统/检索类，不是业务实体。
 
 ## 3. 文件通用字段（frontmatter 字典）
 
@@ -51,7 +52,7 @@
 | `title` | string | 章/世界观/大纲 | 显示名 |
 | `name` | string | 角色 | 角色名（唯一性按归一化 name 判定） |
 | `aliases` | string[] | 角色 | 别名（P1 索引） |
-| `volume` | string | 章 | 卷 id/目录名 |
+| `volume` | string | 章 | 卷 id（`volumeId`，如 `vol-01`；不是目录名）；缺省从所在卷目录推导 |
 | `seq` | int | 章 | 卷内序号；缺省取文件名前导数字 |
 | `status` | enum | 章 | `draft` / `revised` / `final` |
 | `kind` | enum | 大纲 | `overall` / `volume` / `chapter` |
@@ -95,6 +96,12 @@
 | I-08 | 世界观根唯一、非根必须有 parent + category | 拒绝 | P1 补校验 |
 | I-09 | 伏笔 resolved 必须带 resolved 章 | 拒绝 | P1 补校验 |
 | I-10 | JSON 字段可解析 | 写入前序列化 | `FRONTMATTER_ISSUE` |
+| I-11 | 同卷 `(volumeId, seq)` 唯一 | 拒绝重号（P1 章写入工具） | `CATALOG_DUPLICATE` |
+| I-12 | `looseChapters` 的 `seq` 唯一 | 同上 | `CATALOG_DUPLICATE` |
+| I-13 | 卷目录 `dir` 以 `volumeId` 开头且目录存在 | 拒绝建卷（P1） | `VOLUME_DIR_MISMATCH` |
+| I-14 | catalog 指向的 `file` 必须存在且是 `.md` | 写入前校验 | `CHAPTER_FILE_MISSING` |
+
+I-11–I-14 由 `validateCatalog` 报码，**不阻断**（同 `validation_issues`）。catalog 与 `.md` 投影不一致另报 `CATALOG_STALE`——那是「该重建了」的漂移信号，不是不变量；重建即修复，不是数据损坏。
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。代价是不变量要靠代码纪律兜住——因此每条不变量都必须在重建校验里有对应 code，可作为「代码没兜住」的第二道网。
 
