@@ -376,7 +376,7 @@ test('I-08: two world entries without a parent report WORLD_ROOT_MULTIPLE', asyn
 
     const result = await rebuild(harness, root)
     const issue = issueOf(result, 'WORLD_ROOT_MULTIPLE')
-    assert.match(issue.detail, /2 world entries have no parent/)
+    assert.match(issue.detail, /2 world entries are roots/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -394,6 +394,26 @@ test('I-08: a world tree without any root reports WORLD_ROOT_MISSING', async () 
     const result = await rebuild(harness, root)
     issueOf(result, 'WORLD_ROOT_MISSING')
     assert.equal(codesOf(result).includes('WORLD_ROOT_MULTIPLE'), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('I-08: a flat category book (no root, all categorized) reports nothing', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    overall(root)
+    markdown(root, 'world/门派/白鹤门.md', ['id: w-1', 'title: 白鹤门'], '条目。')
+    markdown(root, 'world/地理/苍山.md', ['id: w-2', 'title: 苍山'], '条目。')
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    const result = await rebuild(harness, root)
+    const codes = codesOf(result)
+    assert.equal(codes.includes('WORLD_ROOT_MULTIPLE'), false)
+    assert.equal(codes.includes('WORLD_ROOT_MISSING'), false)
+    assert.equal(codes.includes('WORLD_CATEGORY_REQUIRED'), false)
+    assert.deepEqual(codes.filter((code) => code.startsWith('WORLD_')), [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
