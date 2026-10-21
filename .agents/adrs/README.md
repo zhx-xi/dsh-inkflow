@@ -11,7 +11,8 @@
 | [0002](0002-sqlite-truth-source.md) | ~~SQLite 为真相源~~ | **已被 0005 取代** | 早期方案；保留作历史 |
 | [0003](0003-build-chain.md) | P0 用 esbuild 单工具链（偏离 tsdown） | 已采纳 | Client 半必须产出 loader factory 形状；单工具链失败面小 |
 | [0004](0004-loopback-http.md) | 面板 HTTP 只绑 loopback 并自校验 Host/Origin | 已采纳 | 宿主路由零鉴权，必须 fail-closed |
-| [0005](0005-files-first-with-derived-index.md) | **文件真相 + SQLite 派生索引** | 已采纳（现行） | 升级不破坏存量项目；没有数据库迁移；git 即版本历史 |
+| [0005](0005-files-first-with-derived-index.md) | **文件真相 + SQLite 派生索引** | 已采纳（现行）；**门禁与目录条款已被 [0006](0006-workspace-contract-v2.md) 修改**，其余条款有效 | 升级不破坏存量项目；没有数据库迁移；git 即版本历史 |
+| [0006](0006-workspace-contract-v2.md) | **工作区契约 v2**：9 内容目录 + 派生 `index/`、四态门禁、卷章 catalog | 已采纳（2026-10-21） | 门禁要输出可执行动作，而不是一句"不是项目"；卷章归属不靠路径猜；一个工作区只服务一部小说 |
 
 ## 2. 编号与登记规则
 
