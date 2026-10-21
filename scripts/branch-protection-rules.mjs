@@ -1,0 +1,129 @@
+/**
+ * Branch protection as a repository-verifiable contract (pure functions only).
+ *
+ * Why this file exists: the rule "CI must be green before merge" used to live
+ * only in GitHub's web settings. Nothing inside the repository could tell
+ * whether it was still true, so one settings edit — or a fresh clone of the
+ * repository under a new owner — silently turned the gate off while every
+ * document still promised it. Here the expected protection is data, the
+ * evaluation is a pure function, and `../branch-protection.mjs` only fetches
+ * and prints.
+ *
+ * The GitHub API shape is flattened on purpose. `GET
+ * repos/{owner}/{repo}/branches/{branch}/protection` answers with nested
+ * `{enabled: true}` objects and parallel `contexts` / `checks` arrays; the
+ * evaluator takes the normalized form produced by `flattenProtection`, which is
+ * also what the tests feed it, so no test needs a live GitHub token.
+ *
+ * Source of truth for the expected values is `EXPECTED` below — the
+ * constitutional rule in `.agents/constitution/engineering-discipline.md` §9.5
+ * points here rather than duplicating the list.
+ */
+
+/**
+ * Every context must report success on the PR head before the merge button
+ * works. Names are check contexts (job `name:` values in the workflow), so a
+ * renamed job silently removes a gate — that is exactly what `check` catches.
+ */
+export const REQUIRED_CONTEXTS = [
+  'lint',
+  'test (ubuntu-latest)',
+  'test (windows-latest)',
+  'docs',
+  'package',
+]
+
+export const EXPECTED = {
+  /** The PR branch must be up to date with `main` before merging. */
+  strict: true,
+  /** Repository admins are bound by the same required checks. */
+  enforceAdmins: true,
+  allowForcePushes: false,
+  allowDeletions: false,
+  /** An unresolved review conversation blocks the merge. */
+  requiredConversationResolution: true,
+  requiredContexts: REQUIRED_CONTEXTS,
+}
+
+function asStringArray(value) {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry) => typeof entry === 'string')
+}
+
+/**
+ * Normalize a GitHub branch-protection payload into the flat shape the
+ * evaluator uses. Never throws: an unprotected branch or a partial payload
+ * degrades to "everything off", which the evaluator then reports item by item.
+ */
+export function flattenProtection(api) {
+  const statusChecks = api?.required_status_checks ?? null
+  const checks = Array.isArray(statusChecks?.checks) ? statusChecks.checks : []
+  const fromChecks = checks
+    .map((entry) => (typeof entry?.context === 'string' ? entry.context : null))
+    .filter((entry) => entry !== null)
+  // `checks[]` is the modern field; `contexts[]` is the legacy one. Prefer the
+  // modern one when present so the flattening matches what GitHub actually
+  // enforces today, and fall back so an older payload still evaluates.
+  const requiredContexts = fromChecks.length > 0 ? fromChecks : asStringArray(statusChecks?.contexts)
+
+  return {
+    strict: statusChecks?.strict === true,
+    enforceAdmins: api?.enforce_admins?.enabled === true,
+    allowForcePushes: api?.allow_force_pushes?.enabled === true,
+    allowDeletions: api?.allow_deletions?.enabled === true,
+    requiredConversationResolution: api?.required_conversation_resolution?.enabled === true,
+    requiredContexts,
+  }
+}
+
+const FLAGS = [
+  ['strict', 'required_status_checks.strict must be true: a PR that is not rebased onto main was never verified against it'],
+  ['enforceAdmins', 'enforce_admins.enabled must be true: otherwise an admin can merge with the checks red'],
+  ['allowForcePushes', 'allow_force_pushes.enabled must be false: force pushes rewrite merged history'],
+  ['allowDeletions', 'allow_deletions.enabled must be false: deleting main loses the whole gate'],
+  [
+    'requiredConversationResolution',
+    'required_conversation_resolution.enabled must be true: an unresolved review thread must block the merge',
+  ],
+]
+
+/**
+ * Compare an actual (flattened) protection payload with the expectation.
+ *
+ * Returns `{ ok, problems, extraContexts }`:
+ *   - `problems` are human-readable one-per-line reasons, safe to print;
+ *   - `extraContexts` are required checks we did not ask for — reported, never
+ *     fatal, because an extra gate only makes merging harder.
+ */
+export function evaluateProtection(actual, expected = EXPECTED) {
+  const problems = []
+  const have = new Set(asStringArray(actual?.requiredContexts))
+  for (const context of expected.requiredContexts) {
+    if (!have.has(context)) problems.push(`required check missing: ${context}`)
+  }
+  for (const [key, message] of FLAGS) {
+    const want = expected[key]
+    const got = actual?.[key] === true
+    if (want === false && got) problems.push(message)
+    if (want === true && !got) problems.push(message)
+  }
+  const extraContexts = [...have].filter((context) => !expected.requiredContexts.includes(context))
+  return { ok: problems.length === 0, problems, extraContexts }
+}
+
+/**
+ * The PUT body for `apply`. Kept next to the expectation so the write path and
+ * the read path can never drift: `flattenProtection(protectionPayload())` must
+ * evaluate clean, and a test asserts exactly that.
+ */
+export function protectionPayload(expected = EXPECTED) {
+  return {
+    required_status_checks: { strict: expected.strict, contexts: [...expected.requiredContexts] },
+    enforce_admins: expected.enforceAdmins,
+    required_pull_request_reviews: null,
+    restrictions: null,
+    allow_force_pushes: expected.allowForcePushes,
+    allow_deletions: expected.allowDeletions,
+    required_conversation_resolution: expected.requiredConversationResolution,
+  }
+}

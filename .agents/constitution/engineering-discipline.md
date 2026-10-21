@@ -145,3 +145,15 @@
 - 示例（来自 `#5`）：同 size 同 mtime 的内容替换、调用方不给 `expected` 时的覆盖行为；
 - 每条 Review Focus 必须落到某个测试，或显式标【未验证】；
 - 依据：spec 是愿景文档，**没写不等于可以出错**。
+
+### 9.5 CI 门禁的机制保障
+
+「CI 绿才能合」如果只写在本文件里，它就是一句承诺——GitHub 的一个设置页改动就能让它失效，而仓库里没有任何东西会报错。所以门禁必须同时是三样东西：**强制配置 + 仓库内可验证 + 应急出口有留痕**。
+
+- **必过检查**（缺一不可，名称即 workflow 里的 job `name:`）：`lint`、`test (ubuntu-latest)`、`test (windows-latest)`、`docs`、`package`。改 job 名等于删门禁，必须同步改 [scripts/branch-protection-rules.mjs](../../scripts/branch-protection-rules.mjs) 的 `EXPECTED`。
+- **期望值单一来源**：`EXPECTED` 里集中定义 `strict: true`（分支须与 main 同步）、`enforce_admins: true`（管理员也不能绕过）、禁 force push / 禁删分支、`required_conversation_resolution: true`。文档不复制这份清单，只指向它。
+- **验证**：`node scripts/branch-protection.mjs check`（只读，PASS/FAIL 逐项给理由）。它接在 `pnpm run check` 末端并以 `--tolerant` 运行：缺 gh / 未登录 / 无网络时打印 `SKIP …（未验证）` 并 exit 0，因为本地全量门禁必须在离线机器上可跑。
+- **SKIP 不等于通过**：声明「门禁已验证」前，必须跑一次不带 `--tolerant` 的 `check` 并引用输出。
+- **应用**：`node scripts/branch-protection.mjs apply`（幂等，需仓库 admin；写完自动回读再评估，`--dry-run` 只打印 payload）。
+- **唯一应急出口**：当 CI 自身坏在 main 上、导致所有 check 永久 pending 时（此时任何 PR 都无法合并），可 `gh api -X DELETE repos/OWNER/REPO/branches/main/protection` 临时解除阻塞，修完后**立刻** `apply` 并用 `check` 证明恢复；全过程在对应 issue 留时间、原因与恢复证据。
+- **触发面**（`.github/workflows/ci.yml` 顶部有注释）：PR 面向 `main` 时跑 `pull_request`（合并前门禁）；合并后 `main` 跑 `push`（验证真正落地的 squash commit）；`merge_group` 为 merge queue 预留——GitHub 只在仓库启用队列时派发该事件。
