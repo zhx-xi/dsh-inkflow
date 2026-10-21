@@ -157,3 +157,4 @@
 - **应用**：`node scripts/branch-protection.mjs apply`（幂等，需仓库 admin；写完自动回读再评估，`--dry-run` 只打印 payload）。
 - **唯一应急出口**：当 CI 自身坏在 main 上、导致所有 check 永久 pending 时（此时任何 PR 都无法合并），可 `gh api -X DELETE repos/OWNER/REPO/branches/main/protection` 临时解除阻塞，修完后**立刻** `apply` 并用 `check` 证明恢复；全过程在对应 issue 留时间、原因与恢复证据。
 - **触发面**（`.github/workflows/ci.yml` 顶部有注释）：PR 面向 `main` 时跑 `pull_request`（合并前门禁）；合并后 `main` 跑 `push`（验证真正落地的 squash commit）；`merge_group` 为 merge queue 预留——GitHub 只在仓库启用队列时派发该事件。
+- **分支落后的同步手法**（`strict: true` + 禁 force push 同时生效时的唯一做法）：`gh pr update-branch <n> --rebase`（由 GitHub 侧改写分支，不受 `allow_force_pushes` 限制），或本地 `git merge origin/main` + **普通** `git push`。**不要** `git push --force`：会被保护规则拒绝，而"分支不落后"又是合并的前提。同步后 5 个 check 全部重跑，等于重新过一遍门禁。
