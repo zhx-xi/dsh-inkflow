@@ -176,11 +176,17 @@
 | `outline_nodes` | id | path / kind / title / parent / order_index | 大纲树与不变量校验 |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
-| `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 全文检索（≥3 字；2 字走 `LIKE`） |
+| `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
 
 - 版本不符 → **删库重建**，不做 `ALTER`。
 - 重建：清空 → 全量扫描 → 事务写入 → 校验；`index/` 里除 `.gitkeep` 外全部是派生物。
 - 中文检索实测：SQLite 3.53.4 + FTS5 `trigram`，3 字命中、2 字不命中（证据在对应 PR 评论，不入库）。
+- `chapters_fts.body` 存的是 `parseMarkdown` 的 `body`，**frontmatter 已剥离**：检索片段因此不可能带出 `id` / `status` / 备注等元数据。
+- 检索契约（`searchChapters` / `inkflow_chapter_search`，边界与错误码见 [conventions.md §4.1](conventions.md)）：
+  - **2 字边界**：trigram 以 3 字为一个 token，1–2 字查询 `MATCH` 返回 0 行且不报错，因此 1–2 字（或含短词的组合查询）走 `body LIKE '%q%'`，按 `seq` / 文件排序；≥3 字走 `MATCH`，按 `rank`（bm25）排序。
+  - 查询按 FTS5 短语转义（内部 `"` → `""`），`-` `*` `OR` `NEAR(` 都当字面文本；LIKE 分支转义 `%` `_` `\`。
+  - 短片段取命中词前后各 40 字（连续空白折叠），**不返回命中偏移的字符位置**；`chapterId` 是 `chapters.id`，`file` 是项目内相对路径。
+  - 索引缺失 / `user_version` 不符 → `INDEX_UNAVAILABLE`（读路径零写盘）；懒重建只在工具层执行一次。
 
 ### 4.2 v2（规划，未实现，归 #22 / #23）
 
@@ -193,10 +199,10 @@
 | `facts` | 账本跨章查询 | 未实现 |
 | `entity_mentions` | 别名/名称正文扫描、影响面、掉线检测 | 未实现 |
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现 |
-| 全实体 FTS | 角色/世界观/伏笔/时间线/关系/账本统一检索 | 未实现 |
+| 全实体 FTS | 角色/世界观/伏笔/时间线/关系/账本统一检索（章正文 FTS 已在 v1 可用，见 §4.1） | 未实现 |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（归 #41） |
 
-v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本**。本表整体【未实现】，归 #15（catalog）/ #22（FTS）/ #23（索引 v2）/ #29（提及）/ #41（语义块）。
+v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本**。本表整体【未实现】，归 #15（catalog）/ #23（索引 v2）/ #29（提及）/ #41（语义块）。
 
 ## 5. 不变量与强制手段
 

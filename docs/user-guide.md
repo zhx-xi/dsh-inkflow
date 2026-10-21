@@ -97,7 +97,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
-插件提供五个工具，DSH 里的 AI 会在需要时自己调用：
+插件提供六个工具，DSH 里的 AI 会在需要时自己调用：
 
 | 工具 | 作用 | 你可以这样说 |
 |---|---|---|
@@ -106,6 +106,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_project_init` | 执行上面那份清单（建目录 + `.gitkeep` + `inkflow.json` + `.gitignore` + 必要时 `git init`）；**只补缺的，不覆盖已有文件**；必须带确认 | 「就按这个清单建」/「把缺的补齐」 |
 | `inkflow_index_rebuild` | 从文件重建索引并检查一致性 | 「重建一下索引」/「检查一下设定有没有冲突」 |
 | `inkflow_chapter_list` | 按阅读顺序列出章节 | 「列一下现在有哪些章」 |
+| `inkflow_chapter_search` | 在章节正文里找关键词，返回命中的章与前后各 40 字的片段（1–2 个字也能搜） | 「哪一章写过云海翻涌」/「搜一下『宝剑』」 |
 
 向导的两段式是刻意设计的：先看清单（`plan`），你点头之后才落盘（`init` + 确认）。修复老项目时它只补缺失项——已有的正文、设定、`inkflow.json` 一个字节都不会动；唯一例外是**坏掉的** `inkflow.json`：它会先把原文（超长会截断并标注）给你看，你确认后才重建。
 

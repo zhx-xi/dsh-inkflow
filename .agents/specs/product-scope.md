@@ -197,7 +197,7 @@
 
 ### 4.5 DSH 工具面清单（数量 20–30 为【已定】，命名与切分为【推断】）
 
-当前构建注册 5 个（`inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list`）；下表是目标切分，共 27 个，落在「约 20–30」区间内。
+当前构建注册 6 个（`inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search`）；下表是目标切分，共 27 个，落在「约 20–30」区间内。
 
 | 工具组 | 工具名 | 用途 | 落地 | 来源 |
 | --- | --- | --- | --- | --- |
@@ -223,6 +223,7 @@
 | 时间线 | `inkflow_timeline_list` | 列事件（世界内时间 / 叙事顺序） | 0.2.0 #28 | 【推断】 |
 | 时间线 | `inkflow_timeline_upsert` | 事件创建 / 更新 / 待确认转入 | 0.2.0 #28 | 【推断】 |
 | 账本 | `inkflow_facts_check` | 账本冲突校验 | 0.3.0 #32 | 【推断】 |
+| 检索 | `inkflow_chapter_search` | 章正文关键词检索（FTS5 trigram；1–2 字 `LIKE` 兜底） | 现行 | 【推断】 |
 | 检索 | `inkflow_search` | 关键词 + 语义检索（降级 FTS5） | 0.4.0 #39/#41 | 【推断】 |
 | 导入导出 | `inkflow_import` | TXT / MD / DOCX 导入 | 0.4.0 #37 | 【推断】 |
 | 导入导出 | `inkflow_export` | TXT / MD / EPUB / DOCX 导出 | 0.5.0 #50 | 【推断】 |

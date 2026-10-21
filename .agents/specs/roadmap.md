@@ -92,7 +92,8 @@
 | 写入器与路径安全 | `resolveWriteTarget`、原子替换、单项目写锁、`PROJECT_BUSY`、编码归一 | `src/host/io.ts`；`tests/io-writer.test.js` |
 | 派生索引 v1 | 九目录扫描、临时文件 + 写锁重建、不变量校验（`OUTLINE_*` / `CHARACTER_NAME_DUPLICATE` / `DANGLING_PARENT` / `DUPLICATE_ID` / `FRONTMATTER_ISSUE` / `CHAPTER_NOT_MARKDOWN`） | `src/host/indexer.ts`、`index-build.ts` |
 | 写作 skills 与 preset | 5 个写作工艺 skill 与 `inkflow-writing` preset，按 `cwd` 门禁 | `src/host/skills.ts`、`preset.ts`、`skills/` |
-| 工具面 | 已注册 5 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` | `src/host/tools.ts` |
+| 章正文检索 | `chapters_fts`（trigram）上 ≥3 字 `MATCH`、1–2 字 `LIKE` 兜底、片段只取正文；索引不可用返回 `INDEX_UNAVAILABLE` 且不写盘 | `src/host/search.ts`；`tests/search.test.js` |
+| 工具面 | 已注册 6 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` | `src/host/tools.ts` |
 | 竞品参考索引 | 4 个 OSS 项目的设计参考 | #60（过程稿在 issue 评论） |
 
 ### 4.2 进行中 / 已实现待验收

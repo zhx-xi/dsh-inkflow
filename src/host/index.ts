@@ -136,6 +136,22 @@ export type {
 export { inspectProject } from './project.js'
 export type { ProjectProbe, ProjectState } from './project.js'
 
+/**
+ * Chapter search (issue #22): the read-only query half of `chapters_fts`.
+ * Exported because the panel's future search box reuses it in-process, so this
+ * is not a test-only surface — the tool and the tests drive the same function.
+ */
+export { DEFAULT_SEARCH_LIMIT, DEFAULT_SNIPPET_RADIUS, MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, searchChapters } from './search.js'
+export type {
+  ChapterSearchErrorCode,
+  ChapterSearchFailure,
+  ChapterSearchHit,
+  ChapterSearchOptions,
+  ChapterSearchResult,
+  ChapterSearchSuccess,
+  SearchMode,
+} from './search.js'
+
 export function apply(ctx: HostContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig)
   const log = ctx.logger('dsh-inkflow')

@@ -17,6 +17,7 @@ import type { ContentBlock, HostContext, JsonSchemaNode, ToolDefinition, ToolRun
 import { FILE_SCHEMA_VERSION, INDEX_SCHEMA_VERSION, REQUIRED_DIRS, ROOT_META_FILE } from './conventions.js'
 import { buildIndex, describeIndexBuildFailure } from './index-build.js'
 import { listChapters, readIndexMeta } from './indexer.js'
+import { DEFAULT_SEARCH_LIMIT, MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, searchChapters } from './search.js'
 import { applyWorkspace, planWorkspace } from './workspace.js'
 import type { ProjectProbe, ProjectState, ScopeRejection } from './project.js'
 import { checkProjectRootScope, findProjectRoot, inspectProject, projectLabel } from './project.js'
@@ -624,7 +625,119 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
     },
   }
 
-  return [status, rebuild, chapterList, plan, init]
+  const chapterSearch: ToolDefinition = {
+    name: 'inkflow_chapter_search',
+    description:
+      'Search chapter prose for a keyword and return the matching chapters with a snippet around the first hit. ' +
+      'Queries of three or more characters use the FTS5 trigram index and are ranked; 1–2 character queries ' +
+      '(which trigram cannot match at all) fall back to a LIKE scan ordered by chapter number. Terms are matched ' +
+      'literally — quotes, asterisks, hyphens and OR are text, not operators — and multiple whitespace-separated ' +
+      'terms all have to appear. Snippets are body prose only (never the frontmatter). If the index is missing or ' +
+      'was built by another schema it is rebuilt once (it is only a cache) and the search is retried; an index ' +
+      'that still cannot be used is reported as INDEX_UNAVAILABLE, never as a stack trace.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        query: {
+          type: 'string',
+          description: 'Words to look for in chapter bodies. Matched literally; 1–2 character queries use a LIKE scan.',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_SEARCH_LIMIT,
+          description: `Maximum hits to return. Default ${DEFAULT_SEARCH_LIMIT}.`,
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: SUCCESS_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) {
+          const error = asRecord(v['error'])
+          const message = error['message'] === undefined ? '' : ` — ${String(error['message'])}`
+          const hint = error['hint'] === undefined ? '' : `\n${String(error['hint'])}`
+          return text([`Cannot search chapters: ${String(error['code'] ?? 'unknown')}${message}${hint}`])
+        }
+        const items = Array.isArray(v['items']) ? (v['items'] as Json[]) : []
+        const total = typeof v['total'] === 'number' ? v['total'] : items.length
+        const query = String(v['query'])
+        if (items.length === 0) return text([`No chapter matches "${query}" (${String(v['mode'])} search, total ${total}).`])
+        const lines = [
+          `${total} chapter(s) match "${query}" (${String(v['mode'])} search${v['indexRebuilt'] === true ? ', index rebuilt' : ''}):`,
+        ]
+        for (const item of items) {
+          const seq = item['seq'] === undefined || item['seq'] === null ? '?' : String(item['seq'])
+          lines.push(`- ${seq}. ${String(item['title'])} — ${String(item['file'])}`)
+          if (String(item['snippet'] ?? '') !== '') lines.push(`    ${String(item['snippet'])}`)
+        }
+        return text(lines)
+      },
+    },
+    execute: async (args, exec) => {
+      const a = asRecord(args)
+      const resolved = await resolveProject(deps, a['projectRoot'], exec)
+      if (resolved.probe === undefined || resolved.probe.usable !== true) {
+        return gateFailure(resolved)
+      }
+      const probe = resolved.probe
+      const queryRaw = a['query']
+      if (typeof queryRaw !== 'string' || queryRaw.replace(/\s+/gu, '') === '') {
+        return {
+          ok: false,
+          root: probe.root,
+          error: {
+            code: 'QUERY_INVALID',
+            message: 'query must be a non-empty string',
+            hint: `pass the words to look for; 1–2 characters use a LIKE scan, 3+ use the trigram index (limit ${MAX_QUERY_CHARS} characters)`,
+          },
+        }
+      }
+      const query = queryRaw.trim()
+      const limit = typeof a['limit'] === 'number' ? a['limit'] : DEFAULT_SEARCH_LIMIT
+      const options = { limit }
+
+      let result = searchChapters(probe.root, query, options)
+      let indexRebuilt = false
+      // Lazy rebuild (issue #4): the search function itself must stay read-only,
+      // so the decision to write an index lives here, at the tool boundary.
+      if (!result.ok && result.code === 'INDEX_UNAVAILABLE') {
+        try {
+          await buildIndex(probe.root)
+        } catch (cause) {
+          return indexBuildFailure(cause, probe.root)
+        }
+        indexRebuilt = true
+        result = searchChapters(probe.root, query, options)
+      }
+      rememberProject(deps.dataDir, probe.root)
+      if (!result.ok) {
+        return {
+          ok: false,
+          root: probe.root,
+          query,
+          indexRebuilt,
+          error: { code: result.code, message: result.message, hint: result.hint },
+        }
+      }
+      return {
+        ok: true,
+        root: probe.root,
+        query,
+        mode: result.mode,
+        total: result.total,
+        limit,
+        indexRebuilt,
+        items: result.items,
+      }
+    },
+  }
+
+  return [status, rebuild, chapterList, plan, init, chapterSearch]
 }
 
 /** Exported for tests: the schema every tool must satisfy. */
