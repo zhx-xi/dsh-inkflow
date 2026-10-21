@@ -199,3 +199,4 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 
 - 结论区分【已验证】/【未验证】，并给路径行号或命令输出；证据进 issue/PR comment。
 - 只读取证优先；改动前给出根因与最小修复面。
+- 写功能前先做外部参考对照（Openwrite / novel-forge / novel-studio / AI-Novel-Writer）：只学设计与交互，不搬代码；GPL 部分只读行为。对照结论与取舍写进 issue/PR，流程见 [engineering-discipline §8](.agents/constitution/engineering-discipline.md)。
