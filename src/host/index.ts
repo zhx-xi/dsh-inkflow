@@ -23,6 +23,15 @@ import { createHttpHandler } from './routes.js'
 
 export const name = 'dsh-inkflow'
 
+/**
+ * The frontmatter reader/writer is re-exported from the bundle entry so the
+ * contract tests can drive it directly (they import lib/index.js only). The P1
+ * proposal writer uses the same pair in-process, so this is not a test-only
+ * surface: `parseMarkdown` reads a file, `patchFrontmatter` rewrites one line.
+ */
+export { parseMarkdown, patchFrontmatter } from './frontmatter.js'
+export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
+
 /** Hard dependency: the tool registry. `webServer` is injected lazily. */
 export const inject = ['tools']
 
