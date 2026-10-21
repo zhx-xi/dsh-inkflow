@@ -32,6 +32,7 @@
   "files": [
     "lib",
     "locale",
+    "skills",
     "cordis.patch.yml",
     "icon.svg",
     "README.md",

@@ -83,6 +83,41 @@
 
 每个注册都写成 `ctx.effect(() => resource)`；索引库按调用开/关，进程内不持有长连接——因此**没有需要清理的常驻资源**。
 
+### 4.6 写作 skills 与写作 preset — `ctx.skills` / `ctx.agentPresets`
+
+两个能力都按**可选服务**处理：`ctx.get('skills')` / `ctx.get('agentPresets')` 探测 + 形状校验（`src/host/probe.ts`），缺失时**各打一行日志**、其余能力照常。不写进 `inject:`——硬注入会让服务缺失直接拖死整个插件。
+
+#### skills — 用 provider，不用 `register()`
+
+`ctx.skills.registerProvider(create: (control) => SkillProvider): () => void`。**为什么不用 `ctx.skills.register()`**：它把技能写进**调用方 context 所在的层**，本插件是全局装配，写进去就进全局层——每个会话（写代码的也算）的技能目录里都会多出 5 个小说技能。provider 的 `list(options)` 会收到 `options.cwd`（`dsh-tool-skill` 用 `ctx.workingDirectory.ensure(agent)` 取值），因此按 `findProjectRoot(cwd)` 门禁：只有会话工作目录落在 InkFlow 项目里才返回候选，否则返回**空数组**。
+
+> 返回空数组而不是「不完整观测」：观测不完整会让 `dsh-tool-skill` **整个技能目录停发**（`if (!snapshot.complete) return decision`，实测于 0.2.1-rc.2 源码），而空数组才是正确语义「本会话没有 InkFlow 技能」。
+
+| 字段 | 取值 | 注册表校验（0.2.1-rc.2） |
+|---|---|---|
+| `name` | `inkflow-architect` / `-writer` / `-auditor` / `-reviser` / `-polisher` | kebab-case；provider 名不能是保留字 `runtime` |
+| `description` | 来自 `SKILL.md` frontmatter | 非空（目录里逐条展示） |
+| `rank` | `600` | 层内同名时小的赢；600 是 `dsh-skill` 给打包技能的档位，项目级技能仍能盖过它 |
+| `source` / `provider` | `bundled` / `inkflow` | `candidate.provider` 必须等于 provider 名，否则抛错 |
+| `locator` | 技能名 | 注册表原样交回 `get()` |
+| `resourceBase` | `{kind:'directory', path:<skills/<name>>}` | 让正文里的相对路径相对技能目录解析 |
+
+`list()` 只回摘要，`get(candidate)` 才回 `content`（`SKILL.md` 正文，frontmatter 已剥离）——目录列举不读正文。
+
+#### preset — 一个 Cordis 组合，不是技能清单
+
+`ctx.agentPresets.register(definition: PresetDefinition): Promise<() => Promise<void>>`，`PresetDefinition = { id, name?, description?, order?, plugins: LoaderEntryLike[] }`。`plugins` 是 **Cordis entry 列表**（与 bundle patch 的 `- insert:` 同形）：行里只能挂插件包，**不能直接写技能名或工具名**——技能与工具是这些行挂载后向 preset 作用域贡献的。
+
+本插件注册 `id: inkflow-writing`：一行 `@deepseek-ai/dsh-persona`（人设点名 5 个技能与五阶段流水线）+ `tool-skill` / `tool-fs` / `tool-fs-search` / `tool-todo` / `tool-ask-user` / `tool-web`。**故意不含** shell、subagent、workflow：作者会话不该有仓库改造能力。`inkflow_*` 工具由 Host 半全局注册，preset 会话自然可见，行里不重复。
+
+`register()` 是异步的且**失败不抛**（诊断留在名册 `broken` 上），所以在 `ctx.effect` 里消费这个 promise：成功记一行 info、拒绝记一行 warn，卸载时用 `cancelled` 标记再 `await` 它返回的 disposer，避免卸载后又把注册塞回去。
+
+#### 降级（服务缺失时）
+
+- 没有 `skills` 服务：5 个文件仍随包分发（`check:package` 会检查），只打一行 `skills service missing`。
+- 没有 `agentPresets` 服务：只打一行日志；技能与 `inkflow_*` 工具照常工作。
+- 某个 `SKILL.md` 缺失或 frontmatter 与目录名不一致：逐条 warn，其余技能照常注册；一个都读不出来时**什么都不注册**（不注册空目录）。
+
 ## 5. 四个工程决策
 
 ### 5.1 零运行时依赖
@@ -113,6 +148,9 @@
 | `src/host/index-build.ts` | 索引重建的原子替换、进程内单飞、`index/.lock` | 解析文件格式 |
 | `src/host/io.ts` | **唯一写入口**：路径解析、原子写、单项目写锁 | 业务规则、索引 |
 | `src/host/state.ts` | 插件自身状态（lastProjectRoot），原子写 | 作品数据 |
+| `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
+| `src/host/skills.ts` | 5 个写作技能的读取与校验、按 cwd 门禁的 provider、注册与降级 | 写作品数据、生成正文 |
+| `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
 | `src/host/tools.ts` | 工具 schema/执行/渲染 | 直接扫目录（走 indexer/project） |
 | `src/host/routes.ts` | 只读投影 + 安全校验 | 写操作 |
 | `src/client/index.tsx` | 视图、槽位注册、fetch | 业务规则、文件 IO |
@@ -138,6 +176,8 @@
 | Windows 工具写 UTF-8 BOM | `JSON.parse` 抛错 → 项目被判无效 | 读 `inkflow.json` 前剥 BOM（已有回归测试） |
 | `main` 已有 key `conversation` | 复用会被替换 | 用自有 key `inkflow` |
 | `node:sqlite` 的 `PRAGMA user_version` | 只能 `prepare().get()` 读、`exec()` 写 | 已封装在 indexer |
+| 用 `ctx.skills.register()` 注册随包技能 | 落到**全局层**：所有会话（含代码会话）的技能目录都被塞进小说技能 | 走 `registerProvider` + `cwd` 门禁（§4.6） |
+| 技能 provider 的 `list()` 返回「不完整观测」 | `dsh-tool-skill` 会**停发整个技能目录**，不是只少几个技能 | 无技能时返回空数组 |
 
 ## 9. 未验证 / 待确认
 
@@ -149,3 +189,6 @@
 | 面板的项目来源（会话 → 工作区） | 未做：路由当前 fail-closed 返回 `NO_SESSION_CONTEXT` | 按会话解析工作区后再镜像工具侧的作用域规则 |
 | 增量重建 / 大文件流式解析 | 未做 | P1 |
 | 写入器（原子替换 + 提案制） | 未做 | P1（P0 无写正文能力） |
+| 写作 preset 在真实会话里挂载成功 | **未验证**：签名与行名来自 `cordis_inspect_query` 与官方 preset 声明，但本次没有重启后的名册/会话观测 | 重启 DSH 后看模式选择里是否出现「InkFlow 写作」，再在其中确认工具表无 shell、技能目录有 5 个 `inkflow-*` |
+| 每个会话的 `cwd` 都非空 | 代码路径已确认（`dsh-tool-skill` 用 `workingDirectory.ensure`），真实会话**未观测** | 重启后在工作区外的会话里确认技能目录不含 `inkflow-*` |
+| 5 个技能的实际写作效果 | **未验证**（未跑真实章节生成） | 用一章真实任务书跑 架构→起草→审校，人工判读 |

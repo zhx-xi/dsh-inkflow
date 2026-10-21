@@ -9,7 +9,20 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
-const ALLOWED = /^(package\.json|README\.md|LICENSE|icon\.svg|cordis\.patch\.yml|lib\/|locale\/)/
+// `skills/` is shipped data, not source: the Host half reads the five SKILL.md
+// bodies out of the installed package at apply time (see src/host/skills.ts),
+// so the directory is part of the runtime surface and its absence must fail
+// here rather than silently produce a plugin with no skills.
+const ALLOWED = /^(package\.json|README\.md|LICENSE|icon\.svg|cordis\.patch\.yml|lib\/|locale\/|skills\/)/
+
+/** Every writing skill ships as `skills/<name>/SKILL.md`, one per pipeline stage. */
+const REQUIRED_SKILLS = [
+  'inkflow-architect',
+  'inkflow-writer',
+  'inkflow-auditor',
+  'inkflow-reviser',
+  'inkflow-polisher',
+]
 
 // Windows cannot spawn a .cmd shim without a shell (EINVAL), so go through cmd
 // there and spawn npm directly elsewhere.
@@ -46,4 +59,11 @@ for (const required of ['lib/index.js', 'lib/client.js']) {
     process.exit(1)
   }
 }
-console.log(`package ok: ${files.length} file(s) shipped, no source/test leakage`)
+for (const skill of REQUIRED_SKILLS) {
+  const required = `skills/${skill}/SKILL.md`
+  if (!files.includes(required)) {
+    console.error(`✗ missing writing skill in the package: ${required} (check package.json "files")`)
+    process.exit(1)
+  }
+}
+console.log(`package ok: ${files.length} file(s) shipped (${REQUIRED_SKILLS.length} skills), no source/test leakage`)

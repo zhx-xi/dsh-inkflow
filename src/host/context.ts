@@ -79,6 +79,103 @@ export interface ToolRegistryLike {
 }
 
 /**
+ * `@deepseek-ai/dsh-skill` skill surface, reduced to the fields we set.
+ *
+ * A provider is the borrowed same-process seam described by
+ * `SkillRegistry.registerProvider(create)`: the registry calls `list()` for
+ * catalog discovery and `get()` only for the winning candidate. Both on-demand
+ * fields exist because a catalog listing must stay cheap — a skill body is
+ * loaded when (and only when) the model asks for it.
+ */
+export interface SkillInvocationPolicy {
+  modelInvocable: boolean
+  userInvocable: boolean
+}
+
+export interface SkillResourceBase {
+  kind: 'directory' | 'url' | 'opaque'
+  path?: string
+  url?: string
+  description?: string
+}
+
+export interface SkillSummaryLike {
+  name: string
+  description: string
+  whenToUse?: string
+  invocation: SkillInvocationPolicy
+  /** Where the skill came from (`bundled`, `project-dsh`, `runtime`, …). */
+  source: string
+  /** Must equal the provider name that returned the candidate, or the registry throws. */
+  provider: string
+  path?: string
+  resourceBase?: SkillResourceBase
+}
+
+export interface SkillCandidateLike extends SkillSummaryLike {
+  /** Ascending: a smaller rank wins a duplicate name inside one layer. */
+  rank: number
+  /** Opaque to the registry: handed back verbatim to `get()`. */
+  locator: unknown
+  metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface SkillDefinitionLike extends SkillSummaryLike {
+  content: string
+  metadata?: Readonly<Record<string, unknown>>
+}
+
+export interface SkillLookupOptionsLike {
+  /** Session working directory; the only workspace signal a provider sees. */
+  cwd?: string
+  signal?: AbortSignal
+}
+
+export interface SkillProviderLike {
+  name: string
+  list(options: SkillLookupOptionsLike): Promise<readonly SkillCandidateLike[]>
+  get(candidate: SkillCandidateLike, options: SkillLookupOptionsLike): Promise<SkillDefinitionLike | undefined>
+}
+
+export interface SkillProviderControlLike {
+  readonly signal: AbortSignal
+  /** Drop cached catalog observations after the provider's own state changed. */
+  invalidate(): void
+}
+
+export interface SkillRegistryLike {
+  registerProvider(create: (control: SkillProviderControlLike) => SkillProviderLike): () => void
+}
+
+/**
+ * `@deepseek-ai/dsh-agent-preset-registry` declaration shape.
+ *
+ * A preset is a *composition*: `plugins` is a Cordis entry list, exactly what a
+ * bundle patch writes under `- insert:`. It cannot name skills or tools
+ * directly — rows mount plugins, and those plugins contribute skills/tools into
+ * the preset's scope. `disabled` is `boolean | JsExpr` in the real contract; we
+ * only ever write the boolean form, so a JS expression is not modelled.
+ */
+export interface LoaderEntryLike {
+  id?: string
+  name: string
+  config?: unknown
+  disabled?: boolean
+}
+
+export interface PresetDefinitionLike {
+  id: string
+  name?: string
+  description?: string
+  order?: number
+  plugins: readonly LoaderEntryLike[]
+}
+
+export interface AgentPresetRegistryLike {
+  register(definition: PresetDefinitionLike): Promise<() => Promise<void>>
+}
+
+/**
  * The Cordis context as seen by a Host plugin.
  *
  * `ctx.effect(setup)` owns a resource for the lifetime of the plugin; the

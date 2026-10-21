@@ -104,6 +104,35 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 索引是缓存：删掉 `index/inkflow.db` 也不会丢任何内容，下次使用时自动重建。
 
+### 5.4 写作模式与五个写作技能
+
+装好插件后，在**小说项目目录**里开会话，AI 的技能目录里会自带五个写作工艺技能：
+
+| 技能 | 管什么 |
+|---|---|
+| `inkflow-architect` | 架构：把设定与大纲折成**本章任务书**（目标 / 冲突 / 信息增量 / 伏笔动作 / 禁区） |
+| `inkflow-writer` | 起草：按任务书写正文，管视角、场景、对话、节奏、章末钩子、去 AI 味 |
+| `inkflow-auditor` | 审校：设定 / 时间线 / 人物 / 伏笔四维**只读**审计，逐条给正文原句与严重级 |
+| `inkflow-reviser` | 修订：按审计清单定向改写，只动被点名的位置，不重写全章 |
+| `inkflow-polisher` | 润色：句子级去 AI 味、去翻译腔、修重复与标点，**不改情节** |
+
+这些技能**只在作品目录里出现**：会话工作目录不在任何 InkFlow 项目里时，技能目录里不会有它们，写代码/聊天类的会话不受影响。
+
+**写作模式（agent preset）**：会话的模式选择里会多一项 **InkFlow 写作**（`inkflow-writing`）。它的差别只有两件事：
+
+- 人设按五阶段流水线组织，并点名这五个技能；
+- 工具只给读文件 / 文件搜索 / 待办 / 提问 / 联网这些日常工具，外加 `inkflow_*`。**不给 shell、不给子智能体、不给工作流**——作者会话不该顺手去改仓库。
+
+写小说用这个模式，写代码用默认模式。
+
+**怎么用**（照旧说人话，不用记技能名）：
+
+- 「写下一章」→ 先 `inkflow-architect` 出任务书，再 `inkflow-writer` 成文，最后 `inkflow-auditor` 审一遍；
+- 「按审校意见改」→ `inkflow-reviser`；「这段读着像 AI 写的，润一下」→ `inkflow-polisher`；
+- 想直接点名，输入框里打 `/inkflow-writer` 即可。
+
+**想改工艺**：技能文件在插件包内 `skills/<技能名>/SKILL.md`，正文就是给 AI 的指令（frontmatter 里的 `name` 必须与目录名一致，改名要同时改两处）。技能按作品目录生效，所以同一套工艺对所有书一致。
+
 ## 6. 文件格式速查
 
 正文（`chapters/vol-01/0001-入山.md`）：
@@ -180,6 +209,8 @@ title: 全书总纲
 | `init` 返回 `INIT_REQUIRES_CONFIRMATION` | 目标目录非空且没有 `inkflow.json` | 看返回的「将创建」清单，确认无误后让 AI 带确认再跑一次 |
 | 左侧栏没有 InkFlow 图标 | 插件未安装/未激活，或改了代码没重启 | 检查插件列表；重启 DSH |
 | 装了插件但工具列表里没有 `inkflow_*` | 还是旧版本代码在跑 | 重启 DSH |
+| 技能目录里没有 `inkflow-*` 五个写作技能 | 会话工作目录不在 InkFlow 项目里（技能按目录门禁），或宿主没有 skills 服务 | 把会话切到书的目录；重启后在启动日志里看有没有 `skills service missing` |
+| 模式选择里没有「InkFlow 写作」 | 宿主没有 `agentPresets` 服务（或该宿主不支持 preset） | 技能与 `inkflow_*` 工具不依赖 preset，写作照常可用；重启升级后再看 |
 | 改了章文件，面板还是旧的 | 索引未重建 | 触发 `inkflow_index_rebuild` 或重启会话 |
 | 中文两字词搜不到 | trigram 分词限制 | 用 3 字以上关键词，或直接全文搜文件 |
 | 文档乱码 / 项目识别失败 | 文件被写入了 UTF-8 BOM | 用「UTF-8 无 BOM」重新保存；插件读取时会容忍 BOM，但建议统一 |

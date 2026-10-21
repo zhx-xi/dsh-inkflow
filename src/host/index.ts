@@ -17,11 +17,35 @@
 
 import type { HostContext } from './context.js'
 import { resolveConfig } from './config.js'
+import { BUNDLED_SKILL_NAMES, bundledSkillsDir, registerInkflowSkills } from './skills.js'
+import { buildWritingPreset, registerWritingPreset } from './preset.js'
+import { describeError } from './probe.js'
 import { readState } from './state.js'
 import { buildTools } from './tools.js'
 import { createHttpHandler } from './routes.js'
 
 export const name = 'dsh-inkflow'
+
+/**
+ * The writing surface (issue #21) is re-exported for the contract tests, which
+ * import `lib/index.js` only and must drive what users install — the bundled
+ * skills and the preset declaration are data this plugin owns, so the assembly
+ * inputs are part of that surface.
+ */
+export {
+  BUNDLED_SKILL_NAMES,
+  SKILL_PROVIDER_NAME,
+  SKILL_RANK,
+  bundledSkillsDir,
+  createInkflowSkillProvider,
+  isWritingWorkspace,
+  loadBundledSkills,
+  readBundledSkill,
+  registerInkflowSkills,
+} from './skills.js'
+export type { BundledSkill, SkillFileProblem, SkillRegistration } from './skills.js'
+export { WRITING_PRESET_ID, buildWritingPreset, registerWritingPreset, writingPersona } from './preset.js'
+export type { PresetRegistration } from './preset.js'
 
 /**
  * The frontmatter reader/writer is re-exported from the bundle entry so the
@@ -83,6 +107,22 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
   // to resolve a project — one plugin-wide value cannot speak for a session.
   const remembered = readState(config.dataDir).lastProjectRoot
   if (remembered !== undefined) log.info(`last touched project (display only, not used for resolution): ${remembered}`)
+
+  // Writing craft (issue #21). Both halves probe for their Host service and
+  // degrade to a single log line: a profile without `skills` / `agentPresets`
+  // still gets the tools and the routes, and the skills/ files still ship.
+  // Wrapped whole: a rejected registration (a duplicate provider name from a
+  // second row mounting this package, say) must not cost the user their tools.
+  try {
+    const skills = registerInkflowSkills(ctx, { dir: bundledSkillsDir(import.meta.url), log })
+    registerWritingPreset(
+      ctx,
+      buildWritingPreset(skills.names.length > 0 ? skills.names : [...BUNDLED_SKILL_NAMES]),
+      log,
+    )
+  } catch (error) {
+    log.warn(`writing surface skipped: ${describeError(error)}`)
+  }
 
   const tools = ctx.tools
   if (tools === undefined) {
