@@ -16,8 +16,9 @@
 | [0005](0005-files-first-with-derived-index.md) | 文件真相 + SQLite 派生索引 | 已采纳（现行）；门禁与目录条款被 0006 修改 | 2026-10-21 |
 | [0006](0006-workspace-contract-v2.md) | 工作区契约 v2（9 内容目录 / 四态门禁 / 卷章 catalog） | 已采纳 | 2026-10-21 |
 | [0007](0007-plugin-shared-library.md) | 插件级共享库（`$DSH_HOME/inkflow/shared/`，复制快照 + `origin` 溯源） | 已采纳 | 2026-10-21 |
-| [0008](0008-panel-data-channel.md) | 面板入口只在 `conversation.view`，数据走私有内部通道（不是 API） | 已采纳；**取代/收窄 [0004](0004-loopback-http.md)** 的对外接口定位与路径命名 | 2026-10-21 |
+| [0008](0008-panel-data-channel.md) | 面板入口只在 `conversation.view`，数据走私有内部通道（不是 API） | 已采纳；**取代/收窄 [0004](0004-loopback-http.md)** 的对外接口定位与路径命名；**D1 入口范围被 [0010](0010-book-hub-entry.md) 收窄** | 2026-10-21 |
 | [0009](0009-ovk-semantic-search.md) | 语义检索复用 OpenViking（peer 从工作区读 / 按章重建 / 召回不等于定位） | 已采纳 | 2026-10-21 |
+| [0010](0010-book-hub-entry.md) | 书库入口（root 侧栏）+ 书单来自 DSH 工作区注册表，无会话通道只做状态/初始化/共享库只读 | 已采纳；**收窄 [0008](0008-panel-data-channel.md) D1**（创作工作台仍只留 `conversation.view`） | 2026-10-21 |
 
 ### 1.2 决策速览（一行一条）
 
@@ -32,6 +33,7 @@
 | [0007](0007-plugin-shared-library.md) | **插件级共享库**：`$DSH_HOME/inkflow/shared/`（world / library / snippets / series），默认复制快照 + `origin{projectId,entryId,contentHash}` 溯源，引用仅限 `library/` 原文，系列 = 共享库分组 | 一次维护多书取用；书仍自包含；来源可追溯（`entryId` + `contentHash`） |
 | [0008](0008-panel-data-channel.md) | **面板入口只留 `conversation.view`**，数据走私有 `/inkflow/internal/*`（**不是 API**），客户端只传 `sessionId`、Host 用 workspace 解析路径 | root 插槽拿不到工作区；路径不能让调用方指定；第三方 `@Remote` 当前不可行 |
 | [0009](0009-ovk-semantic-search.md) | **语义检索复用 OpenViking**：peer 从工作区配置只读、按章同路径覆盖重建、召回不等于定位、缺 OVK 降级 FTS5（含 2 字 `LIKE` 兜底） | 零依赖下自研向量库不现实；`forget` 是永久物理删除，不能映射「删章」；结果只到文件级 |
+| [0010](0010-book-hub-entry.md) | **书库入口（root `sidebar.panellist`）+ 书单 = DSH 工作区注册表**（不自建 `books.json`，一本书 = 一个 workspace）；新增无会话通道 `/inkflow/internal/hub/*`，能力白名单只有列书状态 / 初始化 plan、apply / 共享库只读，**禁止任何作品正文读写**；新开书 = pickDirectory → plan → apply(confirm) → 注册工作区 → 引导开新会话（不能程序化建会话） | 没有会话就看不到面板，新开书路径太长；注册表已是"一书一工作区"的宿主表达；root 槽位无 `sessionId`，正文读写仍必须由会话推出路径 |
 
 ## 2. 编号与登记规则
 
