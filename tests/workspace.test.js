@@ -150,6 +150,32 @@ function assertCompleteTree(root) {
 // 1. Empty directory → needs-setup; the plan is read-only
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// 1b. A plain git repository is not a broken book
+// ---------------------------------------------------------------------------
+
+test('gate: a git repository without any InkFlow layout is needs-setup, not needs-repair', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'code-repo')
+    mkdirSync(root)
+    assert.equal(git(['init'], root).status, 0, 'git init should succeed')
+    writeFileSync(join(root, 'README.md'), '# a normal repository\n', 'utf8')
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    const status = await callTool(harness, 'inkflow_project_status', { projectRoot: root })
+    // Every source repository has a .git; treating it as a broken book made the
+    // plugin tell users to "repair" repositories it never created.
+    assert.equal(status.ok, false)
+    assert.equal(status.error.state, 'needs-setup')
+    assert.equal(status.error.code, 'NOT_AN_INKFLOW_PROJECT')
+    // And the repair-only flag must not be set: setup, not repair, is the path.
+    assert.equal(status.error.needsRepair, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('gate: an empty directory is needs-setup and the plan lists every action without writing', async () => {
   const dir = workdir()
   try {

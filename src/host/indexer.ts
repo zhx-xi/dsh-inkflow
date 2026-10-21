@@ -396,24 +396,32 @@ export function scanProject(root: string): ScanResult {
     }
   }
 
-  // I-08 (data-model.md §5): exactly one world root, and every entry below it is
-  // pinned into the tree. "Root" means "no parent" — so the two checks together
-  // say "exactly one entry has no parent; every other entry has one". The
-  // category is the directory name when the field is absent (conventions.md
-  // §3.4), so only an entry that claims a parent but carries neither a field nor
-  // a category directory is incomplete.
+  // I-08 (data-model.md §5): a world book has either one root (a first-level
+  // entry without a parent) or none at all — a "flat category book" that keeps
+  // every entry under `world/<category>/` and never links them is valid.
+  //
+  // The first implementation counted every parentless entry as a root, so a
+  // flat category book reported WORLD_ROOT_MULTIPLE (found in review after #8).
+  // The category is the directory name when the field is absent
+  // (conventions.md §3.4), so only a first-level entry that claims a parent
+  // without carrying a field or a category directory is incomplete.
   if (worldEntries.length > 0) {
-    const roots = worldEntries.filter((entry) => entry.parent === undefined || entry.parent === '')
-    if (roots.length === 0) {
-      issues.push({
-        code: 'WORLD_ROOT_MISSING',
-        detail: 'no world entry is a root; exactly one entry without parent is required',
-      })
-    } else if (roots.length > 1) {
+    const isFirstLevel = (relPath: string): boolean => relPath.split('/').length === 2
+    const roots = worldEntries.filter(
+      (entry) => (entry.parent === undefined || entry.parent === '') && isFirstLevel(entry.path),
+    )
+    const claimsParent = worldEntries.some((entry) => entry.parent !== undefined && entry.parent !== '')
+    if (roots.length > 1) {
       const shown = roots.slice(0, 3).map((entry) => entry.path).join(', ')
       issues.push({
         code: 'WORLD_ROOT_MULTIPLE',
-        detail: `${roots.length} world entries have no parent (${shown}${roots.length > 3 ? ', …' : ''}); exactly one root is allowed`,
+        detail: `${String(roots.length)} world entries are roots (${shown}${roots.length > 3 ? ', …' : ''}); exactly one root is allowed`,
+      })
+    } else if (roots.length === 0 && claimsParent) {
+      issues.push({
+        code: 'WORLD_ROOT_MISSING',
+        detail:
+          'world entries claim parents but none is a root; either add one first-level entry without parent or drop the parents (flat category book)',
       })
     }
     for (const entry of worldEntries) {

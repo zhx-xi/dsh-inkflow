@@ -248,8 +248,7 @@ test('a project that is not usable injects nothing', async (t) => {
     rmSync(newer, { recursive: true, force: true })
   })
 
-  // needs-setup: no git, no meta.
-  scaffold(empty, { git: false, meta: null })
+  // needs-setup: nothing that looks like a book (no meta, no content dirs).
   const setup = buildWritingContext(empty)
   assert.equal(setup.state, 'needs-setup')
   assert.equal(setup.text, '')
@@ -257,7 +256,7 @@ test('a project that is not usable injects nothing', async (t) => {
   assert.deepEqual(setup.trimmed, [])
   assert.equal(setup.tokens, 0)
 
-  // needs-repair: a git repository with no inkflow.json.
+  // needs-repair: the InkFlow layout exists but the meta file is missing.
   scaffold(repair, { meta: null })
   const broken = buildWritingContext(repair)
   assert.equal(broken.state, 'needs-repair')
@@ -289,8 +288,9 @@ test('the budget trims in the documented order and never drops the current chapt
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
 
-  const ladder = ['项目摘要', '当前章大纲', '上章结尾', '世界书']
+  const ladder = ['项目摘要', '当前章大纲', '世界书', '上章结尾']
   const reached = new Map()
+  const rungs = []
   const full = buildWritingContext(root)
   assert.deepEqual(full.trimmed, [])
 
@@ -317,6 +317,7 @@ test('the budget trims in the documented order and never drops the current chapt
     assert.ok(result.text.includes('### 当前章'), `chapter kept at budget ${String(budgetTokens)}`)
     assert.ok(result.text.includes('标题：第二章 夜行'))
     reached.set(result.trimmed.join('|'), result)
+    rungs.push(result)
   }
 
   // Every rung is actually reachable, including "only the current chapter left".
@@ -325,8 +326,13 @@ test('the budget trims in the documented order and never drops the current chapt
     assert.ok(reached.has(key), `rung "${key}" is reachable`)
   }
 
-  // L3 shrinks the tail before L4 drops it — the marker says so.
-  const rungs = [...reached.values()]
+  // The world book is dropped before the tail is touched: the tail has no side
+  // channel (the model cannot re-read the previous chapter), the world book does.
+  assert.ok(
+    rungs.some((result) => result.trimmed.includes('世界书') && result.text.includes('最后 300 字')),
+    'the world book is dropped while the tail is still full length',
+  )
+  // Then the tail shrinks (L4) before it is dropped (L5) — the marker says so.
   assert.ok(
     rungs.some((result) => result.text.includes('最后 120 字')),
     'the tail is shrunk to 120 characters before being dropped',
@@ -344,7 +350,7 @@ test('the budget trims in the documented order and never drops the current chapt
 
   const squeezed = buildWritingContext(root, { budgetTokens: 20 })
   assert.deepEqual(squeezed.trimmed, ladder)
-  assert.match(squeezed.text, /\[trimmed: 项目摘要、当前章大纲、上章结尾、世界书\]/)
+  assert.match(squeezed.text, /\[trimmed: 项目摘要、当前章大纲、世界书、上章结尾\]/)
   assert.ok(!squeezed.text.includes('### 世界书'))
   assert.ok(!squeezed.text.includes('鹤鸣剑出鞘'), 'the outline is gone, not just hidden')
   assert.ok(squeezed.tokens > squeezed.budgetTokens, 'over budget rather than dropping the chapter')
