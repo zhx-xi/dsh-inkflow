@@ -37,7 +37,10 @@
 ├── .gitignore                   ← 至少忽略 index/*.db*
 ├── chapters/                    ← 正文
 │   ├── .gitkeep
-│   └── vol-01/0001-<slug>.md
+│   ├── index.json               ← 卷列表 + 散章（派生投影，入库）
+│   └── vol-01-<slug>/           ← 卷目录（volumeId = vol-01）
+│       ├── index.json           ← 该卷章清单（派生投影，入库）
+│       └── 0001-<slug>.md
 ├── characters/                  ← 角色
 │   ├── .gitkeep
 │   └── <slug>.md
@@ -91,7 +94,7 @@
 ---
 id: 6f1c2c1e-...        # 可选；缺省用相对路径生成稳定 id
 title: 第一章 入山
-volume: vol-01          # 可选；缺省取 chapters/<vol>/ 的目录名（顶层章为空，不会是 "chapters"）
+volume: vol-01          # 可选；卷 id（volumeId，不是目录名）；缺省从所在卷目录推导
 seq: 1                  # 可选；缺省取文件名前导数字
 status: draft           # draft | revised | final
 pov: 主角                # 可选
@@ -161,7 +164,79 @@ order: 0
 | 文件 | 进 git？ | 说明 |
 |---|---|---|
 | `<必建目录>/.gitkeep` | ✅ | 十份（九个内容目录 + `index/`），保证 clone 后目录仍在 |
+| `chapters/index.json`、`chapters/<vol-dir>/index.json` | ✅ | 卷章清单投影（§3.8）：可 `git diff` 审阅、跨机器一致 |
 | `index/inkflow.db` | ❌ | 派生 SQLite（含 `-wal`/`-shm`），可随时删除重建 |
+
+### 3.8 卷章清单 catalog（`chapters/index.json` 与 `chapters/<vol-dir>/index.json`）
+
+三份文件的关系：**`.md` 是真相，两份 catalog 是投影**。写入时自上而下、读取时用投影核对全部三份：
+
+| # | 文件 | 是什么 | 写入时机 |
+|---|---|---|---|
+| 1 | `chapters/**/*.md` | **真相**：文件名 + frontmatter 决定卷归属与章号 | 章写入工具（P1） |
+| 2 | `chapters/<vol-dir>/index.json` | 该卷的章清单（投影） | 章写入后重建 / 显式重建 |
+| 3 | `chapters/index.json` | 卷列表 + 不属于任何卷的散章（投影） | 章写入后重建 / 显式重建 |
+
+catalog 入库（与 `index/` 相反），因此卷章结构可 `git diff` 审阅、跨机器一致；它不是第二真相：手改会在下一次重建时被覆盖。
+
+`chapters/index.json`（卷列表 + 散章）：
+
+```json
+{
+  "schemaVersion": 1,
+  "volumes": [{ "volumeId": "vol-01", "dir": "vol-01-入山", "title": "入山", "order": 1 }],
+  "looseChapters": [
+    { "chapterId": "chapters/0001-序章.md", "file": "chapters/0001-序章.md", "seq": 1, "title": "序章" }
+  ]
+}
+```
+
+`chapters/<vol-dir>/index.json`（该卷章清单）：
+
+```json
+{
+  "schemaVersion": 1,
+  "volumeId": "vol-01",
+  "chapters": [
+    {
+      "chapterId": "chapters/vol-01-入山/0001-入山.md",
+      "file": "chapters/vol-01-入山/0001-入山.md",
+      "seq": 1,
+      "title": "第一章 入山"
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `schemaVersion` | int | 固定 `1`；不同即判为漂移并重建 |
+| `volumeId` | string | 稳定卷 id，形如 `vol-NN`（两位起，`vol-7` 规范化为 `vol-07`） |
+| `dir` | string | 卷目录名；**必须以 `volumeId` 开头**（`vol-NN-<slug>`）。slug 可改、`volumeId` 不变 |
+| `title` | string | 卷：目录 slug；章：frontmatter `title`，缺省取文件名（去 `.md`） |
+| `order` | int | 卷序号，取 `volumeId` 的数字部分（自然排序） |
+| `chapterId` | string | frontmatter `id`，缺省用项目相对路径 |
+| `file` | string | 项目相对路径、`/` 分隔、必在 `chapters/` 下（例 `chapters/vol-01-入山/0001-入山.md`） |
+| `seq` | int | 可选：frontmatter `seq` > 文件名前导数字；都没有时**省略该字段**（不编造 `0`，否则与真实第 0 章冲突） |
+
+- **不写派生统计**：字数、状态统计等由 SQLite 派生索引给出；写进 catalog 只会让 AI 与插件互相改同一字段。
+- **章归属**：frontmatter `volume`（存 `volumeId`，**不是目录名**）优先；缺省时取章所在卷目录的 `volumeId`；两者都不可用时进 `looseChapters`。因此改卷目录 slug 不改变任何章的归属。
+- **什么算卷**：只有 `chapters/` 的一级子目录、且名字匹配 `vol-NN[-slug]` 才算卷。其他目录里的 `.md` 仍是章，按上面的归属规则落到某卷或散章（不会从清单里消失）。
+- **读路径不写盘**：catalog 缺失、不可解析或与 `.md` 不一致时返回 `catalogStale: true` 与内存投影（以 `.md` 为准），供面板/诊断使用。
+- **写路径**：章写入后重建受影响的 catalog（结果标 `catalogRebuilt: true`）；另可显式重建。重建持项目写锁（§5.3）、原子替换（§5.2），**先写卷清单、后写顶层清单**——中途失败时顶层清单保持旧内容，读路径因此继续报 stale，下次重建修复。
+- **幂等**：同一批 `.md` 连续重建两次得到字节相同的文件（卷按 `order`/`dir` 排序，章按 `seq`/`file` 排序）。
+- **不是门禁必需项**：删掉 catalog 不改变 §1 的四态判定（重建即可），避免「删一个投影 = 项目损坏」。
+
+四条不变量（`validateCatalog` 报码，**不阻断**；与派生索引的 `validation_issues` 同策略）：
+
+| # | 不变量 | 失败码 |
+|---|---|---|
+| C-1 | 同一 `volumeId` 内 `(volumeId, seq)` 唯一 | `CATALOG_DUPLICATE` |
+| C-2 | `looseChapters` 内 `seq` 唯一 | `CATALOG_DUPLICATE` |
+| C-3 | 卷目录 `dir` 以 `volumeId` 开头（且目录存在） | `VOLUME_DIR_MISMATCH` |
+| C-4 | 清单指向的 `file` 必须存在且是 `.md` | `CHAPTER_FILE_MISSING` |
+
+另有漂移码 `CATALOG_STALE`：清单缺失 / 不可解析 / 与 `.md` 投影不一致。它不是不变量，而是「该重建了」的信号。插件**不删除**任何文件（正文没有第二份），因此非卷目录下的同名 `index.json` 只当作普通文件，不报漂移——否则会出现「重建也修不掉」的告警。
 
 ## 4. 索引（派生层）
 
