@@ -45,6 +45,7 @@
 
 ## 验证
 
-- `node scripts/branch-protection.mjs check` 在正确配置下 PASS；临时删掉一个 required context 后 FAIL 并点名（2026-10-22 现场做过，见 issue #93 评论）。
-- `tests/branch-protection.test.js` 覆盖纯函数的每条反例；`tests/branch-protection-cli.test.js` 覆盖退出码（tolerant + 无 gh → 0；读到不符 → 1；`--dry-run` 不发请求）。
+- `node scripts/branch-protection.mjs check` 在正确配置下 PASS；临时删掉一个 required context 后 FAIL 并点名（2026-10-22 现场做过，验证输出记在 issue #93）。
+- **应急出口的实跑**：`DELETE …/protection` → `apply` → `check` 的整条往返必须在合并后实跑一次并把输出记进 issue #93；**在实跑之前，「出口可行」只是权限模型上的推断**（`permissions.admin=true`），不得写成已验证。
+- `tests/branch-protection.test.js` 覆盖纯函数的每条反例；`tests/branch-protection-cli.test.js` 覆盖退出码（tolerant + 无 gh → 0；读到不符 → 1；预读失败拒绝 apply；`--dry-run` 不发请求）。
 - `pnpm.cmd run check` 全绿，且末端的 `branch-protection` 一行给出 PASS 或 `SKIP …（未验证）`。

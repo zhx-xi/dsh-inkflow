@@ -93,6 +93,24 @@ test('apply --dry-run prints the payload and touches no network', () => {
   assert.match(out, /"required_status_checks"/)
 })
 
+test('apply refuses to PUT when the current protection cannot be read', () => {
+  // PUT replaces the whole object: applying blind could delete a review
+  // requirement this gate does not own (review finding N1).
+  const { code, out } = run(['apply', '--repo', 'owner/repo'], NO_GH)
+  assert.equal(code, 1, out)
+  assert.match(out, /refusing to apply: could not read the current protection/)
+})
+
+test('apply refuses to PUT when a review requirement cannot be mirrored', () => {
+  const unknown = join(dir, 'unknown-reviews.json')
+  const payload = goodPayload()
+  payload.required_pull_request_reviews = { brand_new_field: 3 }
+  writeFileSync(unknown, JSON.stringify(payload), 'utf8')
+  const { code, out } = run(['apply', '--repo', 'owner/repo', '--fixture', unknown], NO_GH)
+  assert.equal(code, 1, out)
+  assert.match(out, /cannot mirror back/)
+})
+
 test('an unknown command is a failure', () => {
   const { code, out } = run(['verify', '--repo', 'owner/repo'], NO_GH)
   assert.equal(code, 1, out)

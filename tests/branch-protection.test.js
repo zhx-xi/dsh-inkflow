@@ -14,6 +14,7 @@ import {
   evaluateProtection,
   flattenProtection,
   protectionPayload,
+  reviewRequirement,
 } from '../scripts/branch-protection-rules.mjs'
 
 /** A GitHub-shaped payload that satisfies the expectation, built from the write path. */
@@ -123,4 +124,24 @@ test('apply carries over an already-enabled review requirement', () => {
   })
   // Nothing enabled today stays nothing.
   assert.equal(protectionPayload().required_pull_request_reviews, null)
+})
+
+test('a review requirement we cannot mirror is reported as unknown, never guessed', () => {
+  // Guessing either widens (silently dropping an allowlist) or tightens (adding
+  // an approval requirement a single-author repo cannot satisfy) — so `apply`
+  // refuses instead of inventing a value (review finding N3).
+  const unknown = reviewRequirement({ required_pull_request_reviews: { something_new: true } })
+  assert.equal(unknown.kind, 'unknown')
+  const payload = protectionPayload(undefined, { required_pull_request_reviews: { something_new: true } })
+  assert.equal(payload.required_pull_request_reviews, null)
+  assert.equal(reviewRequirement(undefined).kind, 'none')
+})
+
+test('allowlists are carried over verbatim, not flattened away', () => {
+  const allow = { users: [{ login: 'alice' }], teams: [], apps: [] }
+  const carried = reviewRequirement({
+    required_pull_request_reviews: { required_approving_review_count: 1, bypass_pull_request_allowances: allow },
+  })
+  assert.equal(carried.kind, 'known')
+  assert.deepEqual(carried.value.bypass_pull_request_allowances, allow)
 })

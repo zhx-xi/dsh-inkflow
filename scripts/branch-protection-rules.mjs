@@ -124,10 +124,11 @@ export function evaluateProtection(actual, expected = EXPECTED) {
  * review requirement", which is what the repository has today.
  */
 export function protectionPayload(expected = EXPECTED, currentApi = undefined) {
+  const carrier = reviewRequirement(currentApi)
   return {
     required_status_checks: { strict: expected.strict, contexts: [...expected.requiredContexts] },
     enforce_admins: expected.enforceAdmins,
-    required_pull_request_reviews: carryReviewRequirement(currentApi),
+    required_pull_request_reviews: carrier.kind === 'known' ? carrier.value : null,
     restrictions: null,
     allow_force_pushes: expected.allowForcePushes,
     allow_deletions: expected.allowDeletions,
@@ -137,17 +138,31 @@ export function protectionPayload(expected = EXPECTED, currentApi = undefined) {
 
 const REVIEW_FLAGS = ['dismiss_stale_reviews', 'require_code_owner_reviews', 'require_last_push_approval']
 const REVIEW_COUNT = 'required_approving_review_count'
+const REVIEW_PASSTHROUGH = ['dismissal_restrictions', 'bypass_pull_request_allowances']
 
-function carryReviewRequirement(currentApi) {
+/**
+ * Classify the review requirement this gate does not own.
+ *
+ *   'none'    — nothing enabled: sending `null` keeps it that way;
+ *   'known'   — enabled with a shape we can mirror back verbatim (scalars plus
+ *               the two allowlists, so nobody's stricter setting is loosened);
+ *   'unknown' — enabled but unrecognizable: the caller must REFUSE to PUT rather
+ *               than guess, because guessing either widens or tightens a rule
+ *               nobody asked this gate to touch (review findings N3 + S1).
+ */
+export function reviewRequirement(currentApi) {
   const reviews = currentApi?.required_pull_request_reviews
-  if (typeof reviews !== 'object' || reviews === null) return null
-  const carried = {}
+  if (typeof reviews !== 'object' || reviews === null) return { kind: 'none' }
+  const value = {}
   for (const flag of REVIEW_FLAGS) {
-    if (typeof reviews[flag] === 'boolean') carried[flag] = reviews[flag]
+    if (typeof reviews[flag] === 'boolean') value[flag] = reviews[flag]
   }
-  if (typeof reviews[REVIEW_COUNT] === 'number') carried[REVIEW_COUNT] = reviews[REVIEW_COUNT]
-  // An enabled-but-unrecognised shape must not be silently dropped either: keep
-  // at least one approval so a stricter rule stays stricter.
-  if (Object.keys(carried).length === 0) return { [REVIEW_COUNT]: 1 }
-  return carried
+  if (typeof reviews[REVIEW_COUNT] === 'number') value[REVIEW_COUNT] = reviews[REVIEW_COUNT]
+  for (const list of REVIEW_PASSTHROUGH) {
+    if (reviews[list] && typeof reviews[list] === 'object') value[list] = reviews[list]
+  }
+  if (typeof value[REVIEW_COUNT] !== 'number' && !REVIEW_FLAGS.some((flag) => flag in value)) {
+    return { kind: 'unknown', value: reviews }
+  }
+  return { kind: 'known', value }
 }

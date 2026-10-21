@@ -1,11 +1,11 @@
 name: ci
 
 # Three triggers, each with a distinct job (do not delete one as "duplicate"):
-#   pull_request → the pre-merge gate. Branch protection requires lint, both
-#                  test legs, docs and package to be green on the PR head;
-#                  `scripts/branch-protection-rules.mjs` (`EXPECTED`) is the one
-#                  source of that list and `scripts/branch-protection.mjs check`
-#                  fails when the settings drift from it.
+#   pull_request → the pre-merge gate. Branch protection requires exactly the
+#                  contexts in `scripts/branch-protection-rules.mjs`
+#                  (`REQUIRED_CONTEXTS` — the one source of that list); that file
+#                  also spells out the flags, and `scripts/branch-protection.mjs
+#                  check` fails when the live settings drift from them.
 #   push (main)  → what actually landed. A squash merge is written by GitHub, so
 #                  verifying the resulting commit is not the same check as
 #                  verifying the PR head.

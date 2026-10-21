@@ -22,7 +22,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
-import { evaluateProtection, flattenProtection, protectionPayload } from './branch-protection-rules.mjs'
+import { evaluateProtection, flattenProtection, protectionPayload, reviewRequirement } from './branch-protection-rules.mjs'
 
 const argv = process.argv.slice(2)
 const command = argv[0] ?? 'check'
@@ -106,8 +106,12 @@ function report(actual, repo) {
  * SKIP line as a pass.
  */
 function skip(reason) {
-  console.log(`SKIP branch-protection: ${reason}（未验证）`)
-  console.log('      run `node scripts/branch-protection.mjs check` with a logged-in gh to turn this into a PASS/FAIL')
+  if (asJson) {
+    console.log(JSON.stringify({ skipped: true, verified: false, reason }, null, 2))
+  } else {
+    console.log(`SKIP branch-protection: ${reason}（未验证）`)
+    console.log('      run `node scripts/branch-protection.mjs check` with a logged-in gh to turn this into a PASS/FAIL')
+  }
   return true
 }
 
@@ -139,9 +143,23 @@ function applyCommand() {
   }
   // Carry over a review requirement that is already on: `apply` owns the CI
   // gate, and an unrelated stricter setting must not disappear as a side effect
-  // (review finding S1).
+  // (review finding S1). Reading the current object is therefore a precondition,
+  // not an optimisation: `PUT` replaces everything, so a failed pre-read means a
+  // successful PUT would delete settings we never saw (review finding N1).
   const current = readProtectionApi(repo)
-  const payload = protectionPayload(undefined, current.ok ? current.api : undefined)
+  if (!current.ok) {
+    console.error(`✗ refusing to apply: could not read the current protection (${current.reason})`)
+    console.error('  PUT replaces the whole object, so applying blind could drop a review requirement this gate does not own')
+    return false
+  }
+  const carrier = reviewRequirement(current.api)
+  if (carrier.kind === 'unknown') {
+    console.error('✗ refusing to apply: a review requirement is enabled in a shape this gate cannot mirror back')
+    console.error(`  read: ${JSON.stringify(carrier.value)}`)
+    console.error('  widen scripts/branch-protection-rules.mjs REVIEW_* tables to mirror it, then retry')
+    return false
+  }
+  const payload = protectionPayload(undefined, current.api)
   if (dryRun) {
     console.log(`would PUT repos/${repo}/branches/${branch}/protection`)
     console.log(JSON.stringify(payload, null, 2))
@@ -163,6 +181,14 @@ function applyCommand() {
 }
 
 let passed
+/**
+ * A seam that can fabricate a verdict must announce itself: a `PASS` printed
+ * under `--fixture` is evidence about a file, not about GitHub (review finding
+ * N2). Printed for every run, plain text, never suppressed.
+ */
+if (fixture !== null || process.env['INKFLOW_GH'] !== undefined) {
+  console.log('note: test seam active (--fixture / INKFLOW_GH); this run is NOT evidence about the real repository')
+}
 if (command === 'check') passed = checkCommand()
 else if (command === 'apply') passed = applyCommand()
 else {
