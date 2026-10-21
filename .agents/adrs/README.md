@@ -3,21 +3,40 @@
 > 架构决策记录（Architecture Decision Records）。**先写 ADR，再改代码**：涉及技术选型、架构边界、数据格式、对外契约的变更都需要一条。
 > 格式：Nygard（状态 / 背景 / 决策 / 备选与取舍 / 后果 / 验证）。**必须写「为什么不选另一个方案」。**
 
-## 1. 决策速览
+## 1. 索引与速览
 
-| # | 决策 | 状态 | 关键理由 |
+### 1.1 索引表（编号 / 标题 / 状态 / 日期）
+
+| # | 标题 | 状态 | 日期 |
 |---|---|---|---|
-| [0001](0001-single-plugin.md) | 一个插件承载全部功能，不自研编排 | 已采纳 | 避免多插件冲突；复用 DSH agent/skills/chat |
-| [0002](0002-sqlite-truth-source.md) | ~~SQLite 为真相源~~ | **已被 0005 取代** | 早期方案；保留作历史 |
-| [0003](0003-build-chain.md) | P0 用 esbuild 单工具链（偏离 tsdown） | 已采纳 | Client 半必须产出 loader factory 形状；单工具链失败面小 |
-| [0004](0004-loopback-http.md) | 面板 HTTP 只绑 loopback 并自校验 Host/Origin | 已采纳 | 宿主路由零鉴权，必须 fail-closed |
-| [0005](0005-files-first-with-derived-index.md) | **文件真相 + SQLite 派生索引** | 已采纳（现行）；**门禁与目录条款已被 [0006](0006-workspace-contract-v2.md) 修改**，其余条款有效 | 升级不破坏存量项目；没有数据库迁移；git 即版本历史 |
-| [0006](0006-workspace-contract-v2.md) | **工作区契约 v2**：9 内容目录 + 派生 `index/`、四态门禁、卷章 catalog | 已采纳（2026-10-21） | 门禁要输出可执行动作，而不是一句"不是项目"；卷章归属不靠路径猜；一个工作区只服务一部小说 |
+| [0001](0001-single-plugin.md) | 一个插件承载全部功能，不自研编排 | 已采纳 | 2026-10-21 |
+| [0002](0002-sqlite-truth-source.md) | SQLite 为真相源，同步只在架构上预留 | 已被 0005 取代 | 2026-10-21 |
+| [0003](0003-build-chain.md) | P0 用 esbuild 单工具链（偏离 tsdown） | 已采纳（P0）；P1 复评 | 2026-10-21 |
+| [0004](0004-loopback-http.md) | 面板 HTTP 只绑 loopback 并自校验 Host/Origin | 已采纳；**部分条款被 [0008](0008-panel-data-channel.md) 收窄** | 2026-10-21 |
+| [0005](0005-files-first-with-derived-index.md) | 文件真相 + SQLite 派生索引 | 已采纳（现行）；门禁与目录条款被 0006 修改 | 2026-10-21 |
+| [0006](0006-workspace-contract-v2.md) | 工作区契约 v2（9 内容目录 / 四态门禁 / 卷章 catalog） | 已采纳 | 2026-10-21 |
+| [0007](0007-plugin-shared-library.md) | 插件级共享库（`$DSH_HOME/inkflow/shared/`，复制快照 + `origin` 溯源） | 已采纳 | 2026-10-21 |
+| [0008](0008-panel-data-channel.md) | 面板入口只在 `conversation.view`，数据走私有内部通道（不是 API） | 已采纳；**取代/收窄 [0004](0004-loopback-http.md)** 的对外接口定位与路径命名 | 2026-10-21 |
+| [0009](0009-ovk-semantic-search.md) | 语义检索复用 OpenViking（peer 从工作区读 / 按章重建 / 召回不等于定位） | 已采纳 | 2026-10-21 |
+
+### 1.2 决策速览（一行一条）
+
+| # | 决策 | 关键理由 |
+|---|---|---|
+| [0001](0001-single-plugin.md) | 一个插件承载全部功能，不自研编排 | 避免多插件冲突；复用 DSH agent/skills/chat |
+| [0002](0002-sqlite-truth-source.md) | ~~SQLite 为真相源~~ | 早期方案；保留作历史（被 0005 取代） |
+| [0003](0003-build-chain.md) | P0 用 esbuild 单工具链（偏离 tsdown） | Client 半必须产出 loader factory 形状；单工具链失败面小 |
+| [0004](0004-loopback-http.md) | 面板 HTTP 只绑 loopback 并自校验 Host/Origin | 宿主路由零鉴权，必须 fail-closed（对外接口部分见 0008） |
+| [0005](0005-files-first-with-derived-index.md) | **文件真相 + SQLite 派生索引** | 升级不破坏存量项目；没有数据库迁移；git 即版本历史 |
+| [0006](0006-workspace-contract-v2.md) | **工作区契约 v2**：9 内容目录 + 派生 `index/`、四态门禁、卷章 catalog | 门禁要输出可执行动作，而不是一句"不是项目"；卷章归属不靠路径猜；一个工作区只服务一部小说 |
+| [0007](0007-plugin-shared-library.md) | **插件级共享库**：`$DSH_HOME/inkflow/shared/`（world / library / snippets / series），默认复制快照 + `origin{projectId,entryId,contentHash}` 溯源，引用仅限 `library/` 原文，系列 = 共享库分组 | 一次维护多书取用；书仍自包含；来源可追溯（`entryId` + `contentHash`） |
+| [0008](0008-panel-data-channel.md) | **面板入口只留 `conversation.view`**，数据走私有 `/inkflow/internal/*`（**不是 API**），客户端只传 `sessionId`、Host 用 workspace 解析路径 | root 插槽拿不到工作区；路径不能让调用方指定；第三方 `@Remote` 当前不可行 |
+| [0009](0009-ovk-semantic-search.md) | **语义检索复用 OpenViking**：peer 从工作区配置只读、按章同路径覆盖重建、召回不等于定位、缺 OVK 降级 FTS5（含 2 字 `LIKE` 兜底） | 零依赖下自研向量库不现实；`forget` 是永久物理删除，不能映射「删章」；结果只到文件级 |
 
 ## 2. 编号与登记规则
 
 1. 文件名：`NNNN-<kebab-slug>.md`，四位递增，**不复用、不跳号**；
-2. 新增后必须在上表登记（否则等于没写）；
+2. 新增后必须登记到 §1.1 索引表并补 §1.2 速览一行（否则等于没写）；
 3. 决策被取代时：**不改写原文**，把头部「状态」改为「已被 NNNN 取代」并说明原因，原文保留作证据；
 4. 纯文字澄清不算新决策，直接改原 ADR 并在状态里注明「澄清」。
 
