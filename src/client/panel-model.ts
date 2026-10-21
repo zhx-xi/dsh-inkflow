@@ -87,10 +87,17 @@ export interface ChapterDetailValue {
   title?: string
   seq?: number | null
   volumeId?: string | null
+  status?: string
   body?: string
   bodyChars?: number
   hasFrontmatter?: boolean
   issues?: unknown[]
+  /**
+   * The CAS baseline for the next save (issue #19). The Host fingerprints the
+   * bytes it just handed over; the editor sends that back so a file changed in
+   * the author's own editor is never overwritten silently.
+   */
+  fingerprint?: { size?: number; mtimeMs?: number; sha256?: string } | null
 }
 
 /**
@@ -142,8 +149,8 @@ export const EMPTY_MESSAGES: Record<EmptyKind, { title: string; body: string }> 
     body: '这个目录还不是可用的 InkFlow 项目：git 仓库、九个内容目录与 index/（各带 .gitkeep）、inkflow.json 齐全后，面板才有东西可读。',
   },
   'no-selection': {
-    title: '选择一章看正文',
-    body: '左栏点一章，这里显示它的只读预览。编辑器与提案制修订在后续版本。',
+    title: '选择一章开始写',
+    body: '左栏点一章，这里就是它的编辑器（标题 / 正文 / 状态），停止输入 1.5 秒会自动保存。',
   },
 }
 
@@ -158,6 +165,12 @@ export const ERROR_HINTS: Record<string, string> = {
   NOT_AN_INKFLOW_PROJECT: '这个目录还不是 InkFlow 项目，先按清单初始化',
   'chapter-not-found': '这一章在 chapters/ 里找不到了，可能已被改名或删除',
   'fetch-failed': '面板通道请求失败，检查 DSH 与插件的连接',
+  'write-failed': '保存请求没有到达 Host，检查 DSH 与插件的连接后重试',
+  FILE_CHANGED: '这一章在磁盘上被改过了，面板没有覆盖它（选「重新载入」或「仍要保存」）',
+  'unsupported-media-type': '写请求必须是 JSON（面板内部错误）',
+  'invalid-field': '请求里有一个字段不合法',
+  UNEXPECTED_BODY_FIELD: '请求里出现了面板不认识字段（面板内部错误）',
+  PROJECT_BUSY: '另一个会话正在写这本书，稍后重试',
 }
 
 /** Message for a failed call: the hint table first, then the Host's own words. */
@@ -381,13 +394,6 @@ export function relativeProjectRoot(root: string | null, workspacePath: string |
   if (lowerBook === lowerBase) return './'
   if (lowerBook.startsWith(`${lowerBase}/`)) return `./${book.slice(base.length + 1)}`
   return root
-}
-
-/** A preview of the chapter body: the head, with the cut marked. */
-export function previewText(body: string | undefined, limit = 2000): { text: string; truncated: boolean } {
-  const source = (body ?? '').replace(/^\uFEFF/u, '').trim()
-  if (source.length <= limit) return { text: source, truncated: false }
-  return { text: source.slice(0, limit), truncated: true }
 }
 
 /**

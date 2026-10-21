@@ -68,36 +68,70 @@ function internalUrl(path: string, sessionId: string): string {
   return `${route}${separator}sessionId=${encodeURIComponent(sessionId)}`
 }
 
+/** Verbs this half ever sends: reads are GET, writes are POST/DELETE. */
+export type InternalMethod = 'GET' | 'POST' | 'DELETE'
+
+export interface InternalRequest {
+  sessionId?: string | null
+  signal?: AbortSignal
+  method?: InternalMethod
+  /** Serialised as JSON; writes always send an object (the `{}` case included). */
+  body?: unknown
+  /** Writes are bounded so a stuck request cannot hold the editor in "saving". */
+  timeoutMs?: number
+}
+
+/** How long a write may stay in flight before the editor is told it failed. */
+export const WRITE_TIMEOUT_MS = 15_000
+
 /**
- * GET one projection of the session's book.
+ * One round trip to the private channel.
  *
  * Failures stay data (never a thrown error): the panel renders `error.code` as a
  * hint instead of a crash. `response.ok` and the envelope's `ok` are both
- * checked, because a 403/404/405/413 from the guard layer carries an error body
- * too.
+ * checked, because a 403/404/405/409/413/415 from the guard layer carries an
+ * error body too — and a 409 `FILE_CHANGED` is the editor's conflict signal.
  */
-export async function fetchInternal<T>(
-  path: string,
-  options: { sessionId?: string | null; signal?: AbortSignal } = {},
-): Promise<InternalResult<T>> {
+async function requestInternal<T>(path: string, options: InternalRequest): Promise<InternalResult<T>> {
   const sessionId = options.sessionId ?? activeSessionId
   if (sessionId === null || sessionId === undefined || sessionId === '') return localRefusal()
+
+  const method: InternalMethod = options.method ?? 'GET'
+  const isWrite = method !== 'GET'
+  const headers: Record<string, string> = { accept: 'application/json' }
+  if (isWrite) headers['content-type'] = 'application/json'
+
+  const controller = new AbortController()
+  if (options.signal !== undefined) {
+    if (options.signal.aborted) controller.abort()
+    else options.signal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
+  // A write gets a timeout; a read keeps the plain signal so a slow first paint
+  // is not reported as a failure.
+  const timer = isWrite ? setTimeout(() => controller.abort(), options.timeoutMs ?? WRITE_TIMEOUT_MS) : null
 
   let response: Response
   try {
     response = await fetch(internalUrl(path, sessionId), {
-      method: 'GET',
-      headers: { accept: 'application/json' },
+      method,
+      headers,
       credentials: 'same-origin',
       redirect: 'error',
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(isWrite ? { body: JSON.stringify(options.body ?? {}) } : {}),
+      signal: controller.signal,
     })
   } catch (cause) {
+    const aborted = options.signal?.aborted === true
     return {
       ok: false,
       status: 0,
-      error: { code: 'fetch-failed', message: cause instanceof Error ? cause.message : String(cause) },
+      error: {
+        code: aborted ? 'aborted' : isWrite ? 'write-failed' : 'fetch-failed',
+        message: cause instanceof Error ? cause.message : String(cause),
+      },
     }
+  } finally {
+    if (timer !== null) clearTimeout(timer)
   }
 
   let body: unknown
@@ -117,4 +151,34 @@ export async function fetchInternal<T>(
       ? (envelope.error as InternalError)
       : { code: `http-${response.status}` }
   return { ok: false, status: response.status, error }
+}
+
+/** GET one projection of the session's book. */
+export function fetchInternal<T>(
+  path: string,
+  options: { sessionId?: string | null; signal?: AbortSignal } = {},
+): Promise<InternalResult<T>> {
+  return requestInternal<T>(path, { ...options, method: 'GET' })
+}
+
+/**
+ * Write through the private channel.
+ *
+ * The panel is allowed exactly two write verbs (ADR-0008 D3): `POST` for
+ * create/save/move and `DELETE` for a delete. The body is always a JSON object
+ * — a delete sends `{}` — because the Host refuses a write without
+ * `Content-Type: application/json` (415) before it looks at anything else.
+ */
+export function writeInternal<T>(
+  path: string,
+  body: unknown,
+  options: { method?: 'POST' | 'DELETE'; sessionId?: string | null; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<InternalResult<T>> {
+  return requestInternal<T>(path, {
+    method: options.method ?? 'POST',
+    body,
+    sessionId: options.sessionId,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  })
 }

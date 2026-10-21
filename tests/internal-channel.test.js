@@ -208,14 +208,16 @@ function hashTree(root) {
 // 1. Method declaration
 // ---------------------------------------------------------------------------
 
-test('internal channel: each route declares its method, so a write verb is a 405', async () => {
+test('internal channel: each route declares its method, so an undeclared verb is a 405', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
     bookProject(root)
     const harness = createHarness({ workspace: root })
 
-    for (const path of ['/status', '/chapters', '/chapters/ch-1', '/search?q=雨']) {
+    // Read-only routes: GET is the only declared verb (issue #19 added POST
+    // only where a chapter is written, so these two stay 405 on POST).
+    for (const path of ['/status', '/search?q=雨']) {
       const post = await internalCall(harness, path, { method: 'POST' })
       assert.equal(post.status, 405, `${path} must not accept POST`)
       assert.equal(post.json.ok, false)
@@ -223,9 +225,17 @@ test('internal channel: each route declares its method, so a write verb is a 405
       assert.equal(post.headers['allow'], 'GET', `${path} must advertise its single method`)
     }
 
-    const del = await internalCall(harness, '/chapters', { method: 'DELETE' })
-    assert.equal(del.status, 405)
-    assert.equal(del.headers['allow'], 'GET')
+    // `/chapters` reads with GET and creates with POST; PUT/DELETE are undeclared.
+    for (const method of ['PUT', 'DELETE']) {
+      const refused = await internalCall(harness, '/chapters', { method })
+      assert.equal(refused.status, 405, `${method} /chapters must be a 405`)
+      assert.equal(refused.headers['allow'], 'GET, POST')
+    }
+
+    // `/chapters/:id` reads, saves and deletes — but never PUT/PATCH.
+    const chapterPut = await internalCall(harness, '/chapters/ch-1', { method: 'PUT' })
+    assert.equal(chapterPut.status, 405)
+    assert.equal(chapterPut.headers['allow'], 'GET, POST, DELETE')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

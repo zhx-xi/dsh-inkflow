@@ -24,8 +24,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ClientContext, ConversationViewProps, WorkspaceView } from './context.js'
-import { fetchInternal, setActiveSessionId } from './internal.js'
+import { fetchInternal, setActiveSessionId, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { EditorPane } from './editor.js'
+import type { VolumeOption } from './editor.js'
 import {
   EMPTY_MESSAGES,
   PANEL_TABS,
@@ -35,7 +37,6 @@ import {
   describeFacts,
   describeRouteError,
   emptyKindOf,
-  previewText,
   projectFacts,
   readGate,
   relativeProjectRoot,
@@ -175,10 +176,17 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const [status, setStatus] = useState<InternalResult<StatusValue> | null>(null)
   const [chapters, setChapters] = useState<ChaptersValue | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ChapterDetailValue | null>(null)
+  // Keyed by chapter id: after switching chapters, the previous chapter's detail
+  // must never seed the editor — that would put book A's prose in book B's file.
+  const [detail, setDetail] = useState<{ id: string; value: ChapterDetailValue } | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [planVisible, setPlanVisible] = useState(false)
+  // New-chapter form (issue #19): title + volume, nothing else.
+  const [creating, setCreating] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newVolume, setNewVolume] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const workspace = useMemo(() => findSessionWorkspace(workspaceItems, sessionId), [workspaceItems, sessionId])
   const sessionCwd = sessionsById?.[sessionId]?.cwd ?? null
@@ -204,8 +212,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     void refresh()
   }, [refresh])
 
-  // One chapter, read-only. The request names an id; containment is the Host's
-  // job (it refuses anything outside chapters/).
+  // One chapter, with its CAS baseline (`fingerprint`): the editor saves against
+  // exactly the bytes the Host handed over (issue #19).
   useEffect(() => {
     if (selected === null) {
       setDetail(null)
@@ -217,7 +225,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       const result = await fetchInternal<ChapterDetailValue>(`/chapters/${encodeURIComponent(selected)}`, { sessionId })
       if (!live) return
       if (result.ok) {
-        setDetail(result.value ?? null)
+        setDetail({ id: selected, value: result.value ?? {} })
         setDetailError(null)
       } else {
         setDetail(null)
@@ -235,12 +243,38 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const facts = useMemo(() => projectFacts(status), [status])
   const empty = emptyKindOf(gate, tree.total, selected !== null)
 
+  // Volumes for the editor's "which volume" picker and the new-chapter form.
+  const volumes: VolumeOption[] = useMemo(
+    () => tree.groups.map((group) => ({ volumeId: group.volumeId, title: group.title })),
+    [tree.groups],
+  )
+
   // The project root relative to this session's workspace; the Host reported the
   // absolute path, the workspace came from the Client store.
   const rootLabel = relativeProjectRoot(gate.root, workspace?.path ?? sessionCwd)
   const projectTitle = gate.projectTitle ?? workspace?.title ?? null
-  const preview = previewText(detail?.body)
   const routeHint = status !== null && !status.ok ? describeRouteError(status.error) : null
+
+  /**
+   * Create one chapter. Only a title is required; `volumeId` is omitted for a
+   * loose chapter (the Host treats `null` and "absent" the same, but the panel
+   * sends nothing rather than inventing a volume).
+   */
+  const createChapter = async (): Promise<void> => {
+    const payload: Record<string, unknown> = { title: newTitle }
+    if (newVolume !== '') payload['volumeId'] = newVolume
+    const result = await writeInternal<{ chapter?: { chapterId?: string } }>('/chapters', payload, { sessionId })
+    if (!result.ok) {
+      setCreateError(describeRouteError(result.error))
+      return
+    }
+    const created = result.value?.chapter?.chapterId
+    setCreateError(null)
+    setCreating(false)
+    setNewTitle('')
+    await refresh()
+    if (typeof created === 'string' && created !== '') setSelected(created)
+  }
 
   return (
     <div style={panelStyle}>
@@ -370,7 +404,82 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       ) : (
         <div style={bodyStyle}>
           <div style={columnStyle}>
-            <SectionTitle>章节树（卷 → 章）</SectionTitle>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <SectionTitle>章节树（卷 → 章）</SectionTitle>
+              <button
+                type="button"
+                style={{ ...buttonStyle, marginLeft: 'auto' }}
+                onClick={() => {
+                  setCreating(true)
+                  setCreateError(null)
+                }}
+              >
+                新建章
+              </button>
+            </div>
+            {creating ? (
+              <div style={cardStyle}>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <input
+                    aria-label="新章节标题"
+                    value={newTitle}
+                    placeholder="章节标题"
+                    onChange={(event) => setNewTitle(event.target.value)}
+                    style={{
+                      border: '1px solid var(--dsw-alias-border-l1)',
+                      borderRadius: 6,
+                      background: 'var(--dsw-alias-bg-base)',
+                      color: 'var(--dsw-alias-label-primary)',
+                      padding: '3px 6px',
+                      fontSize: 12,
+                    }}
+                  />
+                  <select
+                    aria-label="新章节所属卷"
+                    value={newVolume}
+                    onChange={(event) => setNewVolume(event.target.value)}
+                    style={{
+                      border: '1px solid var(--dsw-alias-border-l1)',
+                      borderRadius: 6,
+                      background: 'var(--dsw-alias-bg-base)',
+                      color: 'var(--dsw-alias-label-primary)',
+                      padding: '3px 6px',
+                      fontSize: 12,
+                    }}
+                  >
+                    <option value="">未分卷</option>
+                    {volumes.map((volume) => (
+                      <option key={volume.volumeId} value={volume.volumeId}>
+                        {volume.volumeId} {volume.title}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      style={buttonStyle}
+                      disabled={newTitle.trim() === ''}
+                      onClick={() => void createChapter()}
+                    >
+                      创建
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonStyle}
+                      onClick={() => {
+                        setCreating(false)
+                        setCreateError(null)
+                      }}
+                    >
+                      取消
+                    </button>
+                  </span>
+                  {createError === null ? null : (
+                    <span style={{ color: 'var(--dsw-alias-state-error-primary)', fontSize: 12 }}>{createError}</span>
+                  )}
+                </div>
+              </div>
+            ) : null}
             {tree.total === 0 ? <EmptyCard kind="no-chapters" /> : null}
             {tree.groups.map((group) => (
               <div key={group.volumeId} style={{ display: 'grid', gap: 2 }}>
@@ -431,37 +540,28 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
           </div>
 
           <div style={{ ...columnStyle, ...dividerStyle }}>
-            <SectionTitle>正文预览（只读）</SectionTitle>
+            <SectionTitle>正文（Markdown 编辑器）</SectionTitle>
             {selected === null ? <EmptyCard kind="no-selection" /> : null}
             {detailError === null ? null : (
               <div style={{ ...cardStyle, borderColor: 'var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)' }}>
                 {detailError}
               </div>
             )}
-            {detail === null || selected === null ? null : (
-              <div style={cardStyle}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span style={{ fontWeight: 600 }}>{detail.title ?? detail.id ?? selected}</span>
-                  <span style={{ ...muted, ...mono }}>{detail.path ?? ''}</span>
-                  <span style={{ ...muted, marginLeft: 'auto' }}>{detail.bodyChars ?? 0} 字</span>
-                </div>
-                {detail.issues === undefined || detail.issues.length === 0 ? null : (
-                  <div style={{ ...muted, marginTop: 4 }}>frontmatter 提示：{detail.issues.length} 条</div>
-                )}
-                <pre
-                  style={{
-                    margin: '8px 0 0',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    fontFamily: 'inherit',
-                    fontSize: 13,
-                    maxHeight: '100%',
-                  }}
-                >
-                  {preview.text === '' ? '（这一章的正文还是空的）' : preview.text}
-                </pre>
-                {preview.truncated ? <div style={{ ...muted, marginTop: 6 }}>预览只显示开头部分；完整正文在 {detail.path ?? 'chapters/'}。</div> : null}
-              </div>
+            {detail === null || detail.id !== selected || selected === null ? null : (
+              // `key` = chapter id: switching chapters remounts the editor so no
+              // undo history or baseline can leak from one chapter into another.
+              <EditorPane
+                key={selected}
+                sessionId={sessionId}
+                chapterId={selected}
+                detail={detail.value}
+                volumes={volumes}
+                onSaved={() => void refresh()}
+                onGone={() => {
+                  setSelected(null)
+                  void refresh()
+                }}
+              />
             )}
           </div>
         </div>
