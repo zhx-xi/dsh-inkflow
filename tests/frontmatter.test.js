@@ -38,11 +38,16 @@ function workdir() {
   return mkdtempSync(join(tmpdir(), 'inkflow-frontmatter-'))
 }
 
+// ADR-0006 D1: nine content directories plus the derived index/, each with a
+// .gitkeep — the gate requires the whole tree before any tool answers.
+const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
+
 function scaffold(root) {
   mkdirSync(root, { recursive: true })
   mkdirSync(join(root, '.git'))
-  for (const dir of ['chapters', 'characters', 'world', 'outlines', 'index', 'library']) {
+  for (const dir of [...CONTENT_DIRS, 'index']) {
     mkdirSync(join(root, dir), { recursive: true })
+    writeFileSync(join(root, dir, '.gitkeep'), '', 'utf8')
   }
   writeFileSync(
     join(root, 'inkflow.json'),

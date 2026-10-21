@@ -41,19 +41,25 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ## 4. 创建一部新书
 
-一部书 = 一个 git 仓库，根目录必须长这样：
+一部书 = 一个 git 仓库，根目录必须长这样（九个内容目录 + 派生 `index/`，**每个目录里都有一个空的 `.gitkeep`**）：
 
 ```
 <你的书名>/
 ├── inkflow.json        # 项目元信息（schemaVersion / title / author）
+├── .gitignore          # 至少忽略 index/*.db*
 ├── chapters/           # 正文
 ├── characters/         # 角色
 ├── world/              # 世界观 / 设定库
 ├── outlines/           # 大纲
+├── foreshadowing/      # 伏笔
+├── timeline/           # 时间线
+├── relations/          # 知识关系
+├── facts/              # 事实账本
 ├── library/            # 资料（参考素材）
-├── index/              # 派生索引（可删可重建，只有 .gitkeep 进 git）
-└── .gitignore          # 至少忽略 index/*.db
+└── index/              # 派生索引（可删可重建，只有 .gitkeep 进 git）
 ```
+
+每个目录里的 `.gitkeep` 不是装饰：git 不跟踪空目录，没有它，`git clone` 之后目录会消失，插件就会把结构齐全的书判成「缺目录」。
 
 **目录名固定、不可改**——插件靠它判断"这是一个 InkFlow 项目"。
 
@@ -61,19 +67,19 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 **方式一：让 DSH 里的 AI 建**（推荐）
 
-在新目录里打开一个 DSH 会话，说「在这里建一本叫《书名》的小说项目」。AI 会调用 `inkflow_project_init` 生成上述目录与 `inkflow.json`。
+在新目录里打开一个 DSH 会话，说「在这里建一本叫《书名》的小说项目」。AI 会先调 `inkflow_project_plan` 把**将创建什么**列给你看，你同意后它才调 `inkflow_project_init` 落盘（并代跑 `git init`，但不会 commit、不配远端、不改你的 git 身份）。
 
 **方式二：手动建**
 
-建目录、写 `inkflow.json`：
+建十个目录（各放一个空 `.gitkeep`）、写 `inkflow.json`：
 
 ```json
 { "schemaVersion": 1, "title": "书名", "author": "你的笔名" }
 ```
 
-然后 `git init` 并提交一次。
+再 `git init`、`git add .`、`git commit`。
 
-> 插件只在**三条同时满足**时工作：① 目录是 git 仓库 ② 六个目录齐全 ③ `inkflow.json` 可解析。缺哪条，工具会告诉你缺什么。
+> 插件只在**四态里的 `usable`** 才工作：① 目录是 git 仓库 ② 九个内容目录与 `index/` 齐全且每项带 `.gitkeep` ③ `inkflow.json` 可解析且版本不高于插件。差哪一项，工具会告诉你缺什么、下一步该做什么。
 
 ## 5. 日常使用
 
@@ -83,20 +89,23 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 - **左栏**：章节列表（章号 / 标题 / 状态 / 字数，来自索引）
 - **中栏**：正文区（编辑能力在后续版本）+ 项目诊断（项目路径、索引状态、统计）
-- **右栏**：六目录勾选状态 + 约定速览
+- **右栏**：十项目录（九个内容目录 + `index/`）勾选状态 + 约定速览
 
 > 面板当前**不知道**你正开在哪个会话里，所以它会显示「无法确定当前会话的项目」而不是猜一本书。项目状态以工具返回为准：在小说目录的会话里让 AI 调 `inkflow_project_status`。面板与会话绑定在后续版本补上。
 
 ### 5.2 对 AI 说人话就行
 
-插件提供四个工具，DSH 里的 AI 会在需要时自己调用：
+插件提供五个工具，DSH 里的 AI 会在需要时自己调用：
 
 | 工具 | 作用 | 你可以这样说 |
 |---|---|---|
-| `inkflow_project_status` | 检查当前目录是不是 InkFlow 项目、缺什么、索引状态 | 「看看这个目录能不能写小说」 |
-| `inkflow_project_init` | 生成项目骨架（目录 + `inkflow.json`，**不会** `git init`）；目标目录非空且没有 `inkflow.json` 时会先给你看「将创建什么」，你同意后才写 | 「在这里建一本新书叫《蜀山》」 |
+| `inkflow_project_status` | 检查当前目录的项目状态（可用 / 待初始化 / 待修复 / 需升级插件）、缺什么、索引状态 | 「看看这个目录能不能写小说」 |
+| `inkflow_project_plan` | **只读**：列出"若初始化/修复，会创建哪些目录与文件"，不写任何东西 | 「先给我看看你打算建什么」 |
+| `inkflow_project_init` | 执行上面那份清单（建目录 + `.gitkeep` + `inkflow.json` + `.gitignore` + 必要时 `git init`）；**只补缺的，不覆盖已有文件**；必须带确认 | 「就按这个清单建」/「把缺的补齐」 |
 | `inkflow_index_rebuild` | 从文件重建索引并检查一致性 | 「重建一下索引」/「检查一下设定有没有冲突」 |
 | `inkflow_chapter_list` | 按阅读顺序列出章节 | 「列一下现在有哪些章」 |
+
+向导的两段式是刻意设计的：先看清单（`plan`），你点头之后才落盘（`init` + 确认）。修复老项目时它只补缺失项——已有的正文、设定、`inkflow.json` 一个字节都不会动；唯一例外是**坏掉的** `inkflow.json`：它会先把原文（超长会截断并标注）给你看，你确认后才重建。
 
 ### 5.3 自己改文件后
 
@@ -204,9 +213,13 @@ title: 全书总纲
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 面板显示「无法确定当前会话的项目」 | 面板还不具备会话→目录的解析能力（`NO_SESSION_CONTEXT`） | 在小说目录的会话里调 `inkflow_project_status` 看项目状态；面板绑定会话在后续版本 |
-| 工具报 `NOT_AN_INKFLOW_PROJECT` | 缺 git / 缺目录 / `inkflow.json` 坏了 | 看返回里的 `missing` 清单逐条补齐 |
+| 工具报 `NOT_AN_INKFLOW_PROJECT`（`needs-setup`） | 这里还不是项目：缺 git / 缺目录 / 缺 `inkflow.json` | 看返回的 `missing` 与 `actions`；确认后让 AI 走 `inkflow_project_plan` → `inkflow_project_init`（`confirm: true`） |
+| 工具报 `PROJECT_NEEDS_REPAIR`（`needs-repair`） | 书已经存在，但缺目录/缺 `.gitkeep`/`inkflow.json` 坏了 | 先看 `actions`（只补缺失项，不覆盖已有文件）；坏 meta 会先回原文再重建 |
+| 工具报 `PROJECT_NEEDS_NEWER_PLUGIN` | `inkflow.json` 的 `schemaVersion` 比你装的插件新 | **升级插件**；不要试图修复或重建——旧版本写入会破坏新版本写下的数据 |
+| 工具报 `META_TITLE_REQUIRED` | 需要写 `inkflow.json` 但没告知书名 | 告诉 AI 书名后重试（插件不编造标题） |
+| 工具报 `GIT_INIT_FAILED` | 机器上没有可用的 git | 装好 git 后重试；或自己在书目录 `git init`，再走修复向导 |
 | 工具报 `PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN` | 传的路径不在当前会话工作目录里（或是盘符根/家目录/安装目录） | 在会话工作目录内建项目，或先把会话切到书的目录 |
-| `init` 返回 `INIT_REQUIRES_CONFIRMATION` | 目标目录非空且没有 `inkflow.json` | 看返回的「将创建」清单，确认无误后让 AI 带确认再跑一次 |
+| 工具报 `INIT_REQUIRES_CONFIRMATION` | 向导还没拿到你的确认 | 看返回的「将创建/将修复」清单，确认无误后让 AI 带 `confirm: true` 再跑一次 |
 | 左侧栏没有 InkFlow 图标 | 插件未安装/未激活，或改了代码没重启 | 检查插件列表；重启 DSH |
 | 装了插件但工具列表里没有 `inkflow_*` | 还是旧版本代码在跑 | 重启 DSH |
 | 技能目录里没有 `inkflow-*` 五个写作技能 | 会话工作目录不在 InkFlow 项目里（技能按目录门禁），或宿主没有 skills 服务 | 把会话切到书的目录；重启后在启动日志里看有没有 `skills service missing` |
@@ -214,6 +227,7 @@ title: 全书总纲
 | 改了章文件，面板还是旧的 | 索引未重建 | 触发 `inkflow_index_rebuild` 或重启会话 |
 | 中文两字词搜不到 | trigram 分词限制 | 用 3 字以上关键词，或直接全文搜文件 |
 | 文档乱码 / 项目识别失败 | 文件被写入了 UTF-8 BOM | 用「UTF-8 无 BOM」重新保存；插件读取时会容忍 BOM，但建议统一 |
+| `git clone` 后插件说缺目录 | 空目录被 git 丢了（`.gitkeep` 被删） | 删掉过 `.gitkeep` 就会这样：让 AI 走修复向导补回来，或手动补空文件 |
 
 ## 9. FAQ
 
@@ -240,3 +254,4 @@ title: 全书总纲
 - 目录与文件契约（权威）：[`.agents/specs/conventions.md`](../.agents/specs/conventions.md)
 - 架构与 DSH 集成点：[`.agents/specs/architecture.md`](../.agents/specs/architecture.md)
 - 为什么是「文件真相 + 派生索引」：[`.agents/adrs/0005-files-first-with-derived-index.md`](../.agents/adrs/0005-files-first-with-derived-index.md)
+- 为什么是九目录 + 四态门禁 + 向导：[`.agents/adrs/0006-workspace-contract-v2.md`](../.agents/adrs/0006-workspace-contract-v2.md)

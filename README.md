@@ -6,7 +6,7 @@
 
 **Storage: files are the truth.** Every novel is its own git repository; the plugin reads and writes Markdown/JSON files, and keeps `index/inkflow.db` only as a **rebuildable query cache**. That is why plugin upgrades never touch existing projects and why there is no database migration to run — see [ADR-0005](.agents/adrs/0005-files-first-with-derived-index.md) and the directory contract in [.agents/specs/conventions.md](.agents/specs/conventions.md).
 
-**Status: P0 (files-first skeleton, not usable for writing yet).** Verified against a real DSH 0.2.1-rc.2 install: project gate (git + six directories + `inkflow.json`), derived index rebuild with invariant checks, four `inkflow_*` tools, a loopback-only HTTP projection, and the workbench panel. Write tools and the editor land in P1 — see [.agents/specs/roadmap.md](.agents/specs/roadmap.md).
+**Status: P0 (files-first skeleton, not usable for writing yet).** [已验证] against a real DSH 0.2.1-rc.2 install: project gate, derived index rebuild with invariant checks, loopback-only HTTP projection, workbench panel. [已验证] by the contract suite against the built bundle (`lib/index.js`): the nine content directories + `index/` + `.gitkeep` gate, the four-state verdict (`needs-setup` / `needs-repair` / `usable` / `needs-newer-plugin`), and the plan → apply setup/repair wizard including `git init`. [未验证] the wizard inside a live DSH generation (needs a restart). Five `inkflow_*` tools. Write tools and the editor land in P1 — see [.agents/specs/roadmap.md](.agents/specs/roadmap.md).
 
 ---
 
@@ -21,11 +21,15 @@
 ├── characters/       # 角色
 ├── world/            # 世界观 / 设定库（目录即分类）
 ├── outlines/         # 大纲（kind: overall|volume|chapter）
+├── foreshadowing/    # 伏笔
+├── timeline/         # 时间线
+├── relations/        # 知识关系
+├── facts/            # 事实账本
 ├── library/          # 资料（原始参考材料）
 └── index/            # 派生索引（可删可重建，只 .gitkeep 进 git）
 ```
 
-插件只在**同时满足**以下条件时工作：① 是 git 仓库；② 六个目录齐全；③ `inkflow.json` 可解析。缺任一条 → 工具返回 `NOT_AN_INKFLOW_PROJECT` 并列出缺什么。目录名**固定英文、不可配置**。
+九个内容目录与 `index/` 都带一个空 `.gitkeep`（git 不跟踪空目录，缺了它 clone 后目录会消失）。门禁产出**四态**——`needs-setup` / `needs-repair` / `usable` / `needs-newer-plugin`（meta 版本高于插件时只读，禁止任何写入）；非 `usable` 时工具返回结构化清单（`state` / `checks` / `missing` / `actions`）。向导先 `inkflow_project_plan`（只读）再 `inkflow_project_init`（`confirm: true`，只补缺失项，`git init` 但不 commit/不配远端）。目录名**固定英文、不可配置**。
 
 ---
 
@@ -50,8 +54,8 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 重启 DSH 后应看到：
 
 - 左侧栏出现 **InkFlow** 图标（order 30，排在已有面板之后）；
-- 点击打开整页「InkFlow 工作台」（章节列表 + 项目诊断 + 六目录勾选）；
-- 工具列表出现 `inkflow_project_status` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list`。
+- 点击打开整页「InkFlow 工作台」（章节列表 + 项目诊断 + 十项目录勾选）；
+- 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list`。
 
 > ⚠️ 改完 `src/**` 必须 `pnpm run build` **并重启 DSH**：实测 HMR 只对新装 bundle 生效，改动已加载插件的 `lib/` 不会热替换（旧 generation 会继续跑）。
 
@@ -64,7 +68,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | 插件自身状态（lastProjectRoot，**仅展示、不用于解析项目**） | `$DSH_HOME/inkflow/state.json` | — |
 | HTTP 路由 | `/inkflow/api/status`、`/api/chapters`（只读；无会话身份时返回 `NO_SESSION_CONTEXT`） | — |
 
-没有「作品库目录」这个配置：**项目在哪由 git 仓库和六个目录自己声明**，由会话的工作目录定位。
+没有「作品库目录」这个配置：**项目在哪由 git 仓库和十个目录自己声明**，由会话的工作目录定位。
 显式传路径的工具参数（`projectRoot` / `root`）必须位于该工作目录子树内，越界或指向系统目录会被拒（`PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`）。
 
 ## 插件配置

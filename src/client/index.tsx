@@ -15,14 +15,7 @@ import type { ClientContext, SidebarPanelIconProps } from './context.js'
 
 const PANEL_ID = 'inkflow'
 
-interface DirChecks {
-  chapters: boolean
-  characters: boolean
-  world: boolean
-  outlines: boolean
-  index: boolean
-  library: boolean
-}
+type DirChecks = Record<string, boolean>
 
 interface StatusValue {
   pluginVersion: string
@@ -30,7 +23,8 @@ interface StatusValue {
     root: string
     label: string
     usable: boolean
-    checks: { git: boolean; dirs: DirChecks; meta: boolean }
+    state?: string
+    checks: { git: boolean; dirs: DirChecks; keeps?: DirChecks; meta: boolean }
     missing: string[]
     reasons: string[]
   }
@@ -93,13 +87,19 @@ function InkflowIcon({ size }: SidebarPanelIconProps) {
   )
 }
 
-const DIR_LABELS: Array<[keyof DirChecks, string, string]> = [
+// ADR-0006 D1: nine content directories plus the derived index/, each carrying
+// a .gitkeep. The keys are the `checks.dirs` / `checks.keeps` names from the host.
+const DIR_LABELS: Array<[string, string, string]> = [
   ['chapters', 'chapters', '正文'],
   ['characters', 'characters', '角色'],
   ['world', 'world', '世界观'],
   ['outlines', 'outlines', '大纲'],
-  ['index', 'index', '索引'],
+  ['foreshadowing', 'foreshadowing', '伏笔'],
+  ['timeline', 'timeline', '时间线'],
+  ['relations', 'relations', '关系'],
+  ['facts', 'facts', '事实账本'],
   ['library', 'library', '资料'],
+  ['index', 'index', '索引'],
 ]
 
 const panelStyle = {
@@ -263,7 +263,7 @@ export function Workbench() {
               {!usable && project !== null && project.missing.length > 0 ? (
                 <div style={{ color: 'var(--dsw-alias-state-warn-primary)' }}>缺少：{project.missing.join('、')}</div>
               ) : null}
-              {!usable ? <div style={muted}>在小说会话里运行 inkflow_project_init 可补齐目录约定。</div> : null}
+              {!usable ? <div style={muted}>在小说会话里先调 inkflow_project_plan 看「将创建什么」，确认后再调 inkflow_project_init（confirm: true）。</div> : null}
             </div>
             <div style={{ marginTop: 10 }}>
               <button
@@ -298,7 +298,8 @@ export function Workbench() {
           </div>
           <SectionTitle>约定</SectionTitle>
           <div style={{ ...cardStyle, ...muted }}>
-            一个小说 = 一个 git 仓库。插件只在「是 git 仓库 + 六个目录齐全 + inkflow.json 可解析」时工作；目录名固定、不可配置。
+            一个小说 = 一个 git 仓库。插件只在「是 git 仓库 + 九个内容目录与 index/ 齐全（每项带 .gitkeep）+ inkflow.json
+            可解析」时工作；目录名固定、不可配置。
           </div>
         </div>
       </div>

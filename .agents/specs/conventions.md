@@ -1,21 +1,33 @@
 # InkFlow 项目目录约定（约定大于配置）
 
 > 状态：**已定（用户拍板 2026-10-21）**。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。
-> 决策依据：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)。
+> 决策依据：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 + 派生索引）与 [ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 四态门禁 / 向导；0006 修改了 0005 的目录与门禁条款）。
 
 ## 1. 什么算一个 InkFlow 项目
 
-**一部小说 = 一个 git 仓库 = 一个项目根目录。** 插件只在满足以下**全部**条件时工作：
+**一部小说 = 一个 git 仓库 = 一个项目根目录 = 一个会话工作区。** 门禁每次判定产出**四态之一**，按下列顺序判定、命中即停（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D2）：
 
-| # | 条件 | 判定方式 |
+| # | 状态 | 条件（按序） | 业务工具 | 允许的写操作 |
+|---|---|---|---|---|
+| 1 | `needs-newer-plugin` | `inkflow.json` 可解析且 `schemaVersion` **高于**插件支持上限 | 拒绝（只读） | **无**：不改 meta、不重建索引、不「修复」 |
+| 2 | `usable` | 是 git 仓库 + 九个内容目录与 `index/` 齐全（每项含 `.gitkeep`；`index/` 缺失见放宽条款）+ `inkflow.json` 可解析且版本 ≤ 上限 | 正常 | 正常 |
+| 3 | `needs-repair` | 未达 1/2，但书目录**有 `inkflow.json`（哪怕不可解析）或有 `.git`** | 拒绝 | 仅修复向导（只补缺失项，不覆盖） |
+| 4 | `needs-setup` | 1/2/3 都不成立 | 拒绝 | 仅初始化向导（只建缺少项） |
+
+三条判据展开：
+
+| # | 判据 | 判定方式 |
 |---|---|---|
-| G1 | 目录是 git 仓库 | 根目录存在 `.git`（目录，或 worktree 的 `.git` 文件） |
-| G2 | 六个目录同时存在 | `chapters/`、`characters/`、`world/`、`outlines/`、`index/`、`library/` |
-| G3 | 根元信息可解析 | `inkflow.json` 存在且 `schemaVersion` 为整数（缺失时按「待初始化」处理，业务工具拒绝） |
+| G1 | 是 git 仓库 | 根目录存在 `.git`（目录，或 worktree 的 `.git` 文件） |
+| G2 | 十项目录齐全 | 九个内容目录 `chapters/ characters/ world/ outlines/ foreshadowing/ timeline/ relations/ facts/ library/` 与派生目录 `index/`，且**每项都带一个 0 字节 `.gitkeep`** |
+| G3 | 根元信息可解析 | `inkflow.json` 存在、是 JSON 对象、`schemaVersion` 为整数（读取时容忍 UTF-8 BOM） |
 
-不满足 → 业务工具返回 `NOT_AN_INKFLOW_PROJECT`，并列出**缺哪一条**（不猜、不兜底、不在随机目录建库）。
-
-> **`index/` 的例外（唯一）**：它是派生物。G2 检查时若**仅** `index/` 缺失而其余五项齐备，插件会自动创建 `index/` 并在返回里标注 `indexDirRecreated: true`——否则「误删索引目录 = 插件永久失效」。这一条是对 G2 的唯一放宽，需用户确认（见 §8）。
+- **缺 `.gitkeep` 等同于结构缺失**：git 不跟踪空目录，clone 后目录会消失，所以「目录在、`.gitkeep` 不在」进 `needs-repair`，由修复向导补一个空文件。除 `.gitkeep` 外，门禁**不**检查目录里有没有内容文件。
+- **`needs-newer-plugin` 是终态**：唯一出路是升级插件；旧插件不得以任何「修复」名义改写 meta 或删除索引。
+- **repair / setup 的判别信号**是「有 meta 或有 `.git`」，不是「有任一目录」——目录可能是用户手工先建的，也不说明书已经成立。
+- **唯一放宽**：`index/` 是派生物。当其余九项 + git + meta 全部满足而**仅 `index/` 目录缺失**时，门禁静默创建 `index/` 与 `index/.gitkeep` 并在结果里标 `indexDirRecreated: true`。这是判定路径上唯一的写操作。
+- **fail-closed**：非 `usable` 时业务工具一律拒绝，并返回结构化清单而不是一句错误——`state`、`root`、`checks`（`git` / `dirs` / `keeps` / `meta` 逐项布尔）、`missing[]`、`actions[]`（动作类型 + 目标路径 + 原因）、`readOnly`。拒绝路径**零写盘**（唯一例外是上面的 `index/` 放宽）。
+- **向导**：`needs-setup` 与 `needs-repair` 走同一套两段式流程（§6.3）——`plan` 只读列出将创建/补齐的项，`apply` 需显式确认后只执行清单里的动作；`git init` 边界见 §6.4。
 
 ## 2. 目录树
 
@@ -24,20 +36,35 @@
 ├── inkflow.json                 ← 项目元信息（唯一配置入口）
 ├── .gitignore                   ← 至少忽略 index/*.db*
 ├── chapters/                    ← 正文
+│   ├── .gitkeep
 │   └── vol-01/0001-<slug>.md
 ├── characters/                  ← 角色
+│   ├── .gitkeep
 │   └── <slug>.md
 ├── world/                       ← 世界观 / 设定库
+│   ├── .gitkeep
 │   └── <category>/<slug>.md
 ├── outlines/                    ← 大纲
+│   ├── .gitkeep
 │   ├── overall.md
 │   ├── vol-01.md
 │   └── ch-0001.md
-├── index/                       ← 派生索引（可由文件重建，禁止手改）
-│   ├── .gitkeep                 ← 入版本控制，保证 clone 后目录存在
-│   └── inkflow.db               ← 派生 SQLite（.gitignore）
-└── library/                     ← 资料（原始参考材料，任意文件）
+├── foreshadowing/               ← 伏笔
+│   └── .gitkeep
+├── timeline/                    ← 时间线
+│   └── .gitkeep
+├── relations/                   ← 知识关系
+│   └── .gitkeep
+├── facts/                       ← 事实账本
+│   └── .gitkeep
+├── library/                     ← 资料（原始参考材料，任意文件）
+│   └── .gitkeep
+└── index/                       ← 派生索引（可由文件重建，禁止手改）
+    ├── .gitkeep                 ← 入版本控制，保证 clone 后目录存在
+    └── inkflow.db               ← 派生 SQLite（.gitignore）
 ```
+
+九个内容目录各自是一级目录、**互不嵌套**：伏笔、时间线、知识关系、事实账本不再挂在 `world/`、`outlines/` 之下，域归属由目录自证，门禁与工具都不必猜层级。
 
 目录名**固定英文**，不提供改名配置。理由：门禁靠目录名自证身份；一旦可配置，就必须有注册表/配置文件，回到「配置地狱」。
 
@@ -127,11 +154,13 @@ order: 0
 
 任意文件（TXT/MD/PDF/图片）。插件只登记路径与大小，不解析内容（P1 起做导入与提取）。
 
-### 3.7 索引 `index/`
+### 3.7 `.gitkeep` 与 `index/`
+
+每个必需目录（九个内容目录 + `index/`）都带一个 0 字节的 `.gitkeep` 并**进 git**：git 不跟踪空目录，没有它，`git clone` 之后目录消失，门禁会把结构齐全的书判成缺目录。`.gitkeep` 不参与解析（解析器只认 `*.md`/`*.json`），也不被工具当作内容。
 
 | 文件 | 进 git？ | 说明 |
 |---|---|---|
-| `index/.gitkeep` | ✅ | 保证 clone 后 `index/` 存在，门禁不误判 |
+| `<必建目录>/.gitkeep` | ✅ | 十份（九个内容目录 + `index/`），保证 clone 后目录仍在 |
 | `index/inkflow.db` | ❌ | 派生 SQLite（含 `-wal`/`-shm`），可随时删除重建 |
 
 ## 4. 索引（派生层）
@@ -198,35 +227,59 @@ order: 0
 
 **验证**：`node --test tests/io-writer.test.js`（实现与契约逐条对拍）。
 
-## 6. 门禁返回约定
+## 6. 门禁与向导返回约定
+
+非 `usable` 时的拒绝返回（结构化清单，不是异常）：
 
 ```json
 {
   "ok": false,
   "error": {
-    "code": "NOT_AN_INKFLOW_PROJECT",
+    "code": "PROJECT_NEEDS_REPAIR",
+    "state": "needs-repair",
+    "needsSetup": false,
+    "needsRepair": true,
+    "readOnly": false,
     "root": "D:\\小说\\某目录",
-    "checks": { "git": false, "dirs": { "chapters": true, "characters": false, "...": false }, "meta": false },
-    "missing": ["characters", "world", "outlines", "library"],
-    "hint": "在项目根运行 inkflow_project_init 或手动补齐目录"
+    "checks": {
+      "git": true,
+      "dirs": { "chapters": true, "foreshadowing": false, "...": false },
+      "keeps": { "chapters": true, "foreshadowing": false, "...": false },
+      "meta": true
+    },
+    "missing": ["foreshadowing", "foreshadowing/.gitkeep"],
+    "actions": [
+      { "type": "create-dir", "path": "D:\\小说\\某目录\\foreshadowing", "reason": "missing required directory foreshadowing/" },
+      { "type": "create-gitkeep", "path": "D:\\小说\\某目录\\foreshadowing\\.gitkeep", "reason": "every required directory carries .gitkeep so a clone keeps it" }
+    ],
+    "reasons": ["missing directory: foreshadowing/"],
+    "hint": "…"
   }
 }
 ```
+
+`missing[]` 是**逐项**清单：`.git`、缺失的目录名、缺失的 `<dir>/.gitkeep`、`inkflow.json`（`needs-newer-plugin` 下 meta 不算缺失，见下）。`actions[].type` ∈ `git-init` / `create-dir` / `create-gitkeep` / `create-meta` / `create-gitignore` / `manual`；`manual` 表示该状态下本插件不能执行，只能由用户升级插件。
 
 **返回码一览**（失败一律结构化返回，不抛异常给模型）：
 
 | code | 含义 | 模型下一步 |
 |---|---|---|
-| `NOT_AN_INKFLOW_PROJECT` | 会话工作目录（或显式 `projectRoot`）不是项目；附 `needsSetup: true` | 把 `missing` 转述给用户；用户同意后 `inkflow_project_init` |
+| `NOT_AN_INKFLOW_PROJECT` | 状态 `needs-setup`：这里什么都没有；附 `needsSetup: true` | 把 `missing` 转述给用户；用户同意后走 §6.3 的 plan → apply |
+| `PROJECT_NEEDS_REPAIR` | 状态 `needs-repair`：书已存在但缺失/损坏；附 `needsRepair: true` | 同上，但只补缺失项，不覆盖既有文件 |
+| `PROJECT_NEEDS_NEWER_PLUGIN` | 状态 `needs-newer-plugin`：meta 版本高于本插件；`readOnly: true`，`actions` 只有 `manual` | 让用户升级插件；**不得**修复、重写或重建索引 |
 | `PATH_OUT_OF_SCOPE` | 显式路径不在**会话工作区子树**内 | 在会话工作目录内开项目，或先切会话工作目录 |
 | `PATH_FORBIDDEN` | 盘符/卷根、家目录本身（或其祖先）、系统与安装目录（`Windows`、`Program Files`、`ProgramData`、宿主可执行目录） | 换工作区内的子目录 |
-| `INIT_REQUIRES_CONFIRMATION` | 目标目录非空且无 `inkflow.json` | 展示 `willCreate`；用户同意后以 `confirm: true` 重调 |
+| `INIT_REQUIRES_CONFIRMATION` | apply 未带 `confirm: true` | 展示 `willCreate` / `actions`；用户同意后以 `confirm: true` 重调 |
+| `META_TITLE_REQUIRED` | 需要写 `inkflow.json` 但没给 `title` | 问用户书名后重调（插件不编造标题） |
+| `TARGET_NOT_DIRECTORY` | 目标路径存在且不是目录 | 换路径 |
+| `GIT_INIT_FAILED` | `git init` 失败（回滚本次半成品） | 装/修好 git 后重试；或用户自己在目标目录 `git init` |
+| `APPLY_FAILED` | 应用后仍未 usable（如目录无法创建） | 看 `message` 与 `missing` |
 | `NO_SESSION_CONTEXT` | 面板 HTTP 请求无法得知所属会话工作区（见 §6.2） | 改用工具读；不要把面板结果当作项目真相 |
 
 ### 6.1 路径作用域（`projectRoot` / `root`）
 
 - **信任锚点只有一个**：会话工作目录（`ctx.get('workingDirectory')`，缺失时降级 `process.cwd()`）。
-- 显式路径先 `realpath`（不存在时对最近存在祖先 `realpath` 再拼回剩余段），再做子树判定；判定在**任何写盘之前**（`inspectProject` 会创建 `index/`，`init` 会创建整棵树）。
+- 显式路径先 `realpath`（不存在时对最近存在祖先 `realpath` 再拼回剩余段），再做子树判定；判定在**任何写盘之前**（`inspectProject` 的 `index/` 放宽会建目录，向导 apply 会建整棵树并 `git init`）。
 - 因此"越界路径"不仅被拒，目标目录**零变更**（mtime/条目不变）。
 - 拒绝盘符根与安装目录是硬规则：那里写入会破坏系统或宿主，且绝不可能是用户的书写目录。
 
@@ -238,14 +291,37 @@ order: 0
 - 不读 `state.json` 的 `lastProjectRoot`（那是"某个会话最后碰过的书"，不代表当前会话）；
 - `/api/status`、`/api/chapters` 一律返回 **HTTP 200 + `ok:false` + `NO_SESSION_CONTEXT`**，且**不创建任何文件**。
 
+### 6.3 初始化 / 修复向导（plan → apply）
+
+两段式，两个工具：
+
+| 段 | 工具 | 写盘 | 内容 |
+|---|---|---|---|
+| plan | `inkflow_project_plan` | **无**（连 `index/` 放宽也不做） | `state`、`checks`、`missing`、`actions[]`、`notices[]`（用户需自己处理的事，如外层仓库的 ignore）、`metaRaw`（坏 meta 原文，超 4096 字符截断并标 `truncated`） |
+| apply | `inkflow_project_init` | 需 `confirm: true` | 只执行当前 plan 列出的动作；返回 `created[]` / `updated[]` / `skipped[]` |
+
+- apply 的动作集合 = 调用时重新推导的 plan，只增不改：已存在的目录/文件一律进 `skipped[]`，**不覆盖、不改写、不重排格式**。
+- **幂等**：同一状态连续 apply 两次，第二次 `created[]` 为空，`skipped[]` 覆盖上一次创建的全部项。
+- **坏 meta 是唯一例外**：`inkflow.json` 存在但不可解析/不可用时，plan 与 apply 的确认轮都返回 `metaRaw`；只有 `confirm: true` 才会重建它（重建需 `title`，否则 `META_TITLE_REQUIRED`）。
+- `needs-newer-plugin` 下 apply 直接拒绝（`PROJECT_NEEDS_NEWER_PLUGIN`），零写入。
+
+### 6.4 `git init` 边界
+
+- 向导**可以**执行 `git init`，这是全插件唯一允许的 git 写操作。
+- 一律**不做**：`git add`、`git commit`、`git remote add`/改远程、设置 `user.name`/`user.email`、改默认分支或任何 git 配置、`git submodule`。
+- 已有 `.git` → plan 不含 `git-init`。
+- **父级已有 git 仓库**（书目录本身还没有 `.git`）→ plan 仍含 `git-init`（一部小说 = 一个仓库），并附一条 `notice`：「请在外层仓库的 `.gitignore` 里忽略本书目录」；插件**不代改项目根以外的任何文件**。
+- `git init` 失败 → 回滚本次创建的全部半成品（目录、`.gitkeep`、`inkflow.json`、`.git`），返回 `GIT_INIT_FAILED`。
+- 不 commit 意味着"向导跑完 = 工作区干净但没有提交"，首次提交由用户审阅后进行。
+
 ## 7. 与旧 InkFlow 的关系
 
 旧库（43 表 / 59 万字）不再是真相源；**迁移 = 生成上述文件树**。逐章、逐实体落盘后可直接 `git commit` 审阅，比跨 schema ETL 更容易核对（P4 执行）。
 
-## 8. 待拍板（3 条，含建议默认值）
+## 8. 已裁决事项（原 3 条待拍板）
 
-| # | 问题 | 建议默认 |
+| # | 原问题 | 裁决 |
 |---|---|---|
-| C1 | `index/` 缺失时自动重建（§1 的放宽）是否接受？ | 接受（否则误删索引目录即永久失效） |
-| C2 | 伏笔 / 时间线 / 知识关系 / 账本 的归属目录 | 伏笔 → `outlines/foreshadowing/`；时间线 → `world/timeline/`；知识关系 → `world/relations.json`；账本 → `world/facts/` |
-| C3 | 新书创建是否提供 `inkflow_project_init`（建目录 + meta，不自动 `git init`）？ | 提供，且不代替用户 `git init`（git 身份/远端应由用户决定） |
+| C1 | `index/` 缺失时自动重建（§1 的放宽）是否接受？ | **采纳**，成为 §1 的唯一放宽（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D2） |
+| C2 | 伏笔 / 时间线 / 知识关系 / 账本 的归属目录 | **被取代**：四个域各自独立成一级目录（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D1） |
+| C3 | 新书创建是否提供 `inkflow_project_init`？是否代跑 `git init`？ | **被取代**：向导可 `git init`，但不 commit / 不配 remote / 不设身份（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3/D4） |

@@ -22,18 +22,23 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { IndexBuildError, apply, buildIndex } from '../lib/index.js'
 
-const ALL_DIRS = ['chapters', 'characters', 'world', 'outlines', 'index', 'library']
+// ADR-0006 D1: nine content directories plus index/, each carrying .gitkeep.
+const ALL_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library', 'index']
+const KEEP = '.gitkeep'
 const DB_RELATIVE = join('index', 'inkflow.db')
 
 function workdir() {
   return mkdtempSync(join(tmpdir(), 'inkflow-index-build-'))
 }
 
-/** A minimal but *usable* project: git dir, six directories, meta, chapters. */
+/** A minimal but *usable* project: git dir, ten directories, meta, chapters. */
 function project(dir, { chapters = 1 } = {}) {
   const root = join(dir, 'book')
   mkdirSync(join(root, '.git'), { recursive: true })
-  for (const name of ALL_DIRS) mkdirSync(join(root, name), { recursive: true })
+  for (const name of ALL_DIRS) {
+    mkdirSync(join(root, name), { recursive: true })
+    writeFileSync(join(root, name, KEEP), '', 'utf8')
+  }
   writeFileSync(
     join(root, 'inkflow.json'),
     `${JSON.stringify({ schemaVersion: 1, title: '测试之书' }, null, 2)}\n`,
