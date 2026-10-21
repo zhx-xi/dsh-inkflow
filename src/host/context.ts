@@ -213,6 +213,38 @@ export interface WorkingDirectoryLike {
 }
 
 /**
+ * A live Session, reduced to the fields the panel channel reads.
+ *
+ * `header.cwd` is the creation-time directory the session store validates as an
+ * absolute path; it is the last resort of the session → project chain
+ * (ADR-0008 D4) because a later `cd` is not reflected in it.
+ */
+export interface SessionLike extends PromptSessionLike {
+  readonly id?: string
+  readonly header?: { readonly cwd?: string }
+}
+
+/** `@deepseek-ai/dsh-sessions` store, reduced to the lookup the channel needs. */
+export interface SessionsLike {
+  get(id: string): SessionLike | undefined
+}
+
+/**
+ * `@deepseek-ai/dsh-workspace-registry` `Workspace`, reduced to the association
+ * the channel needs: `path` is canonicalised through `fs.realpath` by the host,
+ * and `sessionIds` is already filtered to sessions whose canonical cwd matches.
+ */
+export interface WorkspaceLike {
+  readonly path: string
+  readonly sessionIds: readonly string[]
+}
+
+/** `@deepseek-ai/dsh-workspace-registry` registry, reduced to `list()`. */
+export interface WorkspaceRegistryLike {
+  list(): readonly WorkspaceLike[]
+}
+
+/**
  * The Cordis context as seen by a Host plugin.
  *
  * `ctx.effect(setup)` owns a resource for the lifetime of the plugin; the

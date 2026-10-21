@@ -87,11 +87,11 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 **目标形态**（[ADR-0008](../.agents/adrs/0008-panel-data-channel.md)）：面板入口在**会话视图**（与「对话 / 轨迹」同栏）的 InkFlow 页签——它只显示当前会话所在的那本书，不需要你选项目。
 
-**当前构建**：入口仍在**左侧栏**（点 InkFlow 图标打开整页工作台）；面板还无法解析会话所属项目，会显示「无法确定当前会话的项目」（`NO_SESSION_CONTEXT`）。在两个入口与私有通道落地前，项目状态以工具返回为准：在小说目录的会话里让 AI 调 `inkflow_project_status`。
+**当前构建**：入口仍在**左侧栏**（点 InkFlow 图标打开整页工作台）。Host 侧已能按会话解析项目（`/inkflow/internal/*` 私有通道），但会话视图入口尚未落地，左侧栏入口拿不到会话身份，因此面板仍会显示「无法确定当前会话的项目」（`NO_SESSION_CONTEXT`）。在会话视图入口落地前，项目状态以工具返回为准：在小说目录的会话里让 AI 调 `inkflow_project_status`。
 
 工作台内容（当前）：
 
-- **左栏**：章节列表（章号 / 标题 / 状态 / 字数，来自索引）
+- **左栏**：章节列表（章号 / 标题 / 项目相对路径，来自 `chapters/` 的卷章投影）
 - **中栏**：正文区（编辑能力在后续版本）+ 项目诊断（项目路径、索引状态、统计）
 - **右栏**：十项目录（九个内容目录 + `index/`）勾选状态 + 约定速览
 
@@ -215,7 +215,7 @@ title: 全书总纲
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 面板显示「无法确定当前会话的项目」 | 面板还不具备会话→目录的解析能力（`NO_SESSION_CONTEXT`）；目标形态是会话视图入口 + 私有通道，尚未实现 | 在小说目录的会话里调 `inkflow_project_status` 看项目状态 |
+| 面板显示「无法确定当前会话的项目」 | 面板入口还在左侧栏（root 作用域），拿不到会话身份，所以 Host 无法定位这本书（`NO_SESSION_CONTEXT`）；会话视图入口尚未落地 | 在小说目录的会话里调 `inkflow_project_status` 看项目状态 |
 | 工具报 `NOT_AN_INKFLOW_PROJECT`（`needs-setup`） | 这里还不是项目：缺 git / 缺目录 / 缺 `inkflow.json` | 看返回的 `missing` 与 `actions`；确认后让 AI 走 `inkflow_project_plan` → `inkflow_project_init`（`confirm: true`） |
 | 工具报 `PROJECT_NEEDS_REPAIR`（`needs-repair`） | 书已经存在，但缺目录/缺 `.gitkeep`/`inkflow.json` 坏了 | 先看 `actions`（只补缺失项，不覆盖已有文件）；坏 meta 会先回原文再重建 |
 | 工具报 `PROJECT_NEEDS_NEWER_PLUGIN` | `inkflow.json` 的 `schemaVersion` 比你装的插件新 | **升级插件**；不要试图修复或重建——旧版本写入会破坏新版本写下的数据 |
