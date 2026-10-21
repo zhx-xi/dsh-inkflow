@@ -144,13 +144,59 @@ order: 0
 
 ## 5. 写入纪律（P1 实现，P0 已定原则）
 
+**单一写入口**：所有落盘都经过 `src/host/io.ts`（路径解析 + 原子替换 + 写锁「三件套」只实现一次）。业务代码不得自行拼接项目内路径，也不得直接调用 `fs.writeFileSync` 写项目文件。
+
+### 5.1 路径解析（`resolveWriteTarget`）
+
+| 规则 | 说明 | 失败码 |
+|---|---|---|
+| 只接受相对路径 | 相对项目根；绝对路径、盘符相对（`C:x`）、UNC（`\\server\share`）一律拒绝 | `PATH_INVALID` |
+| 目录白名单 | 首段必须是九个内容目录之一（`chapters/`、`characters/`、`world/`、`outlines/`、`foreshadowing/`、`timeline/`、`relations/`、`facts/`、`library/`）或派生 `index/`（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D1）；`inkflow.json`、`.git/` 等其余位置不可写 | `PATH_NOT_WRITABLE` |
+| 段格式 | 空段、`.`、`..`、控制字符、`< > : " \| ? *`、以点或空格结尾的段一律拒绝（这些名字在 Windows 上会被静默改写） | `PATH_INVALID` |
+| 保留设备名 | `CON PRN AUX NUL COM1–9 LPT1–9`（取第一个点前的主干，大小写不敏感） | `PATH_RESERVED` |
+| 长度 | 绝对路径 > 240 字符或单段 > 255 字符（给 `.tmp-<pid>-<rand>` 后缀留空间，不依赖机器级长路径开关） | `PATH_TOO_LONG` |
+| 链接逃逸 | 目标（含尚不存在的尾部）`realpath` 后必须仍在项目根子树内；junction / 符号链接逃出项目 | `PATH_OUT_OF_SCOPE` |
+| 插件文件 | `index/.write.lock`、`index/.lock` 不可作为写目标（会把插件自己的锁写掉） | `PATH_NOT_WRITABLE` |
+
+解析阶段只做 `stat` / `realpath` 读操作，**不建目录、不写文件**；父目录在真正写入时才创建。项目根不存在或不是目录 → `PROJECT_NOT_FOUND`。
+
+### 5.2 原子替换与失败不变量
+
 | 规则 | 说明 |
 |---|---|
-| 原子替换 | 先写 `<file>.tmp-<pid>-<rand>`，`fsync` 后 `rename` 覆盖；禁止原地截断写入 |
-| 只追加审计 | `world/../..` 之外的审计/事件写在 `index/`（派生）或 DSH 会话日志，不污染正文 |
+| 原子替换 | 先写同目录 `<file>.tmp-<pid>-<rand>`，`fsync` 后 `rename` 覆盖；禁止原地截断写入 |
+| 失败不落半截 | 写失败时目标文件**字节不变**（sha256 不变）、临时文件删除、写锁释放；错误里带 `tempFile` 供诊断 |
+| 崩溃残留可清扫 | 崩溃遗留的 `*.tmp-<pid>-<rand>`（持有者已死或超过 10 分钟）在下次持锁写入时清扫 |
+| 编码在写入口规范化 | 写入前剥 BOM、`CRLF`/`CR` → LF（`.gitattributes` 固定 LF）；读取侧仍须容忍 BOM 与 CRLF |
+| JSON | `JSON.stringify(value, null, 2)` + 单个结尾 LF；不可序列化（BigInt / 循环引用 / `undefined`）→ `IO_FAILED`，不写半截文件 |
 | 不静默覆盖 | 改写既有正文必须走「提案 → 用户确认」（P1 提案制），P0 无写正文工具 |
 | 删除可回溯 | 删文件交给 git（`git rm` 后可 `git revert`）；插件不物理删正文 |
-| 中文与编码 | 全部 UTF-8（无 BOM），LF 行尾（`.gitattributes`） |
+| 只追加审计 | 审计/事件写在 `index/`（派生）或 DSH 会话日志，不污染正文 |
+
+### 5.3 单项目写锁
+
+| 规则 | 说明 |
+|---|---|
+| 锁文件 | `index/.write.lock`（O_EXCL 创建，内容 `{pid, token, startedAt}`）。与索引重建的 `index/.lock` **分开**：重建锁把「本进程 pid」当陈旧（其单飞表已串行化进程内重建），复用它会让写路径误抢锁 |
+| 语义 | 单项目单写者；拿不到锁**立即**返回 `PROJECT_BUSY`（不等待、不阻塞工具调用） |
+| 陈旧自愈 | pid 已死 / `startedAt` 超过 10 分钟 / 不可解析且超过 10 秒写入宽限 / 本进程遗留（不在锁表里）→ 视为陈旧，删除后重试一次 |
+| 释放校验 | 释放前比对 token，只删自己持有的锁；进程内可重入（嵌套写复用同一把锁，最外层释放才删文件） |
+| 与重建的关系 | 两把锁保护两个资源（数据文件 / 可重建数据库）；写入是 rename，重建要么读到旧文件要么读到新文件，不需要互相等待 |
+
+### 5.4 写失败返回码一览
+
+| code | 含义 |
+|---|---|
+| `PATH_INVALID` | 路径形状非法（见 §5.1） |
+| `PATH_OUT_OF_SCOPE` | realpath 后落在项目根之外 |
+| `PATH_NOT_WRITABLE` | 目录不在白名单内，或目标是插件自己的锁文件 |
+| `PATH_RESERVED` | Windows 保留设备名 |
+| `PATH_TOO_LONG` | 超过长度上限 |
+| `PROJECT_NOT_FOUND` | 项目根不存在或不是目录 |
+| `PROJECT_BUSY` | 另一会话/进程持有写锁 |
+| `IO_FAILED` | 文件系统拒绝（权限、占用、磁盘），附 `errno` |
+
+**验证**：`node --test tests/io-writer.test.js`（实现与契约逐条对拍）。
 
 ## 6. 门禁返回约定
 

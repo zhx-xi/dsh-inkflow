@@ -33,6 +33,30 @@ export const REQUIRED_DIRS = [
   'library',
 ] as const
 
+/**
+ * Directories a **write target** may live under (ADR-0006 D1): the nine content
+ * directories plus the derived `index/`.
+ *
+ * This is deliberately a different list from `CONTENT_DIRS`/`REQUIRED_DIRS`:
+ * those describe what must *exist* for a project to be usable (a read-side
+ * gate), while this describes where a writer may *create* a file. The four v2
+ * directories are writable before the gate starts requiring them, so the writer
+ * does not have to be revisited when the directory contract moves to nine.
+ */
+export const WRITE_DIRS = [
+  'chapters',
+  'characters',
+  'world',
+  'outlines',
+  'foreshadowing',
+  'timeline',
+  'relations',
+  'facts',
+  'library',
+  INDEX_DIR,
+] as const
+export type WriteDir = (typeof WRITE_DIRS)[number]
+
 /** Version of the on-disk file contract (inside inkflow.json). */
 export const FILE_SCHEMA_VERSION = 1
 
