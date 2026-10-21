@@ -1,6 +1,6 @@
 # ADR-0005：文件真相 + SQLite 派生索引（取代 ADR-0002）
 
-- 状态：**已采纳（用户拍板 2026-10-21）**，取代 [ADR-0002](0002-sqlite-truth-source.md)
+- 状态：**已采纳（用户拍板 2026-10-21）**，取代 [ADR-0002](0002-sqlite-truth-source.md)。**门禁条款（本 ADR 决策 5）与目录条款（决策 4）已被 [ADR-0006](0006-workspace-contract-v2.md) 修改**，正文保留原文；决策 1/2/3 与「约定大于配置」仍有效
 - 日期：2026-10-21
 - 影响：`.agents/specs/data-model.md`（原 SQLite 真相源设计）作废重写；P0 代码切换存储层
 
