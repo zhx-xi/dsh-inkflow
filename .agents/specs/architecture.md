@@ -110,6 +110,8 @@
 | `src/host/project.ts` | 门禁检测、`inkflow.json` 读写、脚手架 | 索引 |
 | `src/host/frontmatter.ts` | 极简 frontmatter 解析（标量/内联数组/块数组/注释） | 完整 YAML |
 | `src/host/indexer.ts` | 扫描 → 派生索引 + 不变量校验 | 写真相文件 |
+| `src/host/index-build.ts` | 索引重建的原子替换、进程内单飞、`index/.lock` | 解析文件格式 |
+| `src/host/io.ts` | **唯一写入口**：路径解析、原子写、单项目写锁 | 业务规则、索引 |
 | `src/host/state.ts` | 插件自身状态（lastProjectRoot），原子写 | 作品数据 |
 | `src/host/tools.ts` | 工具 schema/执行/渲染 | 直接扫目录（走 indexer/project） |
 | `src/host/routes.ts` | 只读投影 + 安全校验 | 写操作 |
@@ -118,7 +120,7 @@
 ## 7. 数据流
 
 ```
-写：Agent → inkflow_* 工具 → 原子写文件（P1）→ git commit（用户/AI）
+写：Agent → inkflow_* 工具 → io.ts（解析 + 写锁 + 原子写）→ git commit（用户/AI）
 读：Agent → inkflow_* 工具 ─┐
     面板 → /inkflow/api/*  ─┴→ indexer（缺失/版本不符则重建）→ index/inkflow.db
 ```

@@ -47,6 +47,31 @@ export { buildIndex, describeIndexBuildFailure, IndexBuildError } from './index-
 export type { IndexBuildErrorCode, IndexBuildFailure } from './index-build.js'
 export type { IndexBuildResult } from './indexer.js'
 
+/**
+ * Write-layer API (issue #14): the single door for project file writes.
+ * Exported for the tests now and for the chapter/scaffolding writers next; no
+ * tool registers against it yet, so this adds no model-facing surface.
+ */
+export {
+  acquireProjectWriteLock,
+  resolveWriteTarget,
+  withProjectWriteLock,
+  writeJsonAtomic,
+  writeTextAtomic,
+} from './io.js'
+export type {
+  AtomicWriteOptions,
+  IoErrorCode,
+  IoFailure,
+  IoResult,
+  ProjectLock,
+  ProjectLockResult,
+  ResolveWriteTargetResult,
+  WriteResult,
+  WriteTarget,
+} from './io.js'
+export { WRITE_DIRS } from './conventions.js'
+
 export function apply(ctx: HostContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig)
   const log = ctx.logger('dsh-inkflow')

@@ -87,8 +87,11 @@ export function findProjectRoot(start: string): string | undefined {
  * nearest existing ancestor, then re-append the missing segments. Without this,
  * a junction/symlink or a `..` text trick could smuggle a path out of the
  * workspace while looking contained.
+ *
+ * Exported for `io.ts`, which needs the same tolerance for write targets that
+ * do not exist yet (issue #14): one implementation of "resolve through links".
  */
-function realpathLoose(input: string): string {
+export function realpathLoose(input: string): string {
   const absolute = resolve(input)
   const missing: string[] = []
   let current = absolute
@@ -111,8 +114,11 @@ function realpathLoose(input: string): string {
  * True when `child` is `parent` itself or sits below it. `path.relative` is
  * case-insensitive on Windows, which is what we want for drive-letter/case
  * variants of the same directory.
+ *
+ * Exported for `io.ts`: the write door must judge containment exactly the way
+ * the gate does, or the two would disagree on the same path (issue #14).
  */
-function isWithin(parent: string, child: string): boolean {
+export function isWithin(parent: string, child: string): boolean {
   const relative = relativePath(parent, child)
   return relative === '' || (!relative.startsWith('..') && !isAbsolute(relative))
 }
