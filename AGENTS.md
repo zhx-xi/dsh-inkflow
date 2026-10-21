@@ -25,7 +25,7 @@
 ## 1. 项目概览
 
 **dsh-inkflow**：一个 DSH 插件（Host 半 + Client 半），用**一个插件**完成长篇小说创作全流程——项目/卷/章、大纲、人物、世界观、伏笔、时间线、工作台、`inkflow_*` 工具。
-三个差异点：①旧稿/设定 → 结构化资料库的**提取管线**；②**系列共享设定 / 同世界观多故事**；③结构化深度（多纪元历法、双时间轴、知识图谱、地图）。
+三个差异点：①旧稿/设定 → 结构化资料库的**提取管线**；②**系列共享设定 / 同世界观多故事**（插件级共享库 + 复制快照）；③**复用 OpenViking 的语义检索**（不自研 embedding / 向量库）。
 范围、阶段与估工见 [S-05 roadmap](.agents/specs/roadmap.md)（阶段进度也在那里，不在本文件）。
 
 ## 2. 技术栈（易错项，无法从代码推导）
@@ -48,17 +48,18 @@
 ## 4. 架构规则（不可违反）
 
 ```
-✅ 写数据：工具 → project/indexer → 文件（真相）→ 用户 git commit
+✅ 写数据：工具 → io.ts（路径解析 + 写锁 + 原子替换）→ 文件（真相）→ 用户 git commit
 ✅ 读数据：工具/面板 → indexer（缺失或版本不符则重建）→ index/inkflow.db
+✅ 面板数据：Client → /inkflow/internal/*（私有内部通道，不是对外 API）
 ❌ 禁止：改索引来改数据（索引是缓存，不是真相）
 ❌ 禁止：在随机目录建库/写文件（必须先过门禁）
-❌ 禁止：client 半做文件 IO（只能 fetch /inkflow/api/*）
+❌ 禁止：client 半做文件 IO（只能 fetch /inkflow/internal/*）
 ❌ 禁止：tools.ts 直接扫目录（走 project.ts / indexer.ts）
 ```
 
 - `src/host/conventions.ts` 是**目录/文件约定的唯一常量来源**；任何字面量目录名都应从那里取。
 - 不变量靠「写入校验 + 索引重建校验」双重保障；新增不变量必须同时加重建期 code 与测试。
-- 依赖方向：`client/index.tsx` → `client/context.ts`；Host 侧 `index.ts` → `tools.ts` → `{project,indexer,state,conventions}`。
+- 依赖方向：`client/index.tsx` → `client/context.ts`；Host 侧 `index.ts` → `tools.ts` / `routes.ts` → `{project,workspace,io,indexer,state,conventions}`。
 
 ## 5. 开发工作流（SDD + TDD）
 
@@ -92,7 +93,7 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 |---|---|---|
 | 1 | `cordis.patch.yml` 漏 `- insert:` | 新增行一律写在 `- insert:` 下（漏了整条静默丢弃） |
 | 2 | 改完 `lib/` 直接测 | HMR 不热替换已加载插件，必须重启 DSH |
-| 3 | 面板有图标没页面 | `sidebar.panellist.id` 与 `main.key` 必须是同一个 `PANEL_ID` |
+| 3 | 面板指错书 / 有图标没页面 | 面板入口用 session 作用域的 `conversation.view`；root 插槽拿不到工作区，不能靠"上次打开的书"猜（[ADR-0008](.agents/adrs/0008-panel-data-channel.md)） |
 | 4 | Windows 写 BOM | 读 `inkflow.json`/frontmatter 前剥 BOM |
 | 5 | 给索引写 `ALTER TABLE` | 索引是缓存：改 schema 版本号 → 删库重建 |
 | 6 | 把证据/过程稿写进仓库 | 证据 → issue/PR comment；仓库只留手册与规范 |

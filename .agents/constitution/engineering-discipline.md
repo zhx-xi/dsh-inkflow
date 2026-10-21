@@ -10,7 +10,7 @@
 - **spec 是开发的唯一真相来源**：发现 spec 与实现矛盾 → **先改 spec**，再改代码。
 - 新功能默认：先在 `.agents/specs/` 落一节（或新文件），再开测试。
 - spec 写「是什么」（数据形状、契约、边界、验收），不写「怎么做」（不贴实现代码、不贴迁移 SQL）。
-- spec 篇幅纪律：单文件优先；超过 ~500 行且章节内聚时，允许同目录 `references/` 子目录，但 spec 头部必须列出引用了哪些 references。
+- spec 篇幅纪律：单文件 **≤800 行**（[AGENTS.md §9.3 S6](../../AGENTS.md)）；超出且章节内聚时，允许同目录 `references/` 子目录，但 spec 头部必须列出引用了哪些 references。
 
 ## 2. TDD：RED → GREEN → REFACTOR
 
