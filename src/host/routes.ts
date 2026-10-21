@@ -27,11 +27,14 @@
  * A resolvable session whose directory fails the four-state gate answers the
  * same structured checklist the tools return, and nothing is written.
  *
- * FUTURE WRITE ROUTES (there are none on this build) MUST: be POST only, require
- * `Content-Type: application/json` (415 otherwise) and require a loopback
- * `Origin` to be PRESENT (403 otherwise) — the same-origin check is mandatory
- * exactly for requests that write. Read routes keep working without `Origin`
- * because a same-origin `fetch` from the panel may omit it.
+ * WRITE ROUTES: four chapter write routes exist on this build
+ * (`POST /chapters`, `POST|DELETE /chapters/:id`, `POST /chapters/:id/move`).
+ * They are POST/DELETE only, require `Content-Type: application/json` (415
+ * otherwise) and require a loopback `Origin` to be PRESENT (403 otherwise) — the
+ * same-origin check is mandatory exactly for requests that write. Read routes
+ * keep working without `Origin` because a same-origin `fetch` from the panel may
+ * omit it. Anything that writes goes through `chapters.ts`, never through this
+ * file: see `internal.ts` for the domain mapping and the CAS plumbing.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -46,13 +49,17 @@ import {
   buildChapters,
   buildSearch,
   buildStatus,
+  createChapterViaChannel,
+  deleteChapterViaChannel,
   findPathParam,
   findPathParamInBody,
   isSessionId,
+  moveChapterViaChannel,
   noSessionContextBody,
   resolveChannelTarget,
+  writeChapterViaChannel,
 } from './internal.js'
-import type { ChannelTarget, JsonRecord } from './internal.js'
+import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 
 const PREFIX = '/inkflow'
 const LOOPBACK_AUTHORITY = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
@@ -73,10 +80,14 @@ const KNOWN_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DE
 
 interface RouteInput {
   target: ChannelTarget
+  /** The verb that actually arrived; a route may declare several. */
+  method: HttpMethod
   query: URLSearchParams
   version: string
   /** `pattern` capture groups, still percent-encoded. */
   params: readonly string[]
+  /** Parsed JSON object body (empty for a bodyless request). */
+  body: JsonRecord
 }
 
 interface RouteReply {
@@ -91,6 +102,12 @@ interface InternalRoute {
   readonly pattern: RegExp
   /** Declared per route. A verb outside this list is a 405 with `Allow`. */
   readonly methods: readonly HttpMethod[]
+  /**
+   * The only body fields this route accepts (writes only; `sessionId` is always
+   * allowed). Anything else is a 400 `UNEXPECTED_BODY_FIELD`, so a client
+   * cannot smuggle a directory or a future knob past the guards.
+   */
+  readonly body?: readonly string[]
   /**
    * Read routes may have to make the derived index fresh first (issue #5), so a
    * handler is allowed to be async; the dispatcher awaits it either way.
@@ -107,9 +124,11 @@ function failure(code: string, extra: JsonRecord = {}): JsonRecord {
 }
 
 /**
- * P0 is read-only: four GET projections. Each entry declares its own method
- * list, so adding a write route means writing `methods: ['POST']` next to this
- * comment — not flipping a global switch.
+ * Reads are GET; anything else declared here is a write and must satisfy the
+ * write guards below. Each entry declares its own method list, so adding a write
+ * route means writing `methods: ['POST']` next to this comment — not flipping a
+ * global switch. One entry per pattern: `/chapters/:id` answers GET (detail),
+ * POST (save) and DELETE (delete) from the same capture group.
  */
 const ROUTES: readonly InternalRoute[] = [
   {
@@ -121,31 +140,32 @@ const ROUTES: readonly InternalRoute[] = [
   {
     name: 'chapters',
     pattern: /^\/chapters$/,
-    methods: ['GET'],
-    handle: async ({ target, version }) => ({ status: 200, body: ok(await buildChapters(target, version)) }),
+    methods: ['GET', 'POST'],
+    body: ['sessionId', 'title', 'volumeId', 'slug', 'seq'],
+    handle: async (input) =>
+      input.method === 'POST'
+        ? toReply(await createChapterViaChannel(writeRequestOf(input)))
+        : { status: 200, body: ok(await buildChapters(input.target, input.version)) },
   },
   {
     name: 'chapter',
     pattern: /^\/chapters\/([^/]+)$/,
-    methods: ['GET'],
-    handle: ({ target, version, params }) => {
-      let id: string
-      try {
-        id = decodeURIComponent(params[0] ?? '')
-      } catch {
-        // Malformed percent-encoding names nothing: refuse it as a bad request
-        // rather than letting decodeURIComponent throw inside the handler.
-        return { status: 400, body: failure('invalid-path-encoding') }
-      }
-      const chapter = buildChapter(target, version, id)
-      if (chapter === undefined) {
-        return {
-          status: 404,
-          body: failure('chapter-not-found', { id, hint: 'list the chapters with GET /chapters and use a chapter id from there' }),
-        }
-      }
-      return { status: 200, body: ok(chapter) }
+    methods: ['GET', 'POST', 'DELETE'],
+    body: ['sessionId', 'title', 'body', 'status', 'expected'],
+    handle: async (input) => {
+      if (input.method === 'POST') return toReply(await writeChapterViaChannel(writeRequestOf(input)))
+      if (input.method === 'DELETE') return toReply(await deleteChapterViaChannel(writeRequestOf(input)))
+      return readChapterReply(input)
     },
+  },
+  {
+    // Must be declared with the same `/chapters/…` prefix but a longer pattern:
+    // `[^/]+` in the row above cannot swallow the `/move` segment.
+    name: 'chapter-move',
+    pattern: /^\/chapters\/([^/]+)\/move$/,
+    methods: ['POST'],
+    body: ['sessionId', 'volumeId', 'expected'],
+    handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
   {
     name: 'search',
@@ -160,6 +180,34 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
 ]
+
+/** One chapter, read-only. The request names an id; containment is the Host's job. */
+function readChapterReply(input: RouteInput): RouteReply {
+  let id: string
+  try {
+    id = decodeURIComponent(input.params[0] ?? '')
+  } catch {
+    // Malformed percent-encoding names nothing: refuse it as a bad request
+    // rather than letting decodeURIComponent throw inside the handler.
+    return { status: 400, body: failure('invalid-path-encoding') }
+  }
+  const chapter = buildChapter(input.target, input.version, id)
+  if (chapter === undefined) {
+    return {
+      status: 404,
+      body: failure('chapter-not-found', { id, hint: 'list the chapters with GET /chapters and use a chapter id from there' }),
+    }
+  }
+  return { status: 200, body: ok(chapter) }
+}
+
+function writeRequestOf(input: RouteInput) {
+  return { target: input.target, params: input.params, body: input.body, version: input.version }
+}
+
+function toReply(reply: WriteReply): RouteReply {
+  return { status: reply.status, body: reply.body }
+}
 
 /** The single write on the wire: a JSON response with the hardening headers. */
 function sendJson(res: ServerResponse, status: number, body: JsonRecord, headers: Record<string, string> = {}): void {
@@ -236,11 +284,29 @@ function isHttpMethod(value: string): value is HttpMethod {
   return (KNOWN_METHODS as readonly string[]).includes(value)
 }
 
-function sessionIdFrom(req: IncomingMessage, query: URLSearchParams): string | undefined {
+function sessionIdFrom(req: IncomingMessage, query: URLSearchParams, body: JsonRecord): string | undefined {
   const fromQuery = (query.get(SESSION_ID_PARAM) ?? '').trim()
   if (fromQuery !== '') return fromQuery
   const fromHeader = headerValue(req, SESSION_ID_HEADER)
-  return fromHeader === '' ? undefined : fromHeader
+  if (fromHeader !== '') return fromHeader
+  // A write may name its session in the body instead (`{sessionId}` is one of
+  // the two things a write body is allowed to contain). Never a directory.
+  const fromBody = body[SESSION_ID_PARAM]
+  return typeof fromBody === 'string' && fromBody.trim() !== '' ? fromBody.trim() : undefined
+}
+
+/** `application/json`, with or without parameters (`; charset=utf-8`). */
+function isJsonContentType(value: string): boolean {
+  return /^application\/json(?:\s*;.*)?$/i.test(value.trim())
+}
+
+/** The first body field the route did not declare, if any (writes only). */
+function unexpectedBodyField(body: JsonRecord, allowed: readonly string[]): string | undefined {
+  const permitted = new Set([...allowed, SESSION_ID_PARAM])
+  for (const key of Object.keys(body)) {
+    if (!permitted.has(key)) return key
+  }
+  return undefined
 }
 
 interface RouteMatch {
@@ -311,6 +377,26 @@ export function createHttpHandler(deps: HttpDeps) {
       return
     }
 
+    // ---- write guards (ADR-0008 D3): same-origin, JSON, declared fields -----
+    // Only GET is a read in this channel, so any other declared verb is a write.
+    const isWrite = method !== 'GET'
+    if (isWrite) {
+      // `Origin` must be PRESENT and loopback: a same-origin `fetch` from the
+      // panel always sets it, and a cross-site page cannot forge it.
+      if (origin === '') {
+        sendJson(res, 403, failure('forbidden-origin', { reason: 'origin-required', hint: 'a write request must carry a loopback Origin' }))
+        return
+      }
+      if (!isJsonContentType(headerValue(req, 'content-type'))) {
+        sendJson(
+          res,
+          415,
+          failure('unsupported-media-type', { expected: 'application/json', hint: 'a write request must send a JSON object body' }),
+        )
+        return
+      }
+    }
+
     const body = await readBody(req)
     if (!body.ok) {
       sendJson(res, 413, failure('payload-too-large', { limitBytes: MAX_INTERNAL_BODY_BYTES }))
@@ -326,9 +412,16 @@ export function createHttpHandler(deps: HttpDeps) {
       sendJson(res, 400, failure('ROOT_PARAM_NOT_ALLOWED', { reason: 'unexpected-path-param', param: forbiddenBody, in: 'body' }))
       return
     }
+    if (isWrite && matched.route.body !== undefined) {
+      const unexpected = unexpectedBodyField(parsed.value, matched.route.body)
+      if (unexpected !== undefined) {
+        sendJson(res, 400, failure('UNEXPECTED_BODY_FIELD', { field: unexpected, route: matched.route.name }))
+        return
+      }
+    }
 
     // ---- the request's session, resolved by the Host ----------------------
-    const sessionId = sessionIdFrom(req, url.searchParams)
+    const sessionId = sessionIdFrom(req, url.searchParams, parsed.value)
     if (sessionId === undefined) {
       sendJson(res, 200, noSessionContextBody(deps.version))
       return
@@ -346,9 +439,11 @@ export function createHttpHandler(deps: HttpDeps) {
 
     const reply = await matched.route.handle({
       target: resolution.target,
+      method,
       query: url.searchParams,
       version: deps.version,
       params: matched.params,
+      body: parsed.value,
     })
     sendJson(res, reply.status, reply.body, reply.headers ?? {})
   }

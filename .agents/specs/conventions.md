@@ -480,14 +480,18 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 面板与 Host 之间的数据通道是**内部实现**，不是对外 API（[ADR-0008](../adrs/0008-panel-data-channel.md) D2）：不版本化、不提供 OpenAPI、不承诺兼容；`/inkflow/api/*` 一律 404，不留兼容别名。
 
-**路由表**（P0 全部只读；方法在路由表里逐条声明，未声明的动词 → 405 + `Allow` 头）：
+**路由表**（方法在路由表里逐条声明，未声明的动词 → 405 + `Allow` 头；读路由只有 GET，写路由是 POST/DELETE 并额外过写守卫，见下文「写路由」）：
 
 | 路由 | 方法 | 参数 | 成功值 `value` | 专属错误码 |
 |---|---|---|---|---|
 | `/inkflow/internal/status` | GET | `sessionId` | `root`、`label`、`state`、`checks`、`missing`、`actions`、`meta`、`index`（`dbExists`/`schemaMatches`/`builtAt`/`counts`）、`catalog`（`stale`/`volumes`/`chapters`）、`search` | `SESSION_ID_INVALID` |
 | `/inkflow/internal/chapters` | GET | `sessionId` | `volumes[]`（`volumeId`/`dir`/`title`/`order`/`chapters[]`）+ `looseChapters[]` + `catalogStale`、`indexBuilt`、`indexRebuilt`、`indexState`（`indexError`/`indexReasons` 仅在重建失败时出现） | — |
-| `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId` | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
+| `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`status`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId`、`fingerprint`（`size`/`mtimeMs`/`sha256`，写路由的 `expected` 基线） | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
 | `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'`、`indexRebuilt`、`indexState`（+ 失败时的 `indexError`/`indexReasons`） | `400 QUERY_REQUIRED` |
+| `/inkflow/internal/chapters` | POST | `sessionId`；`title`（必填）、`volumeId`（`vol-NN` 或 `null`＝散章）、`slug`、`seq` | 新建章 `chapter`（`chapterId`/`file`/`title`/`seq`/`volumeId`/`status`）+ `fingerprint` + `catalogRebuilt`/`indexRebuilt` | `400 TITLE_REQUIRED`/`SEQ_INVALID`/`VOLUME_ID_INVALID`、`404 VOLUME_NOT_FOUND`、`409 CHAPTER_EXISTS`/`SEQ_CONFLICT` |
+| `/inkflow/internal/chapters/:id` | POST | `sessionId`；`title`/`body`/`status`（三者至少一个）、`expected`（§5.5 基线） | 改后的 `chapter` + `changed[]`（+ 改标题时的 `renamedFrom`）+ `fingerprint` + `catalogRebuilt`/`indexRebuilt` | `400 TITLE_REQUIRED`/`STATUS_INVALID`、`404 chapter-not-found`、`409 FILE_CHANGED`/`CHAPTER_EXISTS` |
+| `/inkflow/internal/chapters/:id/move` | POST | `sessionId`；`volumeId`（必填，`vol-NN` 或 `null`＝移出卷）、`expected` | `chapter` + `moved`/`movedFrom`/`changed[]` + `fingerprint` + 双投影状态 | `404 chapter-not-found`/`VOLUME_NOT_FOUND`、`409 FILE_CHANGED`/`TARGET_EXISTS` |
+| `/inkflow/internal/chapters/:id` | DELETE | `sessionId`；`expected` | `deleted`（`chapterId`/`file`/`title`/`seq`/`volumeId`）+ `catalogRebuilt`/`indexRebuilt` | `404 chapter-not-found`、`409 FILE_CHANGED` |
 
 **错误码**（信封 `{ok:true,value}` / `{ok:false,error:{code}}`；失败一律结构化，不抛栈）：
 
@@ -496,10 +500,15 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 400 | `ROOT_PARAM_NOT_ALLOWED` | query 或 body 出现 `root`/`path`/`cwd`/`workspace`/`projectRoot`；附 `reason: 'unexpected-path-param'` 与 `param`/`in`；判定在路由匹配与任何文件 IO 之前 |
 | 400 | `SESSION_ID_INVALID` | `sessionId` 形状非法（非 `[A-Za-z0-9._:@-]{1,200}`） |
 | 400 | `QUERY_REQUIRED` / `invalid-body` / `invalid-path-encoding` | `/search` 缺 `q`；请求体不是 JSON 对象；`:id` 百分号编码损坏 |
+| 400 | `invalid-field` / `EXPECTED_INVALID` / `UNEXPECTED_BODY_FIELD` | 写路由：声明字段的类型不符（附 `field`）、`expected` 不是对象、body 出现路由未声明的字段（写路由只接受 `sessionId` + 该路由声明的字段） |
 | 403 | `forbidden-host` / `forbidden-origin` / `forbidden-remote` | `Host` 非 loopback；`Origin` 存在但非 loopback；socket 对端地址非 loopback |
+| 403 | `forbidden-origin`（`reason: 'origin-required'`） | **写路由**缺 `Origin`：同源校验只对会产生写入的请求强制 |
 | 404 | `not-found` / `chapter-not-found` | 未知路径（含全部 `/inkflow/api/*`）；章节 id 不存在或不在 `chapters/` 内 |
 | 405 | `method-not-allowed` | 动词不在该路由声明的 `methods` 内（响带 `Allow`） |
+| 409 | `FILE_CHANGED` | **写路由**的 `expected` 与磁盘不符（§5.5）：附 `expected`/`current`/`changed[]`，**零写入**、缓存不重建 |
+| 409 | `CHAPTER_EXISTS` / `CHAPTER_AMBIGUOUS` / `SEQ_CONFLICT` / `TARGET_EXISTS` / `VOLUME_EXISTS` / `PROJECT_BUSY` | 写路由的目标已存在、id 歧义、序冲突、另一会话持写锁 |
 | 413 | `payload-too-large` | 请求体 > 64 KiB（`MAX_INTERNAL_BODY_BYTES`） |
+| 415 | `unsupported-media-type` | **写路由**的 `Content-Type` 不是 `application/json`（写路由一律带 JSON body，DELETE 也发 `{}`） |
 | 200 | `NO_SESSION_CONTEXT` | 缺 `sessionId`，或会话解析不到工作区：`ok:false` + `actions[]`，**零写盘** |
 | 200 | `NOT_AN_INKFLOW_PROJECT` / `PROJECT_NEEDS_REPAIR` / `PROJECT_NEEDS_NEWER_PLUGIN` | 解析到目录但四态门禁非 `usable`：附 `state`/`checks`/`missing`/`actions`/`readOnly`，**零写盘** |
 
@@ -507,11 +516,24 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 **加固**（继承 [ADR-0004](../adrs/0004-loopback-http.md)）：`Host` 必须 loopback；`Origin` 存在时必须 loopback；socket 对端地址非空时必须 loopback；不发 CORS 头；`Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；请求体 ≤64 KiB 且必须是 JSON 对象。
 
-**只读纪律**：通道**不修复项目结构**、不写 `state.json`、不写任何真相文件。门禁以 `inspectProject(root, { recreateIndexDir: false })` 判定（关掉 `index/` 的自动放宽），卷章树走 `readCatalog` 的 `.md` 投影，索引只以 `readOnly` 打开（检索函数本身不建库），章节文件只读且必须落在 `chapters/` 内。
+**只读纪律（读路由）**：通道**不修复项目结构**、不写 `state.json`、不写任何真相文件。门禁以 `inspectProject(root, { recreateIndexDir: false })` 判定（关掉 `index/` 的自动放宽），卷章树走 `readCatalog` 的 `.md` 投影，索引只以 `readOnly` 打开（检索函数本身不建库），章节文件只读且必须落在 `chapters/` 内。
 
 **唯一例外（issue #5）**：`/chapters` 与 `/search` 先调 `ensureIndex`（§4.0）刷新派生缓存——索引是**可重建的缓存**，不是真相，且只在 `usable` 项目的 `index/` 内发生；重建失败时通道降级作答并回 `indexError`（不把失败变成 4xx/5xx）。
 
-**写路由（本期没有）**：只允许 POST，必须 `Content-Type: application/json`（否则 415）且必须带 loopback `Origin`（否则 403）；写动作仍由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做自动修复。写真相仍只走工具 → `io.ts`。
+**写路由（4 条，改正文的编辑通道）**：写的是**真相文件**，因此比读路由多四道守卫，全部在任何文件 IO 之前：
+
+| # | 守卫 | 拒绝 |
+|---|---|---|
+| 1 | 方法只 POST/DELETE（读路由只有 GET） | 405 + `Allow` |
+| 2 | `Origin` **必须存在**且 loopback（读路由允许缺省） | 403 `forbidden-origin`（`reason: 'origin-required'`） |
+| 3 | `Content-Type: application/json`（DELETE 也发 `{}`） | 415 `unsupported-media-type` |
+| 4 | body 只接受 `sessionId` + 该路由声明的字段；体积 ≤64 KiB | 400 `UNEXPECTED_BODY_FIELD` / 413 `payload-too-large` |
+
+- **业务实现只复用** [`chapters.ts`](../../src/host/chapters.ts) 的六个操作（`createVolume`/`renameVolume`/`createChapter`/`writeChapter`/`moveChapter`/`deleteChapter`），通道不自写文件、不改它们的语义；本期只开四个章级写路由。
+- **CAS（§5.5）**：`expected` 原样透传；不符 → `409 FILE_CHANGED` + `expected`/`current`/`changed[]`，**零写入**（文件、catalog、索引都不动）。读路由 `/chapters/:id` 回传的 `fingerprint` 就是下一次写的基线；写成功也回传新 `fingerprint`。
+- **派生缓存**：写成功后由 `chapters.ts` 的写路径重建 catalog 并 `commitIndex`——通道**不**重复建索引，也不在拒绝路径重建。
+- **面板不静默覆盖**：客户端拿到 409 后必须由用户显式二选一（重新载入＝丢弃本地改动，或仍要保存＝不带 `expected` 的覆盖写），默认不覆盖。
+- **门禁**：非 `usable` 项目上四条写路由与读路由一样回结构化门禁清单（`200 + ok:false`），零写入；写路由不做任何"修复"。写真相仍只走工具 → `io.ts`，面板不是第二条写入实现（ADR-0006 D3 的"用户确认"在面板里由「保存 / 仍要保存」这两个显式动作承担）。
 
 ### 6.3 初始化 / 修复向导（plan → apply）
 

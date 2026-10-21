@@ -31,7 +31,7 @@
             foreshadowing/ timeline/ relations/ facts/ library/ index/ }
 ```
 
-**实现状态**：工具与索引已按上图注册，`/inkflow/internal/*` 私有通道已落地（四条只读路由，见 §4.2 与 [conventions.md](conventions.md) §6.2）；Client 半只注册 `conversation.view(id='inkflow', order=40)` 一处（§4.3），面板因此拿到 `sessionId` 并把项目解析交给 Host。面板本身的编辑器与提案制修订尚未落地（§9.1）。
+**实现状态**：工具与索引已按上图注册，`/inkflow/internal/*` 私有通道已落地（四条只读路由 + 四条章级写路由，见 §4.2 与 [conventions.md](conventions.md) §6.2）；Client 半只注册 `conversation.view(id='inkflow', order=40)` 一处（§4.3），面板因此拿到 `sessionId` 并把项目解析交给 Host。面板的章节编辑器（标题/正文/状态 + 自动保存 + 本地撤销 + CAS 冲突二选一）已接上写路由；提案制修订尚未落地（§9.1）。
 
 ## 2. 存储决策（ADR-0005）
 
@@ -78,11 +78,11 @@
 1. `Host` 必须 loopback → 否则 403 `forbidden-host`（防 DNS rebinding）。
 2. `Origin` 存在时必须 loopback → 否则 403 `forbidden-origin`（防跨站 fetch）。
 3. socket 对端地址非空时必须 loopback → 否则 403 `forbidden-remote`。
-4. 方法**逐路由声明**（`ROUTES[].methods`）：P0 读路由只有 GET，其余动词 405 + `Allow` 头。
+4. 方法**逐路由声明**（`ROUTES[].methods`）：读路由只有 GET，写路由是 POST/DELETE；未声明的动词 405 + `Allow` 头。
 5. 路径参数一律拒绝：`root`/`path`/`cwd`/`workspace`/`projectRoot` 出现在 query 或 body → 400 `ROOT_PARAM_NOT_ALLOWED`（`reason: 'unexpected-path-param'`），判定在路由匹配与任何文件 IO 之前。
 6. 请求体 ≤64 KiB（超限 413）且必须是 JSON 对象；未知路径 404。
 7. 响应 `Cache-Control: no-store` + `X-Content-Type-Options: nosniff`，信封 `{ok:true,value}` / `{ok:false,error:{code}}`，**不发任何 CORS 头**。
-8. 写路由（本期没有）：只 POST + `Content-Type: application/json`（否则 415）+ **必须带 loopback `Origin`**（否则 403）。
+8. **写路由**（`/chapters` POST、`/chapters/:id` POST/DELETE、`/chapters/:id/move` POST）：只 POST/DELETE + `Content-Type: application/json`（否则 415）+ **必须带 loopback `Origin`**（否则 403 `reason: 'origin-required'`）+ body 字段白名单（只接受 `sessionId` 与该路由声明的字段）+ `expected` 走 §5.5 CAS（不符 → 409 `FILE_CHANGED`，零写入）。业务只复用 `chapters.ts` 的六个操作，通道不自写文件。
 
 请求只携带 `sessionId`（query 或 `x-inkflow-session`）。Host 按序解析：`workspaceRegistry.list()` 的 `sessionIds → Workspace.path` → `workingDirectory.get(sessions.get(id))` → `Session.header.cwd` → 失败即 `200 + ok:false + NO_SESSION_CONTEXT`（附 `actions[]`，零写盘）；`session-` 前缀的两种写法都匹配。解析出的目录经 `findProjectRoot` 向上找书，再 `inspectProject(root, { recreateIndexDir: false })` 过四态门禁——面板与工具看到同一份 `state`/`checks`/`missing`/`actions`（D5）。
 
@@ -238,10 +238,13 @@
 | 1. 绑定会话 | Client：`setActiveSessionId(sessionId)` | 只一个会话 id |
 | 2. 读门禁 | `GET /inkflow/internal/status?sessionId=…` | `usable` → `{ok:true,value:{state,checks,missing,actions,reasons,index,catalog}}`；其余三态 → `{ok:false,error:{code,state,checks,missing,actions,reasons,readOnly,hint}}`；解析不到会话 → `{ok:false,error:{code:'NO_SESSION_CONTEXT',actions}}`，**三种都是 HTTP 200** |
 | 3. 读卷章树 | `GET /inkflow/internal/chapters?sessionId=…` | `{total, volumes[{volumeId,dir,title,chapters[]}], looseChapters[], catalogStale}` |
-| 4. 读一章（只读预览） | `GET /inkflow/internal/chapters/:id?sessionId=…` | `{id,path,title,seq,body,bodyChars,issues}` |
+| 4. 读一章（编辑器基线） | `GET /inkflow/internal/chapters/:id?sessionId=…` | `{id,path,title,seq,body,bodyChars,issues,fingerprint}`；`fingerprint` 是下一次保存的 CAS 基线 |
+| 5. 保存一章 | `POST /inkflow/internal/chapters/:id?sessionId=…`，body `{title?,body?,status?,expected?}` | 成功 → `{chapter,changed[],fingerprint}`；基线不符 → **409** `{ok:false,error:{code:'FILE_CHANGED',current,changed[]}}`，零写入 |
+| 6. 新建 / 移动 / 删除 | `POST /chapters`、`POST /chapters/:id/move`、`DELETE /chapters/:id` | 同 [conventions.md](conventions.md) §6.2 的路由表；四条写路由共用同一套守卫与 CAS |
 
 - **清单只来自 Host**：非 `usable` 时 `missing[]`/`actions[]` 在 `error` 里，`usable` 时在 `value` 里；面板把两种信封折成同一份 `PanelGate`（`src/client/panel-model.ts` 的 `readGate`），不自己补清单、不自己判定状态。
-- 面板**只读**：向导按钮只重读 `/status` 的计划，不调 `inkflow_project_init`；提交写入必须在会话里由用户确认。
+- **脏检查 / 防抖 / 撤销 / 冲突态是纯逻辑**：`src/client/editor-model.ts`（无 React、无 IO），React 只渲染与接键位；自动保存 1500ms 防抖、撤销 500ms 合并、保存成功清栈；**冲突永远要用户显式二选一**（重新载入＝丢弃本地改动 / 仍要保存＝覆盖），面板不静默覆盖外部改动。
+- **向导仍只读**：向导按钮只重读 `/status` 的计划，不调 `inkflow_project_init`；项目结构与修复写入只能由用户确认后的工具调用完成。
 - Client 侧永不拼 `root`/`path`/`cwd`（`tests/panel-bundle.test.js` 对产物断言这三种查询参数都不存在）。
 
 
@@ -315,7 +318,7 @@
 
 | 契约 | 现状 | 归属 |
 |---|---|---|
-| 面板编辑器与提案制修订 | 面板只有只读预览；写入仍走工具 | #45 |
+| 面板编辑器与提案制修订 | 编辑器（标题/正文/状态、自动保存、本地撤销、CAS 冲突二选一）与四个章级写路由已落地；**提案制**（改正文前需用户审批）未落地，编辑器直接走 CAS 写文件 | #45 |
 | 搜索的正文全文检索 | `/search` 目前只匹配章节元数据（id/路径/标题），并显式标 `searchUnavailable: true` | #22 |
 | 卷章 catalog + `volumeId` | 未落地；卷归属按目录名推导 | #15 |
 | 索引 v2（九目录全实体 + 提及 + 全实体 FTS） | 只覆盖章/角色/世界观/大纲 | #22 / #23 |

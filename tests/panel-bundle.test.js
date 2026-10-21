@@ -92,7 +92,7 @@ test('client bundle talks only to the private internal channel', () => {
 
 test('client bundle ships the skeleton wording the user sees', () => {
   const text = readBundle()
-  for (const marker of ['章节树', '正文预览（只读）', '打开初始化向导', '缺少（missing）', '0.2.0 起']) {
+  for (const marker of ['章节树', '正文（Markdown 编辑器）', '打开初始化向导', '缺少（missing）', '0.2.0 起', '新建章']) {
     assert.ok(text.includes(marker), `bundle is missing the panel wording: ${marker}`)
   }
   // The four-state badge must be able to name every state.
@@ -248,13 +248,10 @@ test('relativeProjectRoot shows the book relative to the session workspace', () 
   assert.equal(relativeProjectRoot('/books/a', null), '/books/a')
 })
 
-test('previewText trims, strips a BOM and marks the cut', () => {
-  const { previewText } = model
-  assert.deepEqual(previewText('\uFEFF  ## 第一章\n\n云海翻涌  '), { text: '## 第一章\n\n云海翻涌', truncated: false })
-  const long = previewText('x'.repeat(2500), 2000)
-  assert.equal(long.text.length, 2000)
-  assert.equal(long.truncated, true)
-  assert.deepEqual(previewText(undefined), { text: '', truncated: false })
+test('previewText is gone: the panel shows an editor, not a read-only preview', () => {
+  // Issue #19 replaced the preview column with the editor, so the projection
+  // helper that existed only for it must not linger as dead code.
+  assert.equal(model.previewText, undefined)
 })
 
 test('describeRouteError and describeAction explain failures and wizard steps', () => {
