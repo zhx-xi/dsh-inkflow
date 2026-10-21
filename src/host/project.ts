@@ -410,11 +410,17 @@ export function inspectProject(root: string, options: InspectOptions = {}): Proj
     reasons.push(metaError ?? `${ROOT_META_FILE} is invalid`)
   }
 
+  // A `.git` alone is not evidence of a book: every source repository has one,
+  // so treating it as "repair me" made `inkflow_project_status` shout at any
+  // git repository the session happened to sit in (found in review after #13).
+  // Repair needs an InkFlow fingerprint: the meta file (even broken) or at
+  // least one of the nine content directories.
+  const hasInkflowLayout = REQUIRED_DIRS.some((name) => checks.dirs[name] === true)
   const state: ProjectState = newer
     ? 'needs-newer-plugin'
     : usable
       ? 'usable'
-      : metaExists || checks.git
+      : metaExists || hasInkflowLayout
         ? 'needs-repair'
         : 'needs-setup'
   const readOnly = state === 'needs-newer-plugin'
