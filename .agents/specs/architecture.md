@@ -213,6 +213,44 @@
 
 不在范围内：九段写作简报与「承诺书 / 场景契约 / 人物卡 / 账本 / 伏笔」（P1 F-P1-06）、面板预览与编辑。
 
+### 4.8 构建标识与 stale 检测 — `src/host/build-info.ts`
+
+DSH 只在进程启动时加载一次插件的 `lib/`，HMR 不替换已加载插件（§8）。所以进程可能正在执行一份**磁盘上已被覆盖**的代际：`pnpm run build` 改的是文件，不是运行中的代码。此时旧面板会对着完好的书写出「需要初始化」，而「刷新」只是重跑同一份旧代码——**刷新在原理上不可能修复它**。旧代码也无法自报「我是旧的」，所以判据落在能同时看见「进程」和「磁盘」的那一半（Host）。
+
+**两个互相独立的事实**：
+
+| 事实 | 来源 | 语义 |
+|---|---|---|
+| `build` | 构建期 esbuild `define` 注入 `__INKFLOW_BUILD__ = <git 短 sha>@<ISO>`（两半都注入） | 进程**正在执行**的代际；运行时无法被磁盘改写 |
+| `diskBuildTime` | 调用期 `stat` 自身 `lib/index.js` 的 mtime | 磁盘上**最新**的代际；只是提示（git checkout、文件复制、进行中的构建都会动它） |
+| `loadedAt` | `Date.now() - process.uptime() * 1000` | 进程启动时刻，比较的基准 |
+
+**判据**（只由 `decideStale` 表述一处）：
+
+```
+staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 ms
+```
+
+| 维度 | 规则 | 理由 |
+|---|---|---|
+| 单侧 | 只有「磁盘比进程新」为真 | 常见顺序是先构建、后重启；把「磁盘更旧」也当异常会让正常安装常亮 |
+| 容差 | 5 s 窗口内不判 stale | 构建与重启交叠时产物可能在进程起来之后才落最后一块，此时进程加载的就是新代码。宁可漏报一次，也不要让用户学会无视警告条 |
+| 不可用即不判 | 定位不到自身文件 / stat 失败 / 非 `file:` URL → `diskBuildTime = 'unknown'`、`staleLoadedCode = false`，**不抛** | 这些代码跑在 `/status` 与状态工具路径上：缺一个字段可以，丢面板不可以 |
+| 两种安装形态 | `import.meta.url` 是 bundle 自身文件 URL；真实目录安装与 junction 指向开发仓命中同一个文件（Node 解析链接，两种写法同一个 mtime） | 开发与发布用同一条判据 |
+
+**透出面**（同一份 `BuildSummary`：`{version, build, loadedAt, staleLoadedCode, diskBuildTime}`）：
+
+| 位置 | 字段 | 说明 |
+|---|---|---|
+| `/inkflow/internal/status` | `value.build` | 面板的正常读数 |
+| `/inkflow/internal/status` | `error.build` | **门禁拒绝信封也带**：stale 代际正是把可用书报成 `needs-setup` / `needs-repair` 的那一方，警告必须能出现在拒绝屏上 |
+| `inkflow_project_status` | `build` | 只作信息字段，**不参与**四态判定与 `missing` 计算 |
+| apply 启动日志 | `build <build> loaded at <iso>` | 不开面板也能从日志判断代际；stale 时代替为「磁盘有更新构建 + 重启步骤」一行 |
+
+**面板**（`src/client/index.tsx` 的 `BuildStamp` / `StaleBuildBanner`，纯判定在 `src/client/panel-model.ts`）：页头显示 `build <sha>`；`staleLoadedCode === true` 时在页签行**之上**渲染不可关闭的警告条——磁盘构建时间、DSH 启动时间、`pnpm.cmd run build` 后完全退出重启、以及「刷新不会生效」。「重新检测」重新取 `/status` 并**重算同一判据**，因此既不会也不能清除警告：只有重启让进程比文件新之后它才消失。
+
+**降级**：旧 Host 不带 `build` 字段 → 面板只显示自身 bundle 的 stamp（构建期同样注入），不推断、不警告；`version` 取 `package.json`，调用方传入则以调用方为准（与 `pluginVersion` 同源）；构建时拿不到 git → `unknown@<ISO>`，时间戳仍能区分两代。
+
 ## 5. 四个工程决策
 
 ### 5.1 零运行时依赖

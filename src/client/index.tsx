@@ -34,15 +34,19 @@ import {
   buildChapterTree,
   chapterHeading,
   describeAction,
+  describeBuildTime,
   describeFacts,
   describeRouteError,
   describeTitleSuspicion,
   emptyKindOf,
   projectFacts,
+  readBuild,
   readGate,
   relativeProjectRoot,
+  shortBuild,
+  staleWarning,
 } from './panel-model.js'
-import type { BadgeTone, ChapterDetailValue, ChaptersValue, PanelGate, StatusValue } from './panel-model.js'
+import type { BadgeTone, ChapterDetailValue, ChaptersValue, PanelBuild, PanelGate, StatusValue } from './panel-model.js'
 
 // ---------------------------------------------------------------------------
 // Theme tokens. Every visible colour comes from the host theme (no literals,
@@ -165,6 +169,69 @@ function EmptyCard({ kind }: { kind: 'no-session' | 'no-chapters' | 'no-selectio
 }
 
 /**
+ * The stamp baked into THIS bundle (`scripts/build.mjs`, issue #88).
+ *
+ * A fallback only: `/status` is authoritative, because the Host half is the code
+ * that actually carries the tools and routes (and the one that can see the disk).
+ * This value describes the panel bundle itself, so it is still shown while the
+ * first answer is in flight. `undefined` when a test bundles this module without
+ * the esbuild define — hence the `typeof` guard.
+ */
+declare const __INKFLOW_BUILD__: string | null
+const CLIENT_BUILD: string | null = typeof __INKFLOW_BUILD__ === 'string' ? __INKFLOW_BUILD__ : null
+
+/** The Host's summary first, then this bundle's own stamp; `null` = nothing to show. */
+function panelBuild(build: PanelBuild | null): PanelBuild | null {
+  if (build !== null) return build
+  if (CLIENT_BUILD === null) return null
+  return { version: null, build: CLIENT_BUILD, loadedAt: null, staleLoadedCode: false, diskBuildTime: null }
+}
+
+/** The stamp as the panel shows it: `build abc1234`, with the long form on hover. */
+function BuildStamp({ build }: { build: PanelBuild | null }) {
+  const shown = panelBuild(build)
+  const label = shortBuild(shown?.build ?? null)
+  if (shown === null || label === null) return null
+  const detail = `build ${shown.build ?? '未知'} · 磁盘构建 ${describeBuildTime(shown.diskBuildTime)} · DSH 启动 ${describeBuildTime(shown.loadedAt)}`
+  return (
+    <span style={{ ...muted, ...mono }} title={detail}>
+      build {label}
+    </span>
+  )
+}
+
+/**
+ * The stale-build banner (issue #88): the one thing an old generation can never
+ * do for itself is announce that it is old — so this renders from the HOST's
+ * verdict, above the tabs, on every state including the gate refusal.
+ *
+ * It is deliberately not dismissible and not clearable by 重新检测: only a
+ * restart makes the process newer than the file on disk (see `staleWarning`).
+ */
+function StaleBuildBanner({ build }: { build: PanelBuild | null }) {
+  const warning = staleWarning(build)
+  if (warning === null) return null
+  return (
+    <div
+      role="alert"
+      style={{
+        display: 'flex',
+        gap: 8,
+        alignItems: 'flex-start',
+        padding: '8px 16px',
+        borderBottom: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-state-warn-primary)',
+        fontSize: 12,
+      }}
+    >
+      <span aria-hidden="true">⚠</span>
+      <span>{warning}</span>
+    </div>
+  )
+}
+
+/**
  * The workspace this session belongs to.
  *
  * `sessionIds` is matched in both spellings DSH uses (`session-<uuid>` in the
@@ -206,6 +273,10 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     setLoading(true)
     // The session id is the ONLY thing the panel tells the Host (ADR-0008 D4).
     setActiveSessionId(sessionId)
+    // Issue #88: 重新检测 re-reads `/status`, which recomputes the stale verdict
+    // from the disk mtime. It therefore cannot CLEAR the banner: a rebuilt
+    // `lib/` is still newer than this process, and only a restart fixes that.
+    // Nothing here may pretend the refresh made the old generation new.
     const statusResult = await fetchInternal<StatusValue>('/status', { sessionId })
     setStatus(statusResult)
     if (statusResult.ok && statusResult.value?.usable === true) {
@@ -249,6 +320,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   }, [selected, sessionId])
 
   const gate: PanelGate = useMemo(() => readGate(status), [status])
+  // Issue #88: which generation answered, read from `value` or `error` — the
+  // refusal screen is exactly where a stale build hides a healthy book.
+  const build = useMemo(() => readBuild(status), [status])
   const tree = useMemo(() => buildChapterTree(chapters), [chapters])
   // Derived state the gate answer already carried: shown, never acted upon.
   const facts = useMemo(() => projectFacts(status), [status])
@@ -305,6 +379,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
           {rootLabel ?? '—'}
         </span>
         <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <BuildStamp build={build} />
           <span style={{ ...muted, ...mono }}>
             {loading ? '检测中…' : sessionOpenState === 'loading' ? '会话打开中…' : `会话 …${sessionId.slice(-8)}`}
           </span>
@@ -313,6 +388,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
           </button>
         </span>
       </div>
+
+      <StaleBuildBanner build={build} />
 
       <div style={tabRowStyle}>
         {PANEL_TABS.map((tab) =>

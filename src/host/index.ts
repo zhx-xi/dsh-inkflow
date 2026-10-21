@@ -16,6 +16,7 @@
  */
 
 import type { HostContext } from './context.js'
+import { getLoadedBuild } from './build-info.js'
 import { resolveConfig } from './config.js'
 import { BUNDLED_SKILL_NAMES, bundledSkillsDir, registerInkflowSkills } from './skills.js'
 import { buildWritingPreset, registerWritingPreset } from './preset.js'
@@ -165,6 +166,16 @@ export { MIN_NON_ASCII_RATIO, MIN_SIGNATURE_FEATURES, describeEncodingSuspicion,
 export type { EncodingSuspicion } from './encoding.js'
 
 /**
+ * Build identity (issue #88): `getLoadedBuild` is what `/status`, the status tool
+ * and the startup log report — the generation this process is executing, the
+ * disk's build time and whether the disk moved on without a restart. Exported
+ * because the contract tests import `lib/index.js` only, and because any surface
+ * that answers "am I running old code" must ask the same function.
+ */
+export { STALE_TOLERANCE_MS, UNKNOWN_BUILD, decideStale, getLoadedBuild, summarizeBuild } from './build-info.js'
+export type { BuildSummary, LoadedBuild, LoadedBuildOptions } from './build-info.js'
+
+/**
  * Chapter search (issue #22): the read-only query half of `chapters_fts`.
  * Exported because the panel's future search box reuses it in-process, so this
  * is not a test-only surface — the tool and the tests drive the same function.
@@ -185,6 +196,16 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
   const log = ctx.logger('dsh-inkflow')
 
   log.info(`ready: files-first mode, plugin state=${config.dataDir}`)
+
+  // Which generation is this, and is the disk ahead of it (issue #88)? A DSH
+  // process keeps running the `lib/` it loaded at startup, so this line is how a
+  // human tells "old generation" from "broken book" without opening the panel.
+  const loaded = getLoadedBuild({ version: VERSION })
+  log.info(
+    loaded.staleLoadedCode
+      ? `build ${loaded.build} loaded at ${loaded.loadedAt}; the disk holds a newer build (${loaded.diskBuildTime}): run pnpm.cmd run build, then fully quit and restart DSH`
+      : `build ${loaded.build} loaded at ${loaded.loadedAt}`,
+  )
 
   // state.json is display-only (issue #7): it records the last project some
   // session touched, purely so a human can see it in the logs. It is never used

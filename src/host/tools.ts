@@ -14,6 +14,7 @@
 import { resolve as resolvePath } from 'node:path'
 
 import type { ContentBlock, HostContext, JsonSchemaNode, ToolDefinition, ToolRunContext } from './context.js'
+import { getLoadedBuild, summarizeBuild } from './build-info.js'
 import { FILE_SCHEMA_VERSION, INDEX_SCHEMA_VERSION, REQUIRED_DIRS, ROOT_META_FILE } from './conventions.js'
 import { buildIndex, describeIndexBuildFailure } from './index-build.js'
 import { ensureIndex } from './index-freshness.js'
@@ -148,6 +149,18 @@ function gateFailure(value: Resolution): Json {
 }
 
 const OBJECT_SCHEMA: JsonSchemaNode = { type: 'object', additionalProperties: true }
+
+/**
+ * Put the loaded-build summary on a refusal (issue #88). "needs setup" is exactly
+ * what a STALE generation reports for a book that is in fact usable, so the model
+ * must be able to see that the running code is older than the disk instead of
+ * confidently telling the user to re-initialise a healthy project.
+ */
+function withBuild(value: Json, version: string): Json {
+  const error = asRecord(value['error'])
+  if (Object.keys(error).length === 0) return value
+  return { ...value, error: { ...error, build: summarizeBuild(getLoadedBuild({ version })) } }
+}
 
 /**
  * The model-facing shape of a failed rebuild. The index is a cache, so a failed
@@ -354,7 +367,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
       const a = asRecord(args)
       const resolved = await resolveProject(deps, a['projectRoot'], exec)
       if (resolved.probe === undefined || resolved.probe.usable !== true) {
-        return gateFailure(resolved)
+        return withBuild(gateFailure(resolved), deps.version)
       }
       const probe = resolved.probe
       rememberProject(deps.dataDir, probe.root)
@@ -385,6 +398,8 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           builtAt: index.builtAt ?? null,
           counts: index.counts,
         },
+        // Issue #88: informational only — it never moves the four-state verdict.
+        build: summarizeBuild(getLoadedBuild({ version: deps.version })),
       }
     },
   }

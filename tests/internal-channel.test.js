@@ -495,6 +495,55 @@ test('internal channel: /status projects the session workspace, gate and index s
 })
 
 // ---------------------------------------------------------------------------
+// 9b. Build identity and the stale-load verdict (issue #88)
+// ---------------------------------------------------------------------------
+
+test('internal channel: /status carries the loaded build stamp', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    const status = await internalCall(harness, '/status')
+    assert.equal(status.json.ok, true)
+    const value = status.json.value
+    assert.equal(value.build.version, value.pluginVersion, 'one version, reported twice')
+    assert.match(value.build.build, /^[^@]+@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, 'stamp is `<sha>@<ISO>`')
+    assert.equal(Number.isNaN(Date.parse(value.build.loadedAt)), false, 'loadedAt is an ISO instant')
+    assert.equal(typeof value.build.staleLoadedCode, 'boolean')
+    assert.equal(typeof value.build.diskBuildTime, 'string')
+    // `pnpm run check` builds before it tests, so the artifact is not newer than
+    // this process: the verdict must not cry wolf on a normal install.
+    assert.equal(value.build.staleLoadedCode, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('internal channel: a gate refusal carries the build stamp too', async () => {
+  // A STALE generation reports "needs setup" for a perfectly usable book, so the
+  // banner's evidence must ride along with the refusal, not only with `value`.
+  const dir = workdir()
+  try {
+    const root = join(dir, 'not-a-book')
+    mkdirSync(root, { recursive: true })
+    const harness = createHarness({ workspace: root })
+
+    const status = await internalCall(harness, '/status')
+    assert.equal(status.status, 200)
+    assert.equal(status.json.ok, false)
+    const build = status.json.error.build
+    assert.ok(build !== undefined, 'the refusal envelope carries `build` under `error`')
+    assert.match(build.build, /^[^@]+@/)
+    assert.equal(typeof build.staleLoadedCode, 'boolean')
+    assert.match(build.version, /^\d+\.\d+\.\d+$/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 10. Chapters tree
 // ---------------------------------------------------------------------------
 

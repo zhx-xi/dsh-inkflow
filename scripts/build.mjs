@@ -14,6 +14,7 @@
  * .d.ts emit for library consumers, tsdown is added for the Host half only.
  */
 
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -25,6 +26,40 @@ const esbuild = require('esbuild')
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const PLUGIN_ID = manifest.name
+
+/**
+ * Build stamp (issue #88): `<git short sha>@<ISO>`.
+ *
+ * DSH loads `lib/` ONCE at startup and HMR never swaps an already-loaded plugin,
+ * so the process can be executing a generation that no longer exists on disk —
+ * and no file on disk can be modified afterwards to say so. The only place a
+ * running process can learn "which code am I" is a value baked in at build time,
+ * which is what `__INKFLOW_BUILD__` is for (`src/host/build-info.ts` reads it and
+ * compares it with the mtime of its own file).
+ *
+ * Git is optional (a tarball, a checkout without `.git`): the sha degrades to
+ * `unknown` and the timestamp still separates two generations.
+ */
+function buildStamp() {
+  const builtAt = new Date().toISOString()
+  let sha = 'unknown'
+  try {
+    const resolved = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      // stderr is dropped on purpose: a missing git is expected, not an error.
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    if (resolved !== '') sha = resolved
+  } catch {
+    // keep 'unknown'
+  }
+  return `${sha}@${builtAt}`
+}
+
+const BUILD = buildStamp()
+/** Both halves carry the stamp: one value, one generation. */
+const BUILD_DEFINE = { __INKFLOW_BUILD__: JSON.stringify(BUILD) }
 
 /**
  * Browser platform module table. Everything here is provided by the DSH web
@@ -63,9 +98,10 @@ async function buildHost() {
     platform: 'node',
     target: 'node22',
     sourcemap: false,
+    define: BUILD_DEFINE,
     logLevel: 'warning',
   })
-  console.log('built lib/index.js (host, esm)')
+  console.log(`built lib/index.js (host, esm) ${BUILD}`)
 }
 
 async function buildClient() {
@@ -85,13 +121,14 @@ async function buildClient() {
     charset: 'utf8',
     define: {
       'process.env.NODE_ENV': '"production"',
+      ...BUILD_DEFINE,
     },
     banner: { js: clientBanner },
     footer: { js: clientFooter },
     sourcemap: false,
     logLevel: 'warning',
   })
-  console.log('built lib/client.js (client, module-loader factory)')
+  console.log(`built lib/client.js (client, module-loader factory) ${BUILD}`)
 }
 
 await buildHost()
