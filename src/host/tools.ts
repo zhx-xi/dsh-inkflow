@@ -229,6 +229,17 @@ function optionalString(value: unknown): string | undefined {
 }
 
 /**
+ * The non-blocking findings an init result carries (issue #89), as records.
+ *
+ * Rendered rather than thrown away: a warning the model cannot see is the same
+ * silence the issue is about, and the fix steps are the only actionable part.
+ */
+function warningsOf(value: Json): Json[] {
+  const warnings = value['warnings']
+  return Array.isArray(warnings) ? warnings.map((warning) => asRecord(warning)) : []
+}
+
+/**
  * Render a refused volume/chapter operation: the code, what it means, whether the
  * tree is whole, and the undo steps when there was a rollback. The rollback
  * report is the part the model must not swallow — "it failed" and "it failed and
@@ -323,12 +334,20 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           return text(lines)
         }
         const counts = asRecord(asRecord(v['index'])['counts'])
-        return text([
+        const lines = [
           `InkFlow project: ${String(v['label'])} (state: ${String(v['state'] ?? 'usable')})`,
           `root: ${String(v['root'])}`,
           `chapters ${String(counts['chapters'] ?? 0)} · characters ${String(counts['characters'] ?? 0)} · world ${String(counts['worldEntries'] ?? 0)} · outlines ${String(counts['outlineNodes'] ?? 0)}`,
           `index: ${asRecord(v['index'])['dbExists'] === true ? `built ${String(asRecord(v['index'])['builtAt'] ?? '?')}` : 'missing (run inkflow_index_rebuild)'}`,
-        ])
+        ]
+        if (v['titleSuspicious'] === true) {
+          lines.push(
+            `Warning: the inkflow.json title looks like UTF-8 bytes read back as GBK ("${String(v['label'])}"). ` +
+              'This is what a PowerShell 5 `Set-Content`/`echo` (default ANSI code page) or a GBK-default editor writes. ' +
+              'The book is still usable; tell the user the title is garbled and offer to write it again as UTF-8 without BOM.',
+          )
+        }
+        return text(lines)
       },
     },
     execute: async (args, exec) => {
@@ -353,6 +372,10 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         indexDirRecreated: probe.indexDirRecreated,
         projectSchemaVersion: probe.meta?.schemaVersion ?? FILE_SCHEMA_VERSION,
         meta: probe.meta ?? {},
+        // Issue #89: the title looks like a GBK round-trip accident (a file this
+        // plugin did not write). Reported so the model can relay it; it changes
+        // neither `state` nor what the tools below are allowed to do.
+        ...(probe.titleSuspicious === true ? { titleSuspicious: true } : {}),
         indexSchemaVersion: INDEX_SCHEMA_VERSION,
         index: {
           dbFile: index.dbFile,
@@ -639,6 +662,12 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
         if (v['gitInit'] === 'created') {
           lines.push('Ran `git init` (no commit, no remote, no identity config): the first commit is yours to make.')
         }
+        for (const warning of warningsOf(v)) {
+          lines.push(
+            `Warning ${String(warning['code'])}: ${String(warning['message'])}`,
+            `  fix: ${String(warning['hint'] ?? '')}`,
+          )
+        }
         for (const notice of (Array.isArray(v['notices']) ? v['notices'] : []).map(String)) lines.push(`Note: ${notice}`)
         return text(lines)
       },
@@ -680,6 +709,10 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
           gitInit: result.gitInit,
           missing: result.probe.missing,
           reasons: result.probe.reasons,
+          // Issue #89: the read-back verdict on the meta this call wrote, plus
+          // anything about it the user has to decide on. Neither is an error.
+          ...(result.metaVerified === undefined ? {} : { metaVerified: result.metaVerified }),
+          warnings: result.warnings,
         }
       }
 

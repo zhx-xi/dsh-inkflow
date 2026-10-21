@@ -157,6 +157,14 @@ export { inspectProject } from './project.js'
 export type { ProjectProbe, ProjectState } from './project.js'
 
 /**
+ * GBK mojibake detection (issue #89): a pure function over the title text, so the
+ * tests can pin the precision bar (genuine Chinese/Japanese/emoji must not trip
+ * it) without building a project on disk.
+ */
+export { MIN_NON_ASCII_RATIO, MIN_SIGNATURE_FEATURES, describeEncodingSuspicion, looksLikeGbkMojibake } from './encoding.js'
+export type { EncodingSuspicion } from './encoding.js'
+
+/**
  * Chapter search (issue #22): the read-only query half of `chapters_fts`.
  * Exported because the panel's future search box reuses it in-process, so this
  * is not a test-only surface — the tool and the tests drive the same function.

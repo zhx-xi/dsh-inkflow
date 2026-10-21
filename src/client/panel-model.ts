@@ -52,6 +52,12 @@ export interface StatusValue {
   state?: string
   usable?: boolean
   readOnly?: boolean
+  /**
+   * The meta parses but its title carries GBK round-trip artifacts (issue #89):
+   * a file this plugin did not write. A hint beside the title, never a gate
+   * state — the Host reports it only when the title is genuinely suspicious.
+   */
+  titleSuspicious?: boolean
   checks?: ProjectChecks
   missing?: string[]
   actions?: WorkspaceAction[]
@@ -114,6 +120,8 @@ export interface PanelGate {
   root: string | null
   usable: boolean
   readOnly: boolean
+  /** The title looks like a GBK round-trip accident (issue #89); cosmetic only. */
+  titleSuspicious: boolean
   missing: string[]
   actions: WorkspaceAction[]
   reasons: string[]
@@ -219,6 +227,7 @@ export function readGate(result: InternalResult<StatusValue> | null): PanelGate 
     root: null,
     usable: false,
     readOnly: false,
+    titleSuspicious: false,
     missing: [],
     actions: [],
     reasons: [],
@@ -240,6 +249,7 @@ export function readGate(result: InternalResult<StatusValue> | null): PanelGate 
       root: optionalString(value.root),
       usable: state === 'usable',
       readOnly: value.readOnly === true,
+      titleSuspicious: value.titleSuspicious === true,
       missing: asStringArray(value.missing),
       actions: asActions(value.actions),
       reasons: asStringArray(value.reasons),
@@ -264,6 +274,27 @@ export function readGate(result: InternalResult<StatusValue> | null): PanelGate 
     hint: optionalString(error?.['hint']),
     errorCode: optionalString(error?.['code']),
   }
+}
+
+/**
+ * The tooltip behind the small marker next to a suspicious book title (issue #89).
+ *
+ * Wording matters here: the panel cannot fix the file, and "your title is wrong"
+ * without a way out is noise. So it names the cause (an encoding accident) and the
+ * two real exits — rewrite it through the tool surface, or edit the file as UTF-8.
+ */
+export const TITLE_SUSPICION_NOTE =
+  '书名疑似编码乱码：可在编辑器里重写或手动修正 inkflow.json（必须 UTF-8 无 BOM）'
+
+/**
+ * The marker's tooltip, or `null` when there is nothing to say.
+ *
+ * A hint, not a state: it is shown beside the title and blocks nothing — a book
+ * with a garbled name is still editable, and refusing to open it would punish the
+ * author for a file some other tool wrote.
+ */
+export function describeTitleSuspicion(gate: PanelGate): string | null {
+  return gate.titleSuspicious ? TITLE_SUSPICION_NOTE : null
 }
 
 /**

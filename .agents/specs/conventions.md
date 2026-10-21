@@ -107,6 +107,25 @@
 
 **实现状态**：向导当前只写 `schemaVersion` / `title` / `author` / `createdAt`（`src/host/workspace.ts` 的 `metaBody`）；`projectId` 的生成尚未落地（归 #40，共享库需要它区分来源）。
 
+#### 3.1.1 写入后回读校验与编码可疑（issue #89）
+
+写出去 ≠ 读回来是同一份。`inkflow_project_init` 在 apply 结束后**重新读一次** `inkflow.json`，把 `title` 与本次请求的 `title` 比较（**正规化**：`trim` + 连续空白折叠 + NFC），结果作为**两个非致命字段**返回，调用本身仍是 `ok: true`：
+
+| 字段 | 取值 | 语义 |
+|---|---|---|
+| `metaVerified` | `true` / `false` / **缺省** | 请求带 `title` 时给出比较结果；未带 `title` 时缺省——没有可比的东西，就不声称校验过 |
+| `warnings[]` | `{ code, message, hint, requested?, onDisk?, title?, hits? }` | 只读提示，供模型原样转述；不改判定、不阻断后续操作 |
+
+| 告警码 | 触发条件 | 附带证据 | 回滚 / 改写文件 |
+|---|---|---|---|
+| `META_READBACK_MISMATCH` | 请求的 `title` 与磁盘上的 `title`（正规化后）不一致 | `requested` / `onDisk`（各截断 120 字符） | **否**：向导只替换「不可用」的 meta，可用的文件原样保留 |
+| `META_ENCODING_SUSPECT` | 磁盘上的 `title` 命中 GBK 乱码判据（`src/host/encoding.ts`） | `title` 与 `hits[]`（命中的误读字节类，如 `lead-e4`） | **否** |
+
+- 正规化只抹平**格式**差异（首尾空白、连续空白、全角空格 `U+3000`、Unicode 组合形式）；可打印内容不同就是真差异，不能靠「看起来差不多」放过。
+- **手写文件必须 UTF-8（无 BOM）**：PowerShell 5 的 `Set-Content` / `echo` 默认 ANSI（中文 Windows 上是 GBK），会把 `人在蜀山，我是掌门` 写成 `浜哄湪铚€灞憋紝鏄帉闂?`。插件不阻止别人用错编码写文件，但会在回读与只读投影里明确报告，而不是把乱码当书名用。
+- 乱码判据要**两个条件同时成立**：≥2 个**不同**误读字节类，且命中字符占非 ASCII 字符 **≥30%**。只看「非 ASCII 占比」会把每个中文书名都判可疑；只看单个特征字符会把「涓流」「河浜」这类正常书名误报——**宁漏不误报**（误报会骚扰所有正常书名）。
+- `titleSuspicious` 只出现在**只读**投影里（`GET /inkflow/internal/status` 的 `value`、`inkflow_project_status` 的返回、面板标题旁的标记），**不参与四态判定**：书名乱码的书仍然是 `usable`，照常可读可写。
+
 ### 3.2 正文 `chapters/**/*.md`
 
 ```markdown

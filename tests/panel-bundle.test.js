@@ -304,3 +304,37 @@ test('PANEL_TABS leaves unimplemented pages disabled with their release note', (
   assert.deepEqual(disabled.map((tab) => tab.id), ['settings', 'outline', 'foreshadowing'])
   for (const tab of disabled) assert.equal(tab.note, '0.2.0 起', `tab ${tab.id} must say when it arrives`)
 })
+
+test('the client bundle ships the title-suspicion tooltip (issue #89)', () => {
+  // The marker lives in the View, the wording in the model: both have to reach
+  // the artifact DSH loads, or the Host flags a garbled title nobody ever sees.
+  const text = readBundle()
+  assert.match(text, /书名疑似编码乱码/, 'the tooltip text must be in lib/client.js')
+  assert.match(text, /UTF-8 无 BOM/, 'the tooltip must name the fix')
+})
+
+test('readGate carries titleSuspicious and describeTitleSuspicion words it (issue #89)', () => {
+  const { readGate, describeTitleSuspicion } = model
+  // A hand-written meta whose title is UTF-8 read back as GBK: the Host reports
+  // it beside the gate, and the panel only adds a marker — it never blocks.
+  const flagged = readGate({
+    ok: true,
+    status: 200,
+    value: { label: '浜哄湪铚€灞憋紝鏄帉闂?', state: 'usable', usable: true, titleSuspicious: true },
+  })
+  assert.equal(flagged.titleSuspicious, true)
+  assert.equal(flagged.usable, true, 'a suspicious title is not a gate state')
+  const note = describeTitleSuspicion(flagged)
+  assert.equal(typeof note, 'string')
+  assert.match(note, /乱码/)
+  assert.match(note, /UTF-8/)
+
+  const plain = readGate({ ok: true, status: 200, value: { label: '蜀山', state: 'usable', usable: true } })
+  assert.equal(plain.titleSuspicious, false)
+  assert.equal(describeTitleSuspicion(plain), null, 'an ordinary title renders no marker')
+
+  // The refusal envelope never carries it: only a parseable meta can be judged.
+  const refused = readGate({ ok: false, status: 200, error: { code: 'NOT_AN_INKFLOW_PROJECT', state: 'needs-setup' } })
+  assert.equal(refused.titleSuspicious, false)
+  assert.equal(describeTitleSuspicion(readGate(null)), null)
+})
