@@ -110,3 +110,17 @@ test('extra required checks are reported but never fail the gate', () => {
   assert.equal(result.ok, true)
   assert.deepEqual(result.extraContexts, ['e2e'])
 })
+
+test('apply carries over an already-enabled review requirement', () => {
+  // PUT /protection replaces the whole object: the CI gate must not delete a
+  // "require 1 approval" rule it does not own (review finding S1).
+  const withReviews = protectionPayload(undefined, {
+    required_pull_request_reviews: { dismiss_stale_reviews: true, required_approving_review_count: 2 },
+  })
+  assert.deepEqual(withReviews.required_pull_request_reviews, {
+    dismiss_stale_reviews: true,
+    required_approving_review_count: 2,
+  })
+  // Nothing enabled today stays nothing.
+  assert.equal(protectionPayload().required_pull_request_reviews, null)
+})

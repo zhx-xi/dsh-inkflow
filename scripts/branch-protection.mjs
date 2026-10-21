@@ -1,19 +1,27 @@
 /**
  * Branch-protection CLI: the only place that talks to GitHub.
  *
- *   node scripts/branch-protection.mjs check [--tolerant] [--json] [--repo O/R] [--branch main]
- *   node scripts/branch-protection.mjs apply [--dry-run] [--repo O/R] [--branch main]
+ *   node scripts/branch-protection.mjs check [--tolerant] [--json] [--repo O/R] [--branch main] [--fixture FILE]
+ *   node scripts/branch-protection.mjs apply [--dry-run] [--repo O/R] [--branch main] [--fixture FILE]
  *
  * `check` is read-only and wired into `pnpm run check` in `--tolerant` mode: a
  * machine without the gh CLI, without a login or without network prints
- * `SKIP …（未验证）` and exits 0, because the local gate must stay runnable
- * offline. SKIP is NOT a pass — claiming "the gate is verified" requires one run
- * without `--tolerant` (see .agents/constitution/engineering-discipline.md §9.5).
+ * `SKIP …（未验证）` and exits **0**, because the local gate must stay runnable
+ * offline. Tolerance only covers "no verdict could be obtained" — a protection
+ * payload that was read successfully and does not match still exits 1.
  *
  * `apply` is the only writer and needs admin on the repository. It is idempotent:
- * it PUTs the full expected payload and then re-reads to prove the result.
+ * it PUTs the expected payload, re-reads to prove the result, and carries over
+ * any pull-request review requirement that is already enabled so running it
+ * never silently removes a stricter setting somebody turned on by hand.
+ *
+ * Test seams (used by tests/branch-protection-cli.test.js):
+ *   --fixture FILE   read the protection payload from a file instead of gh
+ *   INKFLOW_GH=name  the gh executable to spawn (default `gh`)
  */
+import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+
 import { evaluateProtection, flattenProtection, protectionPayload } from './branch-protection-rules.mjs'
 
 const argv = process.argv.slice(2)
@@ -28,6 +36,9 @@ const branch = valueOf('--branch', 'main')
 const tolerant = has('--tolerant')
 const asJson = has('--json')
 const dryRun = has('--dry-run')
+const fixture = valueOf('--fixture', null)
+/** `--fixture` keeps the exit-code contract testable without a network or a token. */
+const ghBinary = process.env['INKFLOW_GH'] ?? 'gh'
 
 /** Resolve `owner/name` from --repo, else from the origin remote of the current tree. */
 function resolveRepo() {
@@ -41,15 +52,23 @@ function resolveRepo() {
 }
 
 function gh(args, input) {
-  const result = spawnSync('gh', args, { encoding: 'utf8', input })
+  const result = spawnSync(ghBinary, args, { encoding: 'utf8', input })
   const stderr = (result.stderr ?? '').trim()
   const stdout = (result.stdout ?? '').trim()
-  if (result.error) return { ok: false, reason: `gh CLI unavailable (${result.error.message})`, stdout, stderr }
-  if (result.status !== 0) return { ok: false, reason: stderr || `gh exited with ${result.status}`, stdout, stderr }
+  if (result.error) return { ok: false, reason: `${ghBinary} unavailable (${result.error.message})`, stdout, stderr }
+  if (result.status !== 0) return { ok: false, reason: stderr || `${ghBinary} exited with ${result.status}`, stdout, stderr }
   return { ok: true, stdout, stderr }
 }
 
-function readProtection(repo) {
+/** The GitHub payload, from `--fixture` when given, else from the API. */
+function readProtectionApi(repo) {
+  if (fixture !== null) {
+    try {
+      return { ok: true, api: JSON.parse(readFileSync(fixture, 'utf8')) }
+    } catch (error) {
+      return { ok: false, reason: `could not read fixture ${fixture} (${error.message})` }
+    }
+  }
   const result = gh(['api', `repos/${repo}/branches/${branch}/protection`])
   if (!result.ok) return { ok: false, reason: result.reason }
   try {
@@ -80,9 +99,16 @@ function report(actual, repo) {
   return ok
 }
 
+/**
+ * "No verdict" — and it must not fail the local gate. Returning `true` here is
+ * the whole point of `--tolerant`: a laptop without gh still runs `pnpm run
+ * check` to completion, and the printed wording says 未验证 so nobody reads the
+ * SKIP line as a pass.
+ */
 function skip(reason) {
   console.log(`SKIP branch-protection: ${reason}（未验证）`)
   console.log('      run `node scripts/branch-protection.mjs check` with a logged-in gh to turn this into a PASS/FAIL')
+  return true
 }
 
 function checkCommand() {
@@ -94,7 +120,7 @@ function checkCommand() {
     console.error(`✗ ${error.message}`)
     return false
   }
-  const current = readProtection(repo)
+  const current = readProtectionApi(repo)
   if (!current.ok) {
     if (tolerant) return skip(current.reason)
     console.error(`✗ could not read branch protection for ${repo} ${branch}: ${current.reason}`)
@@ -104,8 +130,18 @@ function checkCommand() {
 }
 
 function applyCommand() {
-  const repo = resolveRepo()
-  const payload = protectionPayload()
+  let repo
+  try {
+    repo = resolveRepo()
+  } catch (error) {
+    console.error(`✗ ${error.message}`)
+    return false
+  }
+  // Carry over a review requirement that is already on: `apply` owns the CI
+  // gate, and an unrelated stricter setting must not disappear as a side effect
+  // (review finding S1).
+  const current = readProtectionApi(repo)
+  const payload = protectionPayload(undefined, current.ok ? current.api : undefined)
   if (dryRun) {
     console.log(`would PUT repos/${repo}/branches/${branch}/protection`)
     console.log(JSON.stringify(payload, null, 2))
@@ -118,12 +154,12 @@ function applyCommand() {
   }
   // Re-read instead of trusting the PUT response: the read path is what `check`
   // and the evaluator see, so only that proves the gate is now in force.
-  const current = readProtection(repo)
-  if (!current.ok) {
-    console.error(`✗ applied, but the read-back failed: ${current.reason}`)
+  const after = readProtectionApi(repo)
+  if (!after.ok) {
+    console.error(`✗ applied, but the read-back failed: ${after.reason}`)
     return false
   }
-  return report(flattenProtection(current.api), repo)
+  return report(flattenProtection(after.api), repo)
 }
 
 let passed

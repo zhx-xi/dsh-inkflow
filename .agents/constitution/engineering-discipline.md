@@ -148,13 +148,15 @@
 
 ### 9.5 CI 门禁的机制保障
 
-「CI 绿才能合」如果只写在本文件里，它就是一句承诺——GitHub 的一个设置页改动就能让它失效，而仓库里没有任何东西会报错。所以门禁必须同时是三样东西：**强制配置 + 仓库内可验证 + 应急出口有留痕**。
+「CI 绿才能合」如果只写在本文件里，它就是一句承诺——GitHub 的一个设置页改动就能让它失效，而仓库里没有任何东西会报错。所以门禁必须同时是三样东西：**强制配置 + 仓库内可验证 + 应急出口有留痕**。决策与备选见 [ADR-0011](../adrs/0011-ci-merge-gate.md)。
 
-- **必过检查**（缺一不可，名称即 workflow 里的 job `name:`）：`lint`、`test (ubuntu-latest)`、`test (windows-latest)`、`docs`、`package`。改 job 名等于删门禁，必须同步改 [scripts/branch-protection-rules.mjs](../../scripts/branch-protection-rules.mjs) 的 `EXPECTED`。
-- **期望值单一来源**：`EXPECTED` 里集中定义 `strict: true`（分支须与 main 同步）、`enforce_admins: true`（管理员也不能绕过）、禁 force push / 禁删分支、`required_conversation_resolution: true`。文档不复制这份清单，只指向它。
-- **验证**：`node scripts/branch-protection.mjs check`（只读，PASS/FAIL 逐项给理由）。它接在 `pnpm run check` 末端并以 `--tolerant` 运行：缺 gh / 未登录 / 无网络时打印 `SKIP …（未验证）` 并 exit 0，因为本地全量门禁必须在离线机器上可跑。
+- **必过检查的清单只有一处**：[scripts/branch-protection-rules.mjs](../../scripts/branch-protection-rules.mjs) 的 `REQUIRED_CONTEXTS`。本文不复制它——抄一份就等于埋一个漂移源。改 job 名等于删门禁，必须同步改那个常量，改完用下面的 `check` 证明。
+- **期望值单一来源**：同一个文件里的 `EXPECTED` 集中定义 `strict: true`（分支须与 main 同步）、`enforce_admins: true`（管理员也不能绕过）、禁 force push / 禁删分支、`required_conversation_resolution: true`。
+- **验证**：`node scripts/branch-protection.mjs check`（只读，PASS/FAIL 逐项给理由）。它接在 `pnpm run check` 末端并以 `--tolerant` 运行：缺 gh / 未登录 / 无网络时打印 `SKIP …（未验证）` 并 **exit 0**，因为本地全量门禁必须在离线机器上可跑。`--tolerant` 只覆盖「拿不到结论」，**读到了但不符照样 exit 1**。
 - **SKIP 不等于通过**：声明「门禁已验证」前，必须跑一次不带 `--tolerant` 的 `check` 并引用输出。
-- **应用**：`node scripts/branch-protection.mjs apply`（幂等，需仓库 admin；写完自动回读再评估，`--dry-run` 只打印 payload）。
+- **应用**：`node scripts/branch-protection.mjs apply`（幂等，需仓库 admin；写完自动回读再评估，`--dry-run` 只打印 payload）。它会把已开启的「必须评审」要求原样保留，不会顺手删掉自己不管的设置。
 - **唯一应急出口**：当 CI 自身坏在 main 上、导致所有 check 永久 pending 时（此时任何 PR 都无法合并），可 `gh api -X DELETE repos/OWNER/REPO/branches/main/protection` 临时解除阻塞，修完后**立刻** `apply` 并用 `check` 证明恢复；全过程在对应 issue 留时间、原因与恢复证据。
+- **平台前提**：分支保护需要仓库为 **public** 或账户付费（private + 免费额度会 403 `Upgrade to GitHub Pro`）。仓库若转 private 而账户没升级，`check` 只能走「读不到 → SKIP」，漂移检测会**静默消失**——转换前先确认账号能力。
 - **触发面**（`.github/workflows/ci.yml` 顶部有注释）：PR 面向 `main` 时跑 `pull_request`（合并前门禁）；合并后 `main` 跑 `push`（验证真正落地的 squash commit）；`merge_group` 为 merge queue 预留——GitHub 只在仓库启用队列时派发该事件。
-- **分支落后的同步手法**（`strict: true` + 禁 force push 同时生效时的唯一做法）：`gh pr update-branch <n> --rebase`（由 GitHub 侧改写分支，不受 `allow_force_pushes` 限制），或本地 `git merge origin/main` + **普通** `git push`。**不要** `git push --force`：会被保护规则拒绝，而"分支不落后"又是合并的前提。同步后 5 个 check 全部重跑，等于重新过一遍门禁。
+- **分支落后的同步手法**（`strict: true` 下的常规操作）：`gh pr update-branch <n> --rebase`，或本地 `git merge origin/main` + **普通** `git push`。保护规则只作用于 `main`，技术上 `--force-with-lease` 也能推进 PR 头分支，但**不用**它：改写头分支会让已发出的评审意见与 diff 行号错位，评审锚点就丢了。同步后 5 个 check 全部重跑，等于重新过一遍门禁。
+- **与 `AGENTS.md` §9.5 的区别**：本节讲 CI 门禁（GitHub 平台配置），`AGENTS.md` §9.5 讲文档门禁（D1–D7）。引用时带限定词，避免同号混淆。

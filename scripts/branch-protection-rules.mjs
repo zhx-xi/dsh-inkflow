@@ -115,15 +115,39 @@ export function evaluateProtection(actual, expected = EXPECTED) {
  * The PUT body for `apply`. Kept next to the expectation so the write path and
  * the read path can never drift: `flattenProtection(protectionPayload())` must
  * evaluate clean, and a test asserts exactly that.
+ *
+ * `PUT /protection` replaces the whole object, so every field this gate does not
+ * own has to be carried over explicitly. Pull-request review is the dangerous one
+ * (review finding S1): sending `null` blind would delete a "require 1 approval"
+ * rule somebody enabled by hand, while `check` kept saying PASS. Only the
+ * documented scalar PUT fields are mirrored; an unknown shape degrades to "no
+ * review requirement", which is what the repository has today.
  */
-export function protectionPayload(expected = EXPECTED) {
+export function protectionPayload(expected = EXPECTED, currentApi = undefined) {
   return {
     required_status_checks: { strict: expected.strict, contexts: [...expected.requiredContexts] },
     enforce_admins: expected.enforceAdmins,
-    required_pull_request_reviews: null,
+    required_pull_request_reviews: carryReviewRequirement(currentApi),
     restrictions: null,
     allow_force_pushes: expected.allowForcePushes,
     allow_deletions: expected.allowDeletions,
     required_conversation_resolution: expected.requiredConversationResolution,
   }
+}
+
+const REVIEW_FLAGS = ['dismiss_stale_reviews', 'require_code_owner_reviews', 'require_last_push_approval']
+const REVIEW_COUNT = 'required_approving_review_count'
+
+function carryReviewRequirement(currentApi) {
+  const reviews = currentApi?.required_pull_request_reviews
+  if (typeof reviews !== 'object' || reviews === null) return null
+  const carried = {}
+  for (const flag of REVIEW_FLAGS) {
+    if (typeof reviews[flag] === 'boolean') carried[flag] = reviews[flag]
+  }
+  if (typeof reviews[REVIEW_COUNT] === 'number') carried[REVIEW_COUNT] = reviews[REVIEW_COUNT]
+  // An enabled-but-unrecognised shape must not be silently dropped either: keep
+  // at least one approval so a stricter rule stays stricter.
+  if (Object.keys(carried).length === 0) return { [REVIEW_COUNT]: 1 }
+  return carried
 }
