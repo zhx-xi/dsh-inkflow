@@ -109,7 +109,7 @@
 |---|---|---|
 | 卷章 catalog + `volumeId` | 【未实现】：无读写/校验/重建 | M5 #15 |
 | 面板入口 `conversation.view` | 【未实现】：仍注册 `sidebar.panellist` + `main` | M12 #17 |
-| `/inkflow/internal/*` 私有通道 | 【未实现】：只有 `/inkflow/api/*` fail-closed 占位 | M12 #18 |
+| 搜索的正文全文检索 | 【未实现】：`/search` 只匹配章节元数据，标 `searchUnavailable` | M4 #22 |
 | 索引 v2（九目录全实体 + 提及） | 【未实现】：只覆盖章/角色/世界观/大纲 | M4/M18 #23/#29 |
 | 共享库与 `origin` | 【未实现】 | M17 #40 |
 | OVK 语义检索 | 【未实现】：当前只有 FTS5 | M20 #41 |

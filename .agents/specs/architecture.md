@@ -31,7 +31,7 @@
             foreshadowing/ timeline/ relations/ facts/ library/ index/ }
 ```
 
-**实现状态**：工具与索引已按上图注册；`/inkflow/internal/*` 与 `conversation.view` 尚未落地（归 #17 / #18），当前构建仍是 `/inkflow/api/*`（fail-closed 占位）+ `sidebar.panellist`/`main` 两处注册。
+**实现状态**：工具与索引已按上图注册，`/inkflow/internal/*` 私有通道已落地（四条只读路由，见 §4.2 与 [conventions.md](conventions.md) §6.2）；`conversation.view` 入口尚未注册（归 #17），当前构建仍是 `sidebar.panellist`/`main` 两处 root 作用域注册，因此面板还拿不到 `sessionId`，会显示「无法确定当前会话的项目」。
 
 ## 2. 存储决策（ADR-0005）
 
@@ -73,11 +73,20 @@
 
 `ctx.webServer.register({kind:'prefix', path:'/inkflow', handler})`。这是**面板与 Host 之间的内部实现**，不是对外 API（[ADR-0008](../adrs/0008-panel-data-channel.md) D2）：不版本化、不提供 OpenAPI、不承诺兼容、不对外文档化；`/inkflow/api/*` 一律 404。
 
-**零鉴权**，因此 fail-closed：`Host` 必须 loopback；`Origin` 若存在必须 loopback（写路由强制要求存在）；方法**逐路由声明**（读只 GET，写只 POST + `Content-Type: application/json`）；不发 CORS 头；统一 `no-store` + `nosniff`。
+**安全清单**（fail-closed；`src/host/routes.ts` 在请求入口按序执行，命中即返回）：
 
-请求只携带 `sessionId`，**永不接受路径参数**（`root`/`path`/`cwd` → 400 `unexpected-path-param`，且不触达文件系统）。Host 按序解析：`workspaceRegistry` 的 `sessionIds → Workspace.path` → `workingDirectory.get(sessions.get(id))` → 失败即 `200 + ok:false + NO_SESSION_CONTEXT`（零写盘）。解析出的根仍过四态门禁，面板与工具看到同一份 `state`/`checks`/`missing`/`actions`。
+1. `Host` 必须 loopback → 否则 403 `forbidden-host`（防 DNS rebinding）。
+2. `Origin` 存在时必须 loopback → 否则 403 `forbidden-origin`（防跨站 fetch）。
+3. socket 对端地址非空时必须 loopback → 否则 403 `forbidden-remote`。
+4. 方法**逐路由声明**（`ROUTES[].methods`）：P0 读路由只有 GET，其余动词 405 + `Allow` 头。
+5. 路径参数一律拒绝：`root`/`path`/`cwd`/`workspace`/`projectRoot` 出现在 query 或 body → 400 `ROOT_PARAM_NOT_ALLOWED`（`reason: 'unexpected-path-param'`），判定在路由匹配与任何文件 IO 之前。
+6. 请求体 ≤64 KiB（超限 413）且必须是 JSON 对象；未知路径 404。
+7. 响应 `Cache-Control: no-store` + `X-Content-Type-Options: nosniff`，信封 `{ok:true,value}` / `{ok:false,error:{code}}`，**不发任何 CORS 头**。
+8. 写路由（本期没有）：只 POST + `Content-Type: application/json`（否则 415）+ **必须带 loopback `Origin`**（否则 403）。
 
-**实现状态**：`/inkflow/internal/*` 尚未落地（归 #18）。当前构建只注册 `/inkflow/api/status`、`/inkflow/api/chapters`，一律返回 `200 + ok:false + NO_SESSION_CONTEXT`，不读查询串、不读插件状态、不创建任何文件（详见 [conventions.md](conventions.md) §6.2）——这是过渡期占位，不在目标契约内。
+请求只携带 `sessionId`（query 或 `x-inkflow-session`）。Host 按序解析：`workspaceRegistry.list()` 的 `sessionIds → Workspace.path` → `workingDirectory.get(sessions.get(id))` → `Session.header.cwd` → 失败即 `200 + ok:false + NO_SESSION_CONTEXT`（附 `actions[]`，零写盘）；`session-` 前缀的两种写法都匹配。解析出的目录经 `findProjectRoot` 向上找书，再 `inspectProject(root, { recreateIndexDir: false })` 过四态门禁——面板与工具看到同一份 `state`/`checks`/`missing`/`actions`（D5）。
+
+路由清单与错误码见 [conventions.md](conventions.md) §6.2。投影实现在 `src/host/internal.ts`，全部只读：关掉 `index/` 的自动放宽、卷章树走 `readCatalog` 的 `.md` 投影、索引只以 `readOnly` 打开、章节文件只读且必须落在 `chapters/` 内。面板**不重建索引、不修复项目**；`index/` 缺失时 `/status` 报 `index.dbExists: false`，卷章树仍从文件投影得到。
 
 ### 4.3 Client 槽位 — `ctx.slots`
 
@@ -208,7 +217,7 @@
 
 ### 5.4 面板通道：私有、按路由声明方法
 
-面板与 Host 之间只有一条**私有内部通道**（[ADR-0008](../adrs/0008-panel-data-channel.md)）：不对外、不版本化、不接受路径参数、逐路由声明方法（读 GET / 写 POST + JSON）。写操作（如"确认并应用一次向导动作"）必须由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做只读模式下的自动修复。写入真相仍走工具 → `io.ts`。
+面板与 Host 之间只有一条**私有内部通道**（[ADR-0008](../adrs/0008-panel-data-channel.md)）：不对外、不版本化、不接受路径参数、逐路由声明方法（读 GET / 写 POST + JSON）。写操作（如"确认并应用一次向导动作"）必须是 POST + `Content-Type: application/json` + 带 loopback `Origin`，并由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做只读模式下的自动修复。写入真相仍走工具 → `io.ts`。
 
 ## 6. 模块边界
 
@@ -232,8 +241,10 @@
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
 | `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 6 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search`） | 直接扫目录（走 indexer/project/workspace） |
-| `src/host/routes.ts` | 私有内部通道 + 安全校验（目标形态；当前是 `/inkflow/api/*` 占位） | 业务规则、写真相文件 |
-| `src/client/index.tsx` | 视图、槽位注册、`fetch` 私有通道 | 业务规则、文件 IO |
+| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个只读投影 | HTTP 加固、写任何文件、重建索引 |
+| `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封 | 业务规则、写真相文件 |
+| `src/client/index.tsx` | 视图、槽位注册、`fetchInternal` 调私有通道 | 业务规则、文件 IO |
+| `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路 | 拼路径参数、文件 IO |
 
 ## 7. 数据流
 
@@ -270,8 +281,8 @@
 
 | 契约 | 现状 | 归属 |
 |---|---|---|
-| 面板入口 `conversation.view` | 仍注册 `sidebar.panellist` + `main` | #17 |
-| `/inkflow/internal/*` 私有通道 + `sessionId` 解析 | 只有 `/inkflow/api/*` 的 fail-closed 占位 | #18 |
+| 面板入口 `conversation.view` | 仍注册 `sidebar.panellist` + `main`；面板因此还拿不到 `sessionId` | #17 |
+| 搜索的正文全文检索 | `/search` 目前只匹配章节元数据（id/路径/标题），并显式标 `searchUnavailable: true` | #22 |
 | 卷章 catalog + `volumeId` | 未落地；卷归属按目录名推导 | #15 |
 | 索引 v2（九目录全实体 + 提及 + 全实体 FTS） | 只覆盖章/角色/世界观/大纲 | #22 / #23 |
 | 插件级共享库 + `origin` 溯源 | 未落地 | #40 |
@@ -287,7 +298,7 @@
 | 面板视觉（十项目录勾选、章节列表） | 未验证 | 重启后目视 |
 | 向导在运行中的 DSH 里的交互（plan → apply、`git init`） | 契约测试全绿（打 `lib/index.js`），未在重启后的会话里跑过 | 重启后手动跑一次全流程 |
 | 59 万字全量重建耗时 | 未验证 | 用真实库基准（当前样例 7 文件 10ms） |
-| 面板的项目来源（会话 → 工作区） | 未做：路由当前 fail-closed 返回 `NO_SESSION_CONTEXT` | 按会话解析工作区后再镜像工具侧的作用域规则 |
+| 面板的项目来源（会话 → 工作区） | 契约测试全绿（打 `lib/index.js`，含 registry → workingDirectory → header 三级链）；运行中 DSH 未观测 | 重启后在小说会话打开面板，确认 `/inkflow/internal/status` 的 `resolvedFrom` 与 `root` 指向该书 |
 | 增量重建 / 大文件流式解析 | 未做 | P1 |
 | 提案制（改正文需审批） | 未做（原子写入器已由 #14 落地；提案流程在 P3） | P3 |
 | 写作 preset 在真实会话里挂载成功 | 未验证：签名与行名来自 `cordis_inspect_query` 与官方 preset 声明，缺少重启后的名册观测 | 重启后看模式选择里是否出现「InkFlow 写作」，确认工具表无 shell、技能目录有 5 个 `inkflow-*` |

@@ -377,7 +377,7 @@ test('invariants: missing overall outline and volume-in-volume are reported', as
   }
 })
 
-test('http: loopback only, method allowlist, and it never guesses a project', async () => {
+test('http: loopback only, no path parameter, and it never guesses a project', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -397,22 +397,24 @@ test('http: loopback only, method allowlist, and it never guesses a project', as
     // inspects a query-string path again, index/ reappears and the hash moves.
     rmSync(join(root, 'index'), { recursive: true, force: true })
     const before = hashTree(root)
+    // A path parameter is refused before any filesystem access (ADR-0008 D4),
+    // so neither route may read the book the query names.
     const status = await callRoute(
       harness,
-      fakeRequest({ url: `/inkflow/api/status?root=${encodeURIComponent(root)}` }),
+      fakeRequest({ url: `/inkflow/internal/status?root=${encodeURIComponent(root)}` }),
     )
     const chapters = await callRoute(
       harness,
-      fakeRequest({ url: `/inkflow/api/chapters?root=${encodeURIComponent(root)}` }),
+      fakeRequest({ url: `/inkflow/internal/chapters?root=${encodeURIComponent(root)}` }),
     )
 
-    assert.equal(status.status, 200)
+    assert.equal(status.status, 400)
     assert.equal(status.json.ok, false)
-    assert.equal(status.json.error.code, 'NO_SESSION_CONTEXT')
+    assert.equal(status.json.error.code, 'ROOT_PARAM_NOT_ALLOWED')
     assert.equal(status.headers['cache-control'], 'no-store')
-    assert.equal(chapters.status, 200)
+    assert.equal(chapters.status, 400)
     assert.equal(chapters.json.ok, false)
-    assert.equal(chapters.json.error.code, 'NO_SESSION_CONTEXT')
+    assert.equal(chapters.json.error.code, 'ROOT_PARAM_NOT_ALLOWED')
 
     // Neither the query string nor the remembered state may leak into the body.
     assert.equal(JSON.stringify(status.json).includes(root), false)
@@ -421,35 +423,44 @@ test('http: loopback only, method allowlist, and it never guesses a project', as
     assert.equal(hashTree(root), before)
     assert.equal(existsSync(join(root, 'index')), false)
 
-    const rebind = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status', host: 'evil.example.com' }))
+    const rebind = await callRoute(harness, fakeRequest({ url: '/inkflow/internal/status', host: 'evil.example.com' }))
     assert.equal(rebind.status, 403)
     assert.equal(rebind.json.error.code, 'forbidden-host')
 
-    const crossSite = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status', origin: 'https://evil.example.com' }))
+    const crossSite = await callRoute(harness, fakeRequest({ url: '/inkflow/internal/status', origin: 'https://evil.example.com' }))
     assert.equal(crossSite.status, 403)
 
-    const sameOrigin = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status', origin: 'http://127.0.0.1:2149' }))
+    const sameOrigin = await callRoute(harness, fakeRequest({ url: '/inkflow/internal/status', origin: 'http://127.0.0.1:2149' }))
     assert.equal(sameOrigin.status, 200)
+    assert.equal(sameOrigin.json.error.code, 'NO_SESSION_CONTEXT')
 
-    const post = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status', method: 'POST' }))
+    const post = await callRoute(harness, fakeRequest({ url: '/inkflow/internal/status', method: 'POST' }))
     assert.equal(post.status, 405)
 
-    const missing = await callRoute(harness, fakeRequest({ url: '/inkflow/api/nope' }))
+    const missing = await callRoute(harness, fakeRequest({ url: '/inkflow/internal/nope' }))
     assert.equal(missing.status, 404)
+
+    // The old public prefix never was a contract: no alias survives (ADR-0008 D3).
+    for (const legacy of ['/inkflow/api/status', '/inkflow/api/chapters']) {
+      const gone = await callRoute(harness, fakeRequest({ url: legacy }))
+      assert.equal(gone.status, 404, `${legacy} must be gone`)
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('http: an untouched plugin state still refuses instead of inventing a project', async () => {
+test('http: the internal channel refuses a request that names no session', async () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'state'), dir)
-    const status = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status' }))
+    // No sessionId: the channel cannot name a book, and it must say so instead
+    // of falling back to the plugin state file (ADR-0008 D4).
+    const status = await callRoute(harness, fakeRequest({ url: '/inkflow/internal/status' }))
     assert.equal(status.status, 200)
     assert.equal(status.json.ok, false)
     assert.equal(status.json.error.code, 'NO_SESSION_CONTEXT')
-    const chapters = await callRoute(harness, fakeRequest({ url: '/inkflow/api/chapters' }))
+    const chapters = await callRoute(harness, fakeRequest({ url: '/inkflow/internal/chapters' }))
     assert.equal(chapters.status, 200)
     assert.equal(chapters.json.error.code, 'NO_SESSION_CONTEXT')
   } finally {

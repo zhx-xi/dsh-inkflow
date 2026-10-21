@@ -68,7 +68,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | 派生索引 | `<book>/index/inkflow.db`（WAL） | ❌ 只 `.gitkeep` |
 | 插件自身状态（lastProjectRoot，**仅展示、不用于解析项目**） | `$DSH_HOME/inkflow/state.json` | — |
 | 共享库（插件级，跨书复用） | `$DSH_HOME/inkflow/shared/`（【未实现】） | 由用户自建 |
-| 面板通道 | `/inkflow/internal/*`（私有内部通道，**不是对外 API**；【未实现】，当前为 `/inkflow/api/*` fail-closed 占位） | — |
+| 面板通道 | `/inkflow/internal/*`（私有内部通道，**不是对外 API**：不版本化、不文档化、只接受 `sessionId`） | — |
 
 没有「作品库目录」这个配置：**项目在哪由 git 仓库和十个目录自己声明**，由会话的工作目录定位。
 显式传路径的工具参数（`projectRoot` / `root`）必须位于该工作目录子树内，越界或指向系统目录会被拒（`PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`）。
@@ -105,9 +105,11 @@ src/host/              Host 半（DSH Node 进程内）
   preset.ts            写作 preset 声明与注册
   state.ts             插件自身状态（lastProjectRoot，仅展示），原子写
   tools.ts             inkflow_* 工具（当前 6 个）
-  routes.ts            面板私有通道（目标 /inkflow/internal/*；当前为 /inkflow/api/* fail-closed 占位）
+  routes.ts            面板私有通道（/inkflow/internal/*：逐路由声明方法 + loopback/参数加固 + JSON 信封）
+  internal.ts          私有通道的投影层（会话 → 项目解析、门禁清单、status/chapters/chapter/search 只读投影）
 src/client/            Client 半（浏览器 React）
   index.tsx            面板视图与槽位注册（目标 conversation.view；当前 sidebar.panellist + main）
+  internal.ts          `fetchInternal`：只送 sessionId 的私有通道客户端，`{ok,value}` 解包
   context.ts           本插件用到的 DSH Client 表面（slots / layout）
 scripts/build.mjs      esbuild 双半构建（Host ESM + Client module-loader factory）
 tests/                 node:test 契约测试（不依赖 DSH 进程）

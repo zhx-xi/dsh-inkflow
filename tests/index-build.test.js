@@ -138,7 +138,7 @@ async function callChaptersRoute(harness) {
       response.body = payload
     },
   }
-  await route.handler({ url: '/inkflow/api/chapters', method: 'GET', headers: { host: '127.0.0.1:2149' } }, response)
+  await route.handler({ url: '/inkflow/internal/chapters', method: 'GET', headers: { host: '127.0.0.1:2149' } }, response)
   return { status: response.statusCode, json: JSON.parse(response.body) }
 }
 

@@ -390,16 +390,36 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 面板与 Host 之间的数据通道是**内部实现**，不是对外 API（[ADR-0008](../adrs/0008-panel-data-channel.md) D2）：不版本化、不提供 OpenAPI、不承诺兼容；`/inkflow/api/*` 一律 404，不留兼容别名。
 
-| 规则 | 说明 |
-|---|---|
-| 路径 | `/inkflow/internal/<域>`；信封 `{ok:true,value}` / `{ok:false,error:{code}}` |
-| 方法 | **逐路由声明**：读路由只 GET；写路由只 POST，且必须 `Content-Type: application/json`（否则 415）、请求体必须是对象 |
-| 会话来源 | Client 只传 `sessionId`；Host 依次用 ①`workspaceRegistry` 的 `sessionIds → Workspace.path` ②`workingDirectory.get(sessions.get(id))` 解析；都失败 → HTTP 200 + `ok:false` + `NO_SESSION_CONTEXT`，**零写盘** |
-| 路径参数 | `root` / `path` / `cwd` 出现在 query 或 body → 400 `unexpected-path-param`，且不触达文件系统 |
-| 加固 | 继承 [ADR-0004](../adrs/0004-loopback-http.md)：`Host` 必须 loopback；`Origin` 存在时必须 loopback（写路由强制要求存在）；无 CORS 头；`no-store` + `nosniff`；未知路径 404 |
-| 与门禁一致 | 解析出的根仍过四态门禁；非 `usable` 返回同一份结构化清单，面板不自己兜底 |
+**路由表**（P0 全部只读；方法在路由表里逐条声明，未声明的动词 → 405 + `Allow` 头）：
 
-**实现状态**：`/inkflow/internal/*` 尚未落地（归 #18），客户端入口仍是 `sidebar.panellist` + `main`（归 #17 改为 `conversation.view`）。当前构建的 `/inkflow/api/status`、`/inkflow/api/chapters` 一律返回 `200 + ok:false + NO_SESSION_CONTEXT`，且不读查询串、不读插件状态、不创建任何文件——这是过渡期的 fail-closed 占位，不在 ADR-0008 的目标契约内。
+| 路由 | 方法 | 参数 | 成功值 `value` | 专属错误码 |
+|---|---|---|---|---|
+| `/inkflow/internal/status` | GET | `sessionId` | `root`、`label`、`state`、`checks`、`missing`、`actions`、`meta`、`index`（`dbExists`/`schemaMatches`/`builtAt`/`counts`）、`catalog`（`stale`/`volumes`/`chapters`）、`search` | `SESSION_ID_INVALID` |
+| `/inkflow/internal/chapters` | GET | `sessionId` | `volumes[]`（`volumeId`/`dir`/`title`/`order`/`chapters[]`）+ `looseChapters[]` + `catalogStale`、`indexBuilt` | — |
+| `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId` | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
+| `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'` | `400 QUERY_REQUIRED` |
+
+**错误码**（信封 `{ok:true,value}` / `{ok:false,error:{code}}`；失败一律结构化，不抛栈）：
+
+| HTTP | code | 触发条件 |
+|---|---|---|
+| 400 | `ROOT_PARAM_NOT_ALLOWED` | query 或 body 出现 `root`/`path`/`cwd`/`workspace`/`projectRoot`；附 `reason: 'unexpected-path-param'` 与 `param`/`in`；判定在路由匹配与任何文件 IO 之前 |
+| 400 | `SESSION_ID_INVALID` | `sessionId` 形状非法（非 `[A-Za-z0-9._:@-]{1,200}`） |
+| 400 | `QUERY_REQUIRED` / `invalid-body` / `invalid-path-encoding` | `/search` 缺 `q`；请求体不是 JSON 对象；`:id` 百分号编码损坏 |
+| 403 | `forbidden-host` / `forbidden-origin` / `forbidden-remote` | `Host` 非 loopback；`Origin` 存在但非 loopback；socket 对端地址非 loopback |
+| 404 | `not-found` / `chapter-not-found` | 未知路径（含全部 `/inkflow/api/*`）；章节 id 不存在或不在 `chapters/` 内 |
+| 405 | `method-not-allowed` | 动词不在该路由声明的 `methods` 内（响带 `Allow`） |
+| 413 | `payload-too-large` | 请求体 > 64 KiB（`MAX_INTERNAL_BODY_BYTES`） |
+| 200 | `NO_SESSION_CONTEXT` | 缺 `sessionId`，或会话解析不到工作区：`ok:false` + `actions[]`，**零写盘** |
+| 200 | `NOT_AN_INKFLOW_PROJECT` / `PROJECT_NEEDS_REPAIR` / `PROJECT_NEEDS_NEWER_PLUGIN` | 解析到目录但四态门禁非 `usable`：附 `state`/`checks`/`missing`/`actions`/`readOnly`，**零写盘** |
+
+**会话来源**：Client 只传 `sessionId`（query `sessionId` 或 header `x-inkflow-session`）；Host 依次用 ①`workspaceRegistry.list()` 中 `sessionIds` 含该会话的 `Workspace.path` ②`workingDirectory.get(sessions.get(id))` ③`Session.header.cwd`；都失败 → `NO_SESSION_CONTEXT`。会话 id 的 `session-` 前缀两种写法都接受（宿主的 `workspace.json` 用 `session-<uuid>`，会话日志头用裸 `<uuid>`）。解析出的目录再 `findProjectRoot` 向上找书（与工具同一套语义）。
+
+**加固**（继承 [ADR-0004](../adrs/0004-loopback-http.md)）：`Host` 必须 loopback；`Origin` 存在时必须 loopback；socket 对端地址非空时必须 loopback；不发 CORS 头；`Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；请求体 ≤64 KiB 且必须是 JSON 对象。
+
+**只读纪律**：通道不重建索引、不修复项目、不写 `state.json`。门禁以 `inspectProject(root, { recreateIndexDir: false })` 判定（关掉 `index/` 的自动放宽），卷章树走 `readCatalog` 的 `.md` 投影，索引只以 `readOnly` 打开，章节文件只读且必须落在 `chapters/` 内。
+
+**写路由（本期没有）**：只允许 POST，必须 `Content-Type: application/json`（否则 415）且必须带 loopback `Origin`（否则 403）；写动作仍由用户确认后触发（[ADR-0006](../adrs/0006-workspace-contract-v2.md) D3），面板不做自动修复。写真相仍只走工具 → `io.ts`。
 
 ### 6.3 初始化 / 修复向导（plan → apply）
 
@@ -447,7 +467,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `inkflow.json.projectId` | 向导不生成；字段可缺省 | #40 |
 | 索引 v2（九目录全实体 + `entity_mentions` + 全实体 FTS） | 索引 v1 只覆盖章/角色/世界观/大纲/资料路径；章正文检索已可用（§4.1） | #23 |
 | 面板入口 `conversation.view` | Client 仍注册 `sidebar.panellist` + `main` | #17 |
-| `/inkflow/internal/*` 私有通道与 `sessionId` 解析 | 只有 `/inkflow/api/*` 的 fail-closed 占位 | #18 |
+| 搜索的正文全文检索 | `/search` 只匹配章节元数据，并标 `searchUnavailable: true` | #22 |
 | 插件级共享库（`$DSH_HOME/inkflow/shared/`、复制快照、`origin`） | 未实现 | #40 |
 | OVK 语义检索（peer 只读、按章重建、降级 FTS5） | 未实现；当前只有 FTS5 | #41 |
 | 旧库 ETL（43 表 → 文件树） | 未实现 | #51 |

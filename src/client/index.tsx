@@ -5,13 +5,15 @@
  * (see scripts/build.mjs); this file therefore exports the standard Client
  * plugin shape `{inject, apply}` and never touches the module loader itself.
  *
- * The page reads only from the Host's read-only projection
- * (`/inkflow/api/status`, `/inkflow/api/chapters`). It never invents a project:
- * if nothing is selected, it tells the user how to make a directory one.
+ * The page reads only from the Host's private panel channel
+ * (`/inkflow/internal/status`, `/inkflow/internal/chapters`, ADR-0008). It never
+ * names a directory: `fetchInternal` sends the session id and the Host resolves
+ * the book. Without a session the page says exactly that instead of guessing.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ClientContext, SidebarPanelIconProps } from './context.js'
+import { fetchInternal, getActiveSessionId } from './internal.js'
 
 const PANEL_ID = 'inkflow'
 
@@ -19,51 +21,39 @@ type DirChecks = Record<string, boolean>
 
 interface StatusValue {
   pluginVersion: string
-  project: null | {
-    root: string
-    label: string
-    usable: boolean
-    state?: string
-    checks: { git: boolean; dirs: DirChecks; keeps?: DirChecks; meta: boolean }
-    missing: string[]
-    reasons: string[]
-  }
+  root?: string
+  label?: string
+  state?: string
+  checks?: { git: boolean; dirs: DirChecks; keeps?: DirChecks; meta: boolean }
+  missing?: string[]
+  reasons?: string[]
   index?: {
     dbExists: boolean
     schemaMatches: boolean
     builtAt: string | null
     counts: Record<string, number>
   }
-  hint?: string
 }
 
-interface ChapterSummary {
+interface ChapterNode {
   id: string
   path: string
   seq: number | null
   title: string
-  volume: string | null
-  status: string
-  wordCount: number
 }
 
-interface RouteResult<T> {
-  ok: boolean
-  value?: T
-  error?: { code: string; message?: string }
-}
-
-async function getJson<T>(path: string): Promise<RouteResult<T>> {
-  const response = await fetch(path, { headers: { accept: 'application/json' } })
-  const body = (await response.json()) as RouteResult<T>
-  if (!response.ok || body.ok !== true) return { ok: false, error: body.error ?? { code: `http-${response.status}` } }
-  return body
+interface ChaptersValue {
+  total: number
+  volumes: Array<{ volumeId: string; dir: string; title: string; chapters: ChapterNode[] }>
+  looseChapters: ChapterNode[]
 }
 
 /**
- * Route failures that deserve a sentence instead of a bare code. Until the host
- * can map a request to its session's workspace, every projection answers
- * NO_SESSION_CONTEXT — showing a raw code there would look like a plugin bug.
+ * Route failures that deserve a sentence instead of a bare code.
+ *
+ * `NO_SESSION_CONTEXT` is a normal state, not a bug: the panel was opened from a
+ * root-scoped page, or its session has no workspace yet. Showing the raw code
+ * there would look like a plugin failure.
  */
 const ERROR_HINTS: Record<string, string> = {
   NO_SESSION_CONTEXT: '无法确定当前会话的项目，请在小说会话里用 inkflow_project_status 查看',
@@ -72,6 +62,20 @@ const ERROR_HINTS: Record<string, string> = {
 function describeRouteError(error: { code: string; message?: string } | undefined): string {
   if (error === undefined) return 'status-unavailable'
   return ERROR_HINTS[error.code] ?? error.message ?? error.code
+}
+
+/** The channel returns the volume tree; the panel lists chapters in reading order. */
+function flattenChapters(value: ChaptersValue): ChapterNode[] {
+  const fromVolumes = (Array.isArray(value.volumes) ? value.volumes : []).flatMap((volume) =>
+    Array.isArray(volume.chapters) ? volume.chapters : [],
+  )
+  const loose = Array.isArray(value.looseChapters) ? value.looseChapters : []
+  return [...fromVolumes, ...loose].map((chapter) => ({
+    id: chapter.id,
+    path: chapter.path,
+    seq: chapter.seq,
+    title: chapter.title,
+  }))
 }
 
 /** Sidebar icon: a page with a falling ink drop. Monochrome via currentColor. */
@@ -169,14 +173,15 @@ function Dot({ ok }: { ok: boolean }) {
 
 export function Workbench() {
   const [status, setStatus] = useState<StatusValue | null>(null)
-  const [chapters, setChapters] = useState<ChapterSummary[]>([])
+  const [chapters, setChapters] = useState<ChapterNode[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await getJson<StatusValue>('/inkflow/api/status')
+      // The channel takes a session id and nothing else: no root, no path.
+      const result = await fetchInternal<StatusValue>('/status', { sessionId: getActiveSessionId() })
       if (!result.ok || result.value === undefined) {
         setError(describeRouteError(result.error))
         setStatus(null)
@@ -184,9 +189,9 @@ export function Workbench() {
       } else {
         setStatus(result.value)
         setError(null)
-        if (result.value.project?.usable === true) {
-          const list = await getJson<{ total: number; chapters: ChapterSummary[] }>('/inkflow/api/chapters')
-          setChapters(list.ok && list.value !== undefined ? list.value.chapters : [])
+        if (result.value.state === 'usable') {
+          const list = await fetchInternal<ChaptersValue>('/chapters', { sessionId: getActiveSessionId() })
+          setChapters(list.ok && list.value !== undefined ? flattenChapters(list.value) : [])
         } else {
           setChapters([])
         }
@@ -203,16 +208,17 @@ export function Workbench() {
     void refresh()
   }, [refresh])
 
-  const project = status?.project ?? null
-  const usable = project?.usable === true
+  const usable = status?.state === 'usable'
+  const projectLabel = status?.label
   const counts = status?.index?.counts ?? {}
-  const dirs = project?.checks.dirs
+  const dirs = status?.checks?.dirs
+  const missing = status?.missing ?? []
 
   return (
     <div style={panelStyle}>
       <div style={headerStyle}>
         <span style={{ fontSize: 16, fontWeight: 600 }}>InkFlow</span>
-        <span style={muted}>{usable ? project?.label : '长篇小说创作工作台'}</span>
+        <span style={muted}>{usable ? projectLabel : '长篇小说创作工作台'}</span>
         <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Dot ok={loading ? false : usable} />
           <span style={muted}>{loading ? '检测中…' : usable ? '项目已就绪' : '未检测到 InkFlow 项目'}</span>
@@ -232,9 +238,7 @@ export function Workbench() {
                 <div style={{ fontWeight: 600 }}>
                   {chapter.seq ?? '?'}. {chapter.title}
                 </div>
-                <div style={muted}>
-                  {chapter.status} · {chapter.wordCount} 字
-                </div>
+                <div style={muted}>{chapter.path}</div>
               </div>
             ))
           )}
@@ -251,7 +255,7 @@ export function Workbench() {
           <div style={cardStyle}>
             <SectionTitle>项目诊断</SectionTitle>
             <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
-              <div>根目录：{project?.root ?? '—'}</div>
+              <div>根目录：{status?.root ?? '—'}</div>
               <div>
                 索引：{status?.index === undefined ? '—' : status.index.dbExists ? `已建（${status.index.builtAt ?? '?'}）` : '缺失'}
               </div>
@@ -260,8 +264,8 @@ export function Workbench() {
                 {counts['worldEntries'] ?? 0} · 大纲 {counts['outlineNodes'] ?? 0}
               </div>
               {error !== null ? <div style={{ color: 'var(--dsw-alias-state-error-primary)' }}>错误：{error}</div> : null}
-              {!usable && project !== null && project.missing.length > 0 ? (
-                <div style={{ color: 'var(--dsw-alias-state-warn-primary)' }}>缺少：{project.missing.join('、')}</div>
+              {!usable && missing.length > 0 ? (
+                <div style={{ color: 'var(--dsw-alias-state-warn-primary)' }}>缺少：{missing.join('、')}</div>
               ) : null}
               {!usable ? <div style={muted}>在小说会话里先调 inkflow_project_plan 看「将创建什么」，确认后再调 inkflow_project_init（confirm: true）。</div> : null}
             </div>
