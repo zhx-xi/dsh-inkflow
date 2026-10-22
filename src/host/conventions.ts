@@ -117,6 +117,9 @@ export const FILE_SCHEMA_VERSION = 1
  * and the `relations` table (one row per `relations/<slug>.md` edge) joins them,
  * so `relations/` stops being a frontmatter-only directory: it publishes entities.
  * The `entities` column set is unchanged (X-1).
+ * v6 (#29): the `entity_mentions` table — every name/alias occurrence with its body
+ * offset and its evidence source (`entity_key` = `kind:id`), plus a chapter's frontmatter
+ * declaration as a negative-offset `explicit` row. One table, no new columns.
  * v5 (#28): the `timeline_events` table — one row per timeline event with both axes
  * (`world_time`, `narrative_order`) and its chapter, so the two sorts and the conflict
  * checks are queries instead of a scan.
@@ -133,7 +136,7 @@ export const FILE_SCHEMA_VERSION = 1
  * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file is
  * discarded.
  */
-export const INDEX_SCHEMA_VERSION = 5
+export const INDEX_SCHEMA_VERSION = 6
 
 export const CHAPTER_STATUSES = ['draft', 'revised', 'final'] as const
 export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const
