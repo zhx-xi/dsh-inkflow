@@ -103,7 +103,8 @@ export type { OutlinePlan, OutlineRefusal, OutlineRefusalCode, OutlineWriteNode 
 export { entityCounts, listEntities, listEntityIds, listWorldEntries, searchEntities } from './domains/query.js'
 /** One entity's edges in both roles (#27): the read behind `inkflow_relation_list`. */
 export { listRelationsFor } from './domains/query.js'
-export type { EntitySummary, RelationEdge } from './domains/query.js'
+export type { EntitySummary, WorldIndexEntry } from './domains/query.js'
+export type { RelationEdge } from './domains/query.js'
 
 /**
  * Relation domain (#27): `planRelationUpsert` is exported so the write-side decision
