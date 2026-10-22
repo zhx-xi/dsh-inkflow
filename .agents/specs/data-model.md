@@ -100,15 +100,19 @@
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| `kind` | enum | ✅ | `character`（角色关系）/ `knowledge`（知识图谱关系） |
-| `source` / `target` | string | ✅ | 两端实体 id（各恰一个，I-08） |
-| `relation` | string | ✅ | 关系类型（如 `师徒` / `隶属` / `位于`） |
-| `direction` | enum | — | `directed`（缺省）/ `undirected` |
-| `weight` | number | — | 强度（0–1，缺省 0.5） |
-| `evidence` | string[] | — | 支撑位置（章 id 或 `#charRange`） |
-| `since` / `until` | string | — | 关系成立/失效的叙事位置 |
+| `kind` | enum | — | `character`（角色关系，缺省）/ `knowledge`（知识图谱关系）；非法值降级为 `character` 并报 `FRONTMATTER_ISSUE` |
+| `source` / `target` | string | ✅ | 两端实体 id（各恰一个，跨 kind 解析；见 I-08 的 `RELATION_ENDPOINT`） |
+| `title` | string | — | 可读标签（如「清音 → 白鹤掌门」）；缺省时由两端推导，仅用于展示与 `entities.title` |
+| `dir` | enum | — | `directed`（缺省）/ `undirected`；读写统一用 `dir`，读时兼容旧字段 `direction` |
+| `since` / `until` | string | — | 关系成立 / 失效的叙事位置（章节 id 或世界内时间） |
+| `chapter` | string | — | 该关系首次成立的章（用于按章回看） |
 
-关系类型集合与校验强度（孤立/冲突）仍待定（见 [open-questions.md](open-questions.md)）。
+**字段口径的三处变更是 #27 定的**（改 spec 后再改代码，S1）：
+- `relation`（关系类型，如 `师徒`）、`weight`、`evidence` **未实现**：关系类型集合在 [open-questions.md](open-questions.md) Q8 未裁决，先把未定项写进文件会制造第二套真相。在裁决之前用自由文本 `title` 承载「这层关系叫什么」。
+- `direction` → `dir`：两个字段读时都接受，写时只写 `dir`。
+- 新增 `chapter`：与 [conventions.md](conventions.md) 的 `relations/` 契约一致，`since`/`until` 只表达抽象位置。
+
+孤立 / 冲突的**校验强度**仍待定（Q8 的另一半），当前只做三件事：端点必须存在、禁止自环、同 `(source, target, kind)` 不许重复。
 
 ### 3.4 时间线事件 `timeline/<slug>.md`
 

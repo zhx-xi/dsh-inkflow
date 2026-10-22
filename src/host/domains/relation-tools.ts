@@ -18,6 +18,7 @@ import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } fro
 import { writeTextAtomic } from '../io.js'
 import { findProjectRoot } from '../project.js'
 import { sessionCwd } from '../session-cwd.js'
+import { applyCandidate } from './types.js'
 import { listRelationsFor } from './query.js'
 import { RELATION_DIRECTIONS, RELATION_KINDS, planRelationUpsert, renderRelationFile } from './relation-write.js'
 import type { RelationRow } from './relation-write.js'
@@ -60,10 +61,10 @@ interface RootLookup {
 /**
  * Resolve the book without a Host context.
  *
- * A domain module's `tools()` receives no `ToolDeps` (X-5: the registry only
- * assembles), so the session working directory is not reachable the way `tools.ts`
- * reaches it. An explicit `projectRoot` is therefore the reliable form, and
- * `process.cwd()` is only the fallback for a host that runs inside the book.
+ * An explicit `projectRoot` wins; otherwise the book is resolved from the **session's**
+ * working directory via `sessionCwd(deps.ctx, exec)` — the same anchor a built-in tool
+ * uses, and never bare `process.cwd()` (inside the host process that is the DSH
+ * install directory, so the tool would always report NOT_AN_INKFLOW_PROJECT).
  */
 async function projectRootOf(value: unknown, deps: DomainToolDeps, exec: ToolRunContext): Promise<RootLookup> {
   const explicit = optionalString(value)
@@ -73,7 +74,7 @@ async function projectRootOf(value: unknown, deps: DomainToolDeps, exec: ToolRun
     return {
       error: {
         code: 'NOT_AN_INKFLOW_PROJECT',
-        message: 'no InkFlow project found from the process working directory',
+        message: 'no InkFlow project found from the session working directory',
         hint: 'pass projectRoot: the absolute path of the book',
       },
     }
@@ -81,14 +82,16 @@ async function projectRootOf(value: unknown, deps: DomainToolDeps, exec: ToolRun
   return { root: found }
 }
 
-/** The seam, loaded on demand: a static import would close a cycle through the registry. */
+/**
+ * The build seam, loaded on demand: `indexer.ts` imports the registry, so a static
+ * import back into it would close a cycle.
+ *
+ * `applyCandidate` is **not** part of the seam any more: #24 moved it to `types.ts`
+ * precisely so a domain can fold a candidate without touching the registry.
+ */
 async function seam() {
-  const [indexer, build, registry] = await Promise.all([
-    import('../indexer.js'),
-    import('../index-build.js'),
-    import('./index.js'),
-  ])
-  return { scanProject: indexer.scanProject, buildIndex: build.buildIndex, applyCandidate: registry.applyCandidate }
+  const [indexer, build] = await Promise.all([import('../indexer.js'), import('../index-build.js')])
+  return { scanProject: indexer.scanProject, buildIndex: build.buildIndex }
 }
 
 /** One edge as the model sees it: the frontmatter field names, not the row's. */
@@ -231,7 +234,7 @@ async function runRelationUpsert(
   if (lookup.root === undefined) return { ok: false, error: lookup.error }
 
   const root = lookup.root
-  const { scanProject, buildIndex, applyCandidate } = await seam()
+  const { scanProject, buildIndex } = await seam()
   const scan = scanProject(root)
   const rows = rowsOf<RelationRow>(scan, 'relations')
 
