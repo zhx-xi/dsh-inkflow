@@ -44,7 +44,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { basename, isAbsolute, relative as relativePath, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, relative as relativePath, resolve } from 'node:path'
 
 import type { HostContext } from './context.js'
 import { listRegisteredWorkspaces } from './hub.js'
@@ -231,6 +231,19 @@ function pathKey(path: string): string {
 }
 
 /**
+ * The candidate's PARENT in canonical form.
+ *
+ * Resolving only the parent keeps the last hop (a junction the user pointed at)
+ * intact, so the gate can still name it as `PATH_OUT_OF_SCOPE`, while a spelling
+ * mismatch between the registry and the picker — a junction-resolved or 8.3
+ * short temp path, exactly what a Windows CI runner has — stops mattering.
+ */
+function parentCanonical(path: string): string {
+  const parent = dirname(path)
+  return parent === path ? path : realpathLoose(parent)
+}
+
+/**
  * The action kinds the panel shows as "will create".
  *
  * Unique, in execution order, and `manual` is dropped: it means "upgrade the
@@ -355,14 +368,24 @@ export async function hubPlan(
 
   // Anchor 2: inside a registered workspace.
   //
-  // TEXTUAL containment decides first, on purpose (ADR-0010 D6): a junction that
-  // lives inside the workspace but resolves outside must still be anchored here,
-  // so the gate below can refuse it with the precise `PATH_OUT_OF_SCOPE` instead
-  // of a vague `ANCHOR_REQUIRED`. The canonical comparison is the second chance
-  // and exists only for the spelling mismatch: a registry that stored one form
-  // (junction / 8.3 short name) while the picker answered another.
+  // Three chances, in this order, and the order is the semantics (ADR-0010 D6):
+  //   1. TEXTUAL — the picker's answer literally sits under the registry path.
+  //      A junction inside the workspace that resolves outside must be anchored
+  //      here so the gate below refuses it with the precise `PATH_OUT_OF_SCOPE`
+  //      rather than a vague `ANCHOR_REQUIRED`.
+  //   2. PARENT, canonical — the spelling mismatch case: a registry that stored
+  //      one form (junction-resolved, 8.3 short name) while the picker answered
+  //      another. Canonicalising the candidate itself would defeat chance 1 (the
+  //      escaping junction resolves outside), so only its PARENT is resolved —
+  //      that is enough to recognise the workspace while leaving the last hop to
+  //      the gate.
+  //   3. CANDIDATE, canonical — the ordinary "already resolved path inside a
+  //      resolved workspace" case.
   const containing = registry?.find(
-    (entry) => isWithin(resolve(entry.path), picked) || isWithin(canonicalEntry(entry.path), canonical),
+    (entry) =>
+      isWithin(resolve(entry.path), picked) ||
+      isWithin(canonicalEntry(entry.path), parentCanonical(picked)) ||
+      isWithin(canonicalEntry(entry.path), canonical),
   )
   let anchor: HubPlanAnchor
   let scope: string

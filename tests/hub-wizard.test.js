@@ -302,6 +302,25 @@ test('a registry path spelled through a junction still anchors its contents (and
   assert.equal(registeredResponse.status, 200, JSON.stringify(registeredResponse.json))
   assert.equal(registeredResponse.json.value.anchor, 'registered')
   assert.equal(registeredResponse.json.value.planToken, undefined)
+
+  // 3) the escaping-junction case with the registry canonicalised and the
+  //    candidate reached through a differently spelled base — the shape a
+  //    windows-latest runner actually produces. It must still be refused by the
+  //    gate (403 PATH_OUT_OF_SCOPE), not by a vague ANCHOR_REQUIRED (400).
+  const alias = join(base, 'alias-base')
+  try {
+    symlinkSync(base, alias, 'junction')
+  } catch {
+    return
+  }
+  const outside = join(base, 'outside-real')
+  mkdirSync(outside, { recursive: true })
+  const escape = join(alias, 'real-book', 'escape-link')
+  symlinkSync(outside, escape, 'junction')
+  const harnessEscape = createHarness({ workspaces: [{ id: 'ws-real-2', path: real, title: '书乙' }] })
+  const escapeResponse = await post(harnessEscape, '/plan', { candidate: escape })
+  assert.equal(escapeResponse.status, 403, JSON.stringify(escapeResponse.json))
+  assert.equal(escapeResponse.json.error.code, 'PATH_OUT_OF_SCOPE')
 })
 
 test('plan on an already registered book returns its state and NO planToken', async () => {
