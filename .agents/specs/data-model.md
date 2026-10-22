@@ -100,15 +100,19 @@
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| `kind` | enum | ✅ | `character`（角色关系）/ `knowledge`（知识图谱关系） |
-| `source` / `target` | string | ✅ | 两端实体 id（各恰一个，I-08） |
-| `relation` | string | ✅ | 关系类型（如 `师徒` / `隶属` / `位于`） |
-| `direction` | enum | — | `directed`（缺省）/ `undirected` |
-| `weight` | number | — | 强度（0–1，缺省 0.5） |
-| `evidence` | string[] | — | 支撑位置（章 id 或 `#charRange`） |
-| `since` / `until` | string | — | 关系成立/失效的叙事位置 |
+| `kind` | enum | — | `character`（角色关系，缺省）/ `knowledge`（知识图谱关系）；非法值降级为 `character` 并报 `FRONTMATTER_ISSUE` |
+| `source` / `target` | string | ✅ | 两端实体 id（各恰一个，跨 kind 解析；见 I-08 的 `RELATION_ENDPOINT`） |
+| `title` | string | — | 可读标签（如「清音 → 白鹤掌门」）；缺省时由两端推导，仅用于展示与 `entities.title` |
+| `dir` | enum | — | `directed`（缺省）/ `undirected`；读写统一用 `dir`，读时兼容旧字段 `direction` |
+| `since` / `until` | string | — | 关系成立 / 失效的叙事位置（章节 id 或世界内时间） |
+| `chapter` | string | — | 该关系首次成立的章（用于按章回看） |
 
-关系类型集合与校验强度（孤立/冲突）仍待定（见 [open-questions.md](open-questions.md)）。
+**字段口径的三处变更是 #27 定的**（改 spec 后再改代码，S1）：
+- `relation`（关系类型，如 `师徒`）、`weight`、`evidence` **未实现**：关系类型集合在 [open-questions.md](open-questions.md) Q8 未裁决，先把未定项写进文件会制造第二套真相。在裁决之前用自由文本 `title` 承载「这层关系叫什么」。
+- `direction` → `dir`：两个字段读时都接受，写时只写 `dir`。
+- 新增 `chapter`：与 [conventions.md](conventions.md) 的 `relations/` 契约一致，`since`/`until` 只表达抽象位置。
+
+孤立 / 冲突的**校验强度**仍待定（Q8 的另一半），当前只做三件事：端点必须存在、禁止自环、同 `(source, target, kind)` 不许重复。
 
 ### 3.4 时间线事件 `timeline/<slug>.md`
 
@@ -177,6 +181,7 @@
 | `character_states` | `<cardId>#<chapter>` | path / character_id / chapter / status | 「第 N 章时他在什么状态」（#25） |
 | `world_entries` | id | path / title / category / parent / keywords / always / priority | 世界观树、世界书关键词（#26） |
 | `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
+| `relations` | id | path / title / relation_kind / source / target / direction / since / until / chapter | 关系图谱查询与校验（#27） |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
@@ -231,7 +236,7 @@
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |
 | I-06 | 章状态取值合法 | 拒绝 | 非法值降级为 `draft`（不阻断） |
 | I-07 | 正文文件必须是 `.md` | 拒绝 | `CHAPTER_NOT_MARKDOWN` |
-| I-08 | 树/图引用完整：世界观根唯一、非根必须有 `parent` + `category`；**扁平分类书**（全部条目在 `world/<category>/` 且都不写 `parent`）允许无根；关系两端各恰一个实体且都存在 | 拒绝 | `WORLD_ROOT_MISSING` / `WORLD_ROOT_MULTIPLE` / `WORLD_CATEGORY_REQUIRED`；`RELATION_ENDPOINT`（未实现） |
+| I-08 | 树/图引用完整：世界观根唯一、非根必须有 `parent` + `category`；**扁平分类书**（全部条目在 `world/<category>/` 且都不写 `parent`）允许无根；关系两端各恰一个实体且都存在 | 拒绝 | `WORLD_ROOT_MISSING` / `WORLD_ROOT_MULTIPLE` / `WORLD_CATEGORY_REQUIRED`；`RELATION_ENDPOINT` / `RELATION_SELF_LOOP` / `RELATION_DUPLICATE`（#27 落地） |
 | I-09 | 伏笔 `resolved: true` 必须带 `resolvedChapter` | 拒绝 | `FORESHADOW_RESOLVED_WITHOUT_CHAPTER` |
 | I-10 | frontmatter / JSON 可解析 | 写入前序列化 | `FRONTMATTER_ISSUE` |
 | I-11 | catalog 与 `.md` 一致（结构投影不漂移） | 写入时重建受影响的 catalog | `CATALOG_STALE` |

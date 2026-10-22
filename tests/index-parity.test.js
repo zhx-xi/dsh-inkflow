@@ -321,8 +321,25 @@ function generateBook(root) {
   for (let index = 1; index <= 6; index += 1) {
     markdown(root, `timeline/tl-0${index}.md`, [`id: tl-0${index}`, `title: 事件${index}`, `chapter: ${index}`], '时间线事件。')
   }
-  for (let index = 1; index <= 5; index += 1) {
-    markdown(root, `relations/rl-0${index}.md`, [`id: rl-0${index}`, 'from: 清音', 'to: 白鹤', 'kind: 师徒'], '关系。')
+  // Relations carry the field names of data-model §3.3 (`source`/`target`/`kind`):
+  // since #27 `relations/` has its own domain, so a legacy `from`/`to` file would be
+  // reported as a broken edge instead of being ignored. Every pair is distinct — one
+  // (source, target, kind) edge may exist once (RELATION_DUPLICATE).
+  const relationPairs = [
+    ['char-01', 'char-05'],
+    ['char-02', 'char-06'],
+    ['char-03', 'char-07'],
+    ['char-04', 'char-08'],
+    ['char-05', 'char-09'],
+  ]
+  for (const [offset, [source, target]] of relationPairs.entries()) {
+    const index = offset + 1
+    markdown(
+      root,
+      `relations/rl-0${index}.md`,
+      [`id: rl-0${index}`, `title: 关系${index}`, `source: ${source}`, `target: ${target}`, 'kind: character', 'dir: directed'],
+      '关系。',
+    )
   }
   for (let index = 1; index <= 5; index += 1) {
     markdown(root, `facts/ft-0${index}.md`, [`id: ft-0${index}`, 'entity: 清音', 'key: 年龄', `value: ${20 + index}`], '账本。')

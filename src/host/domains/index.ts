@@ -18,6 +18,7 @@ import type { ToolDefinition } from '../context.js'
 import { chapterDomain } from './chapter.js'
 import { characterDomain } from './character.js'
 import { outlineDomain } from './outline.js'
+import { relationDomain } from './relation.js'
 import { worldDomain } from './world.js'
 import type {
   DomainEntityRef,
@@ -31,8 +32,9 @@ export const DOMAIN_MODULES: readonly DomainModule[] = [
   chapterDomain,
   characterDomain,
   outlineDomain,
+  relationDomain,
   worldDomain,
-  // #27 relations · #28 timeline · #29 mentions · #31 foreshadowing state machine
+  // #28 timeline · #29 mentions · #31 foreshadowing state machine
 ]
 
 /**

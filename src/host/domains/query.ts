@@ -158,6 +158,75 @@ export function searchEntities(root: string, query: string, limit = DEFAULT_LIMI
   }
 }
 
+/**
+ * One edge of the relation graph, as a reader sees it.
+ *
+ * Field names are the frontmatter ones (`kind`, `dir`) rather than the row's
+ * (`relation_kind`, `direction`): the edge is what the file says, and the tool that
+ * writes it already speaks this vocabulary.
+ */
+export interface RelationEdge {
+  readonly id: string
+  readonly path: string
+  readonly title: string
+  readonly source: string
+  readonly target: string
+  readonly kind: string
+  readonly dir: string
+  readonly since?: string
+  readonly until?: string
+  readonly chapter?: string
+}
+
+function toEdge(row: Record<string, unknown>): RelationEdge {
+  const text = (key: string): string | undefined => {
+    const value = row[key]
+    return typeof value === 'string' && value !== '' ? value : undefined
+  }
+  return {
+    id: text('id') ?? '',
+    path: text('path') ?? '',
+    title: text('title') ?? '',
+    source: text('source') ?? '',
+    target: text('target') ?? '',
+    kind: text('relation_kind') ?? '',
+    dir: text('direction') ?? 'directed',
+    since: text('since'),
+    until: text('until'),
+    chapter: text('chapter'),
+  }
+}
+
+/**
+ * Every edge touching one entity, in both roles — the read behind
+ * `inkflow_relation_list` and, later, the panel's relation section.
+ *
+ * `source = ? OR target = ?` is the whole point: an edge is symmetric to the writer
+ * but directional to the reader, and "all edges of this character" must not depend
+ * on which end the author happened to name first. `undefined` means the index is
+ * absent or foreign — the caller rebuilds, never renders an empty list as "no edges".
+ */
+export function listRelationsFor(root: string, entityId: string, limit?: number): RelationEdge[] | undefined {
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id, path, title, relation_kind, source, target, direction, since, until, chapter
+           FROM relations
+          WHERE source = ? OR target = ?
+          ORDER BY relation_kind, path
+          LIMIT ?`,
+      )
+      .all(entityId, entityId, clamp(limit)) as unknown as Array<Record<string, unknown>>
+    return rows.map(toEdge)
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
 /** Count entities per kind — the panel's section badges, and a cheap sanity check. */
 export function entityCounts(root: string): Record<string, number> | undefined {
   const db = openIndex(root)

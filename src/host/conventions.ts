@@ -110,10 +110,12 @@ export const FILE_SCHEMA_VERSION = 1
  *
  * v2 (#23): domain modules own their tables, and the cross-class `entities`
  * projection plus one `entities_fts` are added.
- * v3 (#24, #26): `outline_nodes` gains `plot_point_count` / `plot_points` (the
- * parsed body list items, i.e. plot points and their optional story-line tags), and
- * `world_entries` gains the world book's own fields — `keywords`, `always`,
- * `priority` — so a chapter's setting can be matched without reading every file.
+ * v3 (#24, #26, #27): `outline_nodes` gains `plot_point_count` / `plot_points` (the
+ * parsed body list items, i.e. plot points and their optional story-line tags);
+ * `world_entries` gains the world book own fields — `keywords`, `always`,
+ * `priority` — so a chapter setting can be matched without reading every file;
+ * and the `relations` table (one row per `relations/<slug>.md` edge) joins them,
+ * so `relations/` stops being a frontmatter-only directory: it publishes entities.
  * The `entities` column set is unchanged (X-1).
  * v4 (#25): `characters` gains the card fields the query tool reads without parsing
  * frontmatter — `pov`, `first_appearance`, `aliases`, `voice` — and a new
