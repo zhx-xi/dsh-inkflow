@@ -145,6 +145,18 @@ export { ENTITY_COLUMNS, entityFromRow, entityKey } from './domains/entities.js'
 export type { DomainWriteView } from './domains/index.js'
 
 /**
+ * Entity mentions (#29): the scan is pure (text in, rows out) so the DoD's
+ * "590k characters under 5 s" is measured directly, and the three queries are
+ * what the 影响面 / 改名级联 / 掉线检测 surfaces read. `MENTIONS_DDL` and
+ * `insertMentions` are the seam's half — `indexer.ts` creates the table and writes
+ * the rows, because `mentions` owns no content directory and is not a domain.
+ */
+export { MENTIONS_DDL, MENTIONS_TABLE, MENTION_SOURCES, chaptersOf, insertMentions, scanMentions } from './domains/mentions.js'
+export type { MentionChapter, MentionRow, MentionSource } from './domains/mentions.js'
+export { absentEntities, chaptersMentioning, mentionsOf } from './domains/mentions-query.js'
+export type { AbsentEntity, MentionChapterHit, MentionHit, MentionQueryOptions } from './domains/mentions-query.js'
+
+/**
  * World book (#26): the keyword matcher, the write-side half of I-08 and the tree
  * shape are pure — no reads, no writes — so the rule that decides "which setting
  * entry this chapter pulls in" is testable without a project on disk. The
