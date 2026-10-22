@@ -69,7 +69,8 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 
 - **spec 先行**：spec 与实现矛盾 → 先改 spec，再改代码。
 - **测试打构建产物**（`lib/index.js`），不是源码：测用户真正装到的东西。
-- 提交前必过：`pnpm.cmd run check`（typecheck + build + test + 链接门禁）。
+- 提交前必过：`pnpm.cmd run check`（typecheck + build + test + 链接门禁 + 分支保护）。
+- 分支保护是**机制**不是口令：`check` 末端的 `check:branch-protection` 需要 gh 已登录才有结论，输出 `SKIP …（未验证）` 表示**没验证**，不等于通过（[engineering-discipline §9.5「CI 门禁」](.agents/constitution/engineering-discipline.md)，与本节 §9.5 的文档门禁不同号不同事）。
 - 提交信息：Conventional Commits，冒号后**小写**，例 `feat(tools): add inkflow_chapter_list`。
 
 ## 6. 编码规范

@@ -1,0 +1,118 @@
+/**
+ * The CLI's exit codes are the contract: `pnpm run check` reads them, and a
+ * wrong code either turns a dirty protection setting into a green local gate or
+ * makes an offline laptop fail the whole check chain. The pure evaluator is
+ * covered by tests/branch-protection.test.js; this file only drives the process
+ * (review findings F1/F2 — a fixed `skip()` must be provable, not assumed).
+ */
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import test from 'node:test'
+
+const CLI = resolve(import.meta.dirname, '..', 'scripts', 'branch-protection.mjs')
+const { REQUIRED_CONTEXTS } = await import('../scripts/branch-protection-rules.mjs')
+
+const dir = mkdtempSync(join(tmpdir(), 'inkflow-branch-protection-'))
+const goodFixture = join(dir, 'good.json')
+const badFixture = join(dir, 'bad.json')
+
+/** A GitHub-shaped payload that satisfies EXPECTED, in the shape the API returns. */
+function goodPayload() {
+  return {
+    required_status_checks: { strict: true, contexts: [...REQUIRED_CONTEXTS] },
+    enforce_admins: { enabled: true },
+    allow_force_pushes: { enabled: false },
+    allow_deletions: { enabled: false },
+    required_conversation_resolution: { enabled: true },
+  }
+}
+
+writeFileSync(goodFixture, JSON.stringify(goodPayload()), 'utf8')
+const bad = goodPayload()
+bad.required_status_checks.contexts = REQUIRED_CONTEXTS.filter((context) => context !== 'docs')
+writeFileSync(badFixture, JSON.stringify(bad), 'utf8')
+process.on('exit', () => rmSync(dir, { recursive: true, force: true }))
+
+function run(args, env = {}) {
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  })
+  return { code: result.status, out: `${result.stdout ?? ''}${result.stderr ?? ''}` }
+}
+
+/** No gh on this machine as far as the CLI is concerned. */
+const NO_GH = { INKFLOW_GH: 'inkflow-no-such-gh-binary' }
+
+test('a matching payload passes and prints the flags', () => {
+  const { code, out } = run(['check', '--repo', 'owner/repo', '--fixture', goodFixture])
+  assert.equal(code, 0, out)
+  assert.match(out, /branch-protection ok: owner\/repo main/)
+  assert.match(out, /enforce-admins/)
+})
+
+test('a payload missing a required check fails and names it', () => {
+  const { code, out } = run(['check', '--repo', 'owner/repo', '--fixture', badFixture])
+  assert.equal(code, 1, out)
+  assert.match(out, /required check missing: docs/)
+})
+
+test('--tolerant does not hide a mismatch that was actually read', () => {
+  const { code, out } = run(['check', '--repo', 'owner/repo', '--fixture', badFixture, '--tolerant'])
+  assert.equal(code, 1, out)
+  assert.match(out, /required check missing: docs/)
+  assert.doesNotMatch(out, /（未验证）/)
+})
+
+test('--tolerant exits 0 and says 未验证 when gh is unavailable', () => {
+  const { code, out } = run(['check', '--repo', 'owner/repo', '--tolerant'], NO_GH)
+  assert.equal(code, 0, out)
+  assert.match(out, /SKIP branch-protection:/)
+  assert.match(out, /（未验证）/)
+})
+
+test('without --tolerant an unavailable gh is a failure', () => {
+  const { code, out } = run(['check', '--repo', 'owner/repo'], NO_GH)
+  assert.equal(code, 1, out)
+  assert.match(out, /could not read branch protection/)
+})
+
+test('--tolerant also covers an unresolvable repository', () => {
+  const { code, out } = run(['check', '--tolerant'], NO_GH)
+  assert.equal(code, 0, out)
+  assert.match(out, /（未验证）/)
+})
+
+test('apply --dry-run prints the payload and touches no network', () => {
+  const { code, out } = run(['apply', '--repo', 'owner/repo', '--dry-run', '--fixture', goodFixture], NO_GH)
+  assert.equal(code, 0, out)
+  assert.match(out, /would PUT repos\/owner\/repo\/branches\/main\/protection/)
+  assert.match(out, /"required_status_checks"/)
+})
+
+test('apply refuses to PUT when the current protection cannot be read', () => {
+  // PUT replaces the whole object: applying blind could delete a review
+  // requirement this gate does not own (review finding N1).
+  const { code, out } = run(['apply', '--repo', 'owner/repo'], NO_GH)
+  assert.equal(code, 1, out)
+  assert.match(out, /refusing to apply: could not read the current protection/)
+})
+
+test('apply refuses to PUT when a review requirement cannot be mirrored', () => {
+  const unknown = join(dir, 'unknown-reviews.json')
+  const payload = goodPayload()
+  payload.required_pull_request_reviews = { brand_new_field: 3 }
+  writeFileSync(unknown, JSON.stringify(payload), 'utf8')
+  const { code, out } = run(['apply', '--repo', 'owner/repo', '--fixture', unknown], NO_GH)
+  assert.equal(code, 1, out)
+  assert.match(out, /cannot mirror back/)
+})
+
+test('an unknown command is a failure', () => {
+  const { code, out } = run(['verify', '--repo', 'owner/repo'], NO_GH)
+  assert.equal(code, 1, out)
+  assert.match(out, /unknown command: verify/)
+})
