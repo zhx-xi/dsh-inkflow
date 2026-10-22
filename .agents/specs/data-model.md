@@ -199,7 +199,10 @@
 
 | 表 | 用途 | 状态 |
 |---|---|---|
+| `entities`（跨类统一投影） | 九分类树、跨类重名与提及定位；列集 `kind / id / path / title / name_key / category / parent / order_index / status / keywords / aliases`，`kind` 与内容目录对齐（契约见 [roadmap.md](roadmap.md) §2.1 X-1） | 未实现 |
 | `outline_nodes`（扩） | 情节点/故事线结构化 | 未实现 |
+| `characters`（扩） | `voice` / `states` / `aliases` / `first_appearance` 等角色卡字段（v1 只有 name/name_key/group_name/role，见 §4.1） | 未实现 |
+| `world_entries`（扩） | 世界书的 `keywords` / `always` / `priority`（v1 只有 title/category/parent） | 未实现 |
 | `foreshadowings` | 状态机查询、超期列表 | 未实现 |
 | `timeline_events` | 双轴排序、待确认区 | 未实现 |
 | `relations` | 关系图谱查询、孤立/冲突校验 | 未实现 |
@@ -220,7 +223,7 @@ v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本
 | I-01 | 每项目恰 1 条 `overall` 大纲 | 拒绝第二份 | `OUTLINE_NO_OVERALL` / `OUTLINE_MULTIPLE_OVERALL` |
 | I-02 | 卷大纲必须挂 overall；禁止卷中卷 | 拒绝 | `OUTLINE_VOLUME_PARENT` / `OUTLINE_VOLUME_IN_VOLUME` |
 | I-03 | 角色名项目内唯一（归一化） | 拒绝 | `CHARACTER_NAME_DUPLICATE` |
-| I-04 | 章 id / 路径不重复 | 拒绝 | `DUPLICATE_ID` |
+| I-04 | 实体 id 跨类唯一（章/角色/世界观/大纲共用一个命名空间） | 拒绝 | `DUPLICATE_ID` |
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |
 | I-06 | 章状态取值合法 | 拒绝 | 非法值降级为 `draft`（不阻断） |
 | I-07 | 正文文件必须是 `.md` | 拒绝 | `CHAPTER_NOT_MARKDOWN` |
@@ -231,6 +234,7 @@ v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本
 | I-12 | 同一章不得同时出现在两个卷或两条 catalog 项 | 拒绝 | `CATALOG_DUPLICATE` |
 | I-13 | 卷目录名与 `volumeId` / 卷大纲一致 | 拒绝 | `VOLUME_DIR_MISMATCH` |
 | I-14 | catalog 引用的章文件必须存在 | 拒绝 | `CHAPTER_FILE_MISSING` |
+| I-15 | `entities` 投影与各域表同源：同一行事实在两张表里的 `id` / `path` / `title` / `name_key` 必须一致（由同一次 scan、同一事务产出） | 同一 scan 产出，无独立写入 | `ENTITIES_DRIFT` |
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 

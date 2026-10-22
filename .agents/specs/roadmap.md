@@ -23,7 +23,7 @@
 
 | # | 模块 | 范围 | 覆盖 issue |
 |---|---|---|---|
-| M0 | 契约、设置与发布基线 | 目录/数据/架构/ADR、文档门禁、设置页、诊断包、备份、i18n/主题/打包 | #9 #10 #11 #42 #54 #55 #56 #60 |
+| M0 | 契约、设置与发布基线 | 目录/数据/架构/ADR、域模块注册表、文档门禁、设置页、诊断包、备份、i18n/主题/打包 | #9 #10 #11 #42 #54 #55 #56 #60 #101 |
 | M1 | 工作区 | 九目录契约、四态门禁、plan→apply 向导、`git init` 边界、修复/契约迁移 | #13 #36 |
 | M2 | 写入器与路径安全 | 唯一写入口、原子替换、单项目写锁、路径白名单、编码归一 | #14 |
 | M3 | 解析与无损写回 | frontmatter 解析（注释/块数组/行尾）、行级补丁保留未知字段 | #6 |
@@ -63,10 +63,39 @@
 | W9 | 2.0 预留：同步接口 / 对象存储 / 认证（只留接口） | M0 M17 | 2.0 | 含在缓冲 | 【推断】 |
 | **合计** | — | — | — | **122–162** | 【已定】 |
 
+### 2.1 0.2.0 批次（B0–B2）【推断】
+
+> 批次是**同一里程碑内的并行分组**，不是新波次：批次内可同时开工，批次之间有硬前置。0.2.0 取 W2 的结构化域（M5/M13 已由 0.1.0 交付）、W3 的 M9（仅 `relations/` 部分，见 #27）/ M11 / M14 与 M18 索引 v2。
+
+| 批次 | issue | 主题 | 估工 | 硬前置 | 主写域 |
+|---|---|---|---|---|---|
+| B0 | #101 → #23（串行） | ①域模块接口 + 工具聚合骨架；②索引 v2 + 扫描/校验/DDL 注册表化 + 既有四域迁入 | 7–8 | — | #101：`tools.ts` + 新 `domains/{types,index}.ts`；#23：`indexer.ts` / `index-build.ts` / `domains/{chapter,character,world,outline,naming}.ts` |
+| B1 | #24 #25 #26 #27 | 四个数据域：大纲 / 人物 / 世界观 / 关系 | 11–13 | B0 | `domains/<域>.ts`（自带该域 DDL 片段与 `validate()`）+ `domains/index.ts` 追加一行 |
+| B2 | #28 #29 #30 | 时间线、实体提及、九分类树与通用条目编辑器 | 7–10 | B0；#29←#25 别名；#30←B1 字段定型 | `domains/{timeline,mentions}.ts`；`client/*` + `internal.ts` + `routes.ts` |
+
+**为什么 B0 必须先做「注册表化」**：`writeIndexDatabase()` 的 DDL 是一整块 `db.exec` 模板串（`src/host/indexer.ts` 508–522），INSERT 也在同一函数（524–563）；`scanProject()` 把既有不变量 code（`OUTLINE_*`、`CHARACTER_NAME_DUPLICATE`、`WORLD_ROOT_*`、`DANGLING_PARENT`、`DUPLICATE_ID`）写在同一函数里（约 370–470 行之间）。不先把这三处改成「域模块提供片段、`indexer.ts` 只按注册表执行」，B1/B2 的六个域单会在同一函数里排队，批次内的并行不成立。
+
+**跨单契约（B0 定死，B1/B2 不得改列集）**
+
+| # | 契约 | 说明 |
+|---|---|---|
+| X-1 | `entities` 是跨类统一投影 | 列集 `kind / id / path / title / name_key / category / parent / order_index / status / keywords / aliases`；**主键 `id` 单列且跨类唯一**（与现状一致：章/角色/世界观/大纲共用一个命名空间查重，`indexer.ts:463-471`），对应 [data-model](data-model.md) §5 的 I-04 扩成「实体 id 跨类唯一」；`name_key`/`aliases` 的归一化**只有一处实现**（`indexer.ts:84 nameKey()` 提到 `domains/naming.ts`，域单与 #29 都调它）；`entities` 与域表的行必须由同一次 scan、同一事务产出，不一致报 `ENTITIES_DRIFT`（I-15） |
+| X-2 | 域表的 DDL 由域模块自带 | `DomainModule` 除 `scan()`/`validate()` 之外提供 `schema()`（返回该域的 DDL 片段与写入函数）；`writeIndexDatabase()` 只按注册表拼装执行。域单扩列/新建表都在自己的 `domains/<域>.ts` 里，**不改 `indexer.ts`** |
+| X-3 | 全实体 FTS 只建一张 | `entities_fts`（title / aliases / keywords）+ 1–2 字 `LIKE` 兜底，策略与章正文检索一致（[conventions.md §4.1](conventions.md)）；建表与查询函数归 #23，消费与用例归 #30 |
+| X-4 | 校验只经注册表，且写入侧也过 | 每条不变量写在 `DomainModule.validate()`，`scanProject()` 只聚合其输出；**写入侧落盘前调用同一个 `validate()`**（[data-model](data-model.md) §5 的双保险），否则只剩重建期一张网；既有不变量 code 由 #23 迁入对应域模块，新 code 同一提交写进 §5 |
+| X-5 | 注册表只解决装配，不解决文本冲突 | 域单只**新增**自己的文件，并在 `domains/index.ts` 的数组追加一行（按 `kind` 字母序定位，减少相邻行冲突）。该数组是唯一仍会被多单触碰的点，冲突按 rebase 解（单行、机械） |
+| X-6 | 面板查询只读，写仍走写路由 | 查询只消费 `entities` 与内部通道 payload；写入仍走已有写路由 + `io.ts`（[ADR-0008](../adrs/0008-panel-data-channel.md) D5：面板与工具共用同一套解析与判定）；client 侧不直连域表、不做文件 IO |
+| X-7 | 面板分类口径 | 树顶层 kind = `CONTENT_DIRS` 去掉 `chapters`（章由工作台 M13 承接），即 8 类；「地点」不是独立 kind，而是 `world/<category>` 的分类（[data-model](data-model.md) §2），在树里作为世界观的子分组展开。该口径与 #30 正文的「九分类」措辞不同，以本条为准 |
+| X-8 | 视图 payload 归 #30 | `DomainModule` 不含视图面；`internal.ts` 的 payload 由 #30 自己新增（4 个既有构造器是单点，`internal.ts:367/419/487/595`）。#101 不提供「视图注册表」，§4.3 的措辞据此改为「工具面 + 扫描面」 |
+
+**关键路径**：#101（2）→ #23（5–6）→ #24（3–4）→ #30（3–4）≈ **13–16 人日**；0.2.0 合计 **25–31 人日**（并行 4 单时路径仍是瓶颈，「总量 ÷ 并行度」不构成下限）。
+
 **估工口径**
 
-- 总估工 **122–162 人日**：净开发 99–130、缓冲 23–32（【推断】拆分）。
-- 逐项 issue 估工相加为 123.5–161.5 人日（【实测】按 48 个 issue 正文的「估工」行求和），与总口径一致。
+- 总估工 **122–162 人日**：净开发 99–130、缓冲 23–32（【推断】拆分）——这是**承诺值**，不随逐项重估而改动。
+- 逐项估工：见各 issue 正文的「估工」行（每个值本身是【推断】）。本 spec **不再维护全仓逐项和**——这个数字在历史版本里反复漂移（同一个语料被记成 48 / 49 / 50 个 issue 的不同合计），写进 spec 只会变成假的【实测】。现状口径：全仓明文含「估工」行的 issue 为 **58 个**（共 66 个 issue，另 8 个见下一条）；需要总量时按里程碑自行加总，与承诺值的差额留给 0.3.0 排期统一校准。
+- 本 spec 唯一保留的逐项和是 **0.2.0 的 25–31 人日**（9 个 issue：`#23` 5–6 + `#24` 3–4 + `#25` 3 + `#26` 3 + `#27` 2–3 + `#28` 2–3 + `#29` 2–3 + `#30` 3–4 + `#101` 2），可在 issue 正文里逐条核对。
+- 计数口径：只计**正文含「估工」行**的 issue；8 个无估工行（#1 #54 #55 #56 #60 #74 #93 #99）没有可加的值。
 - 1 人日 = 1 个工作日（约 8 h，含 AI 辅助）；1 月按 21 个工作日折算。
 - 旧 123–175（逐项）/ 125–185（规格）**作废**。
 
@@ -75,8 +104,8 @@
 | 里程碑 | 触发条件 | 可演示能力 | 主要波次 |
 |---|---|---|---|
 | 0.1.0 骨架可用 | W0–W2 完成 | 建书（十项目录 + `.gitkeep` + `git init`）→ 四态门禁与向导 → 写章（原子写 + 锁）→ 重建索引 → 会话视图面板显示章树 | W0–W2 |
-| 0.2.0 结构化 | W2–W3 完成 | 大纲三层、角色卡、世界观树/世界书、关系、时间线双轴、伏笔看板、九分类树 | W2–W3 |
-| 0.3.0 可控 | W3–W4 完成 | 账本校验、审计体检、影响面/改名级联、回收站、一键修复与 6→9 目录迁移 | W3–W4 |
+| 0.2.0 结构化 | W2 完成 + W3 的 M9（仅 `relations/`）/M11/M14 完成 | 索引 v2（九目录全实体 + 全实体 FTS + 实体提及）、大纲三层、角色卡、世界观树/世界书、关系、时间线双轴、九分类树与通用条目编辑器 | W2–W3 |
+| 0.3.0 可控 | W3–W4 完成 | 伏笔状态机/超期/看板、账本校验、审计体检、影响面/改名级联、回收站、一键修复与 6→9 目录迁移 | W3–W4 |
 | 0.4.0 资料与取用 | W4 完成 | 资料登记与导入、提取管线、检索增强、共享库（复制/`origin`/stale）、OVK 语义检索、设置/备份 | W4 |
 | 0.5.0 提质 | W5–W6 完成 | 9 段简报、质量门禁、提案制/版本 diff、审稿 DAG/横评、批量写作、多纪元/双轴/KG/地图、EPUB/DOCX、旧库 59 万字迁移 | W5–W6 |
 | 发布 | W7–W8 完成 | 安装 → 启用 → 写入 → 重启 → 升级 → 卸载回归全绿；真实样本长跑通过 | W7–W8 |
@@ -93,7 +122,9 @@
 | 派生索引 v1 | 九目录扫描、临时文件 + 写锁重建、不变量校验（`OUTLINE_*` / `CHARACTER_NAME_DUPLICATE` / `DANGLING_PARENT` / `DUPLICATE_ID` / `FRONTMATTER_ISSUE` / `CHAPTER_NOT_MARKDOWN`） | `src/host/indexer.ts`、`index-build.ts` |
 | 写作 skills 与 preset | 5 个写作工艺 skill 与 `inkflow-writing` preset，按 `cwd` 门禁 | `src/host/skills.ts`、`preset.ts`、`skills/` |
 | 章正文检索 | `chapters_fts`（trigram）上 ≥3 字 `MATCH`、1–2 字 `LIKE` 兜底、片段只取正文；索引不可用返回 `INDEX_UNAVAILABLE` 且不写盘 | `src/host/search.ts`；`tests/search.test.js` |
-| 工具面 | 已注册 6 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` | `src/host/tools.ts` |
+| 工具面 | 已注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete` | `src/host/tools.ts` |
+| 卷章 catalog | `chapters/index.json` 的读写/校验/重建、`volumeId`、改名级联；I-11–I-14 在 catalog 层报告 | `src/host/catalog.ts`、`chapters.ts`；`tests/catalog.test.js` |
+| 面板入口与通道 | 两处入口：书库 = root 的 `sidebar.panellist` + `main`（ADR-0010）；创作工作台 = session 的 `conversation.view`。私有内部通道 `/inkflow/internal/*`（Host/Origin/方法/路径参数闸门） | `src/client/index.tsx`、`editor.tsx`、`hub.tsx`；`src/host/internal.ts`、`routes.ts` |
 | 竞品参考索引 | 4 个 OSS 项目的设计参考 | #60（过程稿在 issue 评论） |
 
 ### 4.2 进行中 / 已实现待验收
@@ -107,10 +138,9 @@
 
 | 项 | 状态 | 归属 |
 |---|---|---|
-| 卷章 catalog + `volumeId` | 【未实现】：无读写/校验/重建 | M5 #15 |
-| 面板入口 `conversation.view` | 【未实现】：仍注册 `sidebar.panellist` + `main` | M12 #17 |
 | 搜索的正文全文检索 | 【未实现】：`/search` 只匹配章节元数据，标 `searchUnavailable` | M4 #22 |
-| 索引 v2（九目录全实体 + 提及） | 【未实现】：只覆盖章/角色/世界观/大纲 | M4/M18 #23/#29 |
+| 索引 v2（九目录全实体 + 提及） | 【未实现】：6 个目录有解析分支（chapters / characters / world / outlines / foreshadowing / library），`timeline` / `relations` / `facts` 无分支，实体数恒为 0 | M4/M18 #23/#29 |
+| 域模块注册表（工具面 + 扫描面） | 【未实现】：`buildTools()` 与 `scanProject()`/`writeIndexDatabase()` 都是单点 | M0 #101 · #23 |
 | 共享库与 `origin` | 【未实现】 | M17 #40 |
 | OVK 语义检索 | 【未实现】：当前只有 FTS5 | M20 #41 |
 | 提案制 / 简报 / 门禁 / 审稿 / 批量 | 【未实现】 | M19 |
@@ -226,6 +256,8 @@
 | D-09 | M18 索引 v2 | M14 九分类树 / M9 影响面 | 硬 | 全实体查询面 |
 | D-10 | M19 简报 | M19 审稿/批量 | 硬 | 审稿与批量复用简报 |
 | D-11 | M20 OVK | 无阻塞 | 软 | 缺席时降级 FTS5 |
+| D-12 | M0 域模块注册表（#101） | #24–#30 的工具面 | 硬 | 域单只经 `DOMAIN_MODULES` 加工具，不改既有数组 |
+| D-13 | M18 `entities` 投影（#23） | #29 #30 | 硬 | 提及定位与九分类树查同一张投影表（X-1） |
 
 ## 8. 待拍板
 
