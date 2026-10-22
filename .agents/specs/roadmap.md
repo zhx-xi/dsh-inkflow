@@ -82,12 +82,12 @@
 | X-1 | `entities` 是跨类统一投影 | 列集 `kind / id / path / title / name_key / category / parent / order_index / status / keywords / aliases`；**主键 `(kind, id)` 复合**：不同目录是不同表、各有主键，两个 kind 可以合法共用一个 id（I-04 只报 `DUPLICATE_ID`、两行都保留），单列主键会把这种既有合法状态判成不可表示；`name_key`/`aliases` 的归一化**只有一处实现**（`indexer.ts:84 nameKey()` 提到 `domains/naming.ts`，域单与 #29 都调它）；`entities` 与域表的行必须由同一次 scan、同一事务产出，不一致报 `ENTITIES_DRIFT`（I-15） |
 | X-2 | 域表的 DDL 由域模块自带 | `DomainModule` 除 `scan()`/`validate()` 之外提供 `schema()`（返回该域的 DDL 片段与写入函数）；`writeIndexDatabase()` 只按注册表拼装执行。域单扩列/新建表都在自己的 `domains/<域>.ts` 里，**不改 `indexer.ts`** |
 | X-3 | 全实体 FTS 只建一张 | `entities_fts`（title / aliases / keywords）+ 1–2 字 `LIKE` 兜底，策略与章正文检索一致（[conventions.md §4.1](conventions.md)）；建表与查询函数归 #23，消费与用例归 #30 |
-| X-3a | 投影覆盖面现状 | 产出 `entities` 的目录随域单增加：已有 chapters / characters / outlines / world / relations；`foreshadowing` / `timeline` / `facts` 仍只报 frontmatter 问题，其实体随 #31 / #28 / #32 的表一起进投影；`library` 是文件登记，不产实体 |
+| X-3a | 投影覆盖面现状 | 产出 `entities` 的目录随域单增加：已有 chapters / characters / outlines / world / relations / timeline；`foreshadowing` / `facts` 仍只报 frontmatter 问题，其实体随 #31 / #32 的表一起进投影；`library` 是文件登记，不产实体 |
 | X-4 | 校验只经注册表，且写入侧也过 | 每条不变量写在 `DomainModule.validate()`，`scanProject()` 只聚合其输出；**写入侧落盘前调用同一个 `validate()`**（[data-model](data-model.md) §5 的双保险），否则只剩重建期一张网；既有不变量 code 由 #23 迁入对应域模块，新 code 同一提交写进 §5 |
 | X-5 | 注册表只解决装配，不解决文本冲突 | 域单只**新增**自己的文件，并在 `domains/index.ts` 的数组追加一行（按 `kind` 字母序定位，减少相邻行冲突）。该数组是唯一仍会被多单触碰的点，冲突按 rebase 解（单行、机械） |
 | X-6 | 面板查询只读，写仍走写路由 | 查询只消费 `entities` 与内部通道 payload；写入仍走已有写路由 + `io.ts`（[ADR-0008](../adrs/0008-panel-data-channel.md) D5：面板与工具共用同一套解析与判定）；client 侧不直连域表、不做文件 IO |
 | X-7 | 面板分类口径 | 树顶层 kind = `CONTENT_DIRS` 去掉 `chapters`（章由工作台 M13 承接），即 8 类；「地点」不是独立 kind，而是 `world/<category>` 的分类（[data-model](data-model.md) §2），在树里作为世界观的子分组展开。该口径与 #30 正文的「九分类」措辞不同，以本条为准 |
-| X-8 | 视图 payload 归 #30 | `DomainModule` 不含视图面；`internal.ts` 的 payload 由 #30 自己新增（4 个既有构造器是单点，`internal.ts:367/419/487/595`）。#101 不提供「视图注册表」，§4.3 的措辞据此改为「工具面 + 扫描面」 |
+| X-8 | 视图 payload 归 #30 | `DomainModule` 不含视图面；设定库的 payload 由 #30 新增，**可放独立模块再经 `internal.ts` 再导出**（`internal.ts` 已近千行，`AGENTS.md` §10.5 的 600 行原则优先于「必须写在同一个文件」）；`routes.ts` 仍只从 `internal.js` 取。#101 不提供「视图注册表」，§4.3 的措辞据此改为「工具面 + 扫描面」 |
 
 **关键路径**：#101（2）→ #23（5–6）→ #24（3–4）→ #30（3–4）≈ **13–16 人日**；0.2.0 合计 **25–31 人日**（并行 4 单时路径仍是瓶颈，「总量 ÷ 并行度」不构成下限）。
 

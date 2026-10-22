@@ -349,7 +349,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 - **为什么不用 `meta.builtAt` 对 `max(mtime)`**：删文件不会抬高任何 mtime；一删一增的「数量不变替换」也骗得过时间戳。因此 `builtAt` 只作诊断信息，**判定只认逐行对拍**。
 - `reasons` 最多列 `FRESHNESS_REASON_LIMIT`（5）条并附「… and N more」，`changes` 是未截断的真实差异数。
 
-**触发点唯一**：`inkflow_chapter_list`、`inkflow_chapter_search`、`GET /inkflow/internal/chapters`、`GET /inkflow/internal/search` 全部只调 `ensureIndex`，各自不再持有 `if (stale) build` 判断——所以「列表已新、搜索还旧」在结构上不可能发生。`inkflow_index_rebuild` 是**显式修复**（人/模型主动要求），`chapters.ts` 写路径成功后的重建是**写后失效**（文件刚变），两者都不是「读时判定」，不构成第二个判定点。
+**触发点唯一**：`inkflow_chapter_list`、`inkflow_chapter_search`、`GET /inkflow/internal/chapters`、`GET /inkflow/internal/search`、**`GET /inkflow/internal/library`、`/library/item`、`/library/issues`**（设定库读路由，消费 `entities` 与 `validation_issues`——不先刷索引，树会把「索引缺失」显示成「书里没有」）全部只调 `ensureIndex`，各自不再持有 `if (stale) build` 判断——所以「列表已新、搜索还旧」在结构上不可能发生。`inkflow_index_rebuild` 是**显式修复**（人/模型主动要求），`chapters.ts` 写路径成功后的重建是**写后失效**（文件刚变），两者都不是「读时判定」，不构成第二个判定点。
 
 **降级**：面板两条读路由在 `ensureIndex` 失败时仍返回数据（旧索引或 catalog 投影），并把 `indexState` / `indexError{code,errno,message}` / `indexReasons[]` 一并返回；工具侧则返回结构化失败（`INDEX_BUILD_FAILED` / `INDEX_BUSY`）。
 
@@ -516,6 +516,9 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 |---|---|---|---|---|
 | `/inkflow/internal/status` | GET | `sessionId` | `root`、`label`、`state`、`checks`、`missing`、`actions`、`meta`、`index`（`dbExists`/`schemaMatches`/`builtAt`/`counts`）、`catalog`（`stale`/`volumes`/`chapters`）、`search` | `SESSION_ID_INVALID` |
 | `/inkflow/internal/chapters` | GET | `sessionId` | `volumes[]`（`volumeId`/`dir`/`title`/`order`/`chapters[]`）+ `looseChapters[]` + `catalogStale`、`indexBuilt`、`indexRebuilt`、`indexState`（`indexError`/`indexReasons` 仅在重建失败时出现） | — |
+| `/inkflow/internal/library` | GET | `sessionId` | `kinds[]`（八类，`CONTENT_DIRS` 去 `chapters`，X-7）每类含 `count`/`truncated`/`groups[]`（`world` 按 category 分组，未分类排最后）；`indexState` | `SESSION_ID_INVALID` |
+| `/inkflow/internal/library/item` | GET | `sessionId`、`kind`、`id` | 实体投影行 + 该文件的 `frontmatter` / `body` / `bodyChars` / `issues`；`KIND_REQUIRED`/`KIND_INVALID`(附 `allowed[]`)/`ID_REQUIRED`；索引不可用时 200 + `INDEX_UNAVAILABLE` | `400 KIND_REQUIRED`、`400 KIND_INVALID`、`400 ID_REQUIRED`、`404 library-item-not-found` |
+| `/inkflow/internal/library/issues` | GET | `sessionId` | `issues[]`（`code`/`path`/`detail`）+ `counts`（按 code）+ `truncated` | `SESSION_ID_INVALID` |
 | `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`status`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId`、`fingerprint`（`size`/`mtimeMs`/`sha256`，写路由的 `expected` 基线） | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
 | `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'`、`indexRebuilt`、`indexState`（+ 失败时的 `indexError`/`indexReasons`） | `400 QUERY_REQUIRED` |
 | `/inkflow/internal/chapters` | POST | `sessionId`；`title`（必填）、`volumeId`（`vol-NN` 或 `null`＝散章）、`slug`、`seq` | 新建章 `chapter`（`chapterId`/`file`/`title`/`seq`/`volumeId`/`status`）+ `fingerprint` + `catalogRebuilt`/`indexRebuilt` | `400 TITLE_REQUIRED`/`SEQ_INVALID`/`VOLUME_ID_INVALID`、`404 VOLUME_NOT_FOUND`、`409 CHAPTER_EXISTS`/`SEQ_CONFLICT` |

@@ -36,6 +36,11 @@
  * omit it. Anything that writes goes through `chapters.ts`, never through this
  * file: see `internal.ts` for the domain mapping and the CAS plumbing.
  *
+ * THE SETTING LIBRARY (issue #30) is three more read routes — `/library` (the
+ * eight-kind tree, X-7), `/library/item?kind=&id=` (one entry, read-only) and
+ * `/library/issues` (`validation_issues`). They are GET-only, name an entity
+ * rather than a directory, and reuse every guard below unchanged.
+ *
  * THE HUB CHANNEL IS SEPARATE (`/inkflow/internal/hub/*`, ADR-0010 D3): the
  * root-scoped book hub has no session, so those routes take their anchor from
  * the Host workspace registry instead (see `hub.ts`) and are dispatched before
@@ -60,6 +65,9 @@ import {
   SESSION_ID_PARAM,
   buildChapter,
   buildChapters,
+  buildLibrary,
+  buildLibraryItem,
+  buildLibraryIssues,
   buildSearch,
   buildStatus,
   createChapterViaChannel,
@@ -191,6 +199,33 @@ const ROUTES: readonly InternalRoute[] = [
       }
       return { status: 200, body: ok(await buildSearch(target, version, q)) }
     },
+  },
+  {
+    // The setting library (issue #30, X-7): eight kind groups, `world` carrying
+    // its `category` buckets. Read-only; the index is refreshed through the same
+    // `ensureIndex` the chapter tree uses (conventions §4.0's single trigger).
+    name: 'library',
+    pattern: /^\/library$/,
+    methods: ['GET'],
+    handle: async ({ target, version }) => ({ status: 200, body: ok(await buildLibrary(target, version)) }),
+  },
+  {
+    // One entry: `kind` and `id` are the tree's own addresses, never a path, so
+    // the path-parameter ban above still means what it says. 400 for an unknown
+    // kind or a missing id, 404 for an id the projection does not hold.
+    name: 'library-item',
+    pattern: /^\/library\/item$/,
+    methods: ['GET'],
+    handle: async ({ target, version, query }) =>
+      buildLibraryItem(target, version, query.get('kind') ?? '', query.get('id') ?? ''),
+  },
+  {
+    // `validation_issues` for the problem panel: grouped client-side by `code`,
+    // because grouping is presentation and the wire stays a flat list.
+    name: 'library-issues',
+    pattern: /^\/library\/issues$/,
+    methods: ['GET'],
+    handle: async ({ target, version }) => ({ status: 200, body: ok(await buildLibraryIssues(target, version)) }),
   },
 ]
 
