@@ -11,20 +11,17 @@
  * `index-build.ts`.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import {
-  CHAPTER_STATUSES,
-  CONTENT_DIRS,
-  INDEX_DB_FILE,
-  INDEX_DIR,
-  INDEX_SCHEMA_VERSION,
-  OUTLINE_KINDS,
-} from './conventions.js'
-import { boolField, intField, parseMarkdown, stringField } from './frontmatter.js'
+import { CONTENT_DIRS, INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from './conventions.js'
+import { boolField, parseMarkdown, stringField } from './frontmatter.js'
 import type { ProjectProbe } from './project.js'
+import { DOMAIN_MODULES } from './domains/index.js'
+import { ENTITIES_DDL, insertEntities } from './domains/entities.js'
+import { readText } from './domains/scan-helpers.js'
+import type { DomainDatabase, DomainEntityRef, DomainScanResult, DomainTableRows } from './domains/types.js'
 
 export interface IndexCounts {
   files: number
@@ -75,15 +72,10 @@ export function indexPaths(root: string): { dir: string; dbFile: string } {
   return { dir, dbFile: join(dir, INDEX_DB_FILE) }
 }
 
-/** Non-blank character count — matches how Chinese word counts are usually quoted. */
-export function countChars(text: string): number {
-  return text.replace(/\s+/gu, '').length
-}
-
-/** Normalise a name for uniqueness checks: NFKC, case-fold, strip whitespace. */
-export function nameKey(name: string): string {
-  return name.normalize('NFKC').toLowerCase().replace(/\s+/gu, '')
-}
+// Re-exported from the domain layer: both used to live here, and `internal.ts` plus
+// the write path already import them through this module (one implementation only).
+export { countChars } from './domains/scan-helpers.js'
+export { nameKey } from './domains/naming.js'
 
 export interface WalkedFile {
   path: string
@@ -146,123 +138,33 @@ export function walkProjectFiles(root: string): WalkedFile[] {
   return files
 }
 
-function leadingNumber(file: string): number | undefined {
-  const match = /^(\d+)/.exec(basename(file))
-  return match?.[1] === undefined ? undefined : Number(match[1])
-}
 
-/**
- * `world/<category>/<slug>.md` → `<category>`; a file sitting directly in
- * `world/` has no category directory.
- *
- * Taking "the parent directory name" blindly gave every root entry
- * `category: "world"` — the container itself, not a category. That also hid
- * I-08's "a child entry must carry a category" check, because the bogus value
- * looked like a category (found by the issue #8 parity fixture). Same class of
- * bug as `volume: "chapters"` (issue #7).
- */
-function worldCategoryOf(relPath: string): string | undefined {
-  const parts = relPath.split('/')
-  if (parts.length !== 3 || parts[0] !== 'world') return undefined
-  const category = parts[1]
-  return category === undefined || category === '' ? undefined : category
-}
 
-/**
- * `chapters/vol-01/0001-a.md` → `vol-01`; a chapter sitting directly in
- * `chapters/` has no volume. Taking "the parent directory name" blindly gave
- * every top-level chapter `volume: "chapters"`, which is not a volume but the
- * container itself (issue #7).
- */
-function volumeDirOf(relPath: string): string | undefined {
-  const parts = relPath.split('/')
-  if (parts.length !== 3 || parts[0] !== 'chapters') return undefined
-  const volume = parts[1]
-  return volume === undefined || volume === '' ? undefined : volume
-}
 
-function readText(path: string): string {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return ''
-  }
-}
 
-interface ChapterRecord {
-  id: string
-  path: string
-  seq: number | undefined
-  title: string
-  volume: string | undefined
-  status: string
-  wordCount: number
-  body: string
-}
 
-interface CharacterRecord {
-  id: string
-  path: string
-  name: string
-  key: string
-  group: string | undefined
-  role: string | undefined
-}
 
-interface WorldRecord {
-  id: string
-  path: string
-  title: string
-  category: string | undefined
-  parent: string | undefined
-}
 
-interface OutlineRecord {
-  id: string
-  path: string
-  kind: string
-  title: string
-  parent: string | undefined
-  order: number | undefined
-}
 
-function inferOutlineKind(relPath: string): string | undefined {
-  const name = basename(relPath, extname(relPath)).toLowerCase()
-  if (name === 'overall' || name.startsWith('overall')) return 'overall'
-  if (name.startsWith('vol-') || name.startsWith('volume-')) return 'volume'
-  if (name.startsWith('ch-') || name.startsWith('chapter-')) return 'chapter'
-  return undefined
-}
 
-/**
- * Keep only the first row per id.
- *
- * The id columns are PRIMARY KEYs and the whole rebuild runs in one transaction,
- * so one duplicate id aborts the build, leaves no index behind, and makes every
- * later read — and every retry — fail the same way. A duplicate id is content
- * the author can still fix, so the index reports it as `DUPLICATE_ID` and keeps
- * the first file instead of locking the project out (conventions.md §4: issues
- * never block the index).
- */
-function keepFirstById<T extends { id: string }>(rows: readonly T[]): T[] {
-  const seen = new Set<string>()
-  const kept: T[] = []
-  for (const row of rows) {
-    if (seen.has(row.id)) continue
-    seen.add(row.id)
-    kept.push(row)
-  }
-  return kept
-}
 
 /** Everything one scan produced; consumed by `writeIndexDatabase`. */
 export interface ScanResult {
   files: WalkedFile[]
   issues: ValidationIssue[]
-  chapterRows: ChapterRecord[]
-  characterRows: CharacterRecord[]
-  worldRows: WorldRecord[]
-  outlineRows: OutlineRecord[]
+  /** One bucket per table, contributed by the domain modules (#23). */
+  tables: DomainTableRows[]
+  /** The cross-class projection (X-1): every entity of the book, one row each. */
+  entities: DomainEntityRef[]
+  /**
+   * Legacy narrow views, derived from `tables`. Kept so existing readers (parity
+   * tests, the build result) do not have to care about the bucket shape; #23 is the
+   * commit that introduced `tables`, so nothing else depends on them yet.
+   */
+  chapterRows: ReadonlyArray<Record<string, unknown>>
+  characterRows: ReadonlyArray<Record<string, unknown>>
+  worldRows: ReadonlyArray<Record<string, unknown>>
+  outlineRows: ReadonlyArray<Record<string, unknown>>
   libraryFiles: WalkedFile[]
   counts: IndexCounts
 }
@@ -272,87 +174,37 @@ export function scanProject(root: string): ScanResult {
   const files = walkProjectFiles(root)
 
   const issues: ValidationIssue[] = []
-  const chapters: ChapterRecord[] = []
-  const characters: CharacterRecord[] = []
-  const worldEntries: WorldRecord[] = []
-  const outlineNodes: OutlineRecord[] = []
+  const tables: DomainTableRows[] = []
+  const entities: DomainEntityRef[] = []
   const libraryFiles: WalkedFile[] = []
-  const counts = emptyCounts()
 
+  // 1) Every registered domain scans its own directory; the index never parses a
+  //    content directory itself (X-4/X-5). A domain owns exactly one kind.
+  const ownedDirs = new Set<string>(DOMAIN_MODULES.map((module) => module.kind))
+  const scanned = DOMAIN_MODULES.map((module) => ({
+    module,
+    result: module.scan({ root, files: files.filter((file) => file.dir === module.kind) }),
+  }))
+  for (const { result } of scanned) {
+    tables.push(...result.tables)
+    entities.push(...result.entities)
+    issues.push(...result.issues)
+  }
+
+  // 2) A content directory with no owner yet still gets the generic frontmatter pass:
+  //    v1 reported it for every content directory, and a broken frontmatter block must
+  //    not become invisible just because its domain has not landed (#27/#28/#31).
   for (const file of files) {
-    const kindDir = file.dir
-    if ((CONTENT_DIRS as readonly string[]).includes(kindDir) === false) continue
-    if (kindDir === 'library') libraryFiles.push(file)
-
-    if (extname(file.path).toLowerCase() !== '.md') {
-      if (kindDir === 'chapters') {
-        issues.push({ code: 'CHAPTER_NOT_MARKDOWN', path: file.path, detail: 'chapters must be .md files' })
-      }
-      continue
-    }
-
+    if ((CONTENT_DIRS as readonly string[]).includes(file.dir) === false) continue
+    if (file.dir === 'library') libraryFiles.push(file)
+    if (ownedDirs.has(file.dir)) continue
+    if (extname(file.path).toLowerCase() !== '.md') continue
     const parsed = parseMarkdown(readText(join(root, file.path)))
-    for (const issue of parsed.issues) {
-      issues.push({ code: 'FRONTMATTER_ISSUE', path: file.path, detail: issue })
-    }
-    const id = stringField(parsed.data, 'id') ?? file.path
-
-    if (kindDir === 'chapters') {
-      const status = stringField(parsed.data, 'status')
-      chapters.push({
-        id,
-        path: file.path,
-        seq: intField(parsed.data, 'seq') ?? leadingNumber(file.path),
-        title: stringField(parsed.data, 'title') ?? basename(file.path, '.md'),
-        volume: stringField(parsed.data, 'volume') ?? volumeDirOf(file.path),
-        status: (CHAPTER_STATUSES as readonly string[]).includes(status ?? '') ? (status as string) : 'draft',
-        wordCount: countChars(parsed.body),
-        body: parsed.body,
-      })
-    } else if (kindDir === 'characters') {
-      const name = stringField(parsed.data, 'name') ?? basename(file.path, '.md')
-      characters.push({
-        id,
-        path: file.path,
-        name,
-        key: nameKey(name),
-        group: stringField(parsed.data, 'group'),
-        role: stringField(parsed.data, 'role'),
-      })
-    } else if (kindDir === 'world') {
-      worldEntries.push({
-        id,
-        path: file.path,
-        title: stringField(parsed.data, 'title') ?? basename(file.path, '.md'),
-        category: stringField(parsed.data, 'category') ?? worldCategoryOf(file.path),
-        parent: stringField(parsed.data, 'parent'),
-      })
-    } else if (kindDir === 'outlines') {
-      const declaredKind = stringField(parsed.data, 'kind')
-      const kind = (OUTLINE_KINDS as readonly string[]).includes(declaredKind ?? '')
-        ? (declaredKind as string)
-        : inferOutlineKind(file.path)
-      if (kind === undefined) {
-        issues.push({
-          code: 'OUTLINE_KIND_UNKNOWN',
-          path: file.path,
-          detail: 'cannot infer kind; declare kind: overall|volume|chapter',
-        })
-        continue
-      }
-      outlineNodes.push({
-        id,
-        path: file.path,
-        kind,
-        title: stringField(parsed.data, 'title') ?? basename(file.path, '.md'),
-        parent: stringField(parsed.data, 'parent'),
-        order: intField(parsed.data, 'order'),
-      })
-    } else if (kindDir === 'foreshadowing') {
-      // I-09 (data-model.md §5): "resolved" is only checkable against the
-      // manuscript when the file also names the chapter that pays it off.
-      // Documented in conventions.md §3.8; there is no table for it yet, so this
-      // is a validation-only pass over the frontmatter.
+    for (const issue of parsed.issues) issues.push({ code: 'FRONTMATTER_ISSUE', path: file.path, detail: issue })
+    // I-09: `resolved: true` is only checkable when the file names the chapter that
+    // pays it off. There is no table for it yet (#31), so this stays a validation-only
+    // pass over the frontmatter — the same shape v1 had.
+    if (file.dir === 'foreshadowing') {
       const resolvedChapter = stringField(parsed.data, 'resolvedChapter')
       if (boolField(parsed.data, 'resolved') && (resolvedChapter ?? '').trim() === '') {
         issues.push({
@@ -364,196 +216,127 @@ export function scanProject(root: string): ScanResult {
     }
   }
 
-  // ---- invariant checks over the parsed view (application-level, ADR-0005) ----
-  const overall = outlineNodes.filter((node) => node.kind === 'overall')
-  if (overall.length === 0) {
-    issues.push({ code: 'OUTLINE_NO_OVERALL', detail: 'project must have exactly one outlines/overall.md' })
-  } else if (overall.length > 1) {
-    issues.push({ code: 'OUTLINE_MULTIPLE_OVERALL', detail: `${overall.length} overall outlines found` })
-  }
-  const overallId = overall[0]?.id
-  const outlineById = new Map(outlineNodes.map((node) => [node.id, node]))
-  for (const node of outlineNodes) {
-    if (node.kind === 'volume') {
-      if (node.parent === undefined || overallId === undefined || node.parent !== overallId) {
-        issues.push({
-          code: 'OUTLINE_VOLUME_PARENT',
-          path: node.path,
-          detail: 'volume outline must have parent = overall outline id',
-        })
-      }
-    }
-    if (node.kind === 'chapter' && node.parent !== undefined) {
-      const parent = outlineById.get(node.parent)
-      if (parent === undefined) {
-        issues.push({ code: 'DANGLING_PARENT', path: node.path, detail: `parent "${node.parent}" not found` })
-      } else if (parent.kind === 'volume') {
-        // allowed (chapter under volume); volume-under-volume is what we forbid
-      }
-    }
-    if (node.kind === 'volume' && node.parent !== undefined) {
-      const parent = outlineById.get(node.parent)
-      if (parent !== undefined && parent.kind === 'volume') {
-        issues.push({ code: 'OUTLINE_VOLUME_IN_VOLUME', path: node.path, detail: 'volume outline cannot nest under a volume' })
-      }
+  // 3) I-04: report every collision across classes, then drop only **same-table**
+  //    duplicates. Separate tables have separate primary keys, so two kinds may share an
+  //    id: that is reported as DUPLICATE_ID with neither row dropped (the contract the
+  //    bug test pins), and the projection's (kind, id) key can represent both.
+  const firstPathById = new Map<string, string>()
+  for (const entity of entities) {
+    const previous = firstPathById.get(entity.id)
+    if (previous !== undefined && previous !== entity.path) {
+      issues.push({ code: 'DUPLICATE_ID', path: entity.path, detail: `id "${entity.id}" also used by ${previous}` })
+    } else if (previous === undefined) {
+      firstPathById.set(entity.id, entity.path)
     }
   }
 
-  const seenCharacterKeys = new Map<string, string>()
-  for (const character of characters) {
-    const previous = seenCharacterKeys.get(character.key)
-    if (previous !== undefined) {
-      issues.push({
-        code: 'CHARACTER_NAME_DUPLICATE',
-        path: character.path,
-        detail: `name "${character.name}" already used by ${previous}`,
-      })
-    } else {
-      seenCharacterKeys.set(character.key, character.path)
-    }
+  // 4) Domain invariants run on the domain's own rows with the whole book's projection
+  //    available, so a domain can resolve references across directories.
+  for (const { module, result } of scanned) {
+    issues.push(...module.validate({ root, scan: result, entities }))
   }
 
-  // I-08 (data-model.md §5): a world book has either one root (a first-level
-  // entry without a parent) or none at all — a "flat category book" that keeps
-  // every entry under `world/<category>/` and never links them is valid.
-  //
-  // The first implementation counted every parentless entry as a root, so a
-  // flat category book reported WORLD_ROOT_MULTIPLE (found in review after #8).
-  // The category is the directory name when the field is absent
-  // (conventions.md §3.4), so only a first-level entry that claims a parent
-  // without carrying a field or a category directory is incomplete.
-  if (worldEntries.length > 0) {
-    const isFirstLevel = (relPath: string): boolean => relPath.split('/').length === 2
-    const roots = worldEntries.filter(
-      (entry) => (entry.parent === undefined || entry.parent === '') && isFirstLevel(entry.path),
-    )
-    const claimsParent = worldEntries.some((entry) => entry.parent !== undefined && entry.parent !== '')
-    if (roots.length > 1) {
-      const shown = roots.slice(0, 3).map((entry) => entry.path).join(', ')
-      issues.push({
-        code: 'WORLD_ROOT_MULTIPLE',
-        detail: `${String(roots.length)} world entries are roots (${shown}${roots.length > 3 ? ', …' : ''}); exactly one root is allowed`,
-      })
-    } else if (roots.length === 0 && claimsParent) {
-      issues.push({
-        code: 'WORLD_ROOT_MISSING',
-        detail:
-          'world entries claim parents but none is a root; either add one first-level entry without parent or drop the parents (flat category book)',
-      })
-    }
-    for (const entry of worldEntries) {
-      const hasParent = entry.parent !== undefined && entry.parent !== ''
-      if (hasParent && (entry.category === undefined || entry.category === '')) {
-        issues.push({
-          code: 'WORLD_CATEGORY_REQUIRED',
-          path: entry.path,
-          detail: 'a world entry with a parent must also carry a category (or live under world/<category>/)',
-        })
-      }
-    }
-  }
+  // Same-table de-duplication: one primary key holds one row, so the first file in walk
+  // order wins and the later ones stay visible in the DUPLICATE_ID details.
+  const keptTables = tables.map((table) => {
+    const seen = new Set<string>()
+    const rows = table.rows.filter((row) => {
+      const key = String(row['id'] ?? row['path'] ?? '')
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    return { table: table.table, rows }
+  })
 
-  const knownIds = new Set<string>([...chapters.map((c) => c.id), ...characters.map((c) => c.id), ...worldEntries.map((c) => c.id)])
-  for (const entry of worldEntries) {
-    if (entry.parent !== undefined && entry.parent !== '' && !knownIds.has(entry.parent)) {
-      issues.push({ code: 'DANGLING_PARENT', path: entry.path, detail: `parent "${entry.parent}" not found` })
-    }
-  }
+  // The projection follows the same keep-first decision as the tables, or I-15 breaks:
+  // `entities` is written from this list, so a row a domain table dropped must not
+  // survive here (and must not be inserted into `entities_fts` twice).
+  const seenEntityKeys = new Set<string>()
+  const keptEntities = entities.filter((entity) => {
+    const key = `${entity.kind}\u0000${entity.id}`
+    if (seenEntityKeys.has(key)) return false
+    seenEntityKeys.add(key)
+    return true
+  })
 
-  const duplicateIds = new Map<string, string>()
-  for (const item of [...chapters, ...characters, ...worldEntries, ...outlineNodes]) {
-    const previous = duplicateIds.get(item.id)
-    if (previous !== undefined) {
-      issues.push({ code: 'DUPLICATE_ID', path: item.path, detail: `id "${item.id}" also used by ${previous}` })
-    } else {
-      duplicateIds.set(item.id, item.path)
-    }
-  }
-
-  // The validator above already reported every collision; the writer must not
-  // be handed two rows with the same primary key, so the later files are dropped
-  // from the index (their paths stay visible in the DUPLICATE_ID details).
-  const chapterRows = keepFirstById(chapters)
-  const characterRows = keepFirstById(characters)
-  const worldRows = keepFirstById(worldEntries)
-  const outlineRows = keepFirstById(outlineNodes)
-
-  // Counts describe what is actually queryable in the index, so they follow the
-  // kept rows — readIndexMeta counts rows too and the two must agree.
+  const counts = emptyCounts()
   counts.files = files.length
-  counts.chapters = chapterRows.length
-  counts.characters = characterRows.length
-  counts.worldEntries = worldRows.length
-  counts.outlineNodes = outlineRows.length
+  counts.chapters = tableCount(keptTables, 'chapters')
+  counts.characters = tableCount(keptTables, 'characters')
+  counts.worldEntries = tableCount(keptTables, 'world_entries')
+  counts.outlineNodes = tableCount(keptTables, 'outline_nodes')
   counts.libraryFiles = libraryFiles.length
 
-  return { files, issues, chapterRows, characterRows, worldRows, outlineRows, libraryFiles, counts }
+  return {
+    files,
+    issues,
+    tables: keptTables,
+    entities: keptEntities,
+    chapterRows: tableRows(keptTables, 'chapters'),
+    characterRows: tableRows(keptTables, 'characters'),
+    worldRows: tableRows(keptTables, 'world_entries'),
+    outlineRows: tableRows(keptTables, 'outline_nodes'),
+    libraryFiles,
+    counts,
+  }
+}
+
+/** Rows of one bucket; empty when the table is absent. */
+function tableRows(tables: readonly DomainTableRows[], name: string): ReadonlyArray<Record<string, unknown>> {
+  return tables.find((table) => table.table === name)?.rows ?? []
+}
+
+/** Row count of one bucket — counts describe what is actually queryable. */
+function tableCount(tables: readonly DomainTableRows[], name: string): number {
+  return tableRows(tables, name).length
 }
 
 /**
  * Write the whole index into `targetFile` (always a build temp file).
- * The caller swaps it into place only after this returns and the file is
- * fsynced; on any throw the temp file is thrown away by the caller.
+ * The caller swaps it into place only after this returns and the file is fsynced; on
+ * any throw the temp file is thrown away by the caller.
+ *
+ * Who creates what: this function creates the seam-owned tables (freshness baseline,
+ * issue log, library registry, cross-class projection) and then asks every registered
+ * domain for its own DDL and row writer (X-2). No table is created in two places.
  */
 export function writeIndexDatabase(targetFile: string, root: string, scan: ScanResult): string {
-  const { files, chapterRows, characterRows, worldRows, outlineRows, libraryFiles, issues, counts } = scan
+  const { files, tables, entities, libraryFiles, issues, counts } = scan
   const db = new DatabaseSync(targetFile)
   try {
-    // DELETE journal: a WAL database brings `-wal`/`-shm` side files that would
-    // have to be renamed together with the database. The temp file is renamed
-    // alone, so it must be a single self-contained file.
+    // DELETE journal: a WAL database brings `-wal`/`-shm` side files that would have to
+    // be renamed together with the database. The temp file is renamed alone, so it must
+    // be a single self-contained file.
     db.exec('PRAGMA journal_mode = DELETE')
     db.exec('PRAGMA synchronous = NORMAL')
     db.exec('BEGIN')
+
     db.exec(`
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE files (path TEXT PRIMARY KEY, dir TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, mtime TEXT NOT NULL);
-CREATE TABLE chapters (id TEXT PRIMARY KEY, path TEXT NOT NULL, seq INTEGER, title TEXT NOT NULL, volume TEXT, status TEXT NOT NULL, word_count INTEGER NOT NULL);
-CREATE INDEX ix_chapters_seq ON chapters(seq);
-CREATE TABLE characters (id TEXT PRIMARY KEY, path TEXT NOT NULL, name TEXT NOT NULL, name_key TEXT NOT NULL, group_name TEXT, role TEXT);
-CREATE INDEX ix_characters_name ON characters(name_key);
-CREATE TABLE world_entries (id TEXT PRIMARY KEY, path TEXT NOT NULL, title TEXT NOT NULL, category TEXT, parent TEXT);
-CREATE INDEX ix_world_category ON world_entries(category);
-CREATE TABLE outline_nodes (id TEXT PRIMARY KEY, path TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, parent TEXT, order_index INTEGER);
-CREATE INDEX ix_outline_kind ON outline_nodes(kind);
 CREATE TABLE library_files (path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime TEXT NOT NULL);
 CREATE TABLE validation_issues (seq INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, path TEXT, detail TEXT NOT NULL);
-CREATE VIRTUAL TABLE chapters_fts USING fts5(chapter_id UNINDEXED, title, body, tokenize='trigram');
 `)
+    for (const statement of ENTITIES_DDL) db.exec(statement)
+    for (const module of DOMAIN_MODULES) {
+      for (const statement of module.schema().ddl) db.exec(statement)
+    }
 
     const insertFile = db.prepare('INSERT INTO files (path, dir, kind, size, mtime) VALUES (?, ?, ?, ?, ?)')
     for (const file of files) {
       insertFile.run(file.path, file.dir, file.dir === '' ? 'root' : file.dir, file.size, file.mtime)
     }
-    // `INSERT OR REPLACE` is the second net below the `keepFirstById` prefilter:
-    // a derived index must never be able to brick a project, so an unforeseen
-    // duplicate replaces the earlier row instead of aborting the transaction.
-    const insertChapter = db.prepare(
-      'INSERT OR REPLACE INTO chapters (id, path, seq, title, volume, status, word_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    )
-    const insertChapterFts = db.prepare('INSERT INTO chapters_fts (chapter_id, title, body) VALUES (?, ?, ?)')
-    for (const chapter of chapterRows) {
-      insertChapter.run(chapter.id, chapter.path, chapter.seq ?? null, chapter.title, chapter.volume ?? null, chapter.status, chapter.wordCount)
-      insertChapterFts.run(chapter.id, chapter.title, chapter.body)
-    }
-    const insertCharacter = db.prepare(
-      'INSERT OR REPLACE INTO characters (id, path, name, name_key, group_name, role) VALUES (?, ?, ?, ?, ?, ?)',
-    )
-    for (const character of characterRows) {
-      insertCharacter.run(character.id, character.path, character.name, character.key, character.group ?? null, character.role ?? null)
-    }
-    const insertWorld = db.prepare(
-      'INSERT OR REPLACE INTO world_entries (id, path, title, category, parent) VALUES (?, ?, ?, ?, ?)',
-    )
-    for (const entry of worldRows) {
-      insertWorld.run(entry.id, entry.path, entry.title, entry.category ?? null, entry.parent ?? null)
-    }
-    const insertOutline = db.prepare(
-      'INSERT OR REPLACE INTO outline_nodes (id, path, kind, title, parent, order_index) VALUES (?, ?, ?, ?, ?, ?)',
-    )
-    for (const node of outlineRows) {
-      insertOutline.run(node.id, node.path, node.kind, node.title, node.parent ?? null, node.order ?? null)
-    }
+
+    // Domain rows: each module writes its own tables (`INSERT OR REPLACE` inside, so an
+    // unforeseen duplicate replaces the earlier row instead of aborting the build), and
+    // then the projection is written from the same scan — same transaction, which is
+    // what makes I-15 (ENTITIES_DRIFT) a check rather than a hope.
+    const domainDatabase = db as unknown as DomainDatabase
+    const domainScan: DomainScanResult = { tables, entities, issues }
+    for (const module of DOMAIN_MODULES) module.schema().insert(domainDatabase, domainScan)
+    insertEntities(domainDatabase, entities)
+
     const insertLibrary = db.prepare('INSERT INTO library_files (path, size, mtime) VALUES (?, ?, ?)')
     for (const file of libraryFiles) insertLibrary.run(file.path, file.size, file.mtime)
     const insertIssue = db.prepare('INSERT INTO validation_issues (code, path, detail) VALUES (?, ?, ?)')
@@ -565,6 +348,7 @@ CREATE VIRTUAL TABLE chapters_fts USING fts5(chapter_id UNINDEXED, title, body, 
     insertMeta.run('root', root)
     insertMeta.run('indexSchemaVersion', String(INDEX_SCHEMA_VERSION))
     insertMeta.run('fileCount', String(counts.files))
+    insertMeta.run('entityCount', String(entities.length))
     db.exec(`PRAGMA user_version = ${INDEX_SCHEMA_VERSION}`)
     db.exec('COMMIT')
     return builtAt

@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { apply } from '../lib/index.js'
+import { INDEX_SCHEMA_VERSION, apply } from '../lib/index.js'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const INDEX_DIR = 'index'
@@ -398,7 +398,7 @@ async function assertParity(harness, root, expected) {
     // meta agrees with the file count and the schema version.
     const meta = Object.fromEntries(all(db, 'SELECT key, value FROM meta').map((row) => [row.key, row.value]))
     assert.equal(meta.fileCount, String(expected.expectedCounts.files))
-    assert.equal(meta.indexSchemaVersion, '1')
+    assert.equal(meta.indexSchemaVersion, String(INDEX_SCHEMA_VERSION))
     assert.equal(meta.root, root)
 
     // The issues in the database are byte-identical to the ones returned.

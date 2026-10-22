@@ -16,6 +16,21 @@ import type { ContentDir } from '../conventions.js'
 import type { ToolDefinition } from '../context.js'
 import type { ValidationIssue, WalkedFile } from '../indexer.js'
 
+// Re-exported so a domain module takes every type it touches from one module.
+export type { ValidationIssue }
+
+/** A row as the seam sees it: opaque to the index, tagged by its own domain. */
+export type DomainRow = Readonly<Record<string, unknown>>
+
+/**
+ * Build one table bucket. The cast lives here once instead of in every domain: a
+ * domain's row interface deliberately has no index signature, and adding one would
+ * trade its type safety for the seam's convenience.
+ */
+export function rowsBucket(table: string, rows: readonly object[]): DomainTableRows {
+  return { table, rows: rows as unknown as readonly DomainRow[] }
+}
+
 /**
  * A file already walked by the index build. Metadata only — the domain that owns
  * the directory reads the content itself, so a domain never re-walks the tree.
@@ -32,7 +47,7 @@ export interface DomainTableRows {
    * edit and linger in the index.
    */
   readonly table: string
-  readonly rows: readonly Readonly<Record<string, unknown>>[]
+  readonly rows: readonly DomainRow[]
 }
 
 /**
@@ -122,6 +137,10 @@ export interface DomainValidateInput {
    * has content at a known path. A delete or a move has no content to judge, so it
    * is validated by the trash/move paths (#35, `moveChapter`) instead; when those
    * need a pre-write check they must pass the destination as a candidate too.
+   *
+   * Status: no production caller sets this yet — the write side is wired by the domain
+   * tools (#24 onward). Until then `validate()` is only reached through a rebuild, and
+   * that is why the write paths still keep their own argument checks.
    */
   readonly candidate?: { readonly path: string }
 }
