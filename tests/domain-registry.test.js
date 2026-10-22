@@ -20,7 +20,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { DOMAIN_MODULES, apply, domainTools } from '../lib/index.js'
+import { CONTENT_DIRS, DOMAIN_MODULES, apply, domainTools } from '../lib/index.js'
 
 /**
  * The built-in tool surface before the seam existed. Order is the declaration
@@ -120,6 +120,7 @@ function stubModule(name) {
   return {
     kind: 'characters',
     scan: () => ({ tables: [], entities: [], issues: [] }),
+    parseFile: () => ({ tables: [], entities: [], issues: [] }),
     validate: () => [],
     schema: () => ({ ddl: [], insert() {} }),
     tools: () => [{ name, description: 'stub', parameters: { type: 'object', properties: {} } }],
@@ -155,8 +156,8 @@ test('buildTools() actually consults the registry', () => {
 test('every registered module owns a real content directory', () => {
   // X-5: a module is one directory's owner. A typo here would silently register a
   // domain that never scans anything, so the kind set is checked against the
-  // directory contract instead of a hard-coded list.
-  const contentDirs = new Set(['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library'])
+  // exported directory contract rather than a second copy of the list.
+  const contentDirs = new Set(CONTENT_DIRS)
   for (const module of DOMAIN_MODULES) {
     assert.ok(contentDirs.has(module.kind), `unknown domain kind: ${module.kind}`)
   }

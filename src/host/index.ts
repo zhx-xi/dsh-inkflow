@@ -96,10 +96,12 @@ export type { IndexBuildResult } from './indexer.js'
  */
 export { DOMAIN_MODULES, domainTools } from './domains/index.js'
 export type {
+  DomainCandidate,
   DomainDatabase,
   DomainEntityRef,
   DomainFile,
   DomainModule,
+  DomainParseInput,
   DomainScanInput,
   DomainScanResult,
   DomainSchema,
@@ -150,7 +152,7 @@ export type {
   WriteResult,
   WriteTarget,
 } from './io.js'
-export { WRITE_DIRS } from './conventions.js'
+export { CONTENT_DIRS, WRITE_DIRS } from './conventions.js'
 
 /**
  * Volume/chapter catalog (issue #15, ADR-0006 D6): a reviewable, committed
