@@ -22,6 +22,8 @@ import type { EnsureIndexResult } from './index-freshness.js'
 import { listChapters, readIndexMeta } from './indexer.js'
 import { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
 import { domainTools } from './domains/index.js'
+import { DOMAIN_MODULES } from './domains/index.js'
+import type { DomainModule } from './domains/types.js'
 import type { FileExpectation } from './file-cas.js'
 import { applyWorkspace, planWorkspace } from './workspace.js'
 import type { ProjectProbe, ProjectState, ScopeRejection } from './project.js'
@@ -304,7 +306,12 @@ function countsSchema(): JsonSchemaNode {
   }
 }
 
-export function buildTools(deps: ToolDeps): ToolDefinition[] {
+/**
+ * The model-facing tool table: built-ins first, then every registered domain's
+ * tools (roadmap §2.1 X-5). `modules` is injectable so the contract test can prove
+ * the aggregate is wired without mutating the production registry.
+ */
+export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DOMAIN_MODULES): ToolDefinition[] {
   const status: ToolDefinition = {
     name: 'inkflow_project_status',
     description:
@@ -1184,7 +1191,7 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
     chapterDelete,
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
-    ...domainTools(),
+    ...domainTools(modules),
   ]
 }
 

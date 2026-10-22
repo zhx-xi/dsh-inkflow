@@ -75,35 +75,43 @@ export interface DomainParseInput {
 }
 
 /**
- * A file that is **not on disk yet** — the bytes a write is about to produce.
- *
- * Why this exists (roadmap X-4): the write path has to refuse an invalid change
- * *before* `io.ts` replaces anything, and at that moment `scan()` cannot see the
- * file. Without this entry point the writer would either write first and validate
- * after (violates "before landing"), or re-implement parsing and normalisation
- * (exactly the second `name_key` implementation X-1 forbids).
+ * What **one file** parses to — deliberately not a `DomainScanResult`, so the
+ * write path cannot concatenate it onto a whole-project scan (`rows` belong to
+ * exactly one path; merging is `applyCandidate()`'s job, once, in the seam).
  */
-export interface DomainCandidate {
+export interface DomainFileParse {
   readonly path: string
-  /** Full text as it will be written; parse it with `parseFile()`, never by hand. */
-  readonly text: string
+  /** Rows this file contributes, per table. Empty when the file produces none. */
+  readonly rows: readonly DomainTableRows[]
+  /** This file's projection row, when the domain publishes one for its kind. */
+  readonly entity?: DomainEntityRef
+  readonly issues: readonly ValidationIssue[]
 }
 
 export interface DomainValidateInput {
   readonly root: string
+  /**
+   * The domain's rows. On the write path this is already the **post-write** view
+   * (the superseded rows for `candidate.path` were dropped and the candidate's rows
+   * added by `applyCandidate()`), so a domain never merges anything itself.
+   */
   readonly scan: DomainScanResult
   /**
    * Every module's projection rows, for cross-domain checks (dangling refs,
-   * cross-class duplicate ids). Assembled by `indexer.ts` (#23, `scanProject`),
-   * never by a single domain.
+   * cross-class duplicate ids). Assembled by `indexer.ts` (`scanProject`, #23),
+   * never by a single domain — and on the write path it is likewise already
+   * post-write, so `I-04` does not report an in-place update as a duplicate id.
    */
   readonly entities: readonly DomainEntityRef[]
   /**
-   * Set only on the write path. A domain that owns `candidate.path` must judge the
-   * parsed candidate **as the replacement** for that path: drop the on-disk rows
-   * it supersedes, add its own, then apply the same invariants as a rebuild.
+   * Set only when this validation runs on the write path, and already applied.
+   *
+   * Scope (X-4): this covers **create and update** of one file — the write always
+   * has content at a known path. A delete or a move has no content to judge, so it
+   * is validated by the trash/move paths (#35, `moveChapter`) instead; when those
+   * need a pre-write check they must pass the destination as a candidate too.
    */
-  readonly candidate?: DomainCandidate
+  readonly candidate?: { readonly path: string }
 }
 
 /**
@@ -122,11 +130,13 @@ export interface DomainSchema {
   /**
    * Write this domain's rows inside the build transaction.
    *
-   * Error discipline: a derived index must never be able to brick a project
-   * (`indexer.ts` already keeps `INSERT OR REPLACE` for that reason), so an insert
-   * either absorbs an unforeseen duplicate row or throws a diagnosable error — it
-   * must not leave the caller guessing. The caller owns BEGIN/COMMIT and rolls back
-   * on a throw.
+   * Error discipline (settled, not either/or): a duplicate that the rebuild would
+   * report as an issue stays a **row plus an issue**, never a silent overwrite and
+   * never a failed build — that is the existing `DUPLICATE_ID` behaviour in
+   * `indexer.ts`. Throw only for a structural error that cannot be attributed to a
+   * row (bad SQL, missing table); the caller turns it into `INDEX_BUILD_FAILED`.
+   * The caller owns the transaction boundary and guarantees atomicity by discarding
+   * the temporary index file on failure (`index-build.ts`).
    */
   insert(db: DomainDatabase, scan: DomainScanResult): void
 }
@@ -136,10 +146,15 @@ export interface DomainSchema {
  * read, `validate()` judges, `schema()` describes, `tools()` declares. Nothing here
  * writes a project file — writes still go through `io.ts`.
  *
+ * `scan()` is assembled by the caller (`indexer.ts`, #23) from one `walkProjectFiles`
+ * pass, exactly like `entities`.
+ *
  * Write path (X-4), in order, all before anything lands:
- *   1. `parseFile({ root, path, text })`   — the candidate's rows, parsed once
- *   2. `validate({ root, scan, entities, candidate })` — same invariants as a rebuild
- *   3. only when that returns no blocking issue does the caller write via `io.ts`
+ *   1. `parseFile({ root, path, text })`                  — the candidate, parsed once
+ *   2. `applyCandidate({ scan, entities }, parsed)`       — seam-owned replace, so
+ *      `scan` and `entities` are already post-write and no domain merges by hand
+ *   3. `validate({ root, scan, entities, candidate })`    — same invariants as a rebuild
+ *   4. only when that returns no blocking issue does the caller write via `io.ts`
  */
 export interface DomainModule {
   /** The content directory this module owns; must be one of `CONTENT_DIRS`. */
@@ -149,7 +164,7 @@ export interface DomainModule {
    * Parse one file's text exactly as `scan()` would, so the write path and the
    * rebuild path can never disagree about what a candidate means.
    */
-  parseFile(input: DomainParseInput): DomainScanResult
+  parseFile(input: DomainParseInput): DomainFileParse
   /** Invariants over the parsed view; returns issues, never throws (`FRONTMATTER_ISSUE` style). */
   validate(input: DomainValidateInput): ValidationIssue[]
   schema(): DomainSchema

@@ -92,14 +92,18 @@ export type { IndexBuildResult } from './indexer.js'
 /**
  * Domain module registry (#101): the seam every 0.2.0 data domain plugs into
  * (roadmap §2.1 X-5). Exported so the contract tests can assert that the tool
- * surface is "built-ins + registered modules" without mutating the registry.
+ * surface is "built-ins + registered modules" and that the pre-write replace
+ * (`applyCandidate`) keeps `I-04` honest.
  */
-export { DOMAIN_MODULES, domainTools } from './domains/index.js'
+export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
+export type { DomainWriteView } from './domains/index.js'
+/** Exported for the tool-surface contract test: it asserts the aggregate is wired. */
+export { buildTools } from './tools.js'
 export type {
-  DomainCandidate,
   DomainDatabase,
   DomainEntityRef,
   DomainFile,
+  DomainFileParse,
   DomainModule,
   DomainParseInput,
   DomainScanInput,

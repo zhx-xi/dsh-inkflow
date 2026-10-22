@@ -20,7 +20,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { CONTENT_DIRS, DOMAIN_MODULES, apply, domainTools } from '../lib/index.js'
+import { CONTENT_DIRS, DOMAIN_MODULES, apply, applyCandidate, buildTools, domainTools } from '../lib/index.js'
 
 /**
  * The built-in tool surface before the seam existed. Order is the declaration
@@ -120,7 +120,7 @@ function stubModule(name) {
   return {
     kind: 'characters',
     scan: () => ({ tables: [], entities: [], issues: [] }),
-    parseFile: () => ({ tables: [], entities: [], issues: [] }),
+    parseFile: ({ path }) => ({ path, rows: [], issues: [] }),
     validate: () => [],
     schema: () => ({ ddl: [], insert() {} }),
     tools: () => [{ name, description: 'stub', parameters: { type: 'object', properties: {} } }],
@@ -142,15 +142,80 @@ test('a registered module contributes its own tools, in registry order', () => {
 test('buildTools() actually consults the registry', () => {
   // The empty-registry tests above cannot catch a `buildTools()` that forgot to
   // call `domainTools()`: with no modules, both surfaces are identical. This one
-  // registers a throwaway module and then drops it, which fails the moment the
-  // aggregate stops being wired in.
-  DOMAIN_MODULES.push(stubModule('inkflow_stub_wired'))
-  try {
-    const tools = registeredTools()
-    assert.ok(tools.has('inkflow_stub_wired'), 'a registered module must reach the tool table')
-  } finally {
-    DOMAIN_MODULES.pop()
+  // passes a throwaway module list and fails the moment the aggregate stops being
+  // wired in. Injection instead of pushing onto `DOMAIN_MODULES` keeps the
+  // production registry untouched (X-5 says it is only ever appended to).
+  const tools = buildTools(
+    { ctx: {}, dataDir: tmpdir(), version: 'test' },
+    [stubModule('inkflow_stub_wired')],
+  )
+  assert.ok(
+    tools.some((tool) => tool.name === 'inkflow_stub_wired'),
+    'a registered module must reach the tool table',
+  )
+  assert.equal(tools.length, BUILT_IN_TOOLS.length + 1)
+})
+
+test('applying a candidate replaces exactly one path, so an in-place edit is not a duplicate id', () => {
+  // X-4 + I-04: the projection already holds the row being replaced, so without the
+  // seam-owned drop-then-add an edit would report DUPLICATE_ID against itself.
+  const view = {
+    scan: {
+      tables: [
+        {
+          table: 'characters',
+          rows: [
+            { path: 'characters/甲.md', id: 'c-1', name: '甲' },
+            { path: 'characters/乙.md', id: 'c-2', name: '乙' },
+          ],
+        },
+      ],
+      entities: [
+        { kind: 'characters', id: 'c-1', path: 'characters/甲.md', title: '甲' },
+        { kind: 'characters', id: 'c-2', path: 'characters/乙.md', title: '乙' },
+      ],
+      issues: [{ code: 'FRONTMATTER_ISSUE', path: 'characters/甲.md', detail: 'old' }],
+    },
+    entities: [
+      { kind: 'characters', id: 'c-1', path: 'characters/甲.md', title: '甲' },
+      { kind: 'characters', id: 'c-2', path: 'characters/乙.md', title: '乙' },
+    ],
   }
+
+  const parsed = {
+    path: 'characters/甲.md',
+    rows: [{ table: 'characters', rows: [{ path: 'characters/甲.md', id: 'c-1', name: '甲改名' }] }],
+    entity: { kind: 'characters', id: 'c-1', path: 'characters/甲.md', title: '甲改名' },
+    issues: [],
+  }
+
+  const next = applyCandidate(view, parsed)
+
+  assert.deepEqual(next.scan.tables[0].rows, [
+    { path: 'characters/乙.md', id: 'c-2', name: '乙' },
+    { path: 'characters/甲.md', id: 'c-1', name: '甲改名' },
+  ])
+  // One projection row per path, still one entry per entity — the replaced row is gone.
+  assert.equal(next.scan.entities.filter((entity) => entity.id === 'c-1').length, 1)
+  assert.equal(next.entities.filter((entity) => entity.id === 'c-1').length, 1)
+  assert.equal(next.scan.entities.find((entity) => entity.id === 'c-1').title, '甲改名')
+  // The old parse issue for that path is dropped with the old file; other paths keep theirs.
+  assert.deepEqual(next.scan.issues, [])
+})
+
+test('applying a candidate into an empty table still creates the table bucket', () => {
+  const view = { scan: { tables: [], entities: [], issues: [] }, entities: [] }
+  const next = applyCandidate(view, {
+    path: 'relations/甲-乙.md',
+    rows: [{ table: 'relations', rows: [{ path: 'relations/甲-乙.md', source: 'c-1', target: 'c-2' }] }],
+    issues: [{ code: 'RELATION_ENDPOINT', path: 'relations/甲-乙.md', detail: 'missing c-2' }],
+  })
+
+  assert.deepEqual(next.scan.tables, [
+    { table: 'relations', rows: [{ path: 'relations/甲-乙.md', source: 'c-1', target: 'c-2' }] },
+  ])
+  assert.equal(next.scan.entities.length, 0, 'no entity row when the domain publishes none')
+  assert.deepEqual(next.scan.issues, [{ code: 'RELATION_ENDPOINT', path: 'relations/甲-乙.md', detail: 'missing c-2' }])
 })
 
 test('every registered module owns a real content directory', () => {
