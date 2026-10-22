@@ -957,14 +957,15 @@ export async function deleteChapterViaChannel(request: WriteRequest): Promise<Wr
 // ---------------------------------------------------------------------------
 // The setting library (issue #30, roadmap X-7 / X-8)
 //
-// X-8 puts these payloads in this issue rather than in a view registry. They
-// are implemented in `library-view.ts` and re-exported here so the channel
-// keeps ONE entry point for `routes.ts`: this file already carries the session
-// chain, five projections and the four write routes, and the library layer
-// touches nothing else (AGENTS.md §10.5 — no 1000-line grab bag).
+// X-8 puts these payloads in this issue rather than in a view registry. The two
+// readers live in `library-view.ts` and the single writer in `library-write.ts`;
+// both are re-exported here so the channel keeps ONE entry point for `routes.ts`
+// (this file already carries the session chain, five projections and the four
+// chapter write routes — AGENTS.md §10.5: no 1000-line grab bag).
 //
-// Read-only: the three builders open the index `readOnly`, read one entity file
-// through `parseMarkdown`, and write nothing.
+// The three read builders open the index `readOnly` and write nothing. The one
+// writer changes a truth file through `io.ts` (atomic replace + write lock +
+// path whitelist) and then invalidates the derived index.
 // ---------------------------------------------------------------------------
 
 export {
@@ -976,3 +977,6 @@ export {
   buildLibraryIssues,
 } from './library-view.js'
 export type { LibraryIssueRow, LibraryItemReply, LibraryItemRow, LibrarySource } from './library-view.js'
+export { LIBRARY_WRITE_BODY_FIELDS } from './library-request.js'
+export { writeLibraryItem } from './library-write.js'
+export type { LibraryWriteRequest } from './library-write.js'

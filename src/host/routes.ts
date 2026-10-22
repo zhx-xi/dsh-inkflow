@@ -27,19 +27,22 @@
  * A resolvable session whose directory fails the four-state gate answers the
  * same structured checklist the tools return, and nothing is written.
  *
- * WRITE ROUTES: four chapter write routes exist on this build
- * (`POST /chapters`, `POST|DELETE /chapters/:id`, `POST /chapters/:id/move`).
- * They are POST/DELETE only, require `Content-Type: application/json` (415
- * otherwise) and require a loopback `Origin` to be PRESENT (403 otherwise) — the
- * same-origin check is mandatory exactly for requests that write. Read routes
- * keep working without `Origin` because a same-origin `fetch` from the panel may
- * omit it. Anything that writes goes through `chapters.ts`, never through this
- * file: see `internal.ts` for the domain mapping and the CAS plumbing.
+ * WRITE ROUTES: five live on this build — four chapter routes
+ * (`POST /chapters`, `POST|DELETE /chapters/:id`, `POST /chapters/:id/move`)
+ * and the setting library's save (`POST /library/item`). They are POST/DELETE
+ * only, require `Content-Type: application/json` (415 otherwise) and require a
+ * loopback `Origin` to be PRESENT (403 otherwise) — the same-origin check is
+ * mandatory exactly for requests that write. Read routes keep working without
+ * `Origin` because a same-origin `fetch` from the panel may omit it. The chapter
+ * routes go through `chapters.ts`, the library save through `library-write.ts`;
+ * never through this file: see `internal.ts` for the domain mapping and the CAS
+ * plumbing.
  *
- * THE SETTING LIBRARY (issue #30) is three more read routes — `/library` (the
- * eight-kind tree, X-7), `/library/item?kind=&id=` (one entry, read-only) and
- * `/library/issues` (`validation_issues`). They are GET-only, name an entity
- * rather than a directory, and reuse every guard below unchanged.
+ * THE SETTING LIBRARY (issue #30) is three read routes — `/library` (the
+ * eight-kind tree, X-7), `/library/item?kind=&id=` (one entry) and
+ * `/library/issues` (`validation_issues`) — plus the one `POST /library/item`
+ * save. All of them name an entity rather than a directory and reuse every
+ * guard below unchanged.
  *
  * THE HUB CHANNEL IS SEPARATE (`/inkflow/internal/hub/*`, ADR-0010 D3): the
  * root-scoped book hub has no session, so those routes take their anchor from
@@ -60,6 +63,7 @@ import { buildHubShared } from './hub-shared.js'
 import { hubApply, hubPlan } from './hub-wizard.js'
 import {
   INTERNAL_PREFIX,
+  LIBRARY_WRITE_BODY_FIELDS,
   MAX_INTERNAL_BODY_BYTES,
   SESSION_ID_HEADER,
   SESSION_ID_PARAM,
@@ -79,6 +83,7 @@ import {
   noSessionContextBody,
   resolveChannelTarget,
   writeChapterViaChannel,
+  writeLibraryItem,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 
@@ -213,11 +218,23 @@ const ROUTES: readonly InternalRoute[] = [
     // One entry: `kind` and `id` are the tree's own addresses, never a path, so
     // the path-parameter ban above still means what it says. 400 for an unknown
     // kind or a missing id, 404 for an id the projection does not hold.
+    //
+    // POST is the editor's save (issue #30, second batch): it carries the same
+    // `kind`/`id` address plus `frontmatter`/`body`/`expected`, so a write still
+    // names an entity and never a directory. The body allowlist below is the
+    // write guard — `path`/`root`/… are a 400 before any filesystem access.
     name: 'library-item',
     pattern: /^\/library\/item$/,
-    methods: ['GET'],
-    handle: async ({ target, version, query }) =>
-      buildLibraryItem(target, version, query.get('kind') ?? '', query.get('id') ?? ''),
+    methods: ['GET', 'POST'],
+    body: LIBRARY_WRITE_BODY_FIELDS,
+    handle: async (input) => {
+      if (input.method === 'POST') {
+        return toReply(
+          await writeLibraryItem({ source: input.target, version: input.version, body: input.body }),
+        )
+      }
+      return buildLibraryItem(input.target, input.version, input.query.get('kind') ?? '', input.query.get('id') ?? '')
+    },
   },
   {
     // `validation_issues` for the problem panel: grouped client-side by `code`,

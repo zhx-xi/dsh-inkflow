@@ -255,7 +255,26 @@ export interface FrontmatterPatchOptions {
 }
 
 /**
- * One frontmatter value to patch: a scalar, or a list.
+ * A scalar the caller has already rendered (`always: true`, `priority: 3`).
+ *
+ * A plain string would be quoted whenever it looks like a YAML keyword
+ * (`always: "true"`), and `parseScalar` reads that back as the *string* `true`
+ * instead of the boolean — the file and the index would then disagree about
+ * whether an entry is always on. Numbers need no quoting today, but they go
+ * through the same door so the caller has one rule: a value whose read type
+ * matters is rendered here, once, and written verbatim.
+ */
+export interface FrontmatterRawScalar {
+  readonly raw: string
+}
+
+/** Wrap an already-rendered scalar for {@link patchFrontmatter}. */
+export function rawScalar(raw: string): FrontmatterRawScalar {
+  return { raw }
+}
+
+/**
+ * One frontmatter value to patch: a scalar, a list, or a pre-rendered scalar.
  *
  * A list is written in **block form** (`key:` then `  - item` lines) because that
  * is the only list form the reader accepts for values that may contain `,` or `:` —
@@ -263,10 +282,42 @@ export interface FrontmatterPatchOptions {
  * "delete the key": `key:` with no items round-trips as `[]`, which reads as "the
  * author has not filled this in yet", not as the value the caller asked for.
  */
-export type FrontmatterValue = string | readonly string[]
+export type FrontmatterValue = string | readonly string[] | FrontmatterRawScalar
 
 function listItemsOf(value: FrontmatterValue | undefined): readonly string[] | undefined {
-  return Array.isArray(value) ? value : undefined
+  return Array.isArray(value) ? (value as readonly string[]) : undefined
+}
+
+/** `FrontmatterRawScalar` is the only non-string, non-array value form. */
+function isRawScalar(value: FrontmatterValue): value is FrontmatterRawScalar {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The text of a scalar value, and whether it must bypass the quoter. */
+function scalarOf(value: FrontmatterValue): { text: string; verbatim: boolean } {
+  if (typeof value === 'string') return { text: value, verbatim: false }
+  if (isRawScalar(value)) return { text: value.raw, verbatim: true }
+  return { text: '', verbatim: false }
+}
+
+/**
+ * Rules a caller-rendered scalar must satisfy: it is written without quotes, so a
+ * newline would split the block, edge whitespace would change the value, and a
+ * leading `#`/`-`/`[` would be read as a comment, a list item or an inline array.
+ */
+function assertRawScalar(key: string, raw: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) {
+    throw new TypeError(`frontmatter: "${key}" is not a valid frontmatter key`)
+  }
+  if (/[\r\n]/u.test(raw)) {
+    throw new TypeError(`frontmatter: the value of "${key}" must be a single line`)
+  }
+  if (raw.trim() === '' || raw !== raw.trim()) {
+    throw new TypeError(`frontmatter: the raw value of "${key}" must be non-empty without edge whitespace`)
+  }
+  if (/^[#[-]/u.test(raw)) {
+    throw new TypeError(`frontmatter: the raw value of "${key}" must not start with "#", "-" or "["`)
+  }
 }
 
 /** Raw halves of a document, split at the closing frontmatter delimiter. */
@@ -326,8 +377,11 @@ function renderScalar(value: string): string {
 /**
  * Rewrite one `key: value   # comment` line, keeping everything around the
  * value: the key's own spacing, the author's quote style and the comment.
+ *
+ * `verbatim` is the `rawScalar` case: the value was rendered by the caller, so
+ * neither quoting nor quote-style preservation may touch it.
  */
-function rewriteKeyLine(line: string, value: string): string {
+function rewriteKeyLine(line: string, value: string, verbatim = false): string {
   const commentAt = findCommentStart(line)
   const head = commentAt === -1 ? line : line.slice(0, commentAt)
   const tail = commentAt === -1 ? '' : line.slice(commentAt)
@@ -345,7 +399,7 @@ function rewriteKeyLine(line: string, value: string): string {
   // turns the line into a scalar.
   const separator = spaces === '' && rawValue === '' ? ' ' : spaces
   const quote = rawValue.startsWith('"') ? '"' : rawValue.startsWith("'") ? "'" : undefined
-  const rendered = quote === undefined ? renderScalar(value) : quotedValue(value, quote)
+  const rendered = verbatim ? value : quote === undefined ? renderScalar(value) : quotedValue(value, quote)
   return `${keyPart}${separator}${rendered}${gap}${tail}`
 }
 
@@ -394,6 +448,19 @@ export function frontmatterLine(key: string, value: string): string {
     throw new TypeError(`frontmatterLine: the value of "${key}" must be a single line`)
   }
   return `${key}: ${renderScalar(value)}`
+}
+
+/**
+ * Render one `key: <already-rendered>` line (`always: true`, `priority: 3`).
+ *
+ * Exported alongside {@link frontmatterLine} so a caller that has to create a
+ * whole block (`library-write.ts` on a file with no frontmatter) renders the
+ * value the same way `patchFrontmatter` does. `patchFrontmatter` itself is the
+ * only place that decides *when* a value may bypass the quoter.
+ */
+export function frontmatterRawLine(key: string, raw: string): string {
+  assertRawScalar(key, raw)
+  return `${key}: ${raw}`
 }
 
 /**
@@ -459,14 +526,16 @@ export function patchFrontmatter(
     if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) {
       throw new TypeError(`patchFrontmatter: "${key}" is not a valid frontmatter key`)
     }
-    const raw = entries[key]
+    const raw: FrontmatterValue = entries[key] ?? ''
     const items = listItemsOf(raw)
-    const value = typeof raw === 'string' ? raw : ''
+    const scalar = scalarOf(raw)
+    const value = scalar.text
     // A newline would end the line early and split the block in half; refuse
     // loudly rather than write a file the parser cannot read back.
     if (/[\r\n]/.test(value)) {
       throw new TypeError(`patchFrontmatter: the value of "${key}" must be a single line`)
     }
+    if (scalar.verbatim) assertRawScalar(key, value)
     for (const item of items ?? []) {
       if (/[\r\n]/.test(item)) {
         throw new TypeError(`patchFrontmatter: every item of "${key}" must be a single line`)
@@ -488,7 +557,7 @@ export function patchFrontmatter(
     if (target === undefined) {
       insertion +=
         items === undefined
-          ? `${frontmatterLine(key, value)}${eol}`
+          ? `${scalar.verbatim ? frontmatterRawLine(key, value) : frontmatterLine(key, value)}${eol}`
           : `${[`${key}:`, ...items.map(frontmatterListItem)].map((line) => `${line}${eol}`).join('')}`
       appended.push(key)
       continue
@@ -509,7 +578,7 @@ export function patchFrontmatter(
       // (scalar text, or the item lines under it) is rewritten.
       text:
         items === undefined
-          ? `${rewriteKeyLine(line.text, value)}${terminator}`
+          ? `${rewriteKeyLine(line.text, value, scalar.verbatim)}${terminator}`
           : [
               `${rewriteKeyToListHeader(line.text)}${terminator}`,
               ...items.map((item) => `${frontmatterListItem(item)}${terminator}`),

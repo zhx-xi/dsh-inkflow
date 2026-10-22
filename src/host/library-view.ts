@@ -33,6 +33,7 @@ import { entityFromRow } from './domains/entities.js'
 import { listEntities } from './domains/query.js'
 import type { EntitySummary } from './domains/query.js'
 import { countChars } from './domains/scan-helpers.js'
+import { fingerprintProjectFile } from './file-cas.js'
 import { parseMarkdown } from './frontmatter.js'
 import { ensureIndex } from './index-freshness.js'
 import type { EnsureIndexResult } from './index-freshness.js'
@@ -288,9 +289,11 @@ function readValidationIssues(root: string, options: { path?: string; limit: num
 /**
  * `GET /library/item?kind=&id=` — one entry, read-only.
  *
- * The panel never writes here (no editor in this batch): it answers the
- * projection row plus the frontmatter and body the file itself carries, so the
- * reading pane shows what the author wrote and not a copy of the index.
+ * The read half of the editor pair: it answers the projection row plus the
+ * frontmatter and body the file itself carries (so the pane shows what the
+ * author wrote, not a copy of the index) and the `fingerprint` the save sends
+ * back as `expected`. Saving is `POST /library/item`, implemented in
+ * `library-write.ts` — this module still writes nothing.
  */
 export async function buildLibraryItem(
   source: LibrarySource,
@@ -376,6 +379,11 @@ export async function buildLibraryItem(
       body: parsed?.body ?? '',
       bodyChars: parsed === undefined ? 0 : countChars(parsed.body),
       issues: parsed?.issues ?? [],
+      // The CAS baseline for the next save (issue #30, second batch): the editor
+      // reads an entry, edits it, and writes back against exactly these bytes.
+      // Without it the panel could not tell "the file changed under me" from
+      // "my own save", and `POST /library/item` refuses a save without one.
+      fingerprint: path === '' ? null : (fingerprintProjectFile(source.root, path) ?? null),
       // The same rows the problem panel lists, narrowed to this file: a detail
       // pane that hides the reason the file is flagged would be a dead end.
       validationIssues: issues.ok ? issues.rows : [],
