@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the twelve files-first tools, the registered domains\' tools, and one prefix route', () => {
+test('registers the twelve built-ins plus the registered domains' tools, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -209,6 +209,10 @@ test('registers the twelve files-first tools, the registered domains\' tools, an
       'inkflow_chapter_search',
       'inkflow_chapter_write',
       'inkflow_index_rebuild',
+      // #24: the outline domain's own tools, contributed through `domainTools()`.
+      'inkflow_outline_move',
+      'inkflow_outline_tree',
+      'inkflow_outline_upsert',
       'inkflow_project_init',
       'inkflow_project_plan',
       'inkflow_project_status',
