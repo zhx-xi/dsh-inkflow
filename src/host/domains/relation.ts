@@ -292,7 +292,7 @@ export const relationDomain: DomainModule = {
     }
   },
 
-  tools() {
-    return relationTools(relationDomain)
+  tools(deps) {
+    return relationTools(relationDomain, deps)
   },
 }

@@ -14,13 +14,14 @@
 
 import { join, resolve as resolvePath } from 'node:path'
 
-import type { ContentBlock, JsonSchemaNode, ToolDefinition } from '../context.js'
+import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } from '../context.js'
 import { writeTextAtomic } from '../io.js'
 import { findProjectRoot } from '../project.js'
+import { sessionCwd } from '../session-cwd.js'
 import { listRelationsFor } from './query.js'
 import { RELATION_DIRECTIONS, RELATION_KINDS, planRelationUpsert, renderRelationFile } from './relation-write.js'
 import type { RelationRow } from './relation-write.js'
-import type { DomainModule } from './types.js'
+import type { DomainModule, DomainToolDeps } from './types.js'
 import { readText, rowsOf } from './scan-helpers.js'
 
 /** The half of a domain module the write path needs: the same parse and the same judgement. */
@@ -64,10 +65,10 @@ interface RootLookup {
  * reaches it. An explicit `projectRoot` is therefore the reliable form, and
  * `process.cwd()` is only the fallback for a host that runs inside the book.
  */
-function projectRootOf(value: unknown): RootLookup {
+async function projectRootOf(value: unknown, deps: DomainToolDeps, exec: ToolRunContext): Promise<RootLookup> {
   const explicit = optionalString(value)
   if (explicit !== undefined && explicit.trim() !== '') return { root: resolvePath(explicit.trim()) }
-  const found = findProjectRoot(process.cwd())
+  const found = findProjectRoot(await sessionCwd(deps.ctx, exec))
   if (found === undefined) {
     return {
       error: {
@@ -212,7 +213,12 @@ const listSurface: Omit<ToolDefinition, 'execute'> = {
   },
 }
 
-async function runRelationUpsert(args: unknown, domain: RelationDomain): Promise<Record<string, unknown>> {
+async function runRelationUpsert(
+  args: unknown,
+  exec: ToolRunContext,
+  deps: DomainToolDeps,
+  domain: RelationDomain,
+): Promise<Record<string, unknown>> {
   const a = asRecord(args)
   if (a['confirm'] !== true) {
     return {
@@ -221,7 +227,7 @@ async function runRelationUpsert(args: unknown, domain: RelationDomain): Promise
     }
   }
 
-  const lookup = projectRootOf(a['projectRoot'])
+  const lookup = await projectRootOf(a['projectRoot'], deps, exec)
   if (lookup.root === undefined) return { ok: false, error: lookup.error }
 
   const root = lookup.root
@@ -295,9 +301,9 @@ async function runRelationUpsert(args: unknown, domain: RelationDomain): Promise
   return result
 }
 
-async function runRelationList(args: unknown): Promise<Record<string, unknown>> {
+async function runRelationList(args: unknown, exec: ToolRunContext, deps: DomainToolDeps): Promise<Record<string, unknown>> {
   const a = asRecord(args)
-  const lookup = projectRootOf(a['projectRoot'])
+  const lookup = await projectRootOf(a['projectRoot'], deps, exec)
   if (lookup.root === undefined) return { ok: false, error: lookup.error }
 
   const entity = (optionalString(a['entity']) ?? '').trim()
@@ -334,9 +340,9 @@ async function runRelationList(args: unknown): Promise<Record<string, unknown>> 
  * The relation tool surface, bound to the domain that owns the parse and the
  * invariants — passed in rather than imported, so neither module depends on the other.
  */
-export function relationTools(domain: RelationDomain): ToolDefinition[] {
+export function relationTools(domain: RelationDomain, deps: DomainToolDeps): ToolDefinition[] {
   return [
-    { ...upsertSurface, execute: async (args) => runRelationUpsert(args, domain) },
-    { ...listSurface, execute: async (args) => runRelationList(args) },
+    { ...upsertSurface, execute: async (args, exec) => runRelationUpsert(args, exec, deps, domain) },
+    { ...listSurface, execute: async (args, exec) => runRelationList(args, exec, deps) },
   ]
 }
