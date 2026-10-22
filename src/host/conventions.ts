@@ -109,10 +109,15 @@ export const FILE_SCHEMA_VERSION = 1
  * Version of the derived SQLite schema; mismatch means "delete and rebuild".
  *
  * v2 (#23): domain modules own their tables, and the cross-class `entities`
- * projection plus one `entities_fts` are added. The index is a cache, so a mismatch
- * is never migrated (ADR-0005) — the old file is discarded.
+ * projection plus one `entities_fts` are added.
+ * v3 (#26): `world_entries` carries the world book's own fields — `keywords`,
+ * `always`, `priority` — so a chapter's setting can be matched without reading
+ * every file. The `entities` column set is unchanged (X-1).
+ *
+ * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file
+ * is discarded.
  */
-export const INDEX_SCHEMA_VERSION = 2
+export const INDEX_SCHEMA_VERSION = 3
 
 export const CHAPTER_STATUSES = ['draft', 'revised', 'final'] as const
 export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const

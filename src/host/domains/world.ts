@@ -5,14 +5,22 @@
  * every entry under `world/<category>/` and never links them is valid), a child must
  * carry a category, and a `parent` must resolve — across the whole project, not just
  * inside this directory, which is why `validate()` reads the global projection.
+ *
+ * It also owns the world book's own fields (#26): `keywords` (trigger words),
+ * `always` (an entry that is always part of the current chapter's setting) and
+ * `priority` (ordering among hits). The matching rule lives in `world-match.ts`,
+ * the write-side invariants and tree shape in `world-plan.ts`, and the two
+ * model-facing tools in `world-tools.ts` — each one testable on its own.
  */
 
 import { basename, extname, join } from 'node:path'
 
-import { parseMarkdown, stringField } from '../frontmatter.js'
+import { boolField, intField, parseMarkdown, stringField } from '../frontmatter.js'
 import { rowsBucket } from './types.js'
 import type { DomainEntityRef, DomainFileParse, DomainModule, DomainScanResult, ValidationIssue } from './types.js'
-import { keywordsOf, readText, rowsOf, worldCategoryOf } from './scan-helpers.js'
+import { joinTerms, keywordsOf, readText, rowsOf, worldCategoryOf } from './scan-helpers.js'
+import { worldIssues } from './world-plan.js'
+import { worldTools } from './world-tools.js'
 
 export interface WorldRow {
   id: string
@@ -21,6 +29,8 @@ export interface WorldRow {
   category: string | undefined
   parent: string | undefined
   keywords: string[]
+  always: boolean
+  priority: number | undefined
 }
 
 interface ParsedWorld {
@@ -44,6 +54,10 @@ function parseWorld(path: string, text: string): ParsedWorld {
       category: stringField(parsed.data, 'category') ?? worldCategoryOf(path),
       parent: stringField(parsed.data, 'parent'),
       keywords: keywordsOf(parsed.data),
+      // `boolField` reads a bare `true` only: a quoted "true" stays a string, so the
+      // index never disagrees with the file about whether an entry is always on.
+      always: boolField(parsed.data, 'always'),
+      priority: intField(parsed.data, 'priority'),
     },
   }
 }
@@ -56,6 +70,8 @@ function toEntity(row: WorldRow): DomainEntityRef {
     title: row.title,
     category: row.category,
     parent: row.parent,
+    // X-1 fixes the projection's column set: `always` / `priority` are world-book
+    // fields and stay in `world_entries`, reachable through `listWorldEntries()`.
     keywords: row.keywords.length > 0 ? row.keywords : undefined,
   }
 }
@@ -86,64 +102,38 @@ export const worldDomain: DomainModule = {
   },
 
   validate({ scan, entities }): ValidationIssue[] {
-    const issues: ValidationIssue[] = []
-    const rows = rowsOf<WorldRow>(scan, 'world_entries')
-    if (rows.length === 0) return issues
-
-    const isFirstLevel = (relPath: string): boolean => relPath.split('/').length === 2
-    const roots = rows.filter((row) => (row.parent === undefined || row.parent === '') && isFirstLevel(row.path))
-    const claimsParent = rows.some((row) => row.parent !== undefined && row.parent !== '')
-
-    if (roots.length > 1) {
-      const shown = roots.slice(0, 3).map((row) => row.path).join(', ')
-      issues.push({
-        code: 'WORLD_ROOT_MULTIPLE',
-        detail: `${String(roots.length)} world entries are roots (${shown}${roots.length > 3 ? ', …' : ''}); exactly one root is allowed`,
-      })
-    } else if (roots.length === 0 && claimsParent) {
-      issues.push({
-        code: 'WORLD_ROOT_MISSING',
-        detail:
-          'world entries claim parents but none is a root; either add one first-level entry without parent or drop the parents (flat category book)',
-      })
-    }
-
-    // Cross-class on purpose: a world entry may point at a chapter or a character id.
-    const known = new Set(entities.map((entity) => entity.id))
-    for (const row of rows) {
-      const hasParent = row.parent !== undefined && row.parent !== ''
-      if (hasParent && (row.category === undefined || row.category === '')) {
-        issues.push({
-          code: 'WORLD_CATEGORY_REQUIRED',
-          path: row.path,
-          detail: 'a world entry with a parent must also carry a category (or live under world/<category>/)',
-        })
-      }
-      if (hasParent && row.parent !== undefined && !known.has(row.parent)) {
-        issues.push({ code: 'DANGLING_PARENT', path: row.path, detail: `parent "${row.parent}" not found` })
-      }
-    }
-    return issues
+    // The rules themselves live in `world-plan.ts` so the write path applies the
+    // identical set to its candidate (X-4) instead of a second copy.
+    return worldIssues(rowsOf<WorldRow>(scan, 'world_entries'), new Set(entities.map((entity) => entity.id)))
   },
 
   schema() {
     return {
       ddl: [
-        'CREATE TABLE world_entries (id TEXT PRIMARY KEY, path TEXT NOT NULL, title TEXT NOT NULL, category TEXT, parent TEXT)',
+        'CREATE TABLE world_entries (id TEXT PRIMARY KEY, path TEXT NOT NULL, title TEXT NOT NULL, category TEXT, parent TEXT, keywords TEXT, always INTEGER NOT NULL DEFAULT 0, priority INTEGER)',
         'CREATE INDEX ix_world_category ON world_entries(category)',
       ],
       insert(db, scan): void {
         const insert = db.prepare(
-          'INSERT OR REPLACE INTO world_entries (id, path, title, category, parent) VALUES (?, ?, ?, ?, ?)',
+          'INSERT OR REPLACE INTO world_entries (id, path, title, category, parent, keywords, always, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         )
         for (const row of rowsOf<WorldRow>(scan, 'world_entries')) {
-          insert.run(row.id, row.path, row.title, row.category ?? null, row.parent ?? null)
+          insert.run(
+            row.id,
+            row.path,
+            row.title,
+            row.category ?? null,
+            row.parent ?? null,
+            joinTerms(row.keywords) ?? null,
+            row.always ? 1 : 0,
+            row.priority ?? null,
+          )
         }
       },
     }
   },
 
-  tools() {
-    return []
+  tools(deps) {
+    return worldTools(deps)
   },
 }

@@ -82,7 +82,7 @@
 | X-1 | `entities` 是跨类统一投影 | 列集 `kind / id / path / title / name_key / category / parent / order_index / status / keywords / aliases`；**主键 `(kind, id)` 复合**：不同目录是不同表、各有主键，两个 kind 可以合法共用一个 id（I-04 只报 `DUPLICATE_ID`、两行都保留），单列主键会把这种既有合法状态判成不可表示；`name_key`/`aliases` 的归一化**只有一处实现**（`indexer.ts:84 nameKey()` 提到 `domains/naming.ts`，域单与 #29 都调它）；`entities` 与域表的行必须由同一次 scan、同一事务产出，不一致报 `ENTITIES_DRIFT`（I-15） |
 | X-2 | 域表的 DDL 由域模块自带 | `DomainModule` 除 `scan()`/`validate()` 之外提供 `schema()`（返回该域的 DDL 片段与写入函数）；`writeIndexDatabase()` 只按注册表拼装执行。域单扩列/新建表都在自己的 `domains/<域>.ts` 里，**不改 `indexer.ts`** |
 | X-3 | 全实体 FTS 只建一张 | `entities_fts`（title / aliases / keywords）+ 1–2 字 `LIKE` 兜底，策略与章正文检索一致（[conventions.md §4.1](conventions.md)）；建表与查询函数归 #23，消费与用例归 #30 |
-| X-3a | 投影覆盖面现状 | 目前产出 `entities` 的只有 4 个目录（chapters / characters / outlines / world）；`foreshadowing` / `timeline` / `relations` / `facts` 仍只报 frontmatter 问题，其实体随 #31 / #28 / #27 / #32 的表一起进投影；`library` 是文件登记，不产实体 |
+| X-3a | 投影覆盖面现状 | 产出 `entities` 的目录随域单增加：已有 chapters / characters / outlines / world（+#27 relations）；`foreshadowing` / `timeline` / `facts` 仍只报 frontmatter 问题，其实体随 #31 / #28 / #32 的表一起进投影；`library` 是文件登记，不产实体 |
 | X-4 | 校验只经注册表，且写入侧也过 | 每条不变量写在 `DomainModule.validate()`，`scanProject()` 只聚合其输出；**写入侧落盘前调用同一个 `validate()`**（[data-model](data-model.md) §5 的双保险），否则只剩重建期一张网；既有不变量 code 由 #23 迁入对应域模块，新 code 同一提交写进 §5 |
 | X-5 | 注册表只解决装配，不解决文本冲突 | 域单只**新增**自己的文件，并在 `domains/index.ts` 的数组追加一行（按 `kind` 字母序定位，减少相邻行冲突）。该数组是唯一仍会被多单触碰的点，冲突按 rebase 解（单行、机械） |
 | X-6 | 面板查询只读，写仍走写路由 | 查询只消费 `entities` 与内部通道 payload；写入仍走已有写路由 + `io.ts`（[ADR-0008](../adrs/0008-panel-data-channel.md) D5：面板与工具共用同一套解析与判定）；client 侧不直连域表、不做文件 IO |
@@ -121,7 +121,7 @@
 | 工作区契约与向导 | 九内容目录 + `index/`、`.gitkeep`、四态门禁、`plan`/`apply`（`confirm: true`）、`git init` 边界、失败回滚 | `src/host/conventions.ts`、`project.ts`、`workspace.ts`；`tests/workspace.test.js` |
 | 写入器与路径安全 | `resolveWriteTarget`、原子替换、单项目写锁、`PROJECT_BUSY`、编码归一 | `src/host/io.ts`；`tests/io-writer.test.js` |
 | 派生索引重建纪律 | 九目录扫描、临时文件 + 写锁重建、不变量校验（`OUTLINE_*` / `CHARACTER_NAME_DUPLICATE` / `DANGLING_PARENT` / `DUPLICATE_ID` / `FRONTMATTER_ISSUE` / `CHAPTER_NOT_MARKDOWN`） | `src/host/indexer.ts`、`index-build.ts` |
-| 派生索引 v2 | 域模块自带表与行写入；跨类 `entities` 投影（主键 `(kind, id)`）+ 一张 `entities_fts`；章正文 `chapters_fts` 仍在；`user_version = 2`，不匹配即删库重建 | `src/host/indexer.ts`、`src/host/domains/`；`tests/entities.test.js` |
+| 派生索引 v2/v3 | 域模块自带表与行写入；跨类 `entities` 投影（主键 `(kind, id)`）+ 一张 `entities_fts`；章正文 `chapters_fts` 仍在；v3 起 `world_entries` 带 `keywords`/`always`/`priority`；`user_version = 3`，不匹配即删库重建 | `src/host/indexer.ts`、`src/host/domains/`；`tests/entities.test.js` |
 | 写作 skills 与 preset | 5 个写作工艺 skill 与 `inkflow-writing` preset，按 `cwd` 门禁 | `src/host/skills.ts`、`preset.ts`、`skills/` |
 | 章正文检索 | `chapters_fts`（trigram）上 ≥3 字 `MATCH`、1–2 字 `LIKE` 兜底、片段只取正文；索引不可用返回 `INDEX_UNAVAILABLE` 且不写盘 | `src/host/search.ts`；`tests/search.test.js` |
 | 工具面 | 已注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete` | `src/host/tools.ts` |

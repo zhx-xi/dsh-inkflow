@@ -16,6 +16,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from '../conventions.js'
 import { entityFromRow } from './entities.js'
+import { splitTerms } from './scan-helpers.js'
 import type { DomainEntityRef } from './types.js'
 
 export interface EntitySummary extends DomainEntityRef {
@@ -167,6 +168,74 @@ export function entityCounts(root: string): Record<string, number> | undefined {
       n: number
     }>
     return Object.fromEntries(rows.map((row) => [row.kind, row.n]))
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * One world entry as the world book reads it (issue #26).
+ *
+ * Read from `world_entries` rather than from the `entities` projection: `always`
+ * and `priority` are world-book fields and are deliberately **not** columns of the
+ * projection (X-1 fixes that column set), so the projection cannot answer "which
+ * entries are always on".
+ */
+export interface WorldIndexEntry {
+  readonly id: string
+  readonly path: string
+  readonly title: string
+  readonly category?: string
+  readonly parent?: string
+  readonly keywords: readonly string[]
+  readonly always: boolean
+  readonly priority?: number
+}
+
+/**
+ * Every world entry, ordered by path so two builds of the same book list them the
+ * same way. `undefined` means "no usable index" — the caller rebuilds instead of
+ * reporting an empty tree as the truth.
+ */
+export function listWorldEntries(root: string): WorldIndexEntry[] | undefined {
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const rows = db
+      .prepare('SELECT id, path, title, category, parent, keywords, always, priority FROM world_entries ORDER BY path')
+      .all() as unknown as Array<Record<string, unknown>>
+    return rows.map((row) => ({
+      id: String(row['id'] ?? ''),
+      path: String(row['path'] ?? ''),
+      title: String(row['title'] ?? ''),
+      ...(typeof row['category'] === 'string' ? { category: row['category'] } : {}),
+      ...(typeof row['parent'] === 'string' ? { parent: row['parent'] } : {}),
+      keywords: splitTerms(typeof row['keywords'] === 'string' ? row['keywords'] : undefined),
+      always: Number(row['always'] ?? 0) === 1,
+      ...(typeof row['priority'] === 'number' ? { priority: row['priority'] } : {}),
+    }))
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Every entity id in the book, across all nine kinds (I-05's write-side input).
+ *
+ * A world entry's `parent` may point at a chapter or a character — `world.ts`
+ * validates against the global projection for exactly that reason — so the write
+ * path needs the cross-class id set, not just the world one.
+ */
+export function listEntityIds(root: string): Set<string> | undefined {
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const rows = db.prepare('SELECT id FROM entities').all() as unknown as Array<{ id?: unknown }>
+    return new Set(rows.map((row) => String(row.id ?? '')).filter((id) => id !== ''))
   } catch {
     return undefined
   } finally {

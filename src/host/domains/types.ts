@@ -14,10 +14,22 @@
 
 import type { ContentDir } from '../conventions.js'
 import type { ToolDefinition } from '../context.js'
+import type { ToolDeps } from '../tools.js'
 import type { ValidationIssue, WalkedFile } from '../indexer.js'
 
 // Re-exported so a domain module takes every type it touches from one module.
 export type { ValidationIssue }
+
+/**
+ * What a domain needs to build its model-facing tools.
+ *
+ * Why this exists: a tool resolves the book from the **session's** working directory.
+ * Without this the domain had to fall back to `process.cwd()`, which inside the host
+ * process is the DSH install directory — a tool that silently targets the wrong tree.
+ * Same shape as `ToolDeps` in `tools.ts`, declared here so this module keeps no
+ * runtime edge back into the built-in tool surface.
+ */
+export type DomainToolDeps = ToolDeps
 
 /** A row as the seam sees it: opaque to the index, tagged by its own domain. */
 export type DomainRow = Readonly<Record<string, unknown>>
@@ -199,6 +211,10 @@ export interface DomainModule {
   /** Invariants over the parsed view; returns issues, never throws (`FRONTMATTER_ISSUE` style). */
   validate(input: DomainValidateInput): ValidationIssue[]
   schema(): DomainSchema
-  /** Model-facing tools this domain adds (`inkflow_*`); the aggregate stays in `tools.ts`. */
-  tools(): readonly ToolDefinition[]
+  /**
+   * Model-facing tools this domain adds (`inkflow_*`); the aggregate stays in `tools.ts`.
+   * `deps` carries the session context, so a domain tool resolves the book exactly the
+   * way a built-in tool does instead of guessing from `process.cwd()`.
+   */
+  tools(deps: DomainToolDeps): readonly ToolDefinition[]
 }

@@ -44,6 +44,9 @@ const BUILT_IN_TOOLS = [
   ['inkflow_chapter_delete', 'a0cfc616'],
 ]
 
+/** The seam passes the session context through; a tool factory may read it at call time. */
+const TEST_DEPS = { ctx: {}, dataDir: tmpdir(), version: 'test' }
+
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
@@ -128,11 +131,11 @@ function stubModule(name) {
 }
 
 test('an empty registry contributes no tools', () => {
-  assert.deepEqual(domainTools([]), [])
+  assert.deepEqual(domainTools(TEST_DEPS, []), [])
 })
 
 test('a registered module contributes its own tools, in registry order', () => {
-  const tools = domainTools([stubModule('inkflow_stub_first'), stubModule('inkflow_stub_second')])
+  const tools = domainTools(TEST_DEPS, [stubModule('inkflow_stub_first'), stubModule('inkflow_stub_second')])
   assert.deepEqual(
     tools.map((tool) => tool.name),
     ['inkflow_stub_first', 'inkflow_stub_second'],

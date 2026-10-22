@@ -17,7 +17,7 @@ import { chapterDomain } from './chapter.js'
 import { characterDomain } from './character.js'
 import { outlineDomain } from './outline.js'
 import { worldDomain } from './world.js'
-import type { DomainEntityRef, DomainFileParse, DomainModule, DomainScanResult } from './types.js'
+import type { DomainEntityRef, DomainFileParse, DomainModule, DomainScanResult, DomainToolDeps } from './types.js'
 
 /** Registered modules, ordered by `kind`. */
 export const DOMAIN_MODULES: readonly DomainModule[] = [
@@ -28,10 +28,15 @@ export const DOMAIN_MODULES: readonly DomainModule[] = [
   // #27 relations · #28 timeline · #29 mentions · #31 foreshadowing state machine
 ]
 
-/** Flatten every registered module's tools; the aggregate stays a pure function. */
-export function domainTools(modules: readonly DomainModule[] = DOMAIN_MODULES): ToolDefinition[] {
+/**
+ * Flatten every registered module's tools.
+ *
+ * `deps` is passed straight through: a domain tool resolves the book from the session
+ * context (same as a built-in tool), and this aggregate never inspects it.
+ */
+export function domainTools(deps: DomainToolDeps, modules: readonly DomainModule[] = DOMAIN_MODULES): ToolDefinition[] {
   const tools: ToolDefinition[] = []
-  for (const module of modules) tools.push(...module.tools())
+  for (const module of modules) tools.push(...module.tools(deps))
   return tools
 }
 

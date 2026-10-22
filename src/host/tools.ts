@@ -22,6 +22,7 @@ import type { EnsureIndexResult } from './index-freshness.js'
 import { listChapters, readIndexMeta } from './indexer.js'
 import { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
 import { domainTools } from './domains/index.js'
+import { sessionCwd } from './session-cwd.js'
 import { DOMAIN_MODULES } from './domains/index.js'
 import type { DomainModule } from './domains/types.js'
 import type { FileExpectation } from './file-cas.js'
@@ -45,26 +46,6 @@ function text(lines: string[]): ContentBlock[] {
 
 function asRecord(value: unknown): Json {
   return typeof value === 'object' && value !== null ? (value as Json) : {}
-}
-
-/**
- * The Session's effective working directory. Uses the public `workingDirectory`
- * service when the profile has it, and degrades to the process cwd otherwise
- * (a plugin must not throw just because an optional service is absent).
- */
-async function sessionCwd(ctx: HostContext, exec: ToolRunContext): Promise<string> {
-  const service = ctx.get('workingDirectory') as
-    | { ensure?: (agent: unknown, signal?: AbortSignal) => Promise<string> }
-    | undefined
-  if (service !== undefined && typeof service.ensure === 'function' && exec.agent !== undefined) {
-    try {
-      const dir = await service.ensure(exec.agent, exec.signal)
-      if (typeof dir === 'string' && dir !== '') return dir
-    } catch {
-      // fall through to process.cwd()
-    }
-  }
-  return process.cwd()
 }
 
 interface Resolution {
@@ -1191,7 +1172,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     chapterDelete,
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
-    ...domainTools(modules),
+    ...domainTools(deps, modules),
   ]
 }
 
