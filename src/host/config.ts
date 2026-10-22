@@ -39,6 +39,15 @@ export function dshHome(): string {
   return join(homedir(), '.dsh')
 }
 
+/**
+ * The shared library root (ADR-0007 C1): `dataDir/shared`, and the only place
+ * that spells it. Callers must pass the resolved `dataDir` — never `$DSH_HOME`
+ * and never a path from a request (ADR-0010 D5).
+ */
+export function sharedDir(dataDir: string): string {
+  return join(dataDir, 'shared')
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)

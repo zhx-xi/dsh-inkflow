@@ -101,7 +101,39 @@
 
 `/hub/books` 的投影实现在 `src/host/hub.ts`（不是 `internal.ts`）：每行 `state`/`missing`/`actions` 与工作台、工具**同一份** `inspectProject(root, { recreateIndexDir: false })`，另加 `dirStatus`（注册还在但目录已删）、`counts`（只读**已提交** catalog，缺失即未知）、`notABook`（无 meta 且无内容目录）。成本上限：并发 4、单本 2 s → 该行 `state:'timeout'` 不重试、整次预算 3 s → `truncated`、单次 200 行 → `capped`（ADR-0010 D8）。客户端**不轮询**：打开取一次 + 手动「刷新」。
 
-**向导线（plan → apply）的数据流**（`src/host/hub-wizard.ts`，[ADR-0010](../adrs/0010-book-hub-entry.md) D4/D6）：
+#### 4.2.1 共享内容通道 — `src/host/hub-shared.ts`（只读，无会话）
+
+书库的第二个只读投影：`GET /inkflow/internal/hub/shared` 回答 `dataDir/shared` 里有什么（[ADR-0010](../adrs/0010-book-hub-entry.md) D5；目录形状见 [ADR-0007](../adrs/0007-plugin-shared-library.md) C1）。它与上面的书库通道共用同一套守卫，差别只有两点——**没有锚点**（共享库不属于任何一本书，也不在 `workspaceRegistry` 里）和**没有参数**（根目录只来自插件配置，浏览器除了 `kind`/`q` 两个过滤器什么都给不了）。
+
+**数据流**
+
+```
+请求（只有 kind? / q?）
+  → config.ts sharedDir(dataDir)          根目录的唯一来源；请求里没有路径可传
+  → walkKinds：只读四个 kind 目录的目录项
+      每个子项 realpath 必须仍在 shared/ 内（同一道闸门也决定"能否下钻"）
+      同一真实目录只下钻一次（防环）+ 深度上限 + 条目上限 + 时间预算
+  → shared/index.json 可用？
+      可用   → entries 取自清单                  → indexSource: 'index'
+      不可用 → 逐条重算 id/tags/sha256（有界读） → indexSource: 'scan'
+  → 过滤（kind/q）→ 全库计数 → 排序 → {ok:true,value}
+```
+
+**只读纪律（三层）**
+
+1. **代码层**：模块没有任何写 API —— 不 `mkdir`、不写 `index.json`、不改条目文件；库不存在只回 `created:false`（空不是错误，也不是"顺手建一个"的理由）。
+2. **数据层**：`index.json` 是**派生清单**（[ADR-0005](../adrs/0005-files-first-with-derived-index.md)：文件是真相、清单是缓存）。清单与目录不一致时**以目录为准**，清单既不修也不补。
+3. **证据层**：拒绝路径与正常读取都要求 `shared/` 整树 hash 前后一致（`tests/hub-shared.test.js`）。
+
+**为什么不写回 `index.json`**
+
+- **能力边界**：写入属于共享库写入方（#40）。hub 的能力白名单只有"列书 / 初始化计划 / 初始化执行 / 共享内容只读浏览"（ADR-0010 D3），通道里没有写路由；在同一个投影里顺手写清单，等于给只读页开了一个写后门。
+- **幂等与并发**：面板可能同时开在多个窗口。谁都写清单就会出现"最后写者赢"的清单；不写，则任何窗口看到的都是同一份真相——目录本身。
+- **失败形态更好**：清单坏了只是"这次扫描"；扫描被预算截断只是"这次少列 + `truncated:true`"。两者都不留下半写状态。
+
+**成本上限**：见 [conventions.md](conventions.md) §6.2.2。常量在 `hub-shared.ts` 顶部导出，测试注入而非真的等待 1.5 秒。
+
+#### 4.2.2 向导线（plan → apply）— `src/host/hub-wizard.ts`（唯一的 hub 写面）
 
 ```
 用户点「新开书」

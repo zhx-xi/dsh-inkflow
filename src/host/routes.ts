@@ -49,7 +49,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { HostContext } from './context.js'
+import { sharedDir } from './config.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
+import { buildHubShared } from './hub-shared.js'
 import { hubApply, hubPlan } from './hub-wizard.js'
 import {
   INTERNAL_PREFIX,
@@ -353,6 +355,13 @@ function matchRoute(path: string): RouteMatch | undefined {
 interface HubRouteInput {
   ctx: HostContext
   version: string
+  /**
+   * The plugin's own data directory, as `config.ts` resolved it at startup. The
+   * shared library is the only thing under a hub route that lives outside any
+   * book, so it is also the only consumer — and it comes from the plugin's
+   * configuration, never from the request (ADR-0010 D5).
+   */
+  dataDir: string
   method: HttpMethod
   query: URLSearchParams
   body: JsonRecord
@@ -373,10 +382,11 @@ interface HubRoute {
 }
 
 /**
- * The hub's capability whitelist (ADR-0010 D3/D4). Reads are GET, the wizard's
- * two steps are POST and additionally require an `Origin` that is the SAME
- * ORIGIN as `Host` (D6 #6) — see `handleHubRequest`. The shared library arrives
- * with #87 and must declare its own verb here, never a blanket write switch.
+ * The hub's capability whitelist (ADR-0010 D3/D4). Two read routes (`books`,
+ * `shared`), and the wizard's two POST steps (`plan`, `apply`) which
+ * additionally require an `Origin` that is the SAME ORIGIN as `Host` (D6 #6) —
+ * see `handleHubRequest`. Every capability declares its own verb here; there is
+ * never a blanket write switch.
  */
 const HUB_ROUTES: readonly HubRoute[] = [
   {
@@ -408,6 +418,23 @@ const HUB_ROUTES: readonly HubRoute[] = [
     methods: ['POST'],
     body: ['planToken', 'confirm', 'title'],
     handle: ({ ctx, body }) => hubApply(ctx, body),
+  },
+  {
+    // The shared library (ADR-0010 D5, issue #87): read-only browsing of
+    // `dataDir/shared`, the one hub surface that belongs to no book. There is no
+    // anchor to resolve and nothing to accept from the caller — the root comes
+    // from the plugin config, and the route takes only `kind?`/`q?` filters.
+    name: 'hub-shared',
+    pattern: /^\/hub\/shared$/,
+    methods: ['GET'],
+    handle: ({ dataDir, query }) => {
+      const result = buildHubShared(sharedDir(dataDir), {
+        kind: query.get('kind') ?? undefined,
+        q: query.get('q') ?? undefined,
+      })
+      if (result.ok) return { status: 200, body: ok(result.value) }
+      return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
+    },
   },
 ]
 
@@ -533,6 +560,7 @@ async function handleHubRequest(input: {
   const reply = await route.handle({
     ctx: deps.ctx,
     version: deps.version,
+    dataDir: deps.dataDir,
     method,
     query: url.searchParams,
     body: parsed.value,

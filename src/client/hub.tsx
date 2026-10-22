@@ -13,22 +13,22 @@
  * when the panel opens and again when the user presses 刷新: no polling, because
  * every answer costs one judgment per book (ADR-0010 D8).
  *
- * WHAT THE WIZARD ADDS (#86): the 「新开书」 button is real now. It opens
+ * WHAT THE WIZARD ADDS (#86): the 「新开书」 button is real. It opens
  * `HubWizard`, which asks the Host to plan a directory, shows the plan, and
  * applies it after confirmation. A successful apply merges the new book into
  * this list IN PLACE — no refetch, because the host's answer already carries the
  * row (ADR-0010 D8 "apply 成功后就地更新该行").
  *
- * WHAT IS STILL NOT HERE: the shared-content page (#87). It stays a disabled
- * placeholder with its release note; a button that looks clickable and does
- * nothing is worse than a disabled one.
+ * WHAT THE SHARED PAGE ADDS (#87): 「共享内容」 opens `SharedLibraryView`, a
+ * read-only browse of `dataDir/shared` (`hub-shared.tsx`). It owns no book, so it
+ * never touches this list; copy/ref edges belong to #40.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
 import { fetchInternal } from './internal.js'
+import { SharedLibraryView } from './hub-shared.js'
 import {
-  HUB_PLACEHOLDER_NOTE,
   HUB_SHARED_LABEL,
   HUB_TEXTS,
   badgeOf,
@@ -93,12 +93,6 @@ const buttonStyle = {
   cursor: 'pointer',
 } as const
 
-const disabledButtonStyle = {
-  ...buttonStyle,
-  color: 'var(--dsw-alias-label-secondary)',
-  cursor: 'not-allowed',
-} as const
-
 function toneColor(tone: HubBadgeTone): string {
   return `var(--dsw-alias-state-${tone}-primary)`
 }
@@ -144,21 +138,15 @@ function BookCard({ row, home }: { row: HubBookRow; home: string | null }) {
   )
 }
 
-/** The shared-content entry point: reserved for #87, disabled with its release note. */
-function Placeholder({ label }: { label: string }) {
-  return (
-    <button type="button" style={disabledButtonStyle} title={HUB_PLACEHOLDER_NOTE} disabled>
-      {label}（{HUB_PLACEHOLDER_NOTE}）
-    </button>
-  )
-}
-
 const INITIAL: HubState = { status: 'ready', books: [], home: null, total: 0, truncated: false, capped: false }
 
 export function HubView() {
   const [state, setState] = useState<HubState>(INITIAL)
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
+  // The shared library is a page of its own (#87). A root-scoped panel has one
+  // body area, so it is a mode of this view instead of a second slot.
+  const [view, setView] = useState<'books' | 'shared'>('books')
   /** The wizard is a panel of its own: its confirm card does not belong in the header row. */
   const [wizardOpen, setWizardOpen] = useState(false)
 
@@ -180,6 +168,8 @@ export function HubView() {
   const refresh = useCallback(() => {
     setRevision((current) => current + 1)
   }, [])
+
+  if (view === 'shared') return <SharedLibraryView onClose={() => setView('books')} />
 
   /**
    * The wizard's answer, merged into the list in place (issue #86).
@@ -208,7 +198,9 @@ export function HubView() {
           <button type="button" style={buttonStyle} onClick={() => setWizardOpen(true)} disabled={wizardOpen}>
             {HUB_WIZARD_LABEL}
           </button>
-          <Placeholder label={HUB_SHARED_LABEL} />
+          <button type="button" style={buttonStyle} onClick={() => setView('shared')}>
+            {HUB_SHARED_LABEL}
+          </button>
           <button type="button" style={buttonStyle} onClick={refresh} disabled={loading}>
             {HUB_TEXTS.refresh}
           </button>

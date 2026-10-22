@@ -175,6 +175,31 @@ export type {
 } from './hub.js'
 
 /**
+ * Shared library (ADR-0010 D5, issue #87): the **read-only** projection of
+ * `dataDir/shared`, and the only hub surface that reads something outside the
+ * workspace registry. Exported for the same reason as the hub: the two data
+ * sources (the derived manifest vs an in-memory rescan) and the cost limits are
+ * only testable by driving `buildHubShared` directly, and `sharedDir` is the one
+ * place the `dataDir/shared` path is spelled.
+ */
+export {
+  SHARED_HEAD_BYTES,
+  SHARED_MAX_ENTRIES,
+  SHARED_MAX_HASH_BYTES,
+  SHARED_MAX_JSON_BYTES,
+  SHARED_SCAN_BUDGET_MS,
+  buildHubShared,
+} from './hub-shared.js'
+export type {
+  HubSharedError,
+  HubSharedOptions,
+  HubSharedResult,
+  HubSharedValue,
+  SharedEntry,
+} from './hub-shared.js'
+export { sharedDir } from './config.js'
+
+/**
  * The hub's new-book wizard (ADR-0010 D4/D6, issue #86). Exported because the
  * two properties that make it safe are only testable from outside the route
  * handler: a plan token is ONE-SHOT and TTL-bounded (so the store takes an

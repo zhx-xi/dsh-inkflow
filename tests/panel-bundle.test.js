@@ -67,6 +67,23 @@ async function loadHubModel() {
   return import(`data:text/javascript;base64,${code}`)
 }
 
+/** The shared-content page's pure view model (#87), bundled the same way. */
+async function loadSharedModel() {
+  const esbuild = require('esbuild')
+  const result = await esbuild.build({
+    entryPoints: [join(ROOT, 'src/client', 'hub-shared-model.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    target: 'node22',
+    write: false,
+    logLevel: 'silent',
+  })
+  const file = result.outputFiles[0]
+  const code = Buffer.from(file.text, 'utf8').toString('base64')
+  return import(`data:text/javascript;base64,${code}`)
+}
+
 /** The wizard's pure view model (issue #86), bundled the same way. */
 async function loadWizardModel() {
   const esbuild = require('esbuild')
@@ -86,6 +103,7 @@ async function loadWizardModel() {
 
 const model = await loadPanelModel()
 const hub = await loadHubModel()
+const shared = await loadSharedModel()
 const wizard = await loadWizardModel()
 
 // ---------------------------------------------------------------------------
@@ -122,18 +140,31 @@ test('client bundle registers the book hub pair: sidebar.panellist icon + keyed 
   assert.equal((text.match(/slots\.register\(/g) ?? []).length, 3, 'three registrations: view, icon, body')
 })
 
-test('the shared-content entry stays a disabled placeholder with its release note', () => {
+test('both hub entry points are real: no disabled placeholder is left', () => {
   const text = readBundle()
-  // A clickable button that does nothing is worse than a disabled one, so the
-  // one entry #87 still owns must be disabled AND carry its release note.
-  for (const marker of ['共享内容', '0.1.0 后续项']) {
-    assert.ok(text.includes(marker), `bundle is missing the hub placeholder wording: ${marker}`)
-  }
-  assert.match(text, /title: HUB_PLACEHOLDER_NOTE, disabled: true|title: HUB_PLACEHOLDER_NOTE,\s*disabled/, 'the placeholder is really disabled')
+  // #86 made 新开书 real and #87 made 共享内容 real, so the release-note
+  // placeholder component is gone from the hub entirely — a UI that keeps a
+  // dead button and a live one side by side is the worst of both.
+  assert.equal((text.match(/Placeholder, \{/g) ?? []).length, 0, 'no disabled placeholder remains')
+  assert.ok(text.includes('新开书'), 'the new-book entry is labelled')
+  assert.ok(text.includes('共享内容'), 'the shared-content entry is labelled')
+  assert.ok(text.includes('HubWizard'), 'the wizard component is mounted')
+  assert.equal((text.match(/SharedLibraryView, \{/g) ?? []).length, 1, 'the shared page is mounted, not stubbed')
   assert.ok(text.includes('还没有书'), 'the empty state is shipped, not just the loaded list')
   assert.ok(text.includes('用上面的「新开书」创建'), 'the empty state points at the wizard that fills it')
   assert.ok(text.includes('刷新'), 'the hub refreshes on a user action, never on a timer')
   assert.equal(/setInterval/.test(text), false, 'no polling: every answer costs a judgment per book (ADR-0010 D8)')
+})
+
+test('the client bundle ships the read-only shared-content page (issue #87)', () => {
+  const text = readBundle()
+  assert.ok(text.includes('/hub/shared'), 'the page reads the no-session shared route (ADR-0010 D3/D5)')
+  assert.ok(text.includes('共享库尚未创建（0.4.0 支持）'), 'the missing-library release note is shipped (ADR-0010 D5)')
+  assert.ok(text.includes('只读：复制/引用将在后续版本提供（#40）'), 'the page says it is read-only and who adds copy/reference')
+  assert.ok(text.includes('数据来源：shared/index.json（派生清单）'), 'the manifest source is named on screen')
+  assert.ok(text.includes('数据来源：内存扫描，未写回 index.json'), 'the rescan source says it was not written back')
+  assert.ok(text.includes('返回书单'), 'the page can go back to the book list')
+  assert.equal(/setInterval/.test(text), false, 'the shared page never polls: one read per open + 刷新')
 })
 
 test('the new-book wizard ships its two hub routes and still no polling (issue #86)', () => {
@@ -202,7 +233,7 @@ test('the stale-build banner sits above the tabs, so every gate state shows it',
 })
 
 test('client sources draw every colour from theme tokens', () => {
-  for (const file of ['index.tsx', 'hub.tsx', 'hub-wizard.tsx']) {
+  for (const file of ['index.tsx', 'hub.tsx', 'hub-shared.tsx', 'hub-wizard.tsx']) {
     const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')
     assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(source), false, `no hardcoded colour literals in ${file} (AGENTS.md §6)`)
     assert.ok(source.includes('var(--dsw-alias-'), `colours come from --dsw-alias-* tokens in ${file}`)
@@ -212,7 +243,7 @@ test('client sources draw every colour from theme tokens', () => {
 })
 
 test('panel-model has no runtime coupling to the channel', () => {
-  for (const file of ['panel-model.ts', 'hub-model.ts', 'hub-wizard-model.ts']) {
+  for (const file of ['panel-model.ts', 'hub-model.ts', 'hub-shared-model.ts', 'hub-wizard-model.ts']) {
     const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')
     for (const match of source.matchAll(/import\s+(type\s+)?[^'\n]*from\s+'\.\/internal\.js'/g)) {
       assert.ok(match[1] !== undefined, `${file} may only \`import type\` from ./internal.js (it stays pure)`)
@@ -612,7 +643,90 @@ test('hubSummary reports an incomplete list instead of hiding it', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 4. The wizard's view model (issue #86): four outcomes, one row merge
+// 4. The shared-content view model (#87): source wording, grouping, empty states
+// ---------------------------------------------------------------------------
+
+/** A ready answer with two entries and counts over the whole library. */
+function sharedAnswer(overrides = {}) {
+  return {
+    ok: true,
+    status: 200,
+    value: {
+      created: true,
+      indexSource: 'index',
+      entries: [
+        { entryId: 'sh-11112222', kind: 'library', path: 'library/参考资料.md', tags: ['资料'] },
+        { entryId: 'sh-33334444', kind: 'world', path: 'world/门派/白鹤门.md', tags: ['门派', '设定'] },
+      ],
+      countsByKind: { world: 1, library: 1, snippets: 0, series: 2 },
+      total: 2,
+      truncated: false,
+      ...overrides,
+    },
+  }
+}
+
+test('the shared page names the data source it actually used', () => {
+  const { describeSharedSource, SHARED_TEXTS } = shared
+  assert.match(describeSharedSource('index'), /shared\/index\.json/, 'the manifest is named')
+  assert.match(describeSharedSource('scan'), /内存扫描/, 'the rescan is named')
+  assert.match(describeSharedSource('scan'), /未写回/, 'and says it did not write the manifest back')
+  assert.match(describeSharedSource(undefined), /内存扫描/, 'an unknown source is described as the honest one')
+  assert.match(SHARED_TEXTS.emptyTitle, /共享库尚未创建（0\.4\.0 支持）/, 'the release note ADR-0010 D5 requires')
+  assert.match(SHARED_TEXTS.readOnly, /只读：复制\/引用将在后续版本提供（#40）/, 'the page says it is read-only, and who adds the write')
+})
+
+test('the shared page groups by kind in canonical order, keeping the whole-library counts', () => {
+  const { readSharedLibrary, sharedGroups, sharedSummary } = shared
+  const state = readSharedLibrary(sharedAnswer())
+  assert.equal(state.status, 'ready')
+  const groups = sharedGroups(state.entries, state.countsByKind)
+  // Only kinds with entries, in the ADR-0007 C1 order — never alphabetical.
+  assert.deepEqual(groups.map((group) => group.kind), ['world', 'library', 'series'])
+  assert.deepEqual(groups.map((group) => group.label), ['世界观 / 设定', '资料', '系列'])
+  assert.deepEqual(groups[2].entries, [], 'a counted-but-filtered kind renders as an empty group, not a missing one')
+  assert.match(sharedSummary(state), /共 2 条/)
+  assert.match(sharedSummary(state), /世界观 \/ 设定 1/)
+  assert.equal(sharedSummary({ status: 'error', message: 'x' }), '共享库读不到')
+})
+
+test('a filtered-to-nothing answer is not an empty library', () => {
+  const { readSharedLibrary, isEmptyFilter, isEmptyLibrary, sharedSummary } = shared
+  const empty = readSharedLibrary(sharedAnswer({ entries: [], total: 0 }))
+  assert.equal(isEmptyFilter(empty), true, 'a created library with no match shows the filter note')
+  assert.equal(isEmptyLibrary(empty), false, 'and does NOT claim the library is missing')
+  const missing = readSharedLibrary({
+    ok: true,
+    status: 200,
+    value: { created: false, indexSource: 'scan', entries: [], countsByKind: {}, total: 0 },
+  })
+  assert.equal(isEmptyLibrary(missing), true, 'a missing library is its own empty state')
+  assert.equal(isEmptyFilter(missing), false)
+  assert.match(sharedSummary(missing), /共 0 条/)
+})
+
+test('the shared page renders names, paths and tags without inventing any', () => {
+  const { entryName, describeTags } = shared
+  assert.equal(entryName('world/门派/白鹤门.md'), '白鹤门')
+  assert.equal(entryName('series/蜀山.json'), '蜀山')
+  assert.equal(entryName('library/参考.pdf'), '参考.pdf', 'a non-md payload keeps its extension')
+  assert.equal(entryName(undefined), '（未命名条目）')
+  assert.equal(describeTags({ tags: ['门派', '设定'] }), '门派 · 设定')
+  assert.equal(describeTags({}), '无标签', 'an entry without tags says so instead of showing a blank')
+  assert.equal(describeTags({ tags: ['  '] }), '无标签')
+})
+
+test('a refused shared call becomes a sentence, not a bare code', () => {
+  const { describeSharedError, readSharedLibrary } = shared
+  assert.match(describeSharedError({ code: 'SHARED_UNAVAILABLE' }), /SHARED_UNAVAILABLE/)
+  assert.match(describeSharedError({ code: 'not-found' }), /还没有共享内容路由/)
+  assert.equal(describeSharedError(undefined), '共享内容通道没有返回内容')
+  const failed = readSharedLibrary({ ok: false, status: 200, error: { code: 'SHARED_UNAVAILABLE' } })
+  assert.equal(failed.status, 'error')
+})
+
+// ---------------------------------------------------------------------------
+// 5. The wizard's view model (issue #86): four outcomes, one row merge
 // ---------------------------------------------------------------------------
 
 test('readHubPlan separates "ready" from "anchor needed", "blocked" and "refused"', () => {

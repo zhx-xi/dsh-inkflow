@@ -419,14 +419,14 @@ test('the hub guards fail closed and never alias the removed /inkflow/api/* pref
   assert.equal(wrongMethod.json.error.code, 'method-not-allowed')
   assert.equal(wrongMethod.headers.allow, 'GET')
 
-  // `/hub/plan` and `/hub/apply` exist since #86 (POST only); the shared page
-  // is #87's, so it is still an undeclared hub path.
+  // `/hub/plan` and `/hub/apply` exist since #86 (POST only); `/hub/shared`
+  // exists since #87 (GET only). A path no build declares is still 404.
   const planVerb = await hubCall(harness, '/plan')
   assert.equal(planVerb.status, 405, '/hub/plan is declared and POST-only')
   assert.equal(planVerb.json.error.code, 'method-not-allowed')
   assert.equal(planVerb.headers.allow, 'POST')
 
-  const unknown = await hubCall(harness, '/shared')
+  const unknown = await hubCall(harness, '/not-a-route')
   assert.equal(unknown.status, 404, 'a hub route this build does not declare answers 404')
 
   const legacy = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status' }))
