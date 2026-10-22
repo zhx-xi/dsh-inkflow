@@ -284,7 +284,9 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
           <NoteCard title={LIBRARY_EMPTY['index-unavailable'].title} body={LIBRARY_EMPTY['index-unavailable'].body} />
         ) : null}
 
-        {tree.groups.map((group) => (
+        {/* When the index cannot be read, the card above already says so — rendering eight
+            empty kinds underneath would contradict it. */}
+        {(tree.indexAvailable ? tree.groups : []).map((group) => (
           <div key={group.kind} style={{ display: 'grid', gap: 2 }}>
             <button type="button" style={groupRowStyle} onClick={() => toggle(group.kind)} aria-expanded={expanded.includes(group.kind)}>
               <span style={{ ...muted, marginRight: 4 }}>{expanded.includes(group.kind) ? '▾' : '▸'}</span>
