@@ -321,6 +321,15 @@ test('a registry path spelled through a junction still anchors its contents (and
   const escapeResponse = await post(harnessEscape, '/plan', { candidate: escape })
   assert.equal(escapeResponse.status, 403, JSON.stringify(escapeResponse.json))
   assert.equal(escapeResponse.json.error.code, 'PATH_OUT_OF_SCOPE')
+
+  // 4) the same escape, but the junction is the candidate's PARENT
+  //    (`…/escape/book`). This is the shape the pre-existing PATH_OUT_OF_SCOPE
+  //    test has, and it is why the walk has to climb more than one level.
+  const deep = join(escape, 'book')
+  mkdirSync(deep)
+  const deepResponse = await post(harnessEscape, '/plan', { candidate: deep })
+  assert.equal(deepResponse.status, 403, JSON.stringify(deepResponse.json))
+  assert.equal(deepResponse.json.error.code, 'PATH_OUT_OF_SCOPE')
 })
 
 test('plan on an already registered book returns its state and NO planToken', async () => {

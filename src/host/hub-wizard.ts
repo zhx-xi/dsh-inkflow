@@ -231,16 +231,30 @@ function pathKey(path: string): string {
 }
 
 /**
- * The candidate's PARENT in canonical form.
+ * Does the candidate's TEXT sit under a workspace once its ancestors are resolved?
  *
- * Resolving only the parent keeps the last hop (a junction the user pointed at)
- * intact, so the gate can still name it as `PATH_OUT_OF_SCOPE`, while a spelling
- * mismatch between the registry and the picker — a junction-resolved or 8.3
- * short temp path, exactly what a Windows CI runner has — stops mattering.
+ * Two shapes must still anchor here, so the gate below can refuse them with the
+ * precise `PATH_OUT_OF_SCOPE` instead of a vague `ANCHOR_REQUIRED`:
+ *   - the registry path and the picker's answer are spelled differently (a
+ *     junction-resolved or 8.3 short temp path — exactly what a windows-latest
+ *     runner has);
+ *   - a junction inside the workspace points outside, **including** the case
+ *     where that junction is the candidate's own parent (`…/escape/book`), which
+ *     is why this walks up instead of resolving a single level.
+ *
+ * Resolving an ancestor that contains the junction drops the junction itself, so
+ * the real target is still judged by `checkProjectRootScope` afterwards: anchor
+ * by TEXT, gate by REAL path (ADR-0010 D6).
  */
-function parentCanonical(path: string): string {
-  const parent = dirname(path)
-  return parent === path ? path : realpathLoose(parent)
+function anchorsUnder(workspaceCanonical: string, picked: string): boolean {
+  let current = resolve(picked)
+  for (let depth = 0; depth < 32; depth += 1) {
+    if (isWithin(workspaceCanonical, realpathLoose(current))) return true
+    const parent = dirname(current)
+    if (parent === current) return false
+    current = parent
+  }
+  return false
 }
 
 /**
@@ -368,24 +382,14 @@ export async function hubPlan(
 
   // Anchor 2: inside a registered workspace.
   //
-  // Three chances, in this order, and the order is the semantics (ADR-0010 D6):
-  //   1. TEXTUAL — the picker's answer literally sits under the registry path.
-  //      A junction inside the workspace that resolves outside must be anchored
-  //      here so the gate below refuses it with the precise `PATH_OUT_OF_SCOPE`
-  //      rather than a vague `ANCHOR_REQUIRED`.
-  //   2. PARENT, canonical — the spelling mismatch case: a registry that stored
-  //      one form (junction-resolved, 8.3 short name) while the picker answered
-  //      another. Canonicalising the candidate itself would defeat chance 1 (the
-  //      escaping junction resolves outside), so only its PARENT is resolved —
-  //      that is enough to recognise the workspace while leaving the last hop to
-  //      the gate.
-  //   3. CANDIDATE, canonical — the ordinary "already resolved path inside a
-  //      resolved workspace" case.
+  // Two chances, and the order is the semantics (ADR-0010 D6):
+  //   1. TEXTUAL — the picker's answer literally sits under the registry path:
+  //      the ordinary case, and the one a junction that escapes is anchored by
+  //      (the gate then refuses it).
+  //   2. ANCESTORS RESOLVED — same intent, spelled differently on the two sides,
+  //      or the escaping junction is the candidate's parent. See `anchorsUnder`.
   const containing = registry?.find(
-    (entry) =>
-      isWithin(resolve(entry.path), picked) ||
-      isWithin(canonicalEntry(entry.path), parentCanonical(picked)) ||
-      isWithin(canonicalEntry(entry.path), canonical),
+    (entry) => isWithin(resolve(entry.path), picked) || anchorsUnder(canonicalEntry(entry.path), picked),
   )
   let anchor: HubPlanAnchor
   let scope: string
