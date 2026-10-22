@@ -82,21 +82,39 @@ function ids(entries) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. The three conflict rules, on the rebuild net
+// 3. The three conflict rules, on the rebuild net (one test per code, so a rule that
+//    silently stops firing is pinned by its own name instead of a shared fixture)
 // ---------------------------------------------------------------------------
 
-test('timeline: a rebuild reports the missing time, the shared slot and the reversal', async () => {
+test('timeline: a rebuild reports a confirmed event without a world time', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
     scaffold(root)
     // TIMELINE_TIME_MISSING: confirmed, but no world time to place it by.
     writeEvent(root, 'timeline/缺时.md', ['id: t-missing', 'title: 缺时', 'chapterId: c-1', 'narrativeOrder: 1'])
-    // TIMELINE_ORDER_CONFLICT: one slot, two different moments, one chapter.
+
+    const build = await buildIndex(root)
+    const missing = build.issues.filter((issue) => issue.code === 'TIMELINE_TIME_MISSING')
+    assert.equal(missing.length, 1, JSON.stringify(build.issues.map((issue) => issue.code)))
+    assert.equal(missing[0].path, 'timeline/缺时.md')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('timeline: a rebuild reports one book-wide slot claimed twice, even across chapters', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    // TIMELINE_ORDER_CONFLICT: one slot, two different moments — told in two DIFFERENT
+    // chapters. `narrativeOrder` is book-wide, so this pair is a real contradiction; a
+    // chapter-local slot axis reported nothing here (the miss this test pins).
     writeEvent(root, 'timeline/同槽甲.md', [
       'id: t-slot-a',
       'title: 同槽甲',
-      'chapterId: c-9',
+      'chapterId: c-8',
       'narrativeOrder: 4',
       'worldTime: 1710-01-01',
     ])
@@ -107,6 +125,25 @@ test('timeline: a rebuild reports the missing time, the shared slot and the reve
       'narrativeOrder: 4',
       'worldTime: 1710-05-01',
     ])
+
+    const build = await buildIndex(root)
+    const shared = build.issues.filter((issue) => issue.code === 'TIMELINE_ORDER_CONFLICT')
+    assert.equal(shared.length, 1, JSON.stringify(build.issues.map((issue) => issue.code)))
+    // One row per issue in the index, so the finding names one file and its detail names
+    // both moments; the author needs both ends to reconcile the pair.
+    assert.ok(['timeline/同槽甲.md', 'timeline/同槽乙.md'].includes(shared[0].path))
+    assert.match(shared[0].detail, /1710-01-01/u)
+    assert.match(shared[0].detail, /1710-05-01/u)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('timeline: a rebuild reports a scene told out of world order', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
     // TIMELINE_WORLD_TIME_REVERSED: slot 2 happens before slot 1 in world time.
     writeEvent(root, 'timeline/逆序甲.md', [
       'id: t-rev-a',
@@ -124,26 +161,17 @@ test('timeline: a rebuild reports the missing time, the shared slot and the reve
     ])
 
     const build = await buildIndex(root)
-    const codes = build.issues.map((issue) => issue.code)
-    assert.ok(codes.includes('TIMELINE_TIME_MISSING'), `missing time not reported: ${codes.join(',')}`)
-    assert.ok(codes.includes('TIMELINE_ORDER_CONFLICT'), `shared slot not reported: ${codes.join(',')}`)
-    assert.ok(codes.includes('TIMELINE_WORLD_TIME_REVERSED'), `reversal not reported: ${codes.join(',')}`)
-    assert.equal(
-      build.issues.find((issue) => issue.code === 'TIMELINE_TIME_MISSING')?.path,
-      'timeline/缺时.md',
-    )
-    // The reversal is filed against the event told later (the one that is out of place).
-    assert.equal(
-      build.issues.find((issue) => issue.code === 'TIMELINE_WORLD_TIME_REVERSED')?.path,
-      'timeline/逆序乙.md',
-    )
+    const reversed = build.issues.filter((issue) => issue.code === 'TIMELINE_WORLD_TIME_REVERSED')
+    assert.equal(reversed.length, 1, JSON.stringify(build.issues.map((issue) => issue.code)))
+    // Filed against the event told later (the one that is out of place).
+    assert.equal(reversed[0].path, 'timeline/逆序乙.md')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
 // ---------------------------------------------------------------------------
-// 4. The three conflict rules, on the write net
+// 4. The blocking rules on the write net — plus the one that must not block
 // ---------------------------------------------------------------------------
 
 test('timeline: a confirmed event without a world time is refused and nothing is written', async () => {
@@ -199,10 +227,13 @@ test('timeline: a shared narrative slot with a different moment is refused on wr
     const existing = join(root, 'timeline/辰时开门.md')
     const before = sha256(existing)
 
+    // Told in a DIFFERENT chapter (c-10) than 辰时开门 (c-9): the slot is book-wide, so
+    // this is still one position claimed twice with two moments — and the write net has to
+    // catch it, not only the rebuild.
     const refused = await callTool('inkflow_timeline_upsert', {
       projectRoot: root,
       title: '午时破门',
-      chapter: 'c-9',
+      chapter: 'c-10',
       narrativeOrder: 4,
       worldTime: '1710-09-01',
       confirm: true,
@@ -212,11 +243,11 @@ test('timeline: a shared narrative slot with a different moment is refused on wr
     assert.equal(existsSync(join(root, 'timeline/午时破门.md')), false)
     assert.equal(sha256(existing), before)
 
-    // A different slot in the same chapter, later in world time, is fine.
+    // A slot of its own, later in world time, is fine.
     const accepted = await callTool('inkflow_timeline_upsert', {
       projectRoot: root,
       title: '午时破门',
-      chapter: 'c-9',
+      chapter: 'c-10',
       narrativeOrder: 6,
       worldTime: '1710-09-01',
       confirm: true,
@@ -227,11 +258,11 @@ test('timeline: a shared narrative slot with a different moment is refused on wr
   }
 })
 
-test('timeline: a world time that goes backwards in one chapter is refused on write', async () => {
+test('timeline: telling a scene out of world order is written, and the rebuild reports it', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
-    sampleBook(root)
+    scaffold(root)
     writeEvent(root, 'timeline/卯时开门.md', [
       'id: t-rev-a',
       'title: 卯时开门',
@@ -243,7 +274,9 @@ test('timeline: a world time that goes backwards in one chapter is refused on wr
     const existing = join(root, 'timeline/卯时开门.md')
     const before = sha256(existing)
 
-    const refused = await callTool('inkflow_timeline_upsert', {
+    // A flashback: told second, set two years earlier. That is how a recall is written,
+    // so the write must land — refusing it made legal prose impossible.
+    const written = await callTool('inkflow_timeline_upsert', {
       projectRoot: root,
       title: '回忆:两年前',
       chapter: 'c-7',
@@ -251,23 +284,20 @@ test('timeline: a world time that goes backwards in one chapter is refused on wr
       worldTime: '1709-06-01',
       confirm: true,
     })
-    assert.equal(refused.ok, false)
-    assert.equal(refused.error.code, 'TIMELINE_WORLD_TIME_REVERSED')
-    // `:` is not a portable file-name character, so the slug is `回忆-两年前` — assert
-    // on the path the tool would actually have written, not on a name it never uses.
-    assert.equal(existsSync(join(root, 'timeline/回忆-两年前.md')), false)
-    assert.equal(sha256(existing), before)
+    assert.equal(written.ok, true, JSON.stringify(written.error ?? {}))
+    assert.equal(written.created, true)
+    // `:` is not a portable file-name character, so the slug is `回忆-两年前`.
+    assert.ok(existsSync(join(root, 'timeline/回忆-两年前.md')), 'the flashback was written')
+    assert.equal(sha256(existing), before, 'the event told before it is not rewritten')
 
-    // The escape hatch the rule documents: give the flashback its own chapter.
-    const accepted = await callTool('inkflow_timeline_upsert', {
-      projectRoot: root,
-      title: '回忆:两年前',
-      chapter: 'c-8',
-      narrativeOrder: 2,
-      worldTime: '1709-06-01',
-      confirm: true,
-    })
-    assert.equal(accepted.ok, true, JSON.stringify(accepted.error ?? {}))
+    // The axis crossing is still reported — by the rebuild, not by the write gate.
+    const build = await buildIndex(root)
+    const reversed = build.issues.filter((issue) => issue.code === 'TIMELINE_WORLD_TIME_REVERSED')
+    assert.deepEqual(
+      reversed.map((issue) => issue.path),
+      ['timeline/回忆-两年前.md'],
+      JSON.stringify(build.issues.map((issue) => issue.code)),
+    )
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -278,12 +308,16 @@ test('timeline: an illegal date is reported by a rebuild and refused by the tool
   try {
     const root = join(dir, 'book')
     scaffold(root)
-    writeEvent(root, 'timeline/春天.md', ['id: t-bad', 'title: 春天', 'worldTime: 春天'])
+    // The hand-written file keeps its unparsable value (the rebuild only reports it), so
+    // the refusal below is a *new* file the tool would have created.
+    writeEvent(root, 'timeline/坏日期.md', ['id: t-bad', 'title: 坏日期', 'worldTime: 春天'])
+    const existing = join(root, 'timeline/坏日期.md')
+    const before = sha256(existing)
 
     const build = await buildIndex(root)
     const invalid = build.issues.find((issue) => issue.code === 'TIMELINE_TIME_INVALID')
     assert.ok(invalid, 'an unparseable date is a validation issue, not a crash')
-    assert.equal(invalid.path, 'timeline/春天.md')
+    assert.equal(invalid.path, 'timeline/坏日期.md')
     // Non-blocking: the index is still built and the row is still there.
     const rows = listTimelineEvents(root)
     assert.deepEqual(ids(rows), ['t-bad'])
@@ -296,6 +330,10 @@ test('timeline: an illegal date is reported by a rebuild and refused by the tool
     })
     assert.equal(refused.ok, false)
     assert.equal(refused.error.code, 'TIMELINE_TIME_INVALID')
+    // The write side owns the input, so an illegal date never lands on disk either way:
+    // no new file, and the file that already carries the bad date is left untouched.
+    assert.equal(existsSync(join(root, 'timeline/春天.md')), false, 'a refused write creates no file')
+    assert.equal(sha256(existing), before, 'a refused write does not rewrite the existing file')
 
     // Calendar arithmetic is real: 30 February and month 13 do not parse.
     assert.equal(parseWorldTime('1710-02-30'), undefined)
@@ -303,6 +341,62 @@ test('timeline: an illegal date is reported by a rebuild and refused by the tool
     assert.equal(parseWorldTime('1710-02-28')?.precision, 'day')
     assert.equal(parseWorldTime('1710-02')?.precision, 'month')
     assert.equal(parseWorldTime('1710')?.precision, 'year')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('timeline: a refused edit leaves the file it was editing byte-identical', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    writeEvent(root, 'timeline/甲事.md', [
+      'id: t-a',
+      'title: 甲事',
+      'chapterId: c-1',
+      'narrativeOrder: 5',
+      'worldTime: 1710-01-01',
+    ])
+    writeEvent(root, 'timeline/乙事.md', [
+      'id: t-b',
+      'title: 乙事',
+      'chapterId: c-2',
+      'narrativeOrder: 6',
+      'worldTime: 1710-02-01',
+    ])
+    await buildIndex(root)
+    const target = join(root, 'timeline/甲事.md')
+    const before = sha256(target)
+    const beforeFiles = readdirSync(join(root, 'timeline')).sort()
+
+    // An in-place edit claiming 乙事's book-wide slot while keeping its own world time:
+    // one slot, two different moments. Every other refusal case here asserts that a
+    // *new* file was not created, which cannot catch a gate that writes first and judges
+    // after — this one asserts on the file the call would have overwritten.
+    const refused = await callTool('inkflow_timeline_upsert', {
+      projectRoot: root,
+      title: '甲事',
+      id: 't-a',
+      narrativeOrder: 6,
+      worldTime: '1710-01-01',
+      confirm: true,
+    })
+    assert.equal(refused.ok, false, 'editing into a contradiction must be refused')
+    assert.equal(refused.error.code, 'TIMELINE_ORDER_CONFLICT')
+    assert.equal(sha256(target), before, 'a refused edit does not touch the file it was editing')
+    assert.deepEqual(readdirSync(join(root, 'timeline')).sort(), beforeFiles, 'and creates nothing')
+
+    // Sanity on the same call: a slot of its own is an in-place edit that lands.
+    const accepted = await callTool('inkflow_timeline_upsert', {
+      projectRoot: root,
+      title: '甲事',
+      id: 't-a',
+      narrativeOrder: 4,
+      confirm: true,
+    })
+    assert.equal(accepted.ok, true, JSON.stringify(accepted.error ?? {}))
+    assert.equal(accepted.replaced, true)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

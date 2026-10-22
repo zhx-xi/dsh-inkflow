@@ -121,10 +121,13 @@ function timelineListTool(deps: DomainToolDeps): ToolDefinition {
     name: 'inkflow_timeline_list',
     description:
       'List the timeline of the book on one or both axes. `world` is "when it happened" (worldTime, YYYY[-MM[-DD]]), ' +
-      '`narrative` is "when the reader learns it" (narrativeOrder); the two are independent and never overwrite each other. ' +
+      '`narrative` is "when the reader learns it" (narrativeOrder, book-wide: the order the tale is told in across the ' +
+      'whole book); the two are independent and never overwrite each other. ' +
       'Events with `status: unconfirmed` are the pending area: they are excluded from both axes and returned separately as ' +
       '`pending` when `includeUnconfirmed` is true. The reply carries the conflict findings too ' +
-      '(TIMELINE_TIME_MISSING / TIMELINE_TIME_INVALID / TIMELINE_ORDER_CONFLICT / TIMELINE_WORLD_TIME_REVERSED). ' +
+      '(TIMELINE_TIME_MISSING / TIMELINE_TIME_INVALID / TIMELINE_ORDER_CONFLICT / TIMELINE_WORLD_TIME_REVERSED); ' +
+      'TIMELINE_WORLD_TIME_REVERSED only says a scene is told out of world order (a flashback or a recall), ' +
+      'the other three mean the data contradicts what it declares. ' +
       'Read-only; the derived index is rebuilt first when it is stale. Call it when the user asks what happened when, ' +
       'in which order the book tells it, which events still have no settled date, or why two events contradict.',
     parameters: {
@@ -203,7 +206,10 @@ function timelineListTool(deps: DomainToolDeps): ToolDefinition {
           ...(axis === 'narrative' ? {} : { worldOrder: view.worldOrder.map(eventJson) }),
           ...(axis === 'world' ? {} : { narrativeOrder: view.narrativeOrder.map(eventJson) }),
           ...(optionalBoolean(a['includeUnconfirmed']) ? { pending: view.unconfirmed.map(eventJson) } : {}),
-          conflicts: timelineConflicts(filtered),
+          // Judged over the whole book, not over `filtered`: `narrativeOrder` is a
+          // book-wide slot, so a `chapter` filter would hide a slot claimed twice by two
+          // different chapters — the one contradiction the author most needs to see.
+          conflicts: timelineConflicts(rows),
           indexRebuilt: ensured.rebuilt,
           indexState: ensured.state,
         }
@@ -228,10 +234,11 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
     name: 'inkflow_timeline_upsert',
     description:
       'Create or replace one timeline event: writes `timeline/<slug>.md` with `worldTime` / `narrativeOrder` / ' +
-      '`chapterId` / `participants` / `status`, then rebuilds the derived index. The write-side half of the conflict rules ' +
-      'runs first: a confirmed event without a usable world time is refused (TIMELINE_TIME_MISSING), a narrative slot ' +
-      'claimed twice with different world times in one chapter is refused (TIMELINE_ORDER_CONFLICT), and a world time that ' +
-      'goes backwards against the previous declared slot of the same chapter is refused (TIMELINE_WORLD_TIME_REVERSED). ' +
+      '`chapterId` / `participants` / `status`, then rebuilds the derived index. Only contradictions are refused: a ' +
+      'confirmed event without a usable world time (TIMELINE_TIME_MISSING / TIMELINE_TIME_INVALID), and one book-wide ' +
+      'narrative slot claimed twice with different world times (TIMELINE_ORDER_CONFLICT). A world time that goes ' +
+      'backwards against the previous declared slot — telling the story out of world order — is **not** refused: it is ' +
+      'what flashbacks and recalls are, and the next rebuild reports it as TIMELINE_WORLD_TIME_REVERSED. ' +
       'Mark an event `status: unconfirmed` when its time is not settled: it goes to the pending area and is not ordered. ' +
       'Requires `confirm: true`, and writes nothing without it.',
     parameters: {
@@ -245,13 +252,17 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
         },
         worldTime: {
           type: 'string',
-          description: 'World-internal time as `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. Required unless status is unconfirmed.',
+          description:
+            'World-internal time as `YYYY`, `YYYY-MM` or `YYYY-MM-DD` (one flat value; the precision is how many parts ' +
+            'you write). Required unless status is unconfirmed.',
         },
         narrativeOrder: {
           type: 'integer',
-          description: 'Screen slot of the book: when the reader learns this, which may disagree with worldTime.',
+          description:
+            'Book-wide screen slot: when the reader learns this, counted across the whole book (not an index inside one ' +
+            'chapter). It may disagree with worldTime — that is a flashback, and it is allowed.',
         },
-        chapter: { type: 'string', description: 'Chapter id this event is told in.' },
+        chapter: { type: 'string', description: 'Chapter id this event is told in (written as `chapterId`).' },
         participants: {
           type: 'array',
           items: { type: 'string' },
@@ -261,7 +272,8 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
           type: 'string',
           enum: ['confirmed', 'unconfirmed'],
           description:
-            '`unconfirmed` puts the event in the pending area; omit to keep the current value (default confirmed).',
+            '`unconfirmed` puts the event in the pending area; omit to keep the current value (default confirmed). ' +
+            'Writing accepts only these two values — `pending` is still read as `unconfirmed`, for files written by hand.',
         },
         body: { type: 'string', description: 'Event body (Markdown). Omit to keep the existing body.' },
         slug: { type: 'string', description: 'File slug; omit to derive it from the title.' },

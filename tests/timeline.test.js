@@ -112,7 +112,13 @@ test('timeline: the world axis and the narrative axis sort the same events diffe
     const both = await callTool('inkflow_timeline_list', { projectRoot: root })
     assert.deepEqual(ids(both.worldOrder), ['t-2', 't-1', 't-3'])
     assert.deepEqual(ids(both.narrativeOrder), ['t-2', 't-3', 't-1'])
-    assert.deepEqual(both.conflicts, [], 'the fixture is a consistent timeline')
+    // The fixture tells the tale out of world order on purpose. Under the book-wide slot
+    // axis that is exactly one reported reversal — and only that: crossing the two axes
+    // is a narrative choice, so it is reported by the rebuild and never refused.
+    assert.deepEqual(
+      both.conflicts.map((conflict) => conflict.code),
+      ['TIMELINE_WORLD_TIME_REVERSED'],
+    )
     assert.equal(both.axes, undefined, 'the payload never invents an `axes` field')
   } finally {
     rmSync(dir, { recursive: true, force: true })

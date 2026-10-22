@@ -154,27 +154,33 @@ export interface TimelineConflict {
  * events: an event in the pending area has, by definition, no settled world time and
  * is never an ordering error.
  *
+ * `narrativeOrder` is **book-wide** (data-model §3.4): it is the sequence in which the
+ * reader meets the events across the whole book, not an index inside one chapter. Both
+ * slot rules below therefore judge **one bucket per book**, which is also the order the
+ * narrative axis is listed in — a rule that grouped by chapter would disagree with the
+ * axis the reader sees.
+ *
  * 1. `TIMELINE_TIME_MISSING` — a confirmed event carries no `worldTime`. It claims a
  *    settled moment but names none, so the world axis cannot place it.
  * 2. `TIMELINE_TIME_INVALID` — a confirmed event's `worldTime` is not
  *    `YYYY[-MM[-DD]]` (or is not a real date: month 13, 30 February). Reported, never
  *    blocking on a rebuild (the issue's acceptance criterion); the write side refuses
  *    the same shape because it owns the input.
- * 3. `TIMELINE_ORDER_CONFLICT` — two confirmed events **in one chapter** declare the
- *    **same `narrativeOrder`** but different world times. One screen slot cannot show
- *    two different moments; that is a contradiction, not a flashback. (`chapter` is
- *    the grouping key because a narrative slot is read as "position in this chapter";
- *    events without a chapter form one group of their own.) Two events claiming the
- *    same slot *and* the same moment are not a contradiction — only warnings of
- *    "what?" would come out of it — so they are not reported.
- * 4. `TIMELINE_WORLD_TIME_REVERSED` — within one chapter, two **adjacent declared
- *    slots** (`narrativeOrder` a < b, both declared) whose world times go backwards:
- *    the later-told scene happens earlier than the one just told. A flashback chapter
- *    is legal, so this is deliberately **same-chapter only** and only over declared
- *    slots: an event without `narrativeOrder` declares no position and is never part
- *    of a reversal; a pair with equal slots belongs to rule 3 instead. An author who
- *    does mean an in-chapter flashback resolves it by giving the scene its own
- *    chapter, or by correcting the world time — the finding names both events.
+ * 3. `TIMELINE_ORDER_CONFLICT` — two confirmed events declare the **same
+ *    `narrativeOrder`** but different world times. One book-wide slot cannot show two
+ *    different moments; that is a contradiction, not a flashback — and it is
+ *    contradictory across chapters too, because the slot itself is book-wide. Two
+ *    events claiming the same slot *and* the same moment are not a contradiction, so
+ *    they are not reported.
+ * 4. `TIMELINE_WORLD_TIME_REVERSED` — two **adjacent declared slots** (`narrativeOrder`
+ *    a < b, both declared) whose world times go backwards: the later-told scene happens
+ *    earlier than the one just told. Telling a story out of world order **is normal**
+ *    (in-chapter flashback, cross-chapter recall), so this finding is informational:
+ *    the rebuild reports it, and the write side deliberately lets it through (only
+ *    `TIMELINE_ORDER_CONFLICT` / `TIMELINE_TIME_MISSING` / `TIMELINE_TIME_INVALID`
+ *    refuse a write — see `blocksWrite`). Only declared slots take part: an event
+ *    without `narrativeOrder` declares no position, and a pair with equal slots belongs
+ *    to rule 3 instead.
  */
 export function timelineConflicts(rows: readonly TimelineRow[]): TimelineConflict[] {
   const findings: TimelineConflict[] = []
@@ -199,17 +205,11 @@ export function timelineConflicts(rows: readonly TimelineRow[]): TimelineConflic
     }
   }
 
-  const chapters = new Map<string, TimelineRow[]>()
-  for (const row of confirmed) {
-    const key = row.chapter ?? ''
-    const bucket = chapters.get(key)
-    if (bucket === undefined) chapters.set(key, [row])
-    else bucket.push(row)
-  }
-
-  for (const bucket of chapters.values()) {
-    findings.push(...slotConflicts(bucket), ...reversalConflicts(bucket))
-  }
+  // One bucket for the whole book, never one per chapter: `narrativeOrder` is a
+  // book-wide slot, so two events told in different chapters can still claim the same
+  // slot (rule 3), and a flashback told across chapters still crosses the axes
+  // (rule 4). Grouping by chapter missed both.
+  findings.push(...slotConflicts(confirmed), ...reversalConflicts(confirmed))
 
   // Deterministic order: the same book must report the same list on every rebuild.
   return findings.sort((left, right) => {
@@ -278,7 +278,7 @@ function reversalConflicts(bucket: readonly TimelineRow[]): TimelineConflict[] {
       code: 'TIMELINE_WORLD_TIME_REVERSED',
       path: current.row.path,
       otherPath: before.row.path,
-      detail: `told after ${before.order} (${before.time.raw}) but set earlier (${current.time.raw}) in the same chapter`,
+      detail: `told after ${before.order} (${before.time.raw}) but set earlier (${current.time.raw})`,
     })
   }
   return findings
@@ -304,13 +304,35 @@ export type TimelineUpsertPlan =
   | { readonly ok: false; readonly error: TimelineUpsertRejection }
 
 /**
+ * Which findings refuse a write.
+ *
+ * Only the three that make the data **self-contradictory or unreadable**: a confirmed
+ * event with no usable world time (missing / invalid), and one narrative slot claimed
+ * twice with two different world times. `TIMELINE_WORLD_TIME_REVERSED` is deliberately
+ * **not** here (product decision): telling the story out of world order is how flashbacks
+ * and recalls are written — a scene told later that happened earlier is a narrative
+ * choice, not broken data. Refusing it made legal writing impossible; the rebuild still
+ * reports it, so the author sees the axis crossing without being blocked.
+ */
+function blocksWrite(finding: TimelineConflict): boolean {
+  return (
+    finding.code === 'TIMELINE_ORDER_CONFLICT' ||
+    finding.code === 'TIMELINE_TIME_MISSING' ||
+    finding.code === 'TIMELINE_TIME_INVALID'
+  )
+}
+
+/**
  * Judgement for one write, before anything lands (X-4).
  *
- * A finding blocks this write when it names the candidate's path **or** has the
- * candidate as the other side of a pair: a reversal introduced by editing the later
- * event must be caught even when the finding is filed against the earlier one.
+ * A blocking finding refuses this write when it names the candidate's path **or** has
+ * the candidate as the other side of a pair: a contradiction introduced by editing one
+ * of the two events must be caught even when the finding is filed against the other one.
  * A pre-existing finding between two *other* events is a rebuild diagnosis; refusing
  * every edit of the book until it is fixed would wedge work that cannot fix it.
+ *
+ * `TIMELINE_WORLD_TIME_REVERSED` never blocks (see `blocksWrite`): it is reported by the
+ * rebuild, and the write that creates a flashback must still land.
  */
 export function planTimelineUpsert(input: {
   readonly rows: readonly TimelineRow[]
@@ -357,7 +379,9 @@ export function planTimelineUpsert(input: {
   }
 
   const next: TimelineRow[] = [...input.rows.filter((row) => row.path !== path), candidate]
-  const blocking = timelineConflicts(next).find((finding) => finding.path === path || finding.otherPath === path)
+  const blocking = timelineConflicts(next).find(
+    (finding) => blocksWrite(finding) && (finding.path === path || finding.otherPath === path),
+  )
   if (blocking !== undefined) {
     // The refusal is always filed against the file being written (`path`), even when the
     // finding itself is filed against the other half of the pair: the caller has to know
@@ -537,20 +561,24 @@ export function timelineFileParse(path: string, text: string): DomainFileParse {
 }
 
 /**
- * The body of `timelineDomain.validate()`: every conflict rule over one view, narrowed
- * to one path when the caller passes a write candidate.
+ * The body of `timelineDomain.validate()`: every conflict rule over one view.
  *
- * With `candidatePath` the caller treats every returned issue as blocking, so a pair
- * finding is kept when **either** side is the candidate — a reversal introduced by
- * editing the later event must be caught even though the finding is filed against the
- * earlier one. A finding between two other events is a rebuild diagnosis; refusing an
- * unrelated edit until it is fixed would wedge work that cannot fix it.
+ * Two callers, two nets, one judge:
+ *   - the rebuild passes no `candidatePath` and reports **every** finding, informational
+ *     ones included (`TIMELINE_WORLD_TIME_REVERSED` is how the author learns that a scene
+ *     is told out of world order);
+ *   - the write gate passes the path being written, and only `blocksWrite()` findings
+ *     naming **either** side of the pair are returned — a contradiction introduced by
+ *     editing one of the two events must be caught even though the finding is filed
+ *     against the other one, while a flashback must still be writable.
  */
 export function timelineValidate(rows: readonly TimelineRow[], candidatePath?: string): ValidationIssue[] {
   const conflicts = timelineConflicts(rows)
   const relevant =
     candidatePath === undefined
       ? conflicts
-      : conflicts.filter((finding) => finding.path === candidatePath || finding.otherPath === candidatePath)
+      : conflicts.filter(
+          (finding) => blocksWrite(finding) && (finding.path === candidatePath || finding.otherPath === candidatePath),
+        )
   return relevant.map((finding) => ({ code: finding.code, path: finding.path, detail: finding.detail }))
 }
