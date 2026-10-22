@@ -122,7 +122,14 @@ export {
   timelineValidate,
   parseWorldTime,
 } from './domains/timeline-plan.js'
-export type { TimelinePlan, TimelineView, TimelineConflict, TimelineRow } from './domains/timeline-plan.js'
+export type {
+  TimelineConflict,
+  TimelineConflictCode,
+  TimelineRow,
+  TimelineStatus,
+  TimelineUpsertPlan,
+  WorldTime,
+} from './domains/timeline-plan.js'
 export { listTimelineEvents } from './domains/query.js'
 export type {
   RelationDirection,
