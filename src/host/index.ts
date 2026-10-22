@@ -100,8 +100,28 @@ export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
 export { planOutlineMove, planOutlinePlacement, planOutlineUpsert } from './domains/outline-write.js'
 export type { OutlinePlan, OutlineRefusal, OutlineRefusalCode, OutlineWriteNode } from './domains/outline-write.js'
 /** Cross-class projection queries (#23): the nine-class panel and mention work read through these. */
-export { entityCounts, listEntities, listEntityIds, listWorldEntries, searchEntities } from './domains/query.js'
-export type { EntitySummary, WorldIndexEntry } from './domains/query.js'
+export { entityCounts, listEntities, searchEntities } from './domains/query.js'
+export type { EntitySummary, RelationEdge } from './domains/query.js'
+/** One entity's edges in both roles (#27): the read behind `inkflow_relation_list`. */
+export { listRelationsFor } from './domains/query.js'
+
+/**
+ * Relation domain (#27): `planRelationUpsert` is exported so the write-side decision
+ * can be driven as a pure function — the same function the tool calls, so a test
+ * cannot pass while the tool would refuse (or the other way round). The rest of the
+ * domain stays behind `DOMAIN_MODULES`, like every other module.
+ */
+export { planRelationUpsert } from './domains/relation-write.js'
+export type {
+  RelationDirection,
+  RelationErrorCode,
+  RelationKind,
+  RelationPlan,
+  RelationPlanError,
+  RelationRow,
+  RelationUpsertRequest,
+  RelationUpsertView,
+} from './domains/relation-write.js'
 export { ENTITY_COLUMNS, entityFromRow, entityKey } from './domains/entities.js'
 export type { DomainWriteView } from './domains/index.js'
 
