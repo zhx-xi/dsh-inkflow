@@ -166,3 +166,28 @@ export function reviewRequirement(currentApi) {
   }
   return { kind: 'known', value }
 }
+
+/**
+ * Why a protection read failed, split into the one distinction `apply` needs.
+ *
+ *   'unprotected' — the branch has no protection at all (`GET …/protection` →
+ *                   404 `Branch not protected`). This is the FIRST state of the
+ *                   documented emergency exit (DELETE → apply → check), so it is
+ *                   a normal input: there is nothing to carry over, and `apply`
+ *                   must be allowed to install the gate.
+ *   'unavailable' — no gh, no login, no network, or any other error. The current
+ *                   settings are UNKNOWN, so `apply` must refuse: `PUT` replaces
+ *                   the whole object and would silently delete a review
+ *                   requirement nobody saw (review finding N1).
+ *
+ * Matching is deliberately narrow (both the message and the 404 status must be
+ * present). A GitHub wording change therefore degrades to `unavailable`, which is
+ * the safe side: the exit needs a manual `gh api -X PUT` rather than the gate
+ * quietly rotating a setting away.
+ */
+export function classifyReadFailure(reason) {
+  const text = typeof reason === 'string' ? reason : ''
+  const notProtected = /branch not protected/iu.test(text)
+  const notFound = /\b404\b/u.test(text)
+  return notProtected && notFound ? 'unprotected' : 'unavailable'
+}

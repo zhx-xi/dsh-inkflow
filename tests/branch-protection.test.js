@@ -11,6 +11,7 @@ import test from 'node:test'
 import {
   EXPECTED,
   REQUIRED_CONTEXTS,
+  classifyReadFailure,
   evaluateProtection,
   flattenProtection,
   protectionPayload,
@@ -144,4 +145,16 @@ test('allowlists are carried over verbatim, not flattened away', () => {
   })
   assert.equal(carried.kind, 'known')
   assert.deepEqual(carried.value.bypass_pull_request_allowances, allow)
+})
+
+test('a 404 "Branch not protected" is its own kind of read failure (issue #99)', () => {
+  // This is the emergency exit's starting state: nothing to carry over, so apply
+  // must proceed. Any other failure means "current settings unknown" and apply
+  // must refuse — the two must not collapse into one.
+  assert.equal(classifyReadFailure('gh: Branch not protected (HTTP 404)'), 'unprotected')
+  assert.equal(classifyReadFailure('gh: Not Found (HTTP 404)'), 'unavailable')
+  assert.equal(classifyReadFailure('Branch not protected'), 'unavailable')
+  assert.equal(classifyReadFailure('gh: HTTP 401: Bad credentials'), 'unavailable')
+  assert.equal(classifyReadFailure('gh unavailable (spawnSync gh ENOENT)'), 'unavailable')
+  assert.equal(classifyReadFailure(undefined), 'unavailable')
 })

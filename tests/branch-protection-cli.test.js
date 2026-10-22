@@ -101,6 +101,27 @@ test('apply refuses to PUT when the current protection cannot be read', () => {
   assert.match(out, /refusing to apply: could not read the current protection/)
 })
 
+test('apply installs the gate on an unprotected branch (the emergency exit, issue #99)', () => {
+  // DELETE protection → apply → check is the documented exit. The first state is
+  // "not protected at all", so apply must treat it as a normal input instead of
+  // refusing (which made the exit reachable only by hand).
+  const unprotected = join(dir, 'unprotected.json')
+  writeFileSync(unprotected, JSON.stringify({ unprotected: true }), 'utf8')
+  const { code, out } = run(['apply', '--repo', 'owner/repo', '--dry-run', '--fixture', unprotected], NO_GH)
+  assert.equal(code, 0, out)
+  assert.match(out, /has no protection; installing the gate from scratch/)
+  assert.match(out, /"contexts": \[\s*"lint"/)
+})
+
+test('an unprotected branch is a failure for check, even under --tolerant', () => {
+  const unprotected = join(dir, 'unprotected.json')
+  writeFileSync(unprotected, JSON.stringify({ unprotected: true }), 'utf8')
+  const { code, out } = run(['check', '--repo', 'owner/repo', '--fixture', unprotected, '--tolerant'])
+  assert.equal(code, 1, out)
+  assert.match(out, /is absent: the branch is not protected/)
+  assert.doesNotMatch(out, /（未验证）/)
+})
+
 test('apply refuses to PUT when a review requirement cannot be mirrored', () => {
   const unknown = join(dir, 'unknown-reviews.json')
   const payload = goodPayload()
