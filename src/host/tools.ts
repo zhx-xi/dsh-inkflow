@@ -1191,7 +1191,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     chapterDelete,
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
-    ...domainTools(modules),
+    ...domainTools(deps, modules),
   ]
 }
 

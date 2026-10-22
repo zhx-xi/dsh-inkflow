@@ -97,10 +97,31 @@ export type { IndexBuildResult } from './indexer.js'
  */
 export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
 /** Cross-class projection queries (#23): the nine-class panel and mention work read through these. */
-export { entityCounts, listEntities, searchEntities } from './domains/query.js'
-export type { EntitySummary } from './domains/query.js'
+export { entityCounts, listEntities, listEntityIds, listWorldEntries, searchEntities } from './domains/query.js'
+export type { EntitySummary, WorldIndexEntry } from './domains/query.js'
 export { ENTITY_COLUMNS, entityFromRow, entityKey } from './domains/entities.js'
 export type { DomainWriteView } from './domains/index.js'
+
+/**
+ * World book (#26): the keyword matcher, the write-side half of I-08 and the tree
+ * shape are pure — no reads, no writes — so the rule that decides "which setting
+ * entry this chapter pulls in" is testable without a project on disk. The
+ * injection chain that consumes them is #43's and is not wired yet.
+ */
+export { matchWorldBook } from './domains/world-match.js'
+export type { WorldBookEntry, WorldBookHit, WorldBookMatchReason } from './domains/world-match.js'
+export { buildWorldTree, planWorldUpsert, worldIssues } from './domains/world-plan.js'
+export type {
+  WorldPlanRow,
+  WorldTree,
+  WorldTreeEntry,
+  WorldTreeGroup,
+  WorldTreeNode,
+  WorldUpsertCandidate,
+  WorldUpsertCode,
+  WorldUpsertPlan,
+  WorldUpsertRejection,
+} from './domains/world-plan.js'
 /** Exported for the tool-surface contract test: it asserts the aggregate is wired. */
 export { buildTools } from './tools.js'
 export type {

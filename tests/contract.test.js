@@ -193,10 +193,14 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the twelve files-first tools and one prefix route', () => {
+test('registers the twelve files-first tools, the registered domains\' tools, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
+    // Built-ins first (imported by `tools.ts`), then whatever `DOMAIN_MODULES`
+    // declares — the world domain adds its two tools on top of the fixed twelve
+    // (#26, roadmap §2.1 X-5). An unexpected entry here means a domain was wired
+    // without extending this baseline.
     assert.deepEqual([...harness.tools.keys()].sort(), [
       'inkflow_chapter_create',
       'inkflow_chapter_delete',
@@ -210,6 +214,8 @@ test('registers the twelve files-first tools and one prefix route', () => {
       'inkflow_project_status',
       'inkflow_volume_create',
       'inkflow_volume_rename',
+      'inkflow_world_tree',
+      'inkflow_world_upsert',
     ])
     assert.equal(harness.routes.length, 1)
     assert.equal(harness.routes[0].kind, 'prefix')
