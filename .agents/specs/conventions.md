@@ -564,7 +564,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `/inkflow/internal/hub/books` | GET | **无**（不读 `sessionId`；带了也忽略） | `books[]`（见下）、`total`（去重后的工作区数）、`capped`、`truncated`、`readOnly: true`、`home`（供客户端渲染 `~/…`）、`pluginVersion` | 已落地 |
 | `/inkflow/internal/hub/plan` | POST | `candidate`、`outsideRegistry?`、`title?` | `path`、`anchor`、`state`、`checks`、`missing[]`、`actions[]`、`notices[]`、`metaRaw`、`planToken`、`canApply` | 未落地（#86） |
 | `/inkflow/internal/hub/apply` | POST | `planToken`、`confirm: true`、`title?` | `created[]`、`updated[]`、`skipped[]`、`workspace`、`nextStep` | 未落地（#86） |
-| `/inkflow/internal/hub/shared` | GET | `kind?`（`world`/`library`/`snippets`/`series`）、`q?` | `entries[]`、`created: false`、`indexSource: 'scan'` | 未落地（#87） |
+| `/inkflow/internal/hub/shared` | GET | `kind?`（`world`/`library`/`snippets`/`series`）、`q?` | `created`、`indexSource`（`'index'`/`'scan'`）、`kinds[]`、`entries[]`、`countsByKind`、`total`、`truncated` | 已落地（见 §6.2.2） |
 
 **`books[]` 行形状**（每行 = 一个已注册工作区）：
 
@@ -599,6 +599,53 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 **成本与规模**（[ADR-0010](../adrs/0010-book-hub-entry.md) D8）：判定并发 **4**；单本 **2 s** 超时 → 该行 `state: 'timeout'`，不重试；整次预算 **3 s** → 返回已完成行 + `truncated: true`；单次最多 **200** 行 → `capped: true`（`total` 仍是注册表总书数）。客户端**不做轮询**：打开时取一次 + 用户点「刷新」。
 
 **只读纪律**：`inspectProject(root, { recreateIndexDir: false })`（关掉 `index/` 放宽）、catalog 只读已提交文件、`state.json` 不写、目录缺失只报告不创建。拒绝路径与只读路径都要求**零写盘**（整树 hash 前后一致）。
+
+#### 6.2.2 共享内容通道（`/inkflow/internal/hub/shared`，只读）
+
+共享库是**插件级目录**（`dataDir/shared`，[ADR-0007](../adrs/0007-plugin-shared-library.md) C1），不属于任何一本书，因此这条路由**没有锚点可解析、也不接受任何路径参数**：根目录只来自 `src/host/config.ts` 的 `sharedDir(dataDir)`（`dataDir` 由插件配置解析一次）。它只回答"库里有什么"；复制 / 引用 / 重建清单归 #40。
+
+| 项 | 值 |
+|---|---|
+| 方法 | 只 `GET`；其他动词 405 + `Allow: GET` |
+| 参数 | `kind?`（`world`/`library`/`snippets`/`series`；其他值匹配为空）、`q?`（对条目相对路径做大小写不敏感子串匹配） |
+| 成功值 | `{ok:true,value:{created,indexSource,kinds[],entries[],countsByKind,total,truncated}}` |
+| 守卫 | 与 §6.2.1 **同一套**（loopback host/origin/peer、路径参数禁令、方法逐路由声明、体积上限、`no-store`+`nosniff`）；不解析会话，缺 `sessionId` 不是错误 |
+| 错误码 | `SHARED_UNAVAILABLE`（数据目录无法定位：`200 + ok:false` + `message`/`hint`）、`ROOT_PARAM_NOT_ALLOWED`（路径参数，同 §6.2.1） |
+
+**`value` 字段**：
+
+| 字段 | 含义 |
+|---|---|
+| `created` | 共享库目录是否存在。`false` = **空，不是错误**：`entries: []`、`countsByKind: {}`、`kinds: []`，**不建目录、不写任何文件** |
+| `indexSource` | `'index'` = 用了 `shared/index.json` 这份派生清单；`'scan'` = 清单缺失或不可信，在内存里扫四个目录重算，**没有写回清单** |
+| `kinds[]` | 库里**存在**的 kind，固定顺序 `world` → `library` → `snippets` → `series` |
+| `entries[]` | 过滤后的条目；先按 kind 顺序、再按 `path` 排序 |
+| `countsByKind` | 四种 kind 各自的条目数，是**全库**计数（`kind`/`q` 不改变它，所以过滤器不会把页签上的数字改小） |
+| `total` | 本次返回的条目数（过滤后、上限后） |
+| `truncated` | 本次答案被条目上限或时间预算截断（`true` 时列表不完整，别当成"全库就这些"） |
+
+**条目形状**（[ADR-0007](../adrs/0007-plugin-shared-library.md) C1）：
+
+| 字段 | 含义 |
+|---|---|
+| `entryId` | `sh-<8 位十六进制>`。文件自带（`.md` frontmatter、`series/*.json` 顶层）就用它；没有则由 `path` 派生，并置 `entryIdDerived: true`——派生的 id 不伪装成作者写下的 id |
+| `kind` | 条目所在的一级子目录，只可能是四个值之一 |
+| `path` | 相对 `shared/` 的 **POSIX** 路径，例 `world/门派/白鹤门.md` |
+| `sha256?` | 真实内容哈希；文件大于上限或读不了就**不带该字段**，绝不填假值 |
+| `tags?` | 条目自带就带（`.md` 读 frontmatter 的 `tags`，`series/*.json` 读顶层 `tags`） |
+
+**路径纪律**（[ADR-0010](../adrs/0010-book-hub-entry.md) D5，逐条）：
+
+1. 不接受任何路径参数（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`；共享库位置只由 `config.ts` 决定。
+2. 条目路径必须落在四个子目录内：拒绝 `..` 段、绝对路径（含盘符与 UNC 写法）、反斜杠分隔符，以及一级目录与 `kind` 不一致的行。
+3. 符号链接（含 Windows 目录联接）仅在 realpath 仍落在 `shared/` 内时保留；指向库外的链接、以及**穿过链接的整棵外部目录**都不浏览；同一真实目录只下钻一次（防环）。
+4. 清单里只要有一条路径不合法，整份清单视为不可信 → 改走扫描（不"部分采信"，否则列出来的清单既不是清单的也不是目录的）。
+
+**`indexSource` 的判据**：清单可用的条件是「可解析 + 每项 `entryId`/`kind`/`path` 合法 + 路径集合与目录扫描结果**完全一致**（两边都没有多余条目）」。不逐条校验内容哈希：那要对每条算一遍 `sha256`，正是 [ADR-0010](../adrs/0010-book-hub-entry.md) D8 要避免的首屏成本；内容是否过期由扫描重算出的 `sha256` 体现。
+
+**成本与规模**：单次最多 **250** 条（`SHARED_MAX_ENTRIES`）、扫描预算 **1.5 s**（`SHARED_SCAN_BUDGET_MS`）、单文件哈希上限 8 MiB（`SHARED_MAX_HASH_BYTES`）、清单 ≤1 MiB、目录深度 ≤6。只读目录项 + 每文件一次有界头部读（4 KiB）与一次有界哈希，不把整库读进内存。超限只置 `truncated: true`，不静默少列。常量从 `lib/index.js` 导出，也可在调用 `buildHubShared` 时注入（测试因此不需要 sleep）。
+
+**只读纪律**：不写 `shared/index.json`、不建目录、不改条目文件；扫描前后 `shared/` 整树 hash 必须一致（ADR-0010 D6 零写盘断言表）。实现：`src/host/hub-shared.ts`。
 
 ### 6.3 初始化 / 修复向导（plan → apply）
 

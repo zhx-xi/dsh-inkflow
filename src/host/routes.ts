@@ -48,7 +48,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { HostContext } from './context.js'
+import { sharedDir } from './config.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
+import { buildHubShared } from './hub-shared.js'
 import {
   INTERNAL_PREFIX,
   MAX_INTERNAL_BODY_BYTES,
@@ -351,6 +353,13 @@ function matchRoute(path: string): RouteMatch | undefined {
 interface HubRouteInput {
   ctx: HostContext
   version: string
+  /**
+   * The plugin's own data directory, as `config.ts` resolved it at startup. The
+   * shared library is the only thing under a hub route that lives outside any
+   * book, so it is also the only consumer — and it comes from the plugin's
+   * configuration, never from the request (ADR-0010 D5).
+   */
+  dataDir: string
   method: HttpMethod
   query: URLSearchParams
   body: JsonRecord
@@ -364,9 +373,9 @@ interface HubRoute {
 }
 
 /**
- * The hub's capability whitelist (ADR-0010 D3). One read route today; the
- * wizard (`plan`/`apply`) and the shared library arrive with #86/#87 and must
- * declare their own verbs here — never a blanket write switch.
+ * The hub's capability whitelist (ADR-0010 D3). Two read routes today (`books`,
+ * `shared`); the wizard (`plan`/`apply`) arrives with #86 and must declare its
+ * own verbs here — never a blanket write switch.
  */
 const HUB_ROUTES: readonly HubRoute[] = [
   {
@@ -375,6 +384,23 @@ const HUB_ROUTES: readonly HubRoute[] = [
     methods: ['GET'],
     handle: async ({ ctx, version }) => {
       const result = await buildHubBooks(ctx, { pluginVersion: version })
+      if (result.ok) return { status: 200, body: ok(result.value) }
+      return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
+    },
+  },
+  {
+    // The shared library (ADR-0010 D5, issue #87): read-only browsing of
+    // `dataDir/shared`, the one hub surface that belongs to no book. There is no
+    // anchor to resolve and nothing to accept from the caller — the root comes
+    // from the plugin config, and the route takes only `kind?`/`q?` filters.
+    name: 'hub-shared',
+    pattern: /^\/hub\/shared$/,
+    methods: ['GET'],
+    handle: ({ dataDir, query }) => {
+      const result = buildHubShared(sharedDir(dataDir), {
+        kind: query.get('kind') ?? undefined,
+        q: query.get('q') ?? undefined,
+      })
       if (result.ok) return { status: 200, body: ok(result.value) }
       return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
     },
@@ -460,6 +486,7 @@ async function handleHubRequest(input: {
   const reply = await route.handle({
     ctx: deps.ctx,
     version: deps.version,
+    dataDir: deps.dataDir,
     method,
     query: url.searchParams,
     body: parsed.value,

@@ -13,14 +13,15 @@
  * when the panel opens and again when the user presses 刷新: no polling, because
  * every answer costs one judgment per book (ADR-0010 D8).
  *
- * WHAT THIS ISSUE DOES NOT DO: no 新开书 wizard (#86) and no shared-content page
- * (#87). Both are rendered disabled with their release note; the two write
- * actions themselves are not stubbed with dead code.
+ * WHAT THIS ISSUE DOES NOT DO: no 新开书 wizard (#86). The shared-content page
+ * is its own view (`hub-shared.tsx`, #87); the wizard still renders disabled with
+ * its release note, and is not stubbed with dead code.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
 import { fetchInternal } from './internal.js'
+import { SharedLibraryView } from './hub-shared.js'
 import {
   HUB_NEW_BOOK_LABEL,
   HUB_PLACEHOLDER_NOTE,
@@ -136,7 +137,7 @@ function BookCard({ row, home }: { row: HubBookRow; home: string | null }) {
   )
 }
 
-/** A disabled entry point: the wizard (#86) and the shared library (#87) are not here yet. */
+/** A disabled entry point: the new-book wizard (#86) is not here yet. */
 function Placeholder({ label }: { label: string }) {
   return (
     <button type="button" style={disabledButtonStyle} title={HUB_PLACEHOLDER_NOTE} disabled>
@@ -151,6 +152,9 @@ export function HubView() {
   const [state, setState] = useState<HubState>(INITIAL)
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
+  // The shared library is a page of its own (#87). A root-scoped panel has one
+  // body area, so it is a mode of this view instead of a second slot.
+  const [view, setView] = useState<'books' | 'shared'>('books')
 
   useEffect(() => {
     let live = true
@@ -171,6 +175,8 @@ export function HubView() {
     setRevision((current) => current + 1)
   }, [])
 
+  if (view === 'shared') return <SharedLibraryView onClose={() => setView('books')} />
+
   return (
     <div style={sheetStyle}>
       <div style={headerStyle}>
@@ -178,7 +184,9 @@ export function HubView() {
         <span style={{ ...muted, fontSize: 12 }}>{loading ? HUB_TEXTS.loading : hubSummary(state)}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           <Placeholder label={HUB_NEW_BOOK_LABEL} />
-          <Placeholder label={HUB_SHARED_LABEL} />
+          <button type="button" style={buttonStyle} onClick={() => setView('shared')}>
+            {HUB_SHARED_LABEL}
+          </button>
           <button type="button" style={buttonStyle} onClick={refresh} disabled={loading}>
             {HUB_TEXTS.refresh}
           </button>

@@ -87,6 +87,21 @@ export const WRITE_DIRS = [
 ] as const
 export type WriteDir = (typeof WRITE_DIRS)[number]
 
+/**
+ * The plugin-level shared library's four subdirectories (ADR-0007 C1), one per
+ * `kind`. They live under `dataDir/shared` — outside every book — so the book hub
+ * can browse them without touching a project (ADR-0010 D5).
+ */
+export const SHARED_KINDS = ['world', 'library', 'snippets', 'series'] as const
+export type SharedKind = (typeof SHARED_KINDS)[number]
+
+/**
+ * The shared library's **derived** manifest (ADR-0007 C1): a rebuildable
+ * projection of the four directories. The hub only reads it — writing it back is
+ * the shared-library writer's job (#40).
+ */
+export const SHARED_INDEX_FILE = 'index.json'
+
 /** Version of the on-disk file contract (inside inkflow.json). */
 export const FILE_SCHEMA_VERSION = 1
 

@@ -174,6 +174,31 @@ export type {
 } from './hub.js'
 
 /**
+ * Shared library (ADR-0010 D5, issue #87): the **read-only** projection of
+ * `dataDir/shared`, and the only hub surface that reads something outside the
+ * workspace registry. Exported for the same reason as the hub: the two data
+ * sources (the derived manifest vs an in-memory rescan) and the cost limits are
+ * only testable by driving `buildHubShared` directly, and `sharedDir` is the one
+ * place the `dataDir/shared` path is spelled.
+ */
+export {
+  SHARED_HEAD_BYTES,
+  SHARED_MAX_ENTRIES,
+  SHARED_MAX_HASH_BYTES,
+  SHARED_MAX_JSON_BYTES,
+  SHARED_SCAN_BUDGET_MS,
+  buildHubShared,
+} from './hub-shared.js'
+export type {
+  HubSharedError,
+  HubSharedOptions,
+  HubSharedResult,
+  HubSharedValue,
+  SharedEntry,
+} from './hub-shared.js'
+export { sharedDir } from './config.js'
+
+/**
  * GBK mojibake detection (issue #89): a pure function over the title text, so the
  * tests can pin the precision bar (genuine Chinese/Japanese/emoji must not trip
  * it) without building a project on disk.
