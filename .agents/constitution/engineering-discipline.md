@@ -156,7 +156,7 @@
 - **SKIP 不等于通过**：声明「门禁已验证」前，必须跑一次不带 `--tolerant` 的 `check` 并引用输出。
 - **应用**：`node scripts/branch-protection.mjs apply`（幂等，需仓库 admin；写完自动回读再评估，`--dry-run` 只打印 payload）。它会把已开启的「必须评审」要求原样保留，不会顺手删掉自己不管的设置。
 - **唯一应急出口**：当 CI 自身坏在 main 上、导致所有 check 永久 pending 时（此时任何 PR 都无法合并），可 `gh api -X DELETE repos/OWNER/REPO/branches/main/protection` 临时解除阻塞，修完后**立刻** `apply` 并用 `check` 证明恢复；全过程在对应 issue 留时间、原因与恢复证据。
-  - 出口的第二步必须能吃「未受保护」这个状态：`GET …/protection` 在此时 404 `Branch not protected`，`apply` 据此判定「没有设置需要携带」并直接装上（`check` 在这一步之前会红，提示先 apply）。这是**唯一**允许在预读失败后继续写入的情形——其它任何失败（缺 gh / 未登录 / 网络）都仍然拒绝，因为那时当前设置是未知的，盲写会静默删掉别人的评审要求。
+  - 出口的第二步必须能吃「未受保护」这个状态：`GET …/protection` 在此时 404 `Branch not protected`，`apply` 据此判定「没有设置需要携带」并直接装上（`check` 在这一步之前会红，**`--tolerant` 也不例外**——「没有门禁」是配置错误，不是拿不到结论）。这是**唯一**允许在预读失败后继续写入的情形——其它任何失败（缺 gh / 未登录 / 网络）都仍然拒绝，因为那时当前设置是未知的，盲写会静默删掉别人的评审要求。
 - **平台前提**：分支保护需要仓库为 **public** 或账户付费（private + 免费额度会 403 `Upgrade to GitHub Pro`）。仓库若转 private 而账户没升级，`check` 只能走「读不到 → SKIP」，漂移检测会**静默消失**——转换前先确认账号能力。
 - **触发面**（`.github/workflows/ci.yml` 顶部有注释）：PR 面向 `main` 时跑 `pull_request`（合并前门禁）；合并后 `main` 跑 `push`（验证真正落地的 squash commit）；`merge_group` 为 merge queue 预留——GitHub 只在仓库启用队列时派发该事件。
 - **分支落后的同步手法**（`strict: true` 下的常规操作）：`gh pr update-branch <n> --rebase`，或本地 `git merge origin/main` + **普通** `git push`。保护规则只作用于 `main`，技术上 `--force-with-lease` 也能推进 PR 头分支，但**不用**它：改写头分支会让已发出的评审意见与 diff 行号错位，评审锚点就丢了。同步后 5 个 check 全部重跑，等于重新过一遍门禁。

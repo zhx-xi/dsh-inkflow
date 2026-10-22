@@ -36,16 +36,55 @@ bad.required_status_checks.contexts = REQUIRED_CONTEXTS.filter((context) => cont
 writeFileSync(badFixture, JSON.stringify(bad), 'utf8')
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }))
 
-function run(args, env = {}) {
+function run(args, env = {}, cwd = undefined) {
   const result = spawnSync(process.execPath, [CLI, ...args], {
     encoding: 'utf8',
     env: { ...process.env, ...env },
+    ...(cwd === undefined ? {} : { cwd }),
   })
   return { code: result.status, out: `${result.stdout ?? ''}${result.stderr ?? ''}` }
 }
 
 /** No gh on this machine as far as the CLI is concerned. */
 const NO_GH = { INKFLOW_GH: 'inkflow-no-such-gh-binary' }
+
+/**
+ * A fake `gh` that answers like the real one does on an unprotected branch.
+ *
+ * The CLI spawns `<INKFLOW_GH> api <route…>`, so a fake executable named `api`
+ * in the cwd lets `INKFLOW_GH=node` reproduce the exact 404 stderr — the only way
+ * to cover the `reason → classifyReadFailure → unprotected` wiring, which
+ * `--fixture '{"unprotected":true}'` cannot (review finding R1: it faked the
+ * reason and left the classifier unexercised).
+ */
+function fakeGhSaying(message, status = 1) {
+  const dir = mkdtempSync(join(tmpdir(), 'inkflow-fake-gh-'))
+  writeFileSync(join(dir, 'api'), `console.error(${JSON.stringify(message)})\nprocess.exit(${status})\n`, 'utf8')
+  process.on('exit', () => rmSync(dir, { recursive: true, force: true }))
+  return { env: { INKFLOW_GH: process.execPath }, cwd: dir }
+}
+
+test('an unprotected branch read through the real gh path lets apply proceed (issue #99)', () => {
+  const fake = fakeGhSaying('gh: Branch not protected (HTTP 404)')
+  const { code, out } = run(['apply', '--repo', 'owner/repo', '--dry-run'], fake.env, fake.cwd)
+  assert.equal(code, 0, out)
+  assert.match(out, /has no protection; installing the gate from scratch/)
+  assert.match(out, /"contexts": \[\s*"lint"/)
+})
+
+test('the same 404 through the real gh path makes check red', () => {
+  const fake = fakeGhSaying('gh: Branch not protected (HTTP 404)')
+  const { code, out } = run(['check', '--repo', 'owner/repo', '--tolerant'], fake.env, fake.cwd)
+  assert.equal(code, 1, out)
+  assert.match(out, /is absent: the branch is not protected/)
+})
+
+test('a gh failure that is NOT "branch not protected" still refuses to apply', () => {
+  const fake = fakeGhSaying('gh: Not Found (HTTP 404)')
+  const { code, out } = run(['apply', '--repo', 'owner/repo', '--dry-run'], fake.env, fake.cwd)
+  assert.equal(code, 1, out)
+  assert.match(out, /refusing to apply: could not read the current protection/)
+})
 
 test('a matching payload passes and prints the flags', () => {
   const { code, out } = run(['check', '--repo', 'owner/repo', '--fixture', goodFixture])

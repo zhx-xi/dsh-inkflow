@@ -142,8 +142,12 @@ function checkCommand() {
       // A valid answer, and the one the exit starts from: there is no protection
       // to compare against. Tolerant mode must not swallow it — "no gate at all"
       // is a configuration error, not a missing verdict (issue #99).
-      console.error(`✗ branch protection on ${repo} ${branch} is absent: the branch is not protected`)
-      console.error(`\nfix: node scripts/branch-protection.mjs apply --repo ${repo} --branch ${branch}`)
+      if (asJson) {
+        console.log(JSON.stringify({ repo, branch, ok: false, unprotected: true, problems: ['branch is not protected'] }, null, 2))
+      } else {
+        console.error(`✗ branch protection on ${repo} ${branch} is absent: the branch is not protected`)
+        console.error(`\nfix: node scripts/branch-protection.mjs apply --repo ${repo} --branch ${branch}`)
+      }
       return false
     }
     if (tolerant) return skip(current.reason)
