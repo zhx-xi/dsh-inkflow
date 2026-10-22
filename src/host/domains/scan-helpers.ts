@@ -68,9 +68,12 @@ export function countChars(text: string): number {
  * Join a list for a single text column (`entities.aliases` / `entities.keywords`).
  *
  * Space-joined rather than JSON: the same value feeds `entities_fts`, and FTS5
- * cannot tokenise a JSON array. Chinese names and keywords do not contain spaces;
- * a value that does is stored with its inner spaces collapsed, which is acceptable
- * because these columns exist for matching and display, not as the source of truth.
+ * cannot tokenise a JSON array.
+ *
+ * Cost, stated plainly: an alias or keyword that itself contains a space comes back as
+ * two terms from `splitTerms()`. That is acceptable because Chinese names and keywords
+ * do not contain spaces, and because these columns exist for matching and display —
+ * the file is the source of truth for the exact value.
  */
 export function joinTerms(values: readonly string[] | undefined): string | undefined {
   const terms = (values ?? []).map((value) => value.trim()).filter((value) => value !== '')

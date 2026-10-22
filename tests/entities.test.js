@@ -104,6 +104,49 @@ test('one kind can be listed on its own, with its fields intact', async () => {
   }
 })
 
+test('a same-table duplicate id keeps the first file, in the projection too', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // Two files, one id: the character table keeps the first (walk order), so the
+    // projection must too — otherwise I-15 breaks and the FTS gets two rows per key.
+    writeMarkdown(root, 'characters/a-dup.md', ['id: c-dup', 'name: 阿大'], '第一个')
+    writeMarkdown(root, 'characters/b-dup.md', ['id: c-dup', 'name: 阿二'], '第二个')
+    await buildIndex(root)
+
+    const dupes = listEntities(root, { kind: 'characters' })?.filter((entity) => entity.id === 'c-dup') ?? []
+    assert.equal(dupes.length, 1, 'the projection holds exactly one row per (kind, id)')
+    assert.equal(dupes[0].path, 'characters/a-dup.md', 'walk order decides, same as the table')
+    assert.equal(dupes[0].title, '阿大')
+
+    // And the full-text index was not written twice for that key.
+    const hits = searchEntities(root, '阿大')?.filter((entity) => entity.id === 'c-dup') ?? []
+    assert.equal(hits.length, 1, 'one FTS row per entity key')
+    assert.deepEqual(searchEntities(root, '阿二')?.filter((entity) => entity.id === 'c-dup'), [])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a two-character alias and keyword are reachable through the LIKE pass', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    writeMarkdown(root, 'characters/静水.md', ['id: c-3', 'name: 静水', 'aliases: 水师'], '观主。')
+    await buildIndex(root)
+
+    // Two characters, alias column only — the LIKE branch has three columns and the
+    // other two were already covered; this pins the third.
+    assert.deepEqual(searchEntities(root, '水师')?.map((entity) => entity.id), ['c-3'])
+    // Two characters, keyword column only (world entry w-1 carries 白鹤、剑宗).
+    assert.deepEqual(searchEntities(root, '剑宗')?.map((entity) => entity.id), ['w-1'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('entities are searchable by title, alias and keyword', async () => {
   const dir = workdir()
   try {
@@ -180,6 +223,8 @@ test('the projection is not a second truth: a rebuild reproduces it exactly', as
     const second = listEntities(root)
 
     assert.deepEqual(second, first)
+    // Stability alone would pass with an empty projection, so assert content too.
+    assert.ok((first ?? []).length > 0, 'the projection is not empty')
     // And the identity of the row set does not depend on walk order: sort by path.
     const digest = createHash('sha256')
       .update(JSON.stringify([...(first ?? [])].sort((a, b) => (a.path < b.path ? -1 : 1))))

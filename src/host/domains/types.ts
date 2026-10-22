@@ -137,6 +137,10 @@ export interface DomainValidateInput {
    * has content at a known path. A delete or a move has no content to judge, so it
    * is validated by the trash/move paths (#35, `moveChapter`) instead; when those
    * need a pre-write check they must pass the destination as a candidate too.
+   *
+   * Status: no production caller sets this yet — the write side is wired by the domain
+   * tools (#24 onward). Until then `validate()` is only reached through a rebuild, and
+   * that is why the write paths still keep their own argument checks.
    */
   readonly candidate?: { readonly path: string }
 }

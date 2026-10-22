@@ -229,7 +229,7 @@
 | I-01 | 每项目恰 1 条 `overall` 大纲 | 拒绝第二份 | `OUTLINE_NO_OVERALL` / `OUTLINE_MULTIPLE_OVERALL` |
 | I-02 | 卷大纲必须挂 overall；禁止卷中卷 | 拒绝 | `OUTLINE_VOLUME_PARENT` / `OUTLINE_VOLUME_IN_VOLUME` |
 | I-03 | 角色名项目内唯一（归一化） | 拒绝 | `CHARACTER_NAME_DUPLICATE` |
-| I-04 | 同一 kind 内 id 唯一（域表主键）；**跨 kind 同 id 只报不丢**（不同表各有主键，投影的 `(kind, id)` 可表示） | 拒绝 | `DUPLICATE_ID` |
+| I-04 | 同一 kind 内 id 唯一（域表主键）；**跨 kind 同 id 只报不丢**（不同表各有主键，投影的 `(kind, id)` 可表示） | 同 kind 重复：拒绝；跨 kind：放行 | `DUPLICATE_ID` |
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |
 | I-06 | 章状态取值合法 | 拒绝 | 非法值降级为 `draft`（不阻断） |
 | I-07 | 正文文件必须是 `.md` | 拒绝 | `CHAPTER_NOT_MARKDOWN` |

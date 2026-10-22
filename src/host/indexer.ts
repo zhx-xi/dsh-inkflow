@@ -11,12 +11,12 @@
  * `index-build.ts`.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { CONTENT_DIRS, INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from './conventions.js'
-import { boolField, intField, parseMarkdown, stringField } from './frontmatter.js'
+import { boolField, parseMarkdown, stringField } from './frontmatter.js'
 import type { ProjectProbe } from './project.js'
 import { DOMAIN_MODULES } from './domains/index.js'
 import { ENTITIES_DDL, insertEntities } from './domains/entities.js'
@@ -147,26 +147,6 @@ export function walkProjectFiles(root: string): WalkedFile[] {
 
 
 
-/**
- * Keep only the first row per id.
- *
- * The id columns are PRIMARY KEYs and the whole rebuild runs in one transaction,
- * so one duplicate id aborts the build, leaves no index behind, and makes every
- * later read — and every retry — fail the same way. A duplicate id is content
- * the author can still fix, so the index reports it as `DUPLICATE_ID` and keeps
- * the first file instead of locking the project out (conventions.md §4: issues
- * never block the index).
- */
-function keepFirstById<T extends { id: string }>(rows: readonly T[]): T[] {
-  const seen = new Set<string>()
-  const kept: T[] = []
-  for (const row of rows) {
-    if (seen.has(row.id)) continue
-    seen.add(row.id)
-    kept.push(row)
-  }
-  return kept
-}
 
 /** Everything one scan produced; consumed by `writeIndexDatabase`. */
 export interface ScanResult {
@@ -269,6 +249,17 @@ export function scanProject(root: string): ScanResult {
     return { table: table.table, rows }
   })
 
+  // The projection follows the same keep-first decision as the tables, or I-15 breaks:
+  // `entities` is written from this list, so a row a domain table dropped must not
+  // survive here (and must not be inserted into `entities_fts` twice).
+  const seenEntityKeys = new Set<string>()
+  const keptEntities = entities.filter((entity) => {
+    const key = `${entity.kind}\u0000${entity.id}`
+    if (seenEntityKeys.has(key)) return false
+    seenEntityKeys.add(key)
+    return true
+  })
+
   const counts = emptyCounts()
   counts.files = files.length
   counts.chapters = tableCount(keptTables, 'chapters')
@@ -281,7 +272,7 @@ export function scanProject(root: string): ScanResult {
     files,
     issues,
     tables: keptTables,
-    entities,
+    entities: keptEntities,
     chapterRows: tableRows(keptTables, 'chapters'),
     characterRows: tableRows(keptTables, 'characters'),
     worldRows: tableRows(keptTables, 'world_entries'),

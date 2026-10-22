@@ -118,31 +118,37 @@ export function searchEntities(root: string, query: string, limit = DEFAULT_LIMI
   if (db === undefined) return undefined
   try {
     const capped = clamp(limit)
-    const rows =
-      [...trimmed].length >= 3
-        ? (db
-            .prepare(
-              `SELECT e.kind, e.id, e.path, e.title, e.name_key, e.category, e.parent, e.order_index, e.status, e.keywords, e.aliases
-                 FROM entities_fts f
-                 JOIN entities e ON e.kind || ':' || e.id = f.entity_key
-                WHERE entities_fts MATCH ?
-                ORDER BY rank
-                LIMIT ?`,
-            )
-            .all(ftsPhrase(trimmed), capped) as unknown as Array<Record<string, unknown>>)
-        : (db
-            .prepare(
-              `SELECT ${selectColumns()}
-                 FROM entities
-                WHERE title LIKE ? ESCAPE '\\'
-                   OR aliases LIKE ? ESCAPE '\\'
-                   OR keywords LIKE ? ESCAPE '\\'
-                ORDER BY kind, title, path
-                LIMIT ?`,
-            )
-            .all(likePattern(trimmed), likePattern(trimmed), likePattern(trimmed), capped) as unknown as Array<
-            Record<string, unknown>
-          >)
+    if ([...trimmed].length >= 3) {
+      try {
+        const rows = db
+          .prepare(
+            `SELECT e.kind, e.id, e.path, e.title, e.name_key, e.category, e.parent, e.order_index, e.status, e.keywords, e.aliases
+               FROM entities_fts f
+               JOIN entities e ON e.kind || ':' || e.id = f.entity_key
+              WHERE entities_fts MATCH ?
+              ORDER BY rank
+              LIMIT ?`,
+          )
+          .all(ftsPhrase(trimmed), capped) as unknown as Array<Record<string, unknown>>
+        return rows.map(toSummary)
+      } catch {
+        // A query FTS5 cannot parse (unbalanced quote, operator) must not read as
+        // "index unusable" — `search.ts` degrades the same way. Fall through to LIKE.
+      }
+    }
+    const rows = db
+      .prepare(
+        `SELECT ${selectColumns()}
+           FROM entities
+          WHERE title LIKE ? ESCAPE '\\'
+             OR aliases LIKE ? ESCAPE '\\'
+             OR keywords LIKE ? ESCAPE '\\'
+          ORDER BY kind, title, path
+          LIMIT ?`,
+      )
+      .all(likePattern(trimmed), likePattern(trimmed), likePattern(trimmed), capped) as unknown as Array<
+      Record<string, unknown>
+    >
     return rows.map(toSummary)
   } catch {
     return undefined
