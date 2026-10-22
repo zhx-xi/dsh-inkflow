@@ -1,31 +1,48 @@
 /**
- * The setting-library tab (issue #30): eight-kind tree, read-only detail, and
- * the problem panel.
+ * The setting-library tab (issue #30): eight-kind tree, one entry's detail, the
+ * editor, and the problem panel.
  *
  * Scope of THIS build, stated where the code lives: the tree, one entry's
- * read-only detail, and `validation_issues` grouped by code. There is no editor
- * and no save path — that is the next batch of #30, and the tab must not grow a
- * half-working one in the meantime.
+ * detail, the entry editor (common frontmatter fields + Markdown body, saved
+ * against a CAS baseline), and `validation_issues` grouped by code. The editor
+ * component is `library-editor.tsx`; the rules it obeys (field set per kind,
+ * "only what changed" payload) are pure functions in `library-model.ts`.
  *
  * The client half never touches the filesystem (ADR-0008 D4): everything comes
- * from the three private-channel routes, and the request carries a session id
- * and an entity address, never a directory.
+ * from the private-channel routes, and the request carries a session id and an
+ * entity address, never a directory.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { fetchInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { LibraryItemEditor } from './library-editor.js'
 import {
   LIBRARY_EMPTY,
   aggregateIssues,
   buildLibraryTree,
+  describeIndexWarning,
   describeIssueRow,
   describeLibraryError,
   describeLibraryFacts,
+  fingerprintOf,
   findItemByPath,
 } from './library-model.js'
 import type { LibraryIssuesValue, LibraryItemValue, LibraryTreeItem, LibraryValue } from './library-model.js'
+
+/**
+ * The unsaved-changes question.
+ *
+ * A plain `confirm` on purpose: the panel stays dependency-free, and a modal
+ * component would need focus management the harness does not give a plugin. When
+ * there is no window (a test bundle, a non-browser host) nothing is blocked.
+ */
+function confirmDiscard(message: string): boolean {
+  const host = typeof window === 'undefined' ? undefined : window
+  if (host === undefined || typeof host.confirm !== 'function') return true
+  return host.confirm(message)
+}
 
 // Every visible colour comes from the host theme (`--dsw-alias-*`); the panel
 // keeps its own small style set rather than importing `index.tsx`'s, which
@@ -89,6 +106,16 @@ const groupRowStyle = {
   width: '100%',
 } as const
 
+const buttonStyle = {
+  padding: '2px 10px',
+  fontSize: 12,
+  borderRadius: 6,
+  cursor: 'pointer',
+  border: '1px solid var(--dsw-alias-border-l2)',
+  background: 'var(--dsw-alias-bg-layer-2)',
+  color: 'var(--dsw-alias-label-primary)',
+} as const
+
 function SectionTitle({ children }: { children: string }) {
   return <div style={{ ...muted, fontSize: 12, letterSpacing: 0.2 }}>{children}</div>
 }
@@ -129,9 +156,24 @@ function Field({ name, value }: { name: string; value: unknown }) {
 }
 
 /** The frontmatter block, in file order, plus the projection fields the Host sent. */
-function DetailPane({ item, detail, error }: { item: LibraryTreeItem; detail: LibraryItemValue | null; error: string | null }) {
+function DetailPane({
+  item,
+  detail,
+  error,
+  status,
+  onEdit,
+}: {
+  item: LibraryTreeItem
+  detail: LibraryItemValue | null
+  error: string | null
+  status: string | null
+  onEdit: () => void
+}) {
   const frontmatter = detail?.frontmatter ?? {}
   const entity = detail?.entity ?? {}
+  // Editing needs a baseline: without a fingerprint the save route would refuse
+  // the request, so the button says why instead of pretending.
+  const editable = detail !== null && detail.readable !== false && fingerprintOf(detail) !== null
   return (
     <div style={{ ...columnStyle, gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
@@ -140,8 +182,13 @@ function DetailPane({ item, detail, error }: { item: LibraryTreeItem; detail: Li
         {detail?.readable === false ? (
           <span style={{ color: 'var(--dsw-alias-state-warn-primary)', fontSize: 12 }}>文件读不出来</span>
         ) : null}
+        <button type="button" style={buttonStyle} disabled={!editable} onClick={onEdit}>
+          编辑
+        </button>
+        {editable ? null : <span style={{ ...muted, fontSize: 11 }}>读不到文件基线，暂时不能编辑</span>}
       </div>
 
+      {status === null ? null : <div style={{ ...muted, ...mono }}>{status}</div>}
       {error === null ? null : <NoteCard title="详情读取失败" body={error} tone="error" />}
       {detail?.readError === undefined ? null : (
         <NoteCard title="文件读不出来" body={detail.readError.message ?? '索引里有这一条，但它的文件读不出来'} />
@@ -213,6 +260,9 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
   // under the current one (the same lesson the chapter editor learned).
   const [detail, setDetail] = useState<{ key: string; value: LibraryItemValue } | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [draftDirty, setDraftDirty] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -235,6 +285,8 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
   const issuesError = issues !== null && !issues.ok ? describeLibraryError(issues.error) : null
 
   const detailKey = selected === null ? null : `${selected.kind}:${selected.id}`
+  /** The detail that belongs to the CURRENT row: a slow answer for the previous one is ignored. */
+  const current = detail !== null && detail.key === detailKey ? detail.value : null
 
   useEffect(() => {
     if (selected === null || detailKey === null) {
@@ -260,6 +312,58 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
     }
   }, [detailKey, selected, sessionId])
 
+  /**
+   * Leaving edit mode with unsaved changes must be a decision, not an accident.
+   * `draftDirty` comes from the editor (the same "only what changed" comparison
+   * the payload uses), so a draft that matches the file never nags.
+   */
+  const mayLeaveDraft = useCallback((): boolean => {
+    if (!editing || !draftDirty) return true
+    return confirmDiscard('这一条还没保存，改动会丢掉。确定离开？')
+  }, [editing, draftDirty])
+
+  /** Select one row (guarding an open draft first). */
+  const pick = useCallback(
+    (item: LibraryTreeItem): void => {
+      if (!mayLeaveDraft()) return
+      setEditing(false)
+      setDraftDirty(false)
+      setStatus(null)
+      setSelected(item)
+    },
+    [mayLeaveDraft],
+  )
+
+  const cancelEdit = useCallback((): void => {
+    if (!mayLeaveDraft()) return
+    setEditing(false)
+    setDraftDirty(false)
+    setStatus(null)
+  }, [mayLeaveDraft])
+
+  /** A save landed: take the new bytes, refresh the tree, leave edit mode. */
+  const handleSaved = useCallback(
+    (value: LibraryItemValue): void => {
+      if (detailKey !== null) setDetail({ key: detailKey, value })
+      setEditing(false)
+      setDraftDirty(false)
+      const warning = describeIndexWarning(value)
+      setStatus(warning ?? `已保存 · ${value.path ?? ''} · ${value.fingerprint?.size ?? '?'} 字节`)
+      void load()
+    },
+    [detailKey, load],
+  )
+
+  /** A conflict was resolved by reloading inside the editor: adopt its copy. */
+  const handleReloaded = useCallback(
+    (value: LibraryItemValue): void => {
+      if (detailKey !== null) setDetail({ key: detailKey, value })
+      setDraftDirty(false)
+      setStatus(null)
+    },
+    [detailKey],
+  )
+
   const toggle = (kind: string): void => {
     setExpanded((current) => (current.includes(kind) ? current.filter((entry) => entry !== kind) : [...current, kind]))
   }
@@ -268,7 +372,7 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
   const jumpTo = (path: string | null): void => {
     const item = findItemByPath(tree, path)
     if (item === undefined) return
-    setSelected(item)
+    pick(item)
     setExpanded((current) => (current.includes(item.kind) ? current : [...current, item.kind]))
   }
 
@@ -308,7 +412,7 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
                       key={`${item.kind}:${item.id}`}
                       type="button"
                       style={selected !== null && selected.id === item.id && selected.kind === item.kind ? selectedRowStyle : rowStyle}
-                      onClick={() => setSelected(item)}
+                      onClick={() => pick(item)}
                     >
                       {item.title}
                     </button>
@@ -324,7 +428,7 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
                     ...(selected !== null && selected.id === item.id && selected.kind === item.kind ? selectedRowStyle : rowStyle),
                     paddingLeft: 14,
                   }}
-                  onClick={() => setSelected(item)}
+                  onClick={() => pick(item)}
                 >
                   {item.title}
                 </button>
@@ -381,11 +485,29 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
       <div style={{ ...columnStyle, ...dividerStyle }}>
         {selected === null ? (
           <NoteCard title={LIBRARY_EMPTY['no-selection'].title} body={LIBRARY_EMPTY['no-selection'].body} />
+        ) : editing && current !== null && fingerprintOf(current) !== null ? (
+          // Keyed by the baseline: a reload or a save mounts a fresh draft instead
+          // of leaving inputs bound to bytes that are already gone.
+          <LibraryItemEditor
+            key={`${detailKey ?? ''}:${current.fingerprint?.sha256 ?? ''}`}
+            item={selected}
+            detail={current}
+            sessionId={sessionId}
+            onSaved={handleSaved}
+            onReloaded={handleReloaded}
+            onCancel={cancelEdit}
+            onDirtyChange={setDraftDirty}
+          />
         ) : (
           <DetailPane
             item={selected}
-            detail={detail !== null && detail.key === detailKey ? detail.value : null}
+            detail={current}
             error={detailError}
+            status={status}
+            onEdit={() => {
+              setStatus(null)
+              setEditing(true)
+            }}
           />
         )}
       </div>

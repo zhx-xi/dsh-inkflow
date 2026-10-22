@@ -399,10 +399,17 @@ test('library: GET /library/issues answers validation_issues with a per-code cou
 })
 
 // ---------------------------------------------------------------------------
-// 4. The inherited guards apply to the three new routes
+// 4. The inherited guards apply to the three read routes
+//
+// `/library/item` is also the save route since the second batch of #30 (`POST`
+// with `frontmatter`/`body`/`expected`), so the "no verb but GET" claim below is
+// checked on the two read-only routes, and the item route's write verbs are
+// covered by `tests/library-write.test.js` (415/403/405 + the body allowlist).
+// What stays true here: no route answers a cross-site Origin, none answers
+// without a session, and none accepts a path parameter.
 // ---------------------------------------------------------------------------
 
-test('library: all three routes refuse a missing session, a path parameter, a non-GET verb and a cross-site Origin', async () => {
+test('library: the read routes refuse a missing session, a path parameter, an undeclared verb and a cross-site Origin', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -417,15 +424,21 @@ test('library: all three routes refuse a missing session, a path parameter, a no
       assert.equal(missing.json.ok, false)
       assert.equal(missing.json.error.code, 'NO_SESSION_CONTEXT')
 
-      const post = await internalCall(harness, path, { method: 'POST' })
-      assert.equal(post.status, 405, `${path} must not accept POST`)
-      assert.equal(post.json.error.code, 'method-not-allowed')
-      assert.equal(post.headers['allow'], 'GET')
-
       const crossSite = await internalCall(harness, path, { origin: 'https://evil.example.com' })
       assert.equal(crossSite.status, 403)
       assert.equal(crossSite.json.error.code, 'forbidden-origin')
     }
+
+    for (const path of ['/library', '/library/issues']) {
+      const post = await internalCall(harness, path, { method: 'POST' })
+      assert.equal(post.status, 405, `${path} must not accept POST`)
+      assert.equal(post.json.error.code, 'method-not-allowed')
+      assert.equal(post.headers['allow'], 'GET')
+    }
+    // `/library/item` declares GET and POST: PUT is still an undeclared verb.
+    const put = await internalCall(harness, '/library/item?kind=characters&id=char-shen', { method: 'PUT' })
+    assert.equal(put.status, 405)
+    assert.equal(put.headers['allow'], 'GET, POST')
 
     // A path parameter is a 400 before any filesystem access (ADR-0008 D4).
     for (const key of ['root', 'path', 'cwd', 'workspace', 'projectRoot']) {

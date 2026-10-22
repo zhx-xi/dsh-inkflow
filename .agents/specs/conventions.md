@@ -349,7 +349,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 - **为什么不用 `meta.builtAt` 对 `max(mtime)`**：删文件不会抬高任何 mtime；一删一增的「数量不变替换」也骗得过时间戳。因此 `builtAt` 只作诊断信息，**判定只认逐行对拍**。
 - `reasons` 最多列 `FRESHNESS_REASON_LIMIT`（5）条并附「… and N more」，`changes` 是未截断的真实差异数。
 
-**触发点唯一**：`inkflow_chapter_list`、`inkflow_chapter_search`、`GET /inkflow/internal/chapters`、`GET /inkflow/internal/search`、**`GET /inkflow/internal/library`、`/library/item`、`/library/issues`**（设定库读路由，消费 `entities` 与 `validation_issues`——不先刷索引，树会把「索引缺失」显示成「书里没有」）全部只调 `ensureIndex`，各自不再持有 `if (stale) build` 判断——所以「列表已新、搜索还旧」在结构上不可能发生。`inkflow_index_rebuild` 是**显式修复**（人/模型主动要求），`chapters.ts` 写路径成功后的重建是**写后失效**（文件刚变），两者都不是「读时判定」，不构成第二个判定点。
+**触发点唯一**：`inkflow_chapter_list`、`inkflow_chapter_search`、`GET /inkflow/internal/chapters`、`GET /inkflow/internal/search`、**`GET /inkflow/internal/library`、`/library/item`、`/library/issues`**（设定库读路由，消费 `entities` 与 `validation_issues`——不先刷索引，树会把「索引缺失」显示成「书里没有」）全部只调 `ensureIndex`，各自不再持有 `if (stale) build` 判断——所以「列表已新、搜索还旧」在结构上不可能发生。`inkflow_index_rebuild` 是**显式修复**（人/模型主动要求），`chapters.ts` 写路径成功后的重建是**写后失效**（文件刚变——设定库的 `POST /inkflow/internal/library/item` 同理，写成功后调 `ensureIndex(root, { rebuild: true })`），两者都不是「读时判定」，不构成第二个判定点。
 
 **降级**：面板两条读路由在 `ensureIndex` 失败时仍返回数据（旧索引或 catalog 投影），并把 `indexState` / `indexError{code,errno,message}` / `indexReasons[]` 一并返回；工具侧则返回结构化失败（`INDEX_BUILD_FAILED` / `INDEX_BUSY`）。
 
@@ -517,8 +517,9 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `/inkflow/internal/status` | GET | `sessionId` | `root`、`label`、`state`、`checks`、`missing`、`actions`、`meta`、`index`（`dbExists`/`schemaMatches`/`builtAt`/`counts`）、`catalog`（`stale`/`volumes`/`chapters`）、`search` | `SESSION_ID_INVALID` |
 | `/inkflow/internal/chapters` | GET | `sessionId` | `volumes[]`（`volumeId`/`dir`/`title`/`order`/`chapters[]`）+ `looseChapters[]` + `catalogStale`、`indexBuilt`、`indexRebuilt`、`indexState`（`indexError`/`indexReasons` 仅在重建失败时出现） | — |
 | `/inkflow/internal/library` | GET | `sessionId` | `kinds[]`（八类，`CONTENT_DIRS` 去 `chapters`，X-7）每类含 `count`/`truncated`/`groups[]`（`world` 按 category 分组，未分类排最后）；`indexState` | `SESSION_ID_INVALID` |
-| `/inkflow/internal/library/item` | GET | `sessionId`、`kind`、`id` | 实体投影行 + 该文件的 `frontmatter` / `body` / `bodyChars` / `issues`；`KIND_REQUIRED`/`KIND_INVALID`(附 `allowed[]`)/`ID_REQUIRED`；索引不可用时 200 + `INDEX_UNAVAILABLE` | `400 KIND_REQUIRED`、`400 KIND_INVALID`、`400 ID_REQUIRED`、`404 library-item-not-found` |
+| `/inkflow/internal/library/item` | GET | `sessionId`、`kind`、`id` | 实体投影行 + 该文件的 `frontmatter` / `body` / `bodyChars` / `issues` / `fingerprint`（写路由的 `expected` 基线）；`KIND_REQUIRED`/`KIND_INVALID`(附 `allowed[]`)/`ID_REQUIRED`；索引不可用时 200 + `INDEX_UNAVAILABLE` | `400 KIND_REQUIRED`、`400 KIND_INVALID`、`400 ID_REQUIRED`、`404 library-item-not-found` |
 | `/inkflow/internal/library/issues` | GET | `sessionId` | `issues[]`（`code`/`path`/`detail`）+ `counts`（按 code）+ `truncated` | `SESSION_ID_INVALID` |
+| `/inkflow/internal/library/item` | POST | `sessionId`；`kind`、`id`（实体地址，**不是路径**）、`frontmatter`（键→string/number/boolean/数组；`null` 或 `[]` 删除该键）、`body`（整体替换正文）、`expected`（**必填**基线） | 写后的 `path`/`frontmatter`/`body`/`bodyChars`、`replaced`、`changed[]`（`replacedKeys`/`appendedKeys`/`removedKeys`）、新 `fingerprint`、`indexRebuilt`/`indexState`（失败时 `indexError`/`indexReasons`） | `400 KIND_REQUIRED`/`KIND_INVALID`/`ID_REQUIRED`/`PATH_OUT_OF_SCOPE`/`BODY_INVALID`/`EXPECTED_REQUIRED`/`EXPECTED_INVALID`/`FRONTMATTER_INVALID`/`FRONTMATTER_VALUE_INVALID`/`EMPTY_UPDATE`、`404 library-item-not-found`、`409 FILE_CHANGED`、`200 + indexError`（索引不可用不阻止写） |
 | `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`status`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId`、`fingerprint`（`size`/`mtimeMs`/`sha256`，写路由的 `expected` 基线） | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
 | `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'`、`indexRebuilt`、`indexState`（+ 失败时的 `indexError`/`indexReasons`） | `400 QUERY_REQUIRED` |
 | `/inkflow/internal/chapters` | POST | `sessionId`；`title`（必填）、`volumeId`（`vol-NN` 或 `null`＝散章）、`slug`、`seq` | 新建章 `chapter`（`chapterId`/`file`/`title`/`seq`/`volumeId`/`status`）+ `fingerprint` + `catalogRebuilt`/`indexRebuilt` | `400 TITLE_REQUIRED`/`SEQ_INVALID`/`VOLUME_ID_INVALID`、`404 VOLUME_NOT_FOUND`、`409 CHAPTER_EXISTS`/`SEQ_CONFLICT` |
@@ -533,6 +534,10 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 400 | `ROOT_PARAM_NOT_ALLOWED` | query 或 body 出现 `root`/`path`/`cwd`/`workspace`/`projectRoot`；附 `reason: 'unexpected-path-param'` 与 `param`/`in`；判定在路由匹配与任何文件 IO 之前 |
 | 400 | `SESSION_ID_INVALID` | `sessionId` 形状非法（非 `[A-Za-z0-9._:@-]{1,200}`） |
 | 400 | `QUERY_REQUIRED` / `invalid-body` / `invalid-path-encoding` | `/search` 缺 `q`；请求体不是 JSON 对象；`:id` 百分号编码损坏 |
+| 400 | `KIND_REQUIRED` / `KIND_INVALID` / `ID_REQUIRED` | 设定库路由缺类别（附 `allowed[]`）或缺实体 id；`kind`/`id` 是**实体地址**，不是路径 |
+| 400 | `PATH_OUT_OF_SCOPE` | 设定库写路由的 id 试图逃出该 kind 的内容目录（绝对路径、`..` 段、realpath 落在 `kind/` 之外）；判定在任何写之前 |
+| 400 | `BODY_INVALID` / `EXPECTED_REQUIRED` / `EXPECTED_INVALID` | 设定库写路由：`body` 不是字符串或含无法编码为 UTF-8 的代理对；缺基线（`expected` 必填，空对象也算缺）；基线形状不合法 |
+| 400 | `FRONTMATTER_INVALID` / `FRONTMATTER_VALUE_INVALID` / `EMPTY_UPDATE` | 设定库写路由：`frontmatter` 不是对象或键名非法；值是无法写进 frontmatter 的嵌套结构/多行文本；`frontmatter` 与 `body` 都没给 |
 | 400 | `invalid-field` / `EXPECTED_INVALID` / `UNEXPECTED_BODY_FIELD` | 写路由：声明字段的类型不符（附 `field`）、`expected` 不是对象、body 出现路由未声明的字段（写路由只接受 `sessionId` + 该路由声明的字段） |
 | 403 | `forbidden-host` / `forbidden-origin` / `forbidden-remote` | `Host` 非 loopback；`Origin` 存在但非 loopback；socket 对端地址非 loopback |
 | 403 | `forbidden-origin`（`reason: 'origin-required'`） | **写路由**缺 `Origin`：同源校验只对会产生写入的请求强制 |
@@ -553,7 +558,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 **唯一例外（issue #5）**：`/chapters` 与 `/search` 先调 `ensureIndex`（§4.0）刷新派生缓存——索引是**可重建的缓存**，不是真相，且只在 `usable` 项目的 `index/` 内发生；重建失败时通道降级作答并回 `indexError`（不把失败变成 4xx/5xx）。
 
-**写路由（4 条，改正文的编辑通道）**：写的是**真相文件**，因此比读路由多四道守卫，全部在任何文件 IO 之前：
+**写路由（5 条：4 条改章 + 1 条改设定库条目）**：写的是**真相文件**，因此比读路由多四道守卫，全部在任何文件 IO 之前：
 
 | # | 守卫 | 拒绝 |
 |---|---|---|
@@ -562,11 +567,11 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 3 | `Content-Type: application/json`（DELETE 也发 `{}`） | 415 `unsupported-media-type` |
 | 4 | body 只接受 `sessionId` + 该路由声明的字段；体积 ≤64 KiB | 400 `UNEXPECTED_BODY_FIELD` / 413 `payload-too-large` |
 
-- **业务实现只复用** [`chapters.ts`](../../src/host/chapters.ts) 的六个操作（`createVolume`/`renameVolume`/`createChapter`/`writeChapter`/`moveChapter`/`deleteChapter`），通道不自写文件、不改它们的语义；本期只开四个章级写路由。
-- **CAS（§5.5）**：`expected` 原样透传；不符 → `409 FILE_CHANGED` + `expected`/`current`/`changed[]`，**零写入**（文件、catalog、索引都不动）。读路由 `/chapters/:id` 回传的 `fingerprint` 就是下一次写的基线；写成功也回传新 `fingerprint`。
-- **派生缓存**：写成功后由 `chapters.ts` 的写路径重建 catalog 并 `commitIndex`——通道**不**重复建索引，也不在拒绝路径重建。
-- **面板不静默覆盖**：客户端拿到 409 后必须由用户显式二选一（重新载入＝丢弃本地改动，或仍要保存＝不带 `expected` 的覆盖写），默认不覆盖。
-- **门禁**：非 `usable` 项目上四条写路由与读路由一样回结构化门禁清单（`200 + ok:false`），零写入；写路由不做任何"修复"。写真相仍只走工具 → `io.ts`，面板不是第二条写入实现（ADR-0006 D3 的"用户确认"在面板里由「保存 / 仍要保存」这两个显式动作承担）。
+- **业务实现只复用** [`chapters.ts`](../../src/host/chapters.ts) 的六个操作（`createVolume`/`renameVolume`/`createChapter`/`writeChapter`/`moveChapter`/`deleteChapter`），通道不自写文件、不改它们的语义；章级写路由只有四个。设定库条目不属于章域（没有卷/序/改名语义），它的唯一写实现是 [`library-write.ts`](../../src/host/library-write.ts)：`patchFrontmatter` 做行级改写、`io.ts` 做原子替换与写锁，通道本身不碰文件。
+- **CAS（§5.5）**：`expected` 原样透传；不符 → `409 FILE_CHANGED` + `expected`/`current`/`changed[]`，**零写入**（文件、catalog、索引都不动）。读路由 `/chapters/:id` 与 `/library/item` 回传的 `fingerprint` 就是下一次写的基线；写成功也回传新 `fingerprint`。设定库的写路由**要求**基线（缺 → `400 EXPECTED_REQUIRED`），它没有"不带 expected 覆盖写"这条路。
+- **派生缓存**：章写成功后由 `chapters.ts` 的写路径重建 catalog 并 `commitIndex`；设定库写成功后由通道调 `ensureIndex(root, { rebuild: true })`（写后失效，§4.0）。索引失败**不回滚文件**，响应标 `indexError`——文件是真相，索引是缓存。
+- **面板不静默覆盖**：客户端拿到 409 后必须由用户显式二选一（重新载入＝丢弃本地改动，或仍要保存＝不带 `expected` 的覆盖写），默认不覆盖；设定库编辑器只提供「重新加载」这一条。
+- **门禁**：非 `usable` 项目上五条写路由与读路由一样回结构化门禁清单（`200 + ok:false`），零写入；写路由不做任何"修复"。写真相仍只走工具/域模块 → `io.ts`，面板不是第二条写入实现（ADR-0006 D3 的"用户确认"在面板里由「保存 / 仍要保存」这两个显式动作承担）。
 
 #### 6.2.1 书库通道（`/inkflow/internal/hub/*`，**无会话**）
 
