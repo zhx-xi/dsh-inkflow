@@ -22,7 +22,7 @@
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
-import { evaluateProtection, flattenProtection, protectionPayload, reviewRequirement } from './branch-protection-rules.mjs'
+import { classifyReadFailure, evaluateProtection, flattenProtection, protectionPayload, reviewRequirement } from './branch-protection-rules.mjs'
 
 const argv = process.argv.slice(2)
 const command = argv[0] ?? 'check'
@@ -60,21 +60,33 @@ function gh(args, input) {
   return { ok: true, stdout, stderr }
 }
 
-/** The GitHub payload, from `--fixture` when given, else from the API. */
+/**
+ * The GitHub payload, from `--fixture` when given, else from the API.
+ *
+ * `unprotected: true` means "the branch has no protection at all" — the state the
+ * emergency exit starts in (`DELETE` → `apply` → `check`). `--fixture` can say so
+ * with `{"unprotected": true}`, which keeps both branches testable offline.
+ */
 function readProtectionApi(repo) {
   if (fixture !== null) {
     try {
-      return { ok: true, api: JSON.parse(readFileSync(fixture, 'utf8')) }
+      const api = JSON.parse(readFileSync(fixture, 'utf8'))
+      if (api !== null && typeof api === 'object' && api['unprotected'] === true) {
+        return { ok: false, reason: 'gh: Branch not protected (HTTP 404)', unprotected: true }
+      }
+      return { ok: true, api }
     } catch (error) {
       return { ok: false, reason: `could not read fixture ${fixture} (${error.message})` }
     }
   }
   const result = gh(['api', `repos/${repo}/branches/${branch}/protection`])
-  if (!result.ok) return { ok: false, reason: result.reason }
+  if (!result.ok) {
+    return { ok: false, reason: result.reason, unprotected: classifyReadFailure(result.reason) === 'unprotected' }
+  }
   try {
     return { ok: true, api: JSON.parse(result.stdout) }
   } catch (error) {
-    return { ok: false, reason: `could not parse gh output (${error.message})` }
+    return { ok: false, reason: `could not parse gh output (${error.message})`, unprotected: false }
   }
 }
 
@@ -126,6 +138,18 @@ function checkCommand() {
   }
   const current = readProtectionApi(repo)
   if (!current.ok) {
+    if (current.unprotected) {
+      // A valid answer, and the one the exit starts from: there is no protection
+      // to compare against. Tolerant mode must not swallow it — "no gate at all"
+      // is a configuration error, not a missing verdict (issue #99).
+      if (asJson) {
+        console.log(JSON.stringify({ repo, branch, ok: false, unprotected: true, problems: ['branch is not protected'] }, null, 2))
+      } else {
+        console.error(`✗ branch protection on ${repo} ${branch} is absent: the branch is not protected`)
+        console.error(`\nfix: node scripts/branch-protection.mjs apply --repo ${repo} --branch ${branch}`)
+      }
+      return false
+    }
     if (tolerant) return skip(current.reason)
     console.error(`✗ could not read branch protection for ${repo} ${branch}: ${current.reason}`)
     return false
@@ -146,20 +170,28 @@ function applyCommand() {
   // (review finding S1). Reading the current object is therefore a precondition,
   // not an optimisation: `PUT` replaces everything, so a failed pre-read means a
   // successful PUT would delete settings we never saw (review finding N1).
+  //
+  // The one exception is "not protected at all" (404 `Branch not protected`):
+  // that IS the emergency exit's starting state, and there is nothing to carry
+  // over. Refusing it made the documented exit unreachable — the only way back
+  // was a manual `gh api -X PUT` (issue #99).
   const current = readProtectionApi(repo)
-  if (!current.ok) {
+  if (!current.ok && !current.unprotected) {
     console.error(`✗ refusing to apply: could not read the current protection (${current.reason})`)
     console.error('  PUT replaces the whole object, so applying blind could drop a review requirement this gate does not own')
     return false
   }
-  const carrier = reviewRequirement(current.api)
+  if (current.unprotected) {
+    console.log(`note: ${repo} ${branch} has no protection; installing the gate from scratch (nothing to carry over)`)
+  }
+  const carrier = current.ok ? reviewRequirement(current.api) : { kind: 'none' }
   if (carrier.kind === 'unknown') {
     console.error('✗ refusing to apply: a review requirement is enabled in a shape this gate cannot mirror back')
     console.error(`  read: ${JSON.stringify(carrier.value)}`)
     console.error('  widen scripts/branch-protection-rules.mjs REVIEW_* tables to mirror it, then retry')
     return false
   }
-  const payload = protectionPayload(undefined, current.api)
+  const payload = protectionPayload(undefined, current.ok ? current.api : undefined)
   if (dryRun) {
     console.log(`would PUT repos/${repo}/branches/${branch}/protection`)
     console.log(JSON.stringify(payload, null, 2))
