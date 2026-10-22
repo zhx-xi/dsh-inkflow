@@ -386,3 +386,37 @@ test('write-back: frontmatterLine quotes a value the parser would misread', () =
   assert.throws(() => frontmatterLine('bad key', 'x'), /not a valid frontmatter key/)
   assert.throws(() => frontmatterLine('title', 'a\nb'), /single line/)
 })
+
+// ---------------------------------------------------------------------------
+// List values (#25): a card's aliases / 语言基因 / 按章状态 are lists whose items
+// contain `,` and `:`, so the patch path has to write them in block form.
+// ---------------------------------------------------------------------------
+
+test('write-back: a list value is written in block form and reads back as the same list', () => {
+  const doc = ['---', 'id: c-1', 'name: 清音', 'aliases: 青音, 旧名   # 作者标注', '---', '', '正文', ''].join('\n')
+  const patched = patchFrontmatter(doc, { aliases: ['青音', '清音仙子'], states: ['1: 初入门墙', '30: 代掌门'] })
+  assert.deepEqual(patched.replaced, ['aliases'])
+  assert.deepEqual(patched.appended, ['states'])
+
+  const after = parseMarkdown(patched.text)
+  assert.deepEqual(after.data.aliases, ['青音', '清音仙子'], 'the old inline value is replaced, not merged')
+  assert.deepEqual(after.data.states, ['1: 初入门墙', '30: 代掌门'])
+  assert.equal(after.data.name, '清音')
+  // The author's comment on the rewritten key survives, and the body is untouched.
+  assert.equal(patched.text.includes('aliases: # 作者标注'), true)
+  assert.equal(after.body.trim(), '正文')
+})
+
+test('write-back: an empty list deletes the key instead of leaving a dangling "key:"', () => {
+  const doc = ['---', 'id: c-1', 'aliases:', '  - 青音', '  - 清音仙子', 'name: 清音', '---', '', '正文', ''].join('\n')
+  const patched = patchFrontmatter(doc, { aliases: [] })
+  assert.deepEqual(patched.removed, ['aliases'])
+  const after = parseMarkdown(patched.text)
+  assert.equal(Object.hasOwn(after.data, 'aliases'), false)
+  assert.equal(patched.text.includes('清音仙子'), false, 'the items belong to the removed key')
+  assert.equal(after.data.name, '清音')
+})
+
+test('write-back: a multi-line list item is rejected instead of splitting the block', () => {
+  assert.throws(() => patchFrontmatter(HAND_WRITTEN, { aliases: ['青音\n清音仙子'] }), /single line/)
+})

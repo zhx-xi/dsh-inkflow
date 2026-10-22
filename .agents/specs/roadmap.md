@@ -121,7 +121,7 @@
 | 工作区契约与向导 | 九内容目录 + `index/`、`.gitkeep`、四态门禁、`plan`/`apply`（`confirm: true`）、`git init` 边界、失败回滚 | `src/host/conventions.ts`、`project.ts`、`workspace.ts`；`tests/workspace.test.js` |
 | 写入器与路径安全 | `resolveWriteTarget`、原子替换、单项目写锁、`PROJECT_BUSY`、编码归一 | `src/host/io.ts`；`tests/io-writer.test.js` |
 | 派生索引重建纪律 | 九目录扫描、临时文件 + 写锁重建、不变量校验（`OUTLINE_*` / `CHARACTER_NAME_DUPLICATE` / `DANGLING_PARENT` / `DUPLICATE_ID` / `FRONTMATTER_ISSUE` / `CHAPTER_NOT_MARKDOWN`） | `src/host/indexer.ts`、`index-build.ts` |
-| 派生索引 v2/v3 | 域模块自带表与行写入；跨类 `entities` 投影（主键 `(kind, id)`）+ 一张 `entities_fts`；章正文 `chapters_fts` 仍在；v3 起 `world_entries` 带 `keywords`/`always`/`priority`；`user_version = 3`，不匹配即删库重建 | `src/host/indexer.ts`、`src/host/domains/`；`tests/entities.test.js` |
+| 派生索引 v2–v4 | 域模块自带表与行写入；跨类 `entities` 投影（主键 `(kind, id)`）+ 一张 `entities_fts`；章正文 `chapters_fts` 仍在；v3 起 `world_entries` 带 `keywords`/`always`/`priority`；`user_version = 4`（v4 起 `characters` 带角色卡列并新增 `character_states`），不匹配即删库重建 | `src/host/indexer.ts`、`src/host/domains/`；`tests/entities.test.js` |
 | 写作 skills 与 preset | 5 个写作工艺 skill 与 `inkflow-writing` preset，按 `cwd` 门禁 | `src/host/skills.ts`、`preset.ts`、`skills/` |
 | 章正文检索 | `chapters_fts`（trigram）上 ≥3 字 `MATCH`、1–2 字 `LIKE` 兜底、片段只取正文；索引不可用返回 `INDEX_UNAVAILABLE` 且不写盘 | `src/host/search.ts`；`tests/search.test.js` |
 | 工具面 | 已注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete` | `src/host/tools.ts` |

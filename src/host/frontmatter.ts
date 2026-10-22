@@ -254,6 +254,21 @@ export interface FrontmatterPatchOptions {
   remove?: readonly string[]
 }
 
+/**
+ * One frontmatter value to patch: a scalar, or a list.
+ *
+ * A list is written in **block form** (`key:` then `  - item` lines) because that
+ * is the only list form the reader accepts for values that may contain `,` or `:` —
+ * an alias set or a character's state list is exactly that. An empty list means
+ * "delete the key": `key:` with no items round-trips as `[]`, which reads as "the
+ * author has not filled this in yet", not as the value the caller asked for.
+ */
+export type FrontmatterValue = string | readonly string[]
+
+function listItemsOf(value: FrontmatterValue | undefined): readonly string[] | undefined {
+  return Array.isArray(value) ? value : undefined
+}
+
 /** Raw halves of a document, split at the closing frontmatter delimiter. */
 export interface FrontmatterSplit {
   hasFrontmatter: boolean
@@ -335,6 +350,19 @@ function rewriteKeyLine(line: string, value: string): string {
 }
 
 /**
+ * Turn an existing `key: value` / `key:` line into the header of a block list:
+ * the key and any trailing comment survive, the old value (inline array, scalar
+ * or nothing) is removed so the `  - item` lines under it are the only value.
+ */
+function rewriteKeyToListHeader(line: string): string {
+  const commentAt = findCommentStart(line)
+  const head = (commentAt === -1 ? line : line.slice(0, commentAt)).replace(/[ \t]+$/u, '')
+  const key = /^([A-Za-z_][A-Za-z0-9_-]*):/u.exec(head)?.[1]
+  if (key === undefined) return line
+  return commentAt === -1 ? `${key}:` : `${key}: ${line.slice(commentAt)}`
+}
+
+/**
  * The end offset of the block-list items that follow a `key:` line, or the key
  * line's own end when there are none. Replacing or deleting a key must take its
  * items with it, or they become orphaned array items the parser reports.
@@ -369,6 +397,20 @@ export function frontmatterLine(key: string, value: string): string {
 }
 
 /**
+ * Render one block-list item line (`  - value`) for a list-valued key.
+ *
+ * Exported because a caller that renders a whole block by hand (`character-write.ts`)
+ * must quote exactly the way the patch path does — two quoting rules would make a
+ * value read back differently depending on which half wrote it.
+ */
+export function frontmatterListItem(value: string): string {
+  if (/[\r\n]/u.test(value)) {
+    throw new TypeError('frontmatterListItem: a list item must be a single line')
+  }
+  return `  - ${renderScalar(value)}`
+}
+
+/**
  * Rewrite the values of `entries` in a Markdown document.
  *
  * This is a line-level patch on purpose: parsing into `data` and serialising it
@@ -385,7 +427,7 @@ export function frontmatterLine(key: string, value: string): string {
  */
 export function patchFrontmatter(
   text: string,
-  entries: Readonly<Record<string, string>>,
+  entries: Readonly<Record<string, FrontmatterValue>>,
   options: FrontmatterPatchOptions = {},
 ): FrontmatterPatchResult {
   const keys = Object.keys(entries)
@@ -417,30 +459,61 @@ export function patchFrontmatter(
     if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) {
       throw new TypeError(`patchFrontmatter: "${key}" is not a valid frontmatter key`)
     }
-    const value = entries[key] ?? ''
+    const raw = entries[key]
+    const items = listItemsOf(raw)
+    const value = typeof raw === 'string' ? raw : ''
     // A newline would end the line early and split the block in half; refuse
     // loudly rather than write a file the parser cannot read back.
     if (/[\r\n]/.test(value)) {
       throw new TypeError(`patchFrontmatter: the value of "${key}" must be a single line`)
     }
+    for (const item of items ?? []) {
+      if (/[\r\n]/.test(item)) {
+        throw new TypeError(`patchFrontmatter: every item of "${key}" must be a single line`)
+      }
+    }
     const target = keyLines.get(key)
+
+    // An empty list is "no value": drop the key (and any block items it kept).
+    if (items !== undefined && items.length === 0) {
+      const emptyLine = target === undefined ? undefined : scan.lines[target]
+      if (target === undefined || emptyLine === undefined) continue
+      const emptyEnd =
+        valueOfLine(emptyLine.text) === '' ? blockListEnd(scan, target, scan.block.closeLine) : emptyLine.end
+      edits.push({ start: emptyLine.start, end: emptyEnd, text: '' })
+      removed.push(key)
+      continue
+    }
+
     if (target === undefined) {
-      insertion += `${frontmatterLine(key, value)}${eol}`
+      insertion +=
+        items === undefined
+          ? `${frontmatterLine(key, value)}${eol}`
+          : `${[`${key}:`, ...items.map(frontmatterListItem)].map((line) => `${line}${eol}`).join('')}`
       appended.push(key)
       continue
     }
     const line = scan.lines[target]
     if (line === undefined) continue
     // `key:` followed by `- item` lines: those items *are* the value, so a
-    // scalar replacement has to remove them or they are left orphaned.
+    // replacement has to remove them or they are left orphaned.
     let end = line.end
     if (valueOfLine(line.text) === '') {
       end = blockListEnd(scan, target, scan.block.closeLine)
     }
+    const terminator = lineTerminator(text, line)
     edits.push({
       start: line.start,
       end,
-      text: `${rewriteKeyLine(line.text, value)}${lineTerminator(text, line)}`,
+      // The key keeps its own spelling and any trailing comment; only the value
+      // (scalar text, or the item lines under it) is rewritten.
+      text:
+        items === undefined
+          ? `${rewriteKeyLine(line.text, value)}${terminator}`
+          : [
+              `${rewriteKeyToListHeader(line.text)}${terminator}`,
+              ...items.map((item) => `${frontmatterListItem(item)}${terminator}`),
+            ].join(''),
     })
     replaced.push(key)
   }

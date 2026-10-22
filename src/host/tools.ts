@@ -27,8 +27,8 @@ import { DOMAIN_MODULES } from './domains/index.js'
 import type { DomainModule } from './domains/types.js'
 import type { FileExpectation } from './file-cas.js'
 import { applyWorkspace, planWorkspace } from './workspace.js'
-import type { ProjectProbe, ProjectState, ScopeRejection } from './project.js'
 import { checkProjectRootScope, findProjectRoot, inspectProject, projectLabel } from './project.js'
+import { gateFailure, resolveProject } from './domains/tool-project.js'
 import { rememberProject } from './state.js'
 import { DEFAULT_SEARCH_LIMIT, MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, searchChapters } from './search.js'
 
@@ -48,89 +48,13 @@ function asRecord(value: unknown): Json {
   return typeof value === 'object' && value !== null ? (value as Json) : {}
 }
 
-interface Resolution {
-  cwd: string
-  root: string
-  source: 'argument' | 'cwd' | 'none'
-  probe?: ProjectProbe
-  /** Set when an explicit path was refused before touching the disk. */
-  rejection?: ScopeRejection
-}
-
-async function resolveProject(
-  deps: ToolDeps,
-  argumentRoot: unknown,
-  exec: ToolRunContext,
-): Promise<Resolution> {
-  // The session working directory is the only trust anchor: it is the directory
-  // the user actually opened. Every other path must be proven to live inside it.
-  const cwd = await sessionCwd(deps.ctx, exec)
-
-  if (typeof argumentRoot === 'string' && argumentRoot.trim() !== '') {
-    const root = resolvePath(argumentRoot.trim())
-    const rejection = checkProjectRootScope(root, cwd)
-    // Checked BEFORE inspectProject: that call recreates index/, so a bad path
-    // would already have written to someone else's directory.
-    if (rejection !== undefined) return { cwd, root, source: 'argument', rejection }
-    return { cwd, root, source: 'argument', probe: inspectProject(root) }
-  }
-
-  const found = findProjectRoot(cwd)
-  if (found !== undefined) return { cwd, root: found, source: 'cwd', probe: inspectProject(found) }
-
-  // No fallback to state.lastProjectRoot (issue #7): that file records whichever
-  // session ran last, so answering with it reports another book as this
-  // session's project. A session outside a project must say exactly that.
-  return { cwd, root: cwd, source: 'none', probe: inspectProject(cwd) }
-}
-
 /**
- * A refusal carries the whole next step (ADR-0006 D2): `state`, the per-item
- * `checks`, the `missing` checklist and the `actions` the wizard would perform.
- *
- * `NOT_AN_INKFLOW_PROJECT` keeps its issue-#7 meaning ("nothing here yet"); the
- * two actionable states get their own codes so the model cannot answer
- * "run setup" when the book actually exists and only needs repair — or, worse,
- * when it was written by a newer plugin and must not be touched at all.
+ * The project resolution and the four-state refusal are shared with the domain-owned
+ * tools, so both live in `domains/tool-project.ts` (#25 review, D-4). The copy that used
+ * to sit here had already drifted: the character tools answered a refusal without the
+ * `build` summary this file attaches through `withBuild()` below, so the same broken
+ * book read as two different situations depending on which tool asked.
  */
-function gateFailure(value: Resolution): Json {
-  if (value.rejection !== undefined) return { ok: false, error: { ...value.rejection } }
-  const probe = value.probe
-  const state: ProjectState = probe?.state ?? 'needs-setup'
-  const code =
-    state === 'needs-newer-plugin'
-      ? 'PROJECT_NEEDS_NEWER_PLUGIN'
-      : state === 'needs-repair'
-        ? 'PROJECT_NEEDS_REPAIR'
-        : 'NOT_AN_INKFLOW_PROJECT'
-  const hint =
-    state === 'needs-newer-plugin'
-      ? 'this book was written by a newer dsh-inkflow; tell the user to upgrade the plugin. Do not repair, rewrite or re-index it from this version.'
-      : state === 'needs-repair'
-        ? 'the book exists but is incomplete or damaged; call inkflow_project_plan for the exact list, show it to the user, then call inkflow_project_init with confirm: true'
-        : 'an InkFlow project is a git repository with nine content directories (each carrying .gitkeep) plus index/ and inkflow.json; call inkflow_project_plan to see exactly what would be created'
-  return {
-    ok: false,
-    error: {
-      code,
-      state,
-      message: `this directory is not a usable InkFlow project (state: ${state})`,
-      needsSetup: state === 'needs-setup',
-      needsRepair: state === 'needs-repair',
-      readOnly: probe?.readOnly ?? false,
-      cwd: value.cwd,
-      searchedFrom: value.source,
-      root: probe?.root ?? value.root,
-      checks: probe?.checks ?? { git: false, dirs: {}, keeps: {}, meta: false },
-      missing: probe?.missing ?? ['.git', ...REQUIRED_DIRS, ROOT_META_FILE],
-      actions: probe?.actions ?? [],
-      reasons: probe?.reasons ?? ['no InkFlow project found from the session working directory'],
-      ...(probe?.metaError === undefined ? {} : { metaError: probe.metaError }),
-      ...(probe?.metaRaw === undefined ? {} : { metaRaw: probe.metaRaw }),
-      hint,
-    },
-  }
-}
 
 const OBJECT_SCHEMA: JsonSchemaNode = { type: 'object', additionalProperties: true }
 
