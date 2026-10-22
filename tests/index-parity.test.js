@@ -319,7 +319,20 @@ function generateBook(root) {
 
   // ---- timeline / relations / facts: 6 + 5 + 5 ----
   for (let index = 1; index <= 6; index += 1) {
-    markdown(root, `timeline/tl-0${index}.md`, [`id: tl-0${index}`, `title: 事件${index}`, `chapter: ${index}`], '时间线事件。')
+    // #28 owns `timeline/`: a confirmed event needs a world time, so the fixture
+    // writes a valid one (one event per chapter, so no ordering pair exists).
+    markdown(
+      root,
+      `timeline/tl-0${index}.md`,
+      [
+        `id: tl-0${index}`,
+        `title: 事件${index}`,
+        `chapter: ${index}`,
+        `worldTime: 17${String(10 + index)}-01-0${index}`,
+        `narrativeOrder: ${index}`,
+      ],
+      '时间线事件。',
+    )
   }
   // Relations carry the field names of data-model §3.3 (`source`/`target`/`kind`):
   // since #27 `relations/` has its own domain, so a legacy `from`/`to` file would be
@@ -406,6 +419,9 @@ async function assertParity(harness, root, expected) {
     assert.equal(count(db, 'world_entries'), expected.expectedCounts.worldEntries)
     assert.equal(count(db, 'outline_nodes'), expected.expectedCounts.outlineNodes)
     assert.equal(count(db, 'library_files'), expected.expectedCounts.libraryFiles)
+    // #28: one row per `timeline/<slug>.md`; the count is not part of `counts`
+    // (`IndexCounts` is a fixed legacy shape), so it is asserted straight off the table.
+    assert.equal(count(db, 'timeline_events'), 6)
     assert.equal(count(db, 'files'), expected.expectedCounts.files)
 
     // The file list is exactly the disk, not a superset or a subset.

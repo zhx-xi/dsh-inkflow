@@ -19,6 +19,7 @@ import { chapterDomain } from './chapter.js'
 import { characterDomain } from './character.js'
 import { outlineDomain } from './outline.js'
 import { relationDomain } from './relation.js'
+import { timelineDomain } from './timeline.js'
 import { worldDomain } from './world.js'
 import type {
   DomainEntityRef,
@@ -33,6 +34,7 @@ export const DOMAIN_MODULES: readonly DomainModule[] = [
   characterDomain,
   outlineDomain,
   relationDomain,
+  timelineDomain,
   worldDomain,
   // #28 timeline · #29 mentions · #31 foreshadowing state machine
 ]

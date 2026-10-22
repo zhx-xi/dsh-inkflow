@@ -168,7 +168,7 @@
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v4（现行，`PRAGMA user_version = 4`）
+### 4.1 v5（现行，`PRAGMA user_version = 5`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
@@ -182,6 +182,7 @@
 | `world_entries` | id | path / title / category / parent / keywords / always / priority | 世界观树、世界书关键词（#26） |
 | `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `relations` | id | path / title / relation_kind / source / target / direction / since / until / chapter | 关系图谱查询与校验（#27） |
+| `timeline_events` | id | path / title / world_time / narrative_order / chapter / participants / status | 双轴排序、待确认区、冲突检测（#28） |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
