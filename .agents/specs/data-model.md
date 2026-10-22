@@ -175,7 +175,7 @@
 | `chapters` | id | path / seq / title / volume / status / word_count | 章列表、字数统计 |
 | `characters` | id | path / name / name_key / group_name / role | 角色查询、重名校验 |
 | `world_entries` | id | path / title / category / parent / keywords / always / priority | 世界观树、世界书关键词（#26） |
-| `outline_nodes` | id | path / kind / title / parent / order_index | 大纲树与不变量校验 |
+| `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
@@ -226,7 +226,7 @@
 | # | 不变量 | 写入时 | 重建时 code |
 |---|---|---|---|
 | I-01 | 每项目恰 1 条 `overall` 大纲 | 拒绝第二份 | `OUTLINE_NO_OVERALL` / `OUTLINE_MULTIPLE_OVERALL` |
-| I-02 | 卷大纲必须挂 overall；禁止卷中卷 | 拒绝 | `OUTLINE_VOLUME_PARENT` / `OUTLINE_VOLUME_IN_VOLUME` |
+| I-02 | 卷大纲必须挂 overall；禁止卷中卷；**三层为上限**（`chapter` 可挂 overall 或 volume，不可挂 chapter） | 拒绝 | `OUTLINE_VOLUME_PARENT` / `OUTLINE_VOLUME_IN_VOLUME` / `OUTLINE_CHAPTER_IN_CHAPTER` |
 | I-03 | 角色名项目内唯一（归一化） | 拒绝 | `CHARACTER_NAME_DUPLICATE` |
 | I-04 | 同一 kind 内 id 唯一（域表主键）；**跨 kind 同 id 只报不丢**（不同表各有主键，投影的 `(kind, id)` 可表示） | 重建时保留首个并报 issue；写入时同 kind 拒绝（#24 接上写入侧后生效） | `DUPLICATE_ID` |
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |

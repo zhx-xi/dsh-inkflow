@@ -25,11 +25,7 @@ import type {
   DomainModule,
   DomainScanResult,
   DomainToolDeps,
-  DomainWriteView,
 } from './types.js'
-export { applyCandidate } from './types.js'
-export type { DomainWriteView as DomainWriteViewType } from './types.js'
-
 /** Registered modules, ordered by `kind`. */
 export const DOMAIN_MODULES: readonly DomainModule[] = [
   chapterDomain,

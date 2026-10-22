@@ -312,7 +312,17 @@ export function validateOutlineScan(
       })
     }
     // chapter-under-volume is allowed; chapter-under-chapter is not part of the
-    // three-level model but is not reported here — the writer refuses it (I-02).
+    // I-02 also caps the tree at three levels: `chapter` may hang under the overall
+    // outline or a volume, never under another chapter. Reporting it here as well as on
+    // the write path is deliberate — the write path refusing is not a substitute for the
+    // rebuild noticing a file that got that shape another way (hand edit, merge, import).
+    if (node.kind === 'chapter' && parent !== undefined && parent.kind === 'chapter') {
+      issues.push({
+        code: 'OUTLINE_CHAPTER_IN_CHAPTER',
+        path: node.path,
+        detail: 'a chapter outline cannot nest under another chapter (three levels: overall / volume / chapter)',
+      })
+    }
   }
   return issues
 }

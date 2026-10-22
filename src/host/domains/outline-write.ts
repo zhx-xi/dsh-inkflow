@@ -23,6 +23,7 @@ export type OutlineRefusalCode =
   | 'OUTLINE_MULTIPLE_OVERALL'
   | 'OUTLINE_VOLUME_PARENT'
   | 'OUTLINE_VOLUME_IN_VOLUME'
+  | 'OUTLINE_CHAPTER_IN_CHAPTER'
   | 'DANGLING_PARENT'
   | 'DUPLICATE_ID'
   | 'OUTLINE_NODE_NOT_FOUND'
@@ -102,6 +103,13 @@ export function planOutlinePlacement(nodes: readonly OutlineWriteNode[], node: O
     })
   }
 
+  if (node.kind === 'chapter' && parent !== undefined && parent.kind === 'chapter') {
+    return refuse(
+      'OUTLINE_CHAPTER_IN_CHAPTER',
+      'a chapter outline cannot nest under another chapter (three levels: overall / volume / chapter)',
+      { path: node.path }
+    )
+  }
   if (node.kind === 'volume') {
     if (parent !== undefined && parent.kind === 'volume') {
       return refuse('OUTLINE_VOLUME_IN_VOLUME', 'a volume outline cannot nest under another volume (I-02)', {
