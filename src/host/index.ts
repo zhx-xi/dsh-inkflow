@@ -90,6 +90,30 @@ export type { IndexBuildErrorCode, IndexBuildFailure } from './index-build.js'
 export type { IndexBuildResult } from './indexer.js'
 
 /**
+ * Domain module registry (#101): the seam every 0.2.0 data domain plugs into
+ * (roadmap §2.1 X-5). Exported so the contract tests can assert that the tool
+ * surface is "built-ins + registered modules" and that the pre-write replace
+ * (`applyCandidate`) keeps `I-04` honest.
+ */
+export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
+export type { DomainWriteView } from './domains/index.js'
+/** Exported for the tool-surface contract test: it asserts the aggregate is wired. */
+export { buildTools } from './tools.js'
+export type {
+  DomainDatabase,
+  DomainEntityRef,
+  DomainFile,
+  DomainFileParse,
+  DomainModule,
+  DomainParseInput,
+  DomainScanInput,
+  DomainScanResult,
+  DomainSchema,
+  DomainTableRows,
+  DomainValidateInput,
+} from './domains/types.js'
+
+/**
  * Index freshness (issue #5): `checkIndexFreshness` is the read-only verdict and
  * `ensureIndex` is the **single** place that decides to rebuild. Exported for
  * embedders and tests the same way `buildIndex` is — the tools and the panel
@@ -132,7 +156,7 @@ export type {
   WriteResult,
   WriteTarget,
 } from './io.js'
-export { WRITE_DIRS } from './conventions.js'
+export { CONTENT_DIRS, WRITE_DIRS } from './conventions.js'
 
 /**
  * Volume/chapter catalog (issue #15, ADR-0006 D6): a reviewable, committed

@@ -114,23 +114,6 @@ export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const
 /** Lines a project's .gitignore must contain (derived data never goes to git). */
 export const REQUIRED_GITIGNORE_LINES = ['index/*.db', 'index/*.db-wal', 'index/*.db-shm']
 
-/** Frontmatter fields we understand today; unknown fields are preserved in files, ignored here. */
-export const KNOWN_FRONTMATTER = [
-  'id',
-  'title',
-  'name',
-  'aliases',
-  'volume',
-  'seq',
-  'status',
-  'pov',
-  'group',
-  'role',
-  'firstAppearance',
-  'category',
-  'parent',
-  'keywords',
-  'always',
-  'kind',
-  'order',
-] as const
+// NOTE (#101): a `KNOWN_FRONTMATTER` list used to live here with no reader. The
+// field dictionary is spec truth ([data-model.md](../../.agents/specs/data-model.md) §3)
+// and domains own their own field validation, so a second copy in code only drifts.
