@@ -199,6 +199,7 @@
 
 | 表 | 用途 | 状态 |
 |---|---|---|
+| `entities`（跨类统一投影） | 九分类树、跨类重名与提及定位；列集 `kind / id / path / title / name_key / category / parent / order_index / status / keywords / aliases`，`kind` 与内容目录对齐（契约见 [roadmap.md](roadmap.md) §2.1 X-1） | 未实现 |
 | `outline_nodes`（扩） | 情节点/故事线结构化 | 未实现 |
 | `foreshadowings` | 状态机查询、超期列表 | 未实现 |
 | `timeline_events` | 双轴排序、待确认区 | 未实现 |
