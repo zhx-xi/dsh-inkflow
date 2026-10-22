@@ -96,6 +96,9 @@ export type { IndexBuildResult } from './indexer.js'
  * (`applyCandidate`) keeps `I-04` honest.
  */
 export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
+/** Outline planners (#24): pure, so the write-side invariants are test-driven directly. */
+export { planOutlineMove, planOutlinePlacement, planOutlineUpsert } from './domains/outline-write.js'
+export type { OutlinePlan, OutlineRefusal, OutlineRefusalCode, OutlineWriteNode } from './domains/outline-write.js'
 /** Cross-class projection queries (#23): the nine-class panel and mention work read through these. */
 export { entityCounts, listEntities, listEntityIds, listWorldEntries, searchEntities } from './domains/query.js'
 export type { EntitySummary, WorldIndexEntry } from './domains/query.js'

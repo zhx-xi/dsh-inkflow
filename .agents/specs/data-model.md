@@ -175,7 +175,7 @@
 | `chapters` | id | path / seq / title / volume / status / word_count | 章列表、字数统计 |
 | `characters` | id | path / name / name_key / group_name / role | 角色查询、重名校验 |
 | `world_entries` | id | path / title / category / parent / keywords / always / priority | 世界观树、世界书关键词（#26） |
-| `outline_nodes` | id | path / kind / title / parent / order_index | 大纲树与不变量校验 |
+| `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
@@ -207,7 +207,6 @@
 
 | 表 | 用途 | 状态 |
 |---|---|---|
-| `outline_nodes`（扩） | 情节点/故事线结构化 | 未实现（#24） |
 | `characters`（扩） | `voice` / `states` / `first_appearance` 等角色卡字段（现只有 name/name_key/group_name/role，见 §4.1） | 未实现（#25） |
 | `foreshadowings` | 状态机查询、超期列表 | 未实现（#31） |
 | `timeline_events` | 双轴排序、待确认区 | 未实现（#28） |
@@ -217,7 +216,7 @@
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
-**v3 = v2 + `world_entries` 三列**（`keywords` / `always` / `priority`）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
+**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
 
 ## 5. 不变量与强制手段
 
@@ -226,7 +225,7 @@
 | # | 不变量 | 写入时 | 重建时 code |
 |---|---|---|---|
 | I-01 | 每项目恰 1 条 `overall` 大纲 | 拒绝第二份 | `OUTLINE_NO_OVERALL` / `OUTLINE_MULTIPLE_OVERALL` |
-| I-02 | 卷大纲必须挂 overall；禁止卷中卷 | 拒绝 | `OUTLINE_VOLUME_PARENT` / `OUTLINE_VOLUME_IN_VOLUME` |
+| I-02 | 卷大纲必须挂 overall；禁止卷中卷；**三层为上限**（`chapter` 可挂 overall 或 volume，不可挂 chapter） | 拒绝 | `OUTLINE_VOLUME_PARENT` / `OUTLINE_VOLUME_IN_VOLUME` / `OUTLINE_CHAPTER_IN_CHAPTER` |
 | I-03 | 角色名项目内唯一（归一化） | 拒绝 | `CHARACTER_NAME_DUPLICATE` |
 | I-04 | 同一 kind 内 id 唯一（域表主键）；**跨 kind 同 id 只报不丢**（不同表各有主键，投影的 `(kind, id)` 可表示） | 重建时保留首个并报 issue；写入时同 kind 拒绝（#24 接上写入侧后生效） | `DUPLICATE_ID` |
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |

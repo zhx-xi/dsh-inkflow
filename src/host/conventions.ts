@@ -110,12 +110,14 @@ export const FILE_SCHEMA_VERSION = 1
  *
  * v2 (#23): domain modules own their tables, and the cross-class `entities`
  * projection plus one `entities_fts` are added.
- * v3 (#26): `world_entries` carries the world book's own fields — `keywords`,
- * `always`, `priority` — so a chapter's setting can be matched without reading
- * every file. The `entities` column set is unchanged (X-1).
+ * v3 (#24, #26): `outline_nodes` gains `plot_point_count` / `plot_points` (the
+ * parsed body list items, i.e. plot points and their optional story-line tags), and
+ * `world_entries` gains the world book's own fields — `keywords`, `always`,
+ * `priority` — so a chapter's setting can be matched without reading every file.
+ * The `entities` column set is unchanged (X-1).
  *
- * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file
- * is discarded.
+ * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file is
+ * discarded.
  */
 export const INDEX_SCHEMA_VERSION = 3
 

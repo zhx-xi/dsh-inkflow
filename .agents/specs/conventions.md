@@ -196,7 +196,17 @@ order: 0
 - 情节点 2
 ```
 
-约束（由索引重建时的校验器检查，而非 DB 外键）：每项目恰 1 条 `overall`；`volume` 的 `parent` 必须是 `overall`；`chapter` 可挂 `overall`/`volume`，**禁止卷中卷**。
+约束（由索引重建时的校验器检查，而非 DB 外键）：每项目恰 1 条 `overall`；`volume` 的 `parent` 必须是 `overall`；`chapter` 可挂 `overall`/`volume`，**禁止卷中卷、禁止章挂章**（三层为上限，code 见 data-model §5 的 I-02）。
+
+**情节点语法**（正文解析，不进 frontmatter）：
+
+- 顶层列表项（`- ` / `* ` / `+ `，缩进 0–3 空格）是一个情节点；
+- 紧跟其后的更深缩进行并入上一条（不产生新情节点）；
+- 围栏代码块（三个反引号或三个波浪号）内的列表项**不算**情节点；
+- 空行或标题行结束当前列表；
+- 可选前缀标签 `- [主线] 少年入山` 表示该情节点所属故事线；无标签时按 `conventions` 的普通情节点处理。
+
+**故事线（arc）的落点**：`outlines/arcs/<slug>.md` 尚未实现；在那之前，前缀标签是唯一表示，索引里存成 `outline_nodes.plot_points`（JSON `[{text, arc?}]`）。等 `arcs/` 落地时两者需要合并，届时以本节为准改写。
 
 ### 3.6 资料 `library/**`
 

@@ -218,3 +218,59 @@ export interface DomainModule {
    */
   tools(deps: DomainToolDeps): readonly ToolDefinition[]
 }
+
+/** The pair every invariant check looks at: one domain's rows plus the cross-class projections. */
+export interface DomainWriteView {
+  readonly scan: DomainScanResult
+  readonly entities: readonly DomainEntityRef[]
+}
+
+/**
+ * Fold one parsed file into a whole-project view: this path's old rows and old
+ * projection row are dropped first, then the candidate's are added.
+ *
+ * Why it lives in **this** module rather than in the registry (`./index.ts`): a
+ * domain's model-facing tools must run the same pre-write fold the seam runs
+ * (X-4 step 2), and importing the registry from a domain module would make the
+ * registry and its members import each other at run time — the reverse edge this
+ * file exists to keep type-only. A helper that domains must call therefore ships
+ * beside the contract, like `rowsBucket()` above; the registry re-exports both so
+ * no existing importer changes.
+ *
+ * Why the fold is here at all rather than in each domain: seven domains doing
+ * "drop then add" by hand is the same duplication X-1 forbids for `name_key`. It
+ * also keeps `I-04` honest — an in-place edit would otherwise report itself as a
+ * duplicate id, because the projection still held the row being replaced.
+ */
+export function applyCandidate(view: DomainWriteView, parsed: DomainFileParse): DomainWriteView {
+  const superseded = (path: string | undefined): boolean => path !== parsed.path
+
+  const tables = view.scan.tables.map((table) => ({
+    table: table.table,
+    rows: [
+      ...table.rows.filter((row) => String(row['path'] ?? '') !== parsed.path),
+      ...(parsed.rows.find((candidate) => candidate.table === table.table)?.rows ?? []),
+    ],
+  }))
+
+  // A table the candidate fills but the current view has no rows for (first write
+  // of a path into an otherwise empty table) must still be carried over.
+  for (const candidate of parsed.rows) {
+    if (!tables.some((table) => table.table === candidate.table)) {
+      tables.push({ table: candidate.table, rows: [...candidate.rows] })
+    }
+  }
+
+  const projection = [...view.scan.entities.filter((entity) => superseded(entity.path))]
+  if (parsed.entity !== undefined) projection.push(parsed.entity)
+
+  const entities = [...view.entities.filter((entity) => superseded(entity.path))]
+  if (parsed.entity !== undefined) entities.push(parsed.entity)
+
+  const issues = [
+    ...view.scan.issues.filter((issue) => issue.path === undefined || superseded(issue.path)),
+    ...parsed.issues,
+  ]
+
+  return { scan: { tables, entities: projection, issues }, entities }
+}

@@ -5,72 +5,24 @@
  * under it, a volume never nests under a volume, and no node points at a missing
  * parent. The kind may be declared or inferred from the file name — a file whose kind
  * cannot be determined is reported instead of guessed.
+ *
+ * Where the logic lives, and why: parsing, plot-point reading, the tree and the
+ * invariants are in `./outline-model.ts`, and the pre-write planner is in
+ * `./outline-write.ts`. Both are pure, and both are used by this module *and* by
+ * `./outline-tools.ts`. That split is what lets the write path run the same validation
+ * as a rebuild (X-4) without a domain importing the registry that imports it.
  */
 
-import { basename, extname, join } from 'node:path'
+import { join } from 'node:path'
 
-import { OUTLINE_KINDS } from '../conventions.js'
-import { intField, parseMarkdown, stringField } from '../frontmatter.js'
+import { outlineEntity, parseOutlineDocument, validateOutlineScan } from './outline-model.js'
+import type { OutlineRow } from './outline-model.js'
+import { buildOutlineTools } from './outline-tools.js'
 import { rowsBucket } from './types.js'
-import type { DomainEntityRef, DomainFileParse, DomainModule, DomainScanResult, ValidationIssue } from './types.js'
-import { inferOutlineKind, readText, rowsOf } from './scan-helpers.js'
+import type { DomainFileParse, DomainModule, DomainScanResult, ValidationIssue } from './types.js'
+import { readText, rowsOf } from './scan-helpers.js'
 
-export interface OutlineRow {
-  id: string
-  path: string
-  kind: string
-  title: string
-  parent: string | undefined
-  order: number | undefined
-}
-
-interface ParsedOutline {
-  row?: OutlineRow
-  issues: ValidationIssue[]
-}
-
-function parseOutline(path: string, text: string): ParsedOutline {
-  if (extname(path).toLowerCase() !== '.md') return { issues: [] }
-
-  const parsed = parseMarkdown(text)
-  const issues: ValidationIssue[] = parsed.issues.map((issue) => ({ code: 'FRONTMATTER_ISSUE', path, detail: issue }))
-
-  const declared = stringField(parsed.data, 'kind')
-  const kind = (OUTLINE_KINDS as readonly string[]).includes(declared ?? '')
-    ? (declared as string)
-    : inferOutlineKind(path)
-  if (kind === undefined) {
-    issues.push({
-      code: 'OUTLINE_KIND_UNKNOWN',
-      path,
-      detail: 'cannot infer kind; declare kind: overall|volume|chapter',
-    })
-    return { issues }
-  }
-
-  return {
-    issues,
-    row: {
-      id: stringField(parsed.data, 'id') ?? path,
-      path,
-      kind,
-      title: stringField(parsed.data, 'title') ?? basename(path).replace(/\.md$/u, ''),
-      parent: stringField(parsed.data, 'parent'),
-      order: intField(parsed.data, 'order'),
-    },
-  }
-}
-
-function toEntity(row: OutlineRow): DomainEntityRef {
-  return {
-    kind: 'outlines',
-    id: row.id,
-    path: row.path,
-    title: row.title,
-    parent: row.parent,
-    orderIndex: row.order,
-  }
-}
+export type { OutlinePlotPoint, OutlineRow } from './outline-model.js'
 
 export const outlineDomain: DomainModule = {
   kind: 'outlines',
@@ -79,76 +31,68 @@ export const outlineDomain: DomainModule = {
     const rows: OutlineRow[] = []
     const issues: ValidationIssue[] = []
     for (const file of files) {
-      const parsed = parseOutline(file.path, readText(join(root, file.path)))
+      const parsed = parseOutlineDocument(file.path, readText(join(root, file.path)))
       issues.push(...parsed.issues)
       if (parsed.row !== undefined) rows.push(parsed.row)
     }
-    return { tables: [rowsBucket('outline_nodes', rows)], entities: rows.map(toEntity), issues }
+    return { tables: [rowsBucket('outline_nodes', rows)], entities: rows.map(outlineEntity), issues }
   },
 
   parseFile({ path, text }): DomainFileParse {
-    const parsed = parseOutline(path, text)
+    const parsed = parseOutlineDocument(path, text)
     const row = parsed.row
     return {
       path,
       rows: row === undefined ? [] : [rowsBucket('outline_nodes', [row])],
-      entity: row === undefined ? undefined : toEntity(row),
+      entity: row === undefined ? undefined : outlineEntity(row),
       issues: parsed.issues,
     }
   },
 
-  validate({ scan }): ValidationIssue[] {
-    const issues: ValidationIssue[] = []
-    const nodes = rowsOf<OutlineRow>(scan, 'outline_nodes')
-
-    const overall = nodes.filter((node) => node.kind === 'overall')
-    if (overall.length === 0) {
-      issues.push({ code: 'OUTLINE_NO_OVERALL', detail: 'project must have exactly one outlines/overall.md' })
-    } else if (overall.length > 1) {
-      issues.push({ code: 'OUTLINE_MULTIPLE_OVERALL', detail: `${String(overall.length)} overall outlines found` })
-    }
-    const overallId = overall[0]?.id
-    const byId = new Map(nodes.map((node) => [node.id, node]))
-
-    for (const node of nodes) {
-      if (node.kind === 'volume' && (node.parent === undefined || overallId === undefined || node.parent !== overallId)) {
-        issues.push({
-          code: 'OUTLINE_VOLUME_PARENT',
-          path: node.path,
-          detail: 'volume outline must have parent = overall outline id',
-        })
-      }
-      if (node.parent === undefined) continue
-      const parent = byId.get(node.parent)
-      if (parent === undefined) {
-        issues.push({ code: 'DANGLING_PARENT', path: node.path, detail: `parent "${node.parent}" not found` })
-      } else if (node.kind === 'volume' && parent.kind === 'volume') {
-        issues.push({ code: 'OUTLINE_VOLUME_IN_VOLUME', path: node.path, detail: 'volume outline cannot nest under a volume' })
-      }
-      // chapter-under-volume is allowed; chapter-under-chapter is not part of the
-      // three-level model but is not reported here — the writer refuses it (I-02).
-    }
-    return issues
+  /**
+   * I-01/I-02/I-05 over the rows.
+   *
+   * With `candidate` set (the write path) the same function reports only what blocks
+   * *that* write: findings about other files are already-known history and would make
+   * every edit in a damaged book impossible, while the path-less findings (the `overall`
+   * count) always apply — a volume added to a book without an overall is exactly the
+   * state I-01 forbids.
+   */
+  validate({ scan, candidate }): ValidationIssue[] {
+    return validateOutlineScan(scan, candidate)
   },
 
   schema() {
     return {
+      // v3 (#24): `plot_point_count` / `plot_points` carry the body's list items so the
+      // tree can be read without re-parsing prose for every query. `plot_points` is the
+      // JSON form of the parsed points (`[{text, arc?}]`); the file stays the truth, so a
+      // syntax change is a re-index and never a migration (ADR-0005).
       ddl: [
-        'CREATE TABLE outline_nodes (id TEXT PRIMARY KEY, path TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, parent TEXT, order_index INTEGER)',
+        'CREATE TABLE outline_nodes (id TEXT PRIMARY KEY, path TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, parent TEXT, order_index INTEGER, plot_point_count INTEGER NOT NULL DEFAULT 0, plot_points TEXT)',
         'CREATE INDEX ix_outline_kind ON outline_nodes(kind)',
       ],
       insert(db, scan): void {
         const insert = db.prepare(
-          'INSERT OR REPLACE INTO outline_nodes (id, path, kind, title, parent, order_index) VALUES (?, ?, ?, ?, ?, ?)',
+          'INSERT OR REPLACE INTO outline_nodes (id, path, kind, title, parent, order_index, plot_point_count, plot_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         )
         for (const row of rowsOf<OutlineRow>(scan, 'outline_nodes')) {
-          insert.run(row.id, row.path, row.kind, row.title, row.parent ?? null, row.order ?? null)
+          insert.run(
+            row.id,
+            row.path,
+            row.kind,
+            row.title,
+            row.parent ?? null,
+            row.order ?? null,
+            row.plotPointCount,
+            JSON.stringify(row.plotPoints),
+          )
         }
       },
     }
   },
 
   tools() {
-    return []
+    return buildOutlineTools()
   },
 }
