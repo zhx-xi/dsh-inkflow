@@ -164,7 +164,7 @@
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v3（现行，`PRAGMA user_version = 3`）
+### 4.1 v4（现行，`PRAGMA user_version = 4`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
@@ -173,7 +173,8 @@
 | `entities` | (kind, id) | path / title / name_key / category / parent / order_index / status / keywords / aliases | 跨类统一投影：九分类树、跨类 id 冲突、提及定位（X-1） |
 | `entities_fts` | (virtual) | entity_key / title / aliases / keywords，`tokenize='trigram'` | 全实体检索（X-3）；1–2 字走 `LIKE` 兜底 |
 | `chapters` | id | path / seq / title / volume / status / word_count | 章列表、字数统计 |
-| `characters` | id | path / name / name_key / group_name / role | 角色查询、重名校验 |
+| `characters` | id | path / name / name_key / group_name / role / pov / first_appearance / aliases / voice | 角色查询、重名校验、角色卡（#25） |
+| `character_states` | `<cardId>#<chapter>` | path / character_id / chapter / status | 「第 N 章时他在什么状态」（#25） |
 | `world_entries` | id | path / title / category / parent / keywords / always / priority | 世界观树、世界书关键词（#26） |
 | `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `library_files` | path | size / mtime | 资料登记 |
@@ -207,7 +208,6 @@
 
 | 表 | 用途 | 状态 |
 |---|---|---|
-| `characters`（扩） | `voice` / `states` / `first_appearance` 等角色卡字段（现只有 name/name_key/group_name/role，见 §4.1） | 未实现（#25） |
 | `foreshadowings` | 状态机查询、超期列表 | 未实现（#31） |
 | `timeline_events` | 双轴排序、待确认区 | 未实现（#28） |
 | `relations` | 关系图谱查询、孤立/冲突校验 | 未实现（#27） |
@@ -216,7 +216,7 @@
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
-**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
+**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）；**v4 = v3 + `characters` 四列**（`pov` / `first_appearance` / `aliases` / `voice`）**+ `character_states` 表**。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
 
 ## 5. 不变量与强制手段
 

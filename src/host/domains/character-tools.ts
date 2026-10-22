@@ -17,8 +17,12 @@
  * `character-write.ts` is what stops `domains/*` from importing the registry that
  * imports `domains/*`.
  *
- * The domain is passed in (`characterTools(domain, deps)`) instead of imported, for
+ * The domain is passed in (`characterTools(deps, domain)`) instead of imported, for
  * the same reason: this module must not close the loop back onto `character.ts`.
+ * `deps` is required and comes first, like `worldTools(deps)` (#26): a missing host
+ * must fail at the call site that forgot it, not silently resolve the workspace
+ * from `process.cwd()` — inside the host process that is the DSH install
+ * directory, so every tool would answer `NOT_AN_INKFLOW_PROJECT` for a healthy book.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -65,6 +69,23 @@ function optionalStringList(value: unknown): string[] | undefined {
   return value.filter((part): part is string => typeof part === 'string').map((part) => part.trim()).filter((part) => part !== '')
 }
 
+/**
+ * A block-list item has to be one line. `frontmatter.ts frontmatterListItem()`
+ * throws a `TypeError` on `\n`/`\r`, and that throw happens *after* the caller is
+ * committed: the write lock turns it into `IO_FAILED`, so the model is told the
+ * disk failed when nothing was written, and it cannot see which field to fix.
+ * Judged here, before the lock, so the refusal stays data (#25 review, D-6).
+ */
+function listItemProblem(field: string, items: readonly string[]): string | undefined {
+  for (const item of items) {
+    if (/[\r\n]/u.test(item)) {
+      const shown = item.replace(/[\r\n]+/gu, '⏎')
+      return `${field} item "${shown}" contains a line break; a block-list item must be a single line`
+    }
+  }
+  return undefined
+}
+
 /** One card as the tools report it (null, not `undefined`, so it survives JSON). */
 function cardView(row: CharacterRow): Json {
   return {
@@ -89,20 +110,38 @@ function cardView(row: CharacterRow): Json {
  * written and then reported as broken by the next rebuild, which is exactly the
  * "validate after the fact" the write path exists to prevent.
  */
-function statesOfInput(raw: unknown): { ok: true; states: CharacterState[] } | { ok: false; message: string } {
+type StateInputResult =
+  | { ok: true; states: CharacterState[] }
+  | { ok: false; code: 'CHARACTER_STATE_INVALID' | 'CHARACTER_FIELD_INVALID'; message: string }
+
+function statesOfInput(raw: unknown): StateInputResult {
   if (raw === undefined) return { ok: true, states: [] }
-  if (!Array.isArray(raw)) return { ok: false, message: 'states must be a list of {chapter, status} objects' }
+  if (!Array.isArray(raw)) {
+    return { ok: false, code: 'CHARACTER_STATE_INVALID', message: 'states must be a list of {chapter, status} objects' }
+  }
   const states: CharacterState[] = []
   for (const entry of raw) {
     const record = asRecord(entry)
     const chapter = record['chapter']
     const status = optionalString(record['status'])?.trim() ?? ''
     if (typeof chapter !== 'number' || !Number.isInteger(chapter) || chapter < 1) {
-      return { ok: false, message: 'every state needs a positive integer chapter' }
+      return { ok: false, code: 'CHARACTER_STATE_INVALID', message: 'every state needs a positive integer chapter' }
     }
-    if (status === '') return { ok: false, message: `the state for chapter ${chapter} needs a status` }
+    if (status === '') {
+      return { ok: false, code: 'CHARACTER_STATE_INVALID', message: `the state for chapter ${chapter} needs a status` }
+    }
+    // `30: 代掌门` is written as one `- ` line, so a status cannot hold a line break
+    // either — the same rule as `aliases` and `voice`, and the same refusal.
+    const problem = listItemProblem('states', [status])
+    if (problem !== undefined) {
+      return { ok: false, code: 'CHARACTER_FIELD_INVALID', message: `the status for chapter ${chapter}: ${problem}` }
+    }
     if (states.some((state) => state.chapter === chapter)) {
-      return { ok: false, message: `states duplicates chapter ${chapter}; one status per chapter` }
+      return {
+        ok: false,
+        code: 'CHARACTER_STATE_INVALID',
+        message: `states duplicates chapter ${chapter}; one status per chapter`,
+      }
     }
     states.push({ chapter, status })
   }
@@ -305,17 +344,16 @@ function indexLine(value: Json): string {
 }
 
 /**
- * The domain's tools. `deps` is optional: without a host the tools still validate
- * their arguments and still gate the project, they just resolve the workspace from
- * the process cwd (the tool-surface contract test enumerates the registry with no
- * host attached).
+ * The domain's tools.
+ *
+ * `deps` is required and first, exactly like `worldTools(deps)` (#26). An optional
+ * `deps` with a `{ get: () => undefined }` stand-in let a mis-assembled plugin keep
+ * answering — every tool then resolved the workspace from `process.cwd()` and
+ * reported `NOT_AN_INKFLOW_PROJECT` for a book the user had open. A required
+ * parameter turns that into a compile error at the one call site instead.
  */
-export function characterTools(domain: DomainModule, deps?: DomainToolDeps): ToolDefinition[] {
-  // Without a host (the registry enumerated bare), the workspace degrades to the
-  // process cwd exactly the way `sessionCwd()` does — no optional service means no
-  // service, never a throw at registration time.
-  const host = deps?.ctx ?? ({ get: () => undefined } as unknown as DomainToolDeps['ctx'])
-  const resolveRoot = async (args: Json, exec: ToolRunContext) => resolveProject({ ctx: host }, args['projectRoot'], exec)
+export function characterTools(deps: DomainToolDeps, domain: DomainModule): ToolDefinition[] {
+  const resolveRoot = async (args: Json, exec: ToolRunContext) => resolveProject(deps, args['projectRoot'], exec)
 
   const list: ToolDefinition = {
     name: 'inkflow_character_list',
@@ -522,17 +560,28 @@ export function characterTools(domain: DomainModule, deps?: DomainToolDeps): Too
       }
       const states = statesOfInput(a['states'])
       if (!states.ok) {
-        return { ok: false, root, error: { code: 'CHARACTER_STATE_INVALID', message: states.message } }
+        return { ok: false, root, error: { code: states.code, message: states.message } }
+      }
+      // `aliases` and `voice` become block-list items verbatim; a line break in one
+      // of them has to be refused here, before the write lock, or the serialiser
+      // throws and the answer comes back as `IO_FAILED` (see `listItemProblem`).
+      const aliases = optionalStringList(a['aliases'])
+      const voice = optionalStringList(a['voice'])
+      const listProblem =
+        (aliases === undefined ? undefined : listItemProblem('aliases', aliases)) ??
+        (voice === undefined ? undefined : listItemProblem('voice', voice))
+      if (listProblem !== undefined) {
+        return { ok: false, root, error: { code: 'CHARACTER_FIELD_INVALID', message: listProblem } }
       }
 
       const outcome = applyUpsert(domain, root, {
         name,
-        ...provided('aliases', optionalStringList(a['aliases'])),
+        ...provided('aliases', aliases),
         ...provided('group', optionalString(a['group'])),
         ...provided('role', optionalString(a['role'])),
         ...provided('pov', optionalString(a['pov'])),
         ...provided('firstAppearance', typeof firstAppearance === 'number' ? firstAppearance : undefined),
-        ...provided('voice', optionalStringList(a['voice'])),
+        ...provided('voice', voice),
         // An explicit `states: []` clears the list, which is why it is keyed on the
         // argument being present rather than on the normalized result.
         ...(a['states'] === undefined ? {} : { states: states.states }),

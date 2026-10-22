@@ -9,6 +9,12 @@
  * `tools.ts` would invert the dependency direction (`tools.ts` → `domains/`), so
  * the shared half lives here instead: both sides import it, neither imports the
  * other.
+ *
+ * `sessionCwd()` is **not** reimplemented here: it already has one home
+ * (`src/host/session-cwd.ts`, extracted in #26) and a second copy would drift the
+ * moment either side learns something new about the `workingDirectory` service.
+ * It is re-exported so a caller that reaches for it through this module keeps
+ * working.
  */
 
 import { resolve as resolvePath } from 'node:path'
@@ -17,32 +23,15 @@ import { REQUIRED_DIRS, ROOT_META_FILE } from '../conventions.js'
 import type { HostContext, ToolRunContext } from '../context.js'
 import { checkProjectRootScope, findProjectRoot, inspectProject } from '../project.js'
 import type { ProjectProbe, ProjectState, ScopeRejection } from '../project.js'
+import { sessionCwd } from '../session-cwd.js'
+
+export { sessionCwd } from '../session-cwd.js'
 
 type Json = Record<string, unknown>
 
 /** The only Host service this module needs (`workingDirectory` is optional). */
 export interface ProjectResolverDeps {
   readonly ctx: HostContext
-}
-
-/**
- * The Session's effective working directory. Uses the public `workingDirectory`
- * service when the profile has it, and degrades to the process cwd otherwise
- * (a plugin must not throw just because an optional service is absent).
- */
-export async function sessionCwd(ctx: HostContext, exec: ToolRunContext): Promise<string> {
-  const service = ctx.get('workingDirectory') as
-    | { ensure?: (agent: unknown, signal?: AbortSignal) => Promise<string> }
-    | undefined
-  if (service !== undefined && typeof service.ensure === 'function' && exec.agent !== undefined) {
-    try {
-      const dir = await service.ensure(exec.agent, exec.signal)
-      if (typeof dir === 'string' && dir !== '') return dir
-    } catch {
-      // fall through to process.cwd()
-    }
-  }
-  return process.cwd()
 }
 
 export interface Resolution {

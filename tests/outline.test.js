@@ -442,7 +442,10 @@ test('outline: the rebuilt index (v3) stores plot points per outline node', asyn
     const db = new DatabaseSync(join(root, INDEX_DIR, 'inkflow.db'), { readOnly: true })
     try {
       const version = { ...db.prepare('PRAGMA user_version').get() }
-      assert.equal(version.user_version, 3)
+      // v3 introduced these two columns; the current version is pinned as a literal so
+      // an added column without a bump fails here instead of silently reading a stale
+      // database (`AGENTS.md` §8 trap 5). v4 is #25's character-card schema.
+      assert.equal(version.user_version, 4)
       const row = { ...db.prepare('SELECT id, kind, plot_point_count, plot_points FROM outline_nodes WHERE id = ?').get('ov') }
       assert.equal(row.plot_point_count, 3)
       assert.deepEqual(JSON.parse(row.plot_points), [

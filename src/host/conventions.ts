@@ -115,11 +115,20 @@ export const FILE_SCHEMA_VERSION = 1
  * `world_entries` gains the world book's own fields — `keywords`, `always`,
  * `priority` — so a chapter's setting can be matched without reading every file.
  * The `entities` column set is unchanged (X-1).
+ * v4 (#25): `characters` gains the card fields the query tool reads without parsing
+ * frontmatter — `pov`, `first_appearance`, `aliases`, `voice` — and a new
+ * `character_states` table holds one row per recorded state, so "what was he at
+ * chapter 30" is a `chapter <=` query instead of a JSON scan.
+ *
+ * **Bump this for every column/table a domain adds, even when the file mtime does
+ * not move** (AGENTS.md §8 trap 5): a stale `user_version` makes `ensureIndex()` call
+ * the file fresh, the new `SELECT` then fails, and every read silently degrades to
+ * `INDEX_UNAVAILABLE` until the author rebuilds by hand.
  *
  * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file is
  * discarded.
  */
-export const INDEX_SCHEMA_VERSION = 3
+export const INDEX_SCHEMA_VERSION = 4
 
 export const CHAPTER_STATUSES = ['draft', 'revised', 'final'] as const
 export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const

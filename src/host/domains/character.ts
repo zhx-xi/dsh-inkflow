@@ -27,7 +27,6 @@ import { intField, parseMarkdown, stringArrayField, stringField } from '../front
 import type { DomainEntityRef, DomainFileParse, DomainModule, DomainScanResult, ValidationIssue } from './types.js'
 import { nameKey } from './naming.js'
 import { rowsBucket } from './types.js'
-import type { DomainToolDeps } from './types.js'
 import { aliasesOf, keywordsOf, readText, rowsOf } from './scan-helpers.js'
 import { characterTools } from './character-tools.js'
 
@@ -311,7 +310,12 @@ export const characterDomain: DomainModule = {
     }
   },
 
-  tools(deps?: DomainToolDeps) {
-    return characterTools(characterDomain, deps)
+  /**
+   * Tools are bound to the session: `deps` is required, like `worldTools(deps)`
+   * (#26). There is no `process.cwd()` fallback — a card tool that guessed its
+   * book would answer "not a project" for the one the user has open.
+   */
+  tools(deps) {
+    return characterTools(deps, characterDomain)
   },
 }

@@ -545,3 +545,89 @@ test('inkflow_character_upsert refuses to write without confirm: true', async ()
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// A list item is one line (D-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * `aliases`, `voice` and a state's `status` all end up as `- item` lines, and
+ * `frontmatterListItem()` throws on `\n`/`\r`. The throw happens after the write
+ * lock is taken, so before this rule the model got `IO_FAILED` — "the disk failed"
+ * for a project nothing had touched — with no way to tell which field was wrong.
+ * Refused at the argument, the answer is data and the file is never opened.
+ */
+test('a line break in a list item is refused as CHARACTER_FIELD_INVALID and nothing is written', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    const created = await upsert(harness, root, { name: '清音', voice: ['句式：短句'] })
+    assert.equal(created.ok, true, `the fixture card must exist first: ${JSON.stringify(created.error)}`)
+    const cardPath = join(root, 'characters', '清音.md')
+    const before = hashOf(cardPath)
+
+    const cases = [
+      ['voice', { voice: ['句式：短句', '用词：古白话\n不用现代词'] }],
+      ['aliases', { aliases: ['青音\n清音仙子'] }],
+      ['states', { states: [{ chapter: 30, status: '代掌门\n兼掌门印' }] }],
+    ]
+    for (const [field, patch] of cases) {
+      const refused = await upsert(harness, root, { name: '清音', ...patch })
+      assert.equal(refused.ok, false, `${field}: a line break must be refused`)
+      assert.equal(
+        refused.error.code,
+        'CHARACTER_FIELD_INVALID',
+        `${field}: the refusal must name the field, not report an IO failure`,
+      )
+      assert.match(refused.error.message, /line break/u, `${field}: the message must say what is wrong`)
+      assert.equal(hashOf(cardPath), before, `${field}: a refused write leaves the card byte-identical`)
+      assert.deepEqual(readdirSync(join(root, 'characters')).sort(), ['.gitkeep', '清音.md'], `${field}: no stray file`)
+    }
+
+    // The create path takes the same check, before `characters/` is touched at all.
+    const refusedNew = await upsert(harness, root, { name: '静水', voice: ['语速：慢\n停顿多'] })
+    assert.equal(refusedNew.ok, false)
+    assert.equal(refusedNew.error.code, 'CHARACTER_FIELD_INVALID')
+    assert.deepEqual(
+      readdirSync(join(root, 'characters')).sort(),
+      ['.gitkeep', '清音.md'],
+      'a refused create writes no card',
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// One resolver for both halves (D-4)
+// ---------------------------------------------------------------------------
+
+test('a character tool answers the same gate refusal a built-in tool does', async () => {
+  // The character tools used to carry their own copy of `resolveProject()` /
+  // `gateFailure()`, and the two copies had already drifted. Both halves now import
+  // `domains/tool-project.ts`; this pins the visible half of that — same code, same
+  // state, same checklist, same root. (`error.build` is still attached by
+  // `withBuild()` in `tools.ts` only, so a domain refusal carries no stamp; that
+  // asymmetry is unchanged on purpose in this branch.)
+  const dir = workdir()
+  try {
+    const root = join(dir, 'not-a-book')
+    mkdirSync(root, { recursive: true })
+    const harness = makeTools(join(dir, 'state'), root)
+
+    const builtin = await callTool(harness, 'inkflow_project_status', { projectRoot: root })
+    const character = await callTool(harness, 'inkflow_character_list', { projectRoot: root })
+
+    assert.equal(builtin.ok, false)
+    assert.equal(character.ok, false)
+    assert.equal(character.error.code, builtin.error.code, 'both halves must answer the same refusal code')
+    assert.equal(character.error.state, builtin.error.state, 'same gate state')
+    assert.equal(character.error.root, builtin.error.root, 'same resolved root')
+    assert.deepEqual(character.error.missing, builtin.error.missing, 'same missing-item checklist')
+    assert.deepEqual(character.error.actions, builtin.error.actions, 'same wizard actions')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
