@@ -3,7 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 / 派生索引 / 不写迁移）、[ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 卷章 catalog）、[ADR-0007](../adrs/0007-plugin-shared-library.md)（共享库 / `origin`）、[ADR-0009](../adrs/0009-ovk-semantic-search.md)（语义检索）。
 > **依赖**：[conventions.md](conventions.md)（目录、文件格式、门禁、写入纪律）。
 > **相关 ADR**：0005、0006、0007、0009。
-> **状态**：活跃（v3）。本文只描述**数据形状**与**不变量**；未实现的表/字段在 §4.2 与 §7 显式标注。
+> **状态**：活跃（v6）。本文只描述**数据形状**与**不变量**；未实现的表/字段在 §4.2 与 §7 显式标注。
 
 ## 1. 一句话
 
@@ -224,10 +224,7 @@
 | 表 | 用途 | 状态 |
 |---|---|---|
 | `foreshadowings` | 状态机查询、超期列表 | 未实现（#31） |
-| `timeline_events` | 双轴排序、待确认区 | 未实现（#28） |
-| `relations` | 关系图谱查询、孤立/冲突校验 | 未实现（#27） |
 | `facts` | 账本跨章查询 | 未实现（#32） |
-| `entity_mentions` | 别名/名称正文扫描、影响面、掉线检测（`entity_key` = `kind:id` 指向 `entities`） | 未实现（#29） |
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
