@@ -4,11 +4,11 @@
  *
  * Why they live in the domain instead of `tools.ts`: roadmap §2.1 X-5 — a domain
  * branch adds one line to `DOMAIN_MODULES` and never to the built-in tool array.
- * `DomainModule.tools()` takes no arguments (it is a pure aggregate in
- * `domains/index.ts`), so these tools cannot borrow `tools.ts`'s session-scoped
- * resolver; they resolve the project from an explicit `projectRoot`, else from
- * `process.cwd()` — exactly the fallback `tools.ts` itself uses when the Host's
- * `workingDirectory` service is absent — and then run the same four-state gate.
+ *
+ * They resolve the book the same way a built-in tool does: an explicit `projectRoot`
+ * first, else the **session's** working directory via `sessionCwd(deps.ctx, exec)`.
+ * Never bare `process.cwd()` — inside the host process that is the DSH install
+ * directory, so the tool would always report `NOT_AN_INKFLOW_PROJECT`.
  *
  * Everything that writes goes through `io.ts` (path checks + write lock + atomic
  * replace); everything that reads goes through the derived index, made fresh by
@@ -200,7 +200,7 @@ function renderNode(node: Json, depth: number): string[] {
 
 function worldTreeTool(deps: DomainToolDeps): ToolDefinition {
   return {
-  name: 'inkflow_world_tree',
+    name: 'inkflow_world_tree',
   description:
     'Show the world tree of the book: every `world/<category>/` entry grouped by category, each entry carrying its children. ' +
     'I-08 allows at most one root and permits a "flat category book" with no root at all, so a missing top node is not an ' +
@@ -266,33 +266,16 @@ function worldTreeTool(deps: DomainToolDeps): ToolDefinition {
         indexState: ensured.state,
       }
     }),
+  }
 }
 
 // ---------------------------------------------------------------------------
 // inkflow_world_upsert
 // ---------------------------------------------------------------------------
 
-/** `keywords` accepts a list or one comma/、-separated string, like the frontmatter reader does. */
-function readKeywords(value: unknown): string[] {
-  if (typeof value === 'string') {
-    return value
-      .split(/[,，、]/u)
-      .map((item) => item.trim())
-      .filter((item) => item !== '')
-  }
-  if (Array.isArray(value)) {
-    return value
-      .filter((item): item is string => typeof item === 'string')
-      .map((item) => item.trim())
-      .filter((item) => item !== '')
-  }
-  return []
-  }
-}
-
 function worldUpsertTool(deps: DomainToolDeps): ToolDefinition {
   return {
-  name: 'inkflow_world_upsert',
+    name: 'inkflow_world_upsert',
   description:
     'Create or replace one world-book entry: writes `world/<category>/<slug>.md` (or `world/<slug>.md` for a top-level ' +
     'entry) with `id` / `title` / `category` / `parent` / `keywords` / `always` / `priority`, then rebuilds the derived ' +
@@ -383,7 +366,11 @@ function worldUpsertTool(deps: DomainToolDeps): ToolDefinition {
       }
       const keywords = readKeywords(a['keywords'])
       const path = category === undefined ? `world/${slugInput}.md` : `world/${category}/${slugInput}.md`
-      const id = optionalString(a['id']) ?? path
+      // Editing an existing entry must keep its id, or every child that points at it
+      // silently dangles: the write-side gate only knows the pre-write snapshot, so the
+      // breakage would surface as DANGLING_PARENT on the *next* rebuild.
+      const existing = listWorldEntries(root)?.find((entry) => entry.path === path)
+      const id = optionalString(a['id']) ?? existing?.id ?? path
       const candidate: WorldUpsertCandidate = {
         id,
         path,

@@ -13,7 +13,8 @@
  */
 
 import type { ContentDir } from '../conventions.js'
-import type { HostContext, ToolDefinition } from '../context.js'
+import type { ToolDefinition } from '../context.js'
+import type { ToolDeps } from '../tools.js'
 import type { ValidationIssue, WalkedFile } from '../indexer.js'
 
 // Re-exported so a domain module takes every type it touches from one module.
@@ -28,11 +29,7 @@ export type { ValidationIssue }
  * Same shape as `ToolDeps` in `tools.ts`, declared here so this module keeps no
  * runtime edge back into the built-in tool surface.
  */
-export interface DomainToolDeps {
-  readonly ctx: HostContext
-  readonly dataDir: string
-  readonly version: string
-}
+export type DomainToolDeps = ToolDeps
 
 /** A row as the seam sees it: opaque to the index, tagged by its own domain. */
 export type DomainRow = Readonly<Record<string, unknown>>
