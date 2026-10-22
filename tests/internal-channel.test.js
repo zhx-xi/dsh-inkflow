@@ -795,8 +795,14 @@ test('internal channel: the hub route needs no session while the session routes 
       const gone = await callRoute(harness, fakeRequest({ url }))
       assert.equal(gone.status, 404, `${url} must stay gone`)
     }
-    const unknownHub = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/plan` }))
-    assert.equal(unknownHub.status, 404, 'a hub route this issue does not declare answers 404, not 405')
+    // The wizard's routes exist since #86 (POST only, so a GET is 405); a hub
+    // path no build declares is still 404 rather than a generic 405.
+    const planVerb = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/plan` }))
+    assert.equal(planVerb.status, 405, 'the hub plan route is declared and POST-only')
+    assert.equal(planVerb.headers.allow, 'POST')
+
+    const unknownHub = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/shared` }))
+    assert.equal(unknownHub.status, 404, 'an undeclared hub path answers 404, not 405')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

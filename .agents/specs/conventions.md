@@ -562,8 +562,8 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 路由 | 方法 | 参数 | 成功值 `value` | 状态 |
 |---|---|---|---|---|
 | `/inkflow/internal/hub/books` | GET | **无**（不读 `sessionId`；带了也忽略） | `books[]`（见下）、`total`（去重后的工作区数）、`capped`、`truncated`、`readOnly: true`、`home`（供客户端渲染 `~/…`）、`pluginVersion` | 已落地 |
-| `/inkflow/internal/hub/plan` | POST | `candidate`、`outsideRegistry?`、`title?` | `path`、`anchor`、`state`、`checks`、`missing[]`、`actions[]`、`notices[]`、`metaRaw`、`planToken`、`canApply` | 未落地（#86） |
-| `/inkflow/internal/hub/apply` | POST | `planToken`、`confirm: true`、`title?` | `created[]`、`updated[]`、`skipped[]`、`workspace`、`nextStep` | 未落地（#86） |
+| `/inkflow/internal/hub/plan` | POST | `candidate`（**唯一允许的路径字段**，必须绝对路径）、`outsideRegistry?`、`title?` | `path`（canonical）、`anchor`、`state`、`usable`、`checks`、`missing[]`、`actions[]`、`willCreate[]`、`notices[]`、`metaRaw?`、`canApply`、`planToken?`、`alreadyRegistered?`、`blockedReason?`、`message?`、`hint?` | 已落地 |
+| `/inkflow/internal/hub/apply` | POST | `planToken`、`confirm: true`、`title?`（**不接受任何路径**） | `path`、`anchor`、`state`、`created[]`、`updated[]`、`skipped[]`、`gitInit`、`notices[]`、`warnings[]`、`registered`、`workspace`（注册结果或 `null`）、`hint?`、`nextStep` | 已落地 |
 | `/inkflow/internal/hub/shared` | GET | `kind?`（`world`/`library`/`snippets`/`series`）、`q?` | `entries[]`、`created: false`、`indexSource: 'scan'` | 未落地（#87） |
 
 **`books[]` 行形状**（每行 = 一个已注册工作区）：
@@ -577,16 +577,37 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `usable` / `missing[]` / `actions[]` | 与工具、工作台**同一份** `inspectProject` 判定（ADR-0008 D5） |
 | `dirStatus` | `'ok'` / `'missing-dir'`：注册还在但目录已被删/搬走（来自 `Workspace.status()`，缺失时退化为一次 `stat`）。**不重建、不自动移除注册** |
 | `counts?` | `{chapters, volumes}`，取自**已提交的** catalog（`chapters/index.json` + 每卷 `index.json`）；缺失或读不完整则**不带该字段**（未知），绝不扫正文、绝不重建 |
-| `notABook?` | `true` = 无 `inkflow.json` 且无任何内容目录：这是用户打开过的工作区，不是坏书，动作归「新开书」向导（#86）。**不自动初始化** |
+| `notABook?` | `true` = 无 `inkflow.json` 且无任何内容目录：这是用户打开过的工作区，不是坏书。**不自动初始化**；它的初始化走它自己会话里的 `inkflow_project_init`（已注册目录在书库侧不发写凭证） |
 | `duplicates?` | 同一 canonical 目录被注册多次时被折叠的条数（只列首行） |
 
 **守卫顺序**（fail-closed，与 §6.2 会话路由同一套，另加"无会话"差异）：
 
 1. `Host` loopback → 403 `forbidden-host`；`Origin` 存在时必须 loopback → 403 `forbidden-origin`；对端地址非空时必须 loopback → 403 `forbidden-remote`。
-2. 路径参数禁令（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`，**判定在路由匹配与任何文件 IO 之前**。
-3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET）。
-4. 写路由（`plan`/`apply`）额外要求 **`Origin` 与 `Host` 同源**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `origin-required`；`Content-Type: application/json` → 415；体积 ≤64 KiB → 413。
+2. 路径参数禁令（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`，**判定在路由匹配与任何文件 IO 之前**。`candidate` 不在禁令名单里，且只被 `plan` 接受：它是本通道唯一能携带路径的字段，名字固定为 `candidate`（不叫 `path`/`root`）。
+3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET；`/hub/plan`、`/hub/apply` 只有 POST）。
+4. 写路由（`plan`/`apply`）额外要求 **`Origin` 与 `Host` 同源（含端口）**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `forbidden-origin`（`reason: 'origin-required'` 或 `'origin-mismatch'`）；`Content-Type: application/json` → 415；体积 ≤64 KiB → 413；body 字段白名单（`plan` 只接受 `candidate`/`outsideRegistry`/`title`，`apply` 只接受 `planToken`/`confirm`/`title`）→ 400 `UNEXPECTED_BODY_FIELD`。
 5. 不解析会话：缺 `sessionId` **不是**错误，`NO_SESSION_CONTEXT` 在 hub 上**不适用**。
+
+**向导两条写路由的契约（plan → apply）**
+
+- **锚点三级判定**（写进 `anchor` 字段，[ADR-0010](../adrs/0010-book-hub-entry.md) D6 锚点 1–3【已定】）：①`candidate` 的 canonical 路径已是注册工作区 → `anchor: 'registered'`，回该书既有状态、**不发 `planToken`**（`message: "这本书已经在书库里"`；已注册目录的写入路径是它自己会话里的 `inkflow_project_init`）；②`candidate` 落在某个注册工作区之内 → `anchor: 'in-workspace'`，用该工作区做作用域跑 `checkProjectRootScope`（文本层级包含判定、canonical 层级作用域判定：junction 指到工作区外 → `PATH_OUT_OF_SCOPE`）；③都不命中 → 必须显式 `outsideRegistry: true`（UI 二次确认），否则 400 `ANCHOR_REQUIRED`；此时作用域取 `candidate` 自身，只留**绝对拒绝集**（盘符/卷根、家目录与其祖先、系统与安装目录 → `PATH_FORBIDDEN`）。
+- **`plan` 零写盘**：`inspectProject(root, { recreateIndexDir: false })` + `planWorkspace(root)`，连 `index/` 的放宽都不做；`needs-newer-plugin` 回 `state` + `canApply: false` + `blockedReason`，**不发 token**。
+- **`planToken` 生命周期**：进程内随机值（不落盘）、**一次性**、TTL **5 分钟**（默认值 `HUB_PLAN_TOKEN_TTL_MS`，测试可注入时钟/TTL）、绑定 canonical `path` + `anchor` + **plan 摘要**（动作集合、`missing`、`state`、meta 基线）。`apply` 先校验 `confirm`（缺 → 400 `INIT_REQUIRES_CONFIRMATION`，**不消耗 token**），再**在重新推导 plan 之前消耗 token**，然后比对摘要（不一致 → 409 `PLAN_CHANGED`）。因此：重放 → 409 `TOKEN_CONSUMED`；过期 → 400 `TOKEN_EXPIRED`；未知 → 400 `TOKEN_UNKNOWN`；**任何一条拒绝路径都在写盘之前返回，且第二次使用同一 token 不会再写**。
+- **`apply` 只做 plan 列出的动作**：复用 `applyWorkspace`（只补缺失、不覆盖；`git init` 是唯一 git 写且不 commit/不配远端/不设身份，§6.4）。
+- **注册在 Host 内完成**：`apply` 成功后同一请求调用 `workspaceRegistry.create(path, title)`；服务缺失或抛错 → `registered: false` + `hint`（"在左侧手动打开该目录"），**不假装成功**。客户端**不**再调 `workspaces.create`（避免两条注册写入路径）。
+- **降级 A（ADR-0010 D4）**：成功值带 `nextStep: {kind: 'open-new-session', title, path, message}`，`message` 为「书已就绪。在左侧工作区「<title>」点「新会话」开始创作」；面板不跳转、不渲染空白编辑器（程序化建会话做不到）。
+
+**向导错误码**：
+
+| HTTP | code | 触发条件 |
+|---|---|---|
+| 400 | `CANDIDATE_REQUIRED` / `CANDIDATE_NOT_ABSOLUTE` | `plan` 缺 `candidate`，或给的是相对路径（会按 Host 自己的 cwd 解析，用户从未点名该目录） |
+| 400 | `ANCHOR_REQUIRED` | `candidate` 不在任何注册工作区内且未带 `outsideRegistry: true`；**零写盘** |
+| 403 | `PATH_FORBIDDEN` / `PATH_OUT_OF_SCOPE` | 绝对拒绝集命中 / 解析后逃出锚定工作区；判定在任何写盘之前 |
+| 400 | `PLAN_TOKEN_REQUIRED` / `TOKEN_UNKNOWN` / `TOKEN_EXPIRED` | `apply` 缺 token / 本进程从未签发 / 超过 5 分钟 |
+| 409 | `TOKEN_CONSUMED` / `PLAN_CHANGED` / `FILE_CHANGED` / `PROJECT_NEEDS_NEWER_PLUGIN` | 重放 / 目录在 plan 之后被改动（含 meta 基线漂移）/ `applyWorkspace` 的 CAS 冲突 / 旧插件不写新书 |
+| 400 | `INIT_REQUIRES_CONFIRMATION` / `META_TITLE_REQUIRED` / `TARGET_NOT_DIRECTORY` | 未带 `confirm: true`（token 不消耗）/ 需要写 `inkflow.json` 却没给 `title` / 目标存在但不是目录 |
+| 500 | `GIT_INIT_FAILED` / `APPLY_FAILED` | `git init` 失败（已回滚半成品）/ 应用后仍非 `usable` |
 
 **错误码**：
 
@@ -598,7 +619,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 **成本与规模**（[ADR-0010](../adrs/0010-book-hub-entry.md) D8）：判定并发 **4**；单本 **2 s** 超时 → 该行 `state: 'timeout'`，不重试；整次预算 **3 s** → 返回已完成行 + `truncated: true`；单次最多 **200** 行 → `capped: true`（`total` 仍是注册表总书数）。客户端**不做轮询**：打开时取一次 + 用户点「刷新」。
 
-**只读纪律**：`inspectProject(root, { recreateIndexDir: false })`（关掉 `index/` 放宽）、catalog 只读已提交文件、`state.json` 不写、目录缺失只报告不创建。拒绝路径与只读路径都要求**零写盘**（整树 hash 前后一致）。
+**只读纪律**：`inspectProject(root, { recreateIndexDir: false })`（关掉 `index/` 放宽）、catalog 只读已提交文件、`state.json` 不写、目录缺失只报告不创建。拒绝路径与只读路径都要求**零写盘**（整树 hash 前后一致）。本通道唯一的写路由是 `/hub/apply`（只补缺失、不覆盖），`/hub/plan` 仍是纯读。
 
 ### 6.3 初始化 / 修复向导（plan → apply）
 

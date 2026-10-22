@@ -419,13 +419,20 @@ test('the hub guards fail closed and never alias the removed /inkflow/api/* pref
   assert.equal(wrongMethod.json.error.code, 'method-not-allowed')
   assert.equal(wrongMethod.headers.allow, 'GET')
 
-  const unknown = await hubCall(harness, '/plan')
-  assert.equal(unknown.status, 404, 'a hub route this issue does not declare answers 404')
+  // `/hub/plan` and `/hub/apply` exist since #86 (POST only); the shared page
+  // is #87's, so it is still an undeclared hub path.
+  const planVerb = await hubCall(harness, '/plan')
+  assert.equal(planVerb.status, 405, '/hub/plan is declared and POST-only')
+  assert.equal(planVerb.json.error.code, 'method-not-allowed')
+  assert.equal(planVerb.headers.allow, 'POST')
+
+  const unknown = await hubCall(harness, '/shared')
+  assert.equal(unknown.status, 404, 'a hub route this build does not declare answers 404')
 
   const legacy = await callRoute(harness, fakeRequest({ url: '/inkflow/api/status' }))
   assert.equal(legacy.status, 404, '/inkflow/api/* stays gone (ADR-0008 D3)')
 
-  const responses = [forgedHost, crossSite, remotePeer, wrongMethod, unknown, legacy]
+  const responses = [forgedHost, crossSite, remotePeer, wrongMethod, planVerb, unknown, legacy]
   for (const response of responses) {
     assert.equal(response.headers['cache-control'], 'no-store')
     assert.equal(response.headers['x-content-type-options'], 'nosniff')

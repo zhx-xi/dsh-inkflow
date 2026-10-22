@@ -123,8 +123,15 @@ export interface HubBooksOptions {
   home?: string
 }
 
-/** A registry entry, narrowed to what a row needs. */
-interface HubWorkspace {
+/**
+ * A registry entry, narrowed to what a row (or an anchor lookup) needs.
+ *
+ * This is the hub channel's ONLY trust anchor (ADR-0010 D6), so the reader is
+ * exported: `hub-wizard.ts` resolves the anchor with the same list the book
+ * rows come from. Two readers of the registry would be two answers to "is this
+ * directory a book the user already has".
+ */
+export interface HubWorkspaceEntry {
   id?: string
   path: string
   title?: string
@@ -132,7 +139,7 @@ interface HubWorkspace {
 }
 
 /** A registry entry after de-duplication: `duplicates` counts the collapsed extras. */
-interface CollapsedWorkspace extends HubWorkspace {
+interface CollapsedWorkspace extends HubWorkspaceEntry {
   duplicates?: number
 }
 
@@ -150,7 +157,7 @@ const UNAVAILABLE: HubBooksError = {
  * judgment throws becomes a `timeout` row.
  */
 export async function buildHubBooks(ctx: HostContext, options: HubBooksOptions = {}): Promise<HubBooksResult> {
-  const listed = listWorkspaces(ctx)
+  const listed = listRegisteredWorkspaces(ctx)
   if (listed === undefined) return { ok: false, error: UNAVAILABLE }
 
   const entries = collapseDuplicates(listed)
@@ -201,7 +208,7 @@ function nonEmptyString(value: unknown): string | undefined {
  * non-function `list`, or a call that throws). Every field is optional in
  * practice: a Host upgrade that renames `status()` must still list books.
  */
-function listWorkspaces(ctx: HostContext): HubWorkspace[] | undefined {
+export function listRegisteredWorkspaces(ctx: HostContext): HubWorkspaceEntry[] | undefined {
   const raw = ctx.get('workspaceRegistry')
   const record = asRecord(raw)
   if (record === undefined || typeof record['list'] !== 'function') return undefined
@@ -214,7 +221,7 @@ function listWorkspaces(ctx: HostContext): HubWorkspace[] | undefined {
   }
   if (!Array.isArray(listed)) return undefined
 
-  const entries: HubWorkspace[] = []
+  const entries: HubWorkspaceEntry[] = []
   for (const item of listed) {
     const workspace = asRecord(item)
     if (workspace === undefined) continue
@@ -241,7 +248,7 @@ function listWorkspaces(ctx: HostContext): HubWorkspace[] | undefined {
  * extras are counted (`duplicates`), because dropping them silently would hide
  * a registry the user can see in the sidebar.
  */
-function collapseDuplicates(entries: readonly HubWorkspace[]): CollapsedWorkspace[] {
+function collapseDuplicates(entries: readonly HubWorkspaceEntry[]): CollapsedWorkspace[] {
   const seen = new Map<string, number>()
   const unique: CollapsedWorkspace[] = []
   const duplicated: number[] = []
@@ -348,7 +355,7 @@ async function judgeBook(entry: CollapsedWorkspace, settings: CollectSettings): 
 }
 
 /** `Workspace.status()` when the Host exposes it, else one `stat`. */
-function directoryStatus(entry: HubWorkspace): 'ok' | 'missing-dir' {
+function directoryStatus(entry: HubWorkspaceEntry): 'ok' | 'missing-dir' {
   if (entry.status !== undefined) {
     try {
       const status = entry.status()
