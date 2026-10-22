@@ -321,7 +321,11 @@ CREATE TABLE validation_issues (seq INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT
 `)
     for (const statement of ENTITIES_DDL) db.exec(statement)
     // Mentions (#29) are a cross-cutting scan, not a domain: `mentions` owns no
-    // content directory, so its table is created here beside the projection.
+    // content directory, so its table is created here beside the projection. The rows
+    // are written by `insertMentions` below rather than contributed as a domain table
+    // because they carry no `path`: `applyCandidate()` replaces a table's rows by path,
+    // and `rowsOf()` reads one bucket per table — a whole-book row set with neither
+    // address cannot be patched per file (see `domains/mentions.ts`).
     for (const statement of MENTIONS_DDL) db.exec(statement)
     for (const module of DOMAIN_MODULES) {
       for (const statement of module.schema().ddl) db.exec(statement)

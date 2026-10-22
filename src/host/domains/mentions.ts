@@ -25,11 +25,31 @@
  * The seam (`indexer.ts`) therefore calls it once, after the chapter domain has
  * already parsed the bodies — the scan never re-reads a file.
  *
- * Consequence worth stating: these rows carry no `path`, and that is correct. The
- * `path` rule on `DomainTableRows` exists because `applyCandidate()` replaces one
- * file's rows *by path*; a mention row belongs to (entity, chapter, offset), is
- * produced for the whole book at once, and is never folded per file. The table is
- * rebuilt whole inside the same transaction as the projection.
+ * Why these rows are **not** contributed as a `DomainTableRows` bucket, and why
+ * they carry no `path` (the mechanism, not a preference):
+ *
+ *   `applyCandidate()` ([types.ts](./types.ts)) builds the post-write view of a
+ *   table as "drop every row whose `path` equals the file being written, then append
+ *   this file's rows". A mention row has no `path` — it is addressed by
+ *   `(entity_key, chapter_id, offset, source)` — so `String(row['path'] ?? '')` is
+ *   `''` and never equals a real file path: the row is **kept**, not replaced, and
+ *   the freshly parsed rows are appended beside it. The view then holds every
+ *   chapter's pre-edit offsets next to the post-edit ones, which is exactly the
+ *   drift an offset cannot survive: the first thing a jump-to-text consumer does is
+ *   slice the body at that number. Offsets also cannot be repaired by the write,
+ *   because `offset` is part of the primary key — `INSERT OR REPLACE` treats a moved
+ *   occurrence as a *new* row, so a replace-by-path patch can never retire the old
+ *   one.
+ *
+ *   `rowsOf()` ([scan-helpers.ts](./scan-helpers.ts)) adds a second reason: it
+ *   reads one bucket per table (`tables.find`), so a per-file contribution — many
+ *   buckets sharing one table name — would silently write only the first bucket's
+ *   rows.
+ *
+ * Mentions cannot be per-file anyway: the automaton is built from every entity and
+ * walks every chapter, so the whole table is one scan's output. It is therefore
+ * computed and written whole by the seam, inside the same transaction as the
+ * projection (`insertMentions`), and rebuilt — never patched — with the index.
  */
 
 import { entityKey } from './entities.js'

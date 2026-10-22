@@ -33,7 +33,27 @@ export interface MentionHit {
   readonly chapterId: string
   /** Code-unit offset into the chapter body; negative for a frontmatter mention. */
   readonly offset: number
-  readonly source: MentionSource
+  /**
+   * Every kind of evidence recorded **at this offset**, in {@link MENTION_SOURCES}
+   * order.
+   *
+   * Normally one entry. The table's primary key is
+   * `(entity_key, chapter_id, offset, source)`, so a `name` and an `alias` row may share
+   * an offset; a consumer that reads a single `source` would then silently drop the
+   * other one.
+   */
+  readonly sources: MentionSource[]
+  /**
+   * Earliest **body** offset of this entity in this chapter, or `undefined` when the
+   * chapter only declares it in frontmatter.
+   *
+   * `offset` alone must not be used to place a caret: an `explicit` row is stored at
+   * `-1` because frontmatter has no position inside the body, so a chapter whose only
+   * hit is `pov: 清音` reports `offset: -1` with no `firstBodyOffset` at all, and a
+   * chapter that declares *and* names the entity reports the prose position here —
+   * never `-1`.
+   */
+  readonly firstBodyOffset?: number
 }
 
 export interface MentionQueryOptions {
@@ -62,8 +82,31 @@ export interface AbsentEntity {
   /** The chapter of its last mention; absent only if the entity was never mentioned at all. */
   readonly lastChapterId?: string
   readonly lastSeq?: number
-  /** How many chapters came after that last appearance. */
+  /**
+   * Chapters that came after its last appearance, from any source:
+   * **该实体最后一次出场（任何来源）之后又过了多少章；0 表示它在给定章仍在场.**
+   */
   readonly missed: number
+}
+
+/** Default threshold of {@link AbsentQueryOptions.minMissed}: 掉线 starts at one missed chapter. */
+const DEFAULT_MIN_MISSED = 1
+
+export interface AbsentQueryOptions {
+  /**
+   * How many chapters must have passed since the entity's last appearance before it is
+   * reported. Default **1**.
+   *
+   * `missed: 0` is not an absence — it means the entity is still onstage in
+   * `sinceChapter`. Without this threshold a character who is only ever declared in
+   * frontmatter (`pov: 清音`, no body hit) is listed as "dropped out" in the very
+   * chapter it narrates, which is how the query used to produce false positives. The
+   * filter lives here, not in the caller: the list is a **finding** list, and
+   * "everything, including the cast that is still present" is what `minMissed: 0` is
+   * for.
+   */
+  readonly minMissed?: number
+  readonly limit?: number
 }
 
 function clamp(limit: number | undefined): number {
@@ -111,6 +154,16 @@ function idOf(entityKey: string): string {
  * tool argument may not; without it the id is matched on the `kind:id` suffix, so
  * an id used by two kinds (I-04 allows that) reports both instead of guessing.
  *
+ * Two things exist so a caller can act on a hit without second-guessing it:
+ *
+ *   - rows that share an `offset` are merged into one hit (`sources`), because the
+ *     table can hold a `name` and an `alias` row for the same position;
+ *   - `firstBodyOffset` carries the earliest position **in the body**, so an
+ *     `explicit` hit (stored at `-1`) never becomes a caret placed before the text.
+ *     Body offsets also sort before `explicit` inside a chapter — ordering by raw
+ *     `offset` would put `-1` first, which is how "jump to the first mention" ended
+ *     up pointing at nothing.
+ *
  * Occurrences are capped (`limit`, default 500) like every other index list, so a
  * protagonist named thousands of times truncates; when the question is "which
  * chapters", ask {@link chaptersMentioning}, which groups instead of truncating.
@@ -124,8 +177,16 @@ export function mentionsOf(
   const db = openIndex(root)
   if (db === undefined) return undefined
   try {
-    const columns = 'm.entity_key AS entity_key, m.chapter_id AS chapter_id, m.offset AS offset, m.source AS source'
-    const order = 'ORDER BY c.seq IS NULL, c.seq, c.path, m.offset'
+    // `first_body_offset` is a window over this entity's rows in the same chapter, so
+    // it stays correct even for an `explicit` row whose chapter also names the entity
+    // in prose; `PARTITION BY entity_key` keeps two kinds that share an id apart.
+    const columns = `m.entity_key AS entity_key,
+                     m.chapter_id AS chapter_id,
+                     m.offset AS offset,
+                     m.source AS source,
+                     MIN(CASE WHEN m.offset >= 0 THEN m.offset END)
+                       OVER (PARTITION BY m.entity_key, m.chapter_id) AS first_body_offset`
+    const order = 'ORDER BY c.seq IS NULL, c.seq, c.path, m.offset < 0, m.offset'
     const rows =
       options.kind === undefined
         ? (db
@@ -149,26 +210,45 @@ export function mentionsOf(
             )
             .all(`${options.kind}:${entityId}`, clamp(options.limit)) as unknown as Array<Record<string, unknown>>)
 
-    const hits: MentionHit[] = []
+    // Merged by (entity, chapter, offset): the query's ORDER BY keeps equal offsets
+    // adjacent, so insertion order still is reading order.
+    const merged = new Map<string, MentionHit & { sources: MentionSource[] }>()
     for (const row of rows) {
       const source = toSource(row['source'])
       const entityKey = text(row['entity_key'])
       const chapterId = text(row['chapter_id'])
       if (source === undefined || entityKey === '' || chapterId === '') continue
-      hits.push({
+      const offset = typeof row['offset'] === 'number' ? row['offset'] : -1
+      const firstBodyOffset =
+        typeof row['first_body_offset'] === 'number' ? row['first_body_offset'] : undefined
+      const key = `${entityKey}\u0000${chapterId}\u0000${String(offset)}`
+      const existing = merged.get(key)
+      if (existing !== undefined) {
+        addSource(existing.sources, source)
+        continue
+      }
+      merged.set(key, {
         entityKey,
         entityId: idOf(entityKey),
         chapterId,
-        offset: typeof row['offset'] === 'number' ? row['offset'] : -1,
-        source,
+        offset,
+        sources: [source],
+        ...(firstBodyOffset === undefined ? {} : { firstBodyOffset }),
       })
     }
-    return hits
+    return [...merged.values()]
   } catch {
     return undefined
   } finally {
     db.close()
   }
+}
+
+/** Keep `sources` in `MENTION_SOURCES` order so two reads of one row are comparable. */
+function addSource(sources: MentionSource[], source: MentionSource): void {
+  if (sources.includes(source)) return
+  sources.push(source)
+  sources.sort((left, right) => MENTION_SOURCES.indexOf(left) - MENTION_SOURCES.indexOf(right))
 }
 
 /**
@@ -242,15 +322,22 @@ function countAbove(sorted: readonly number[], value: number): number {
  * is a different finding (an unused setting entry), and mixing it in would bury
  * the character who actually dropped out.
  *
- * "After" is strictly after: an entity that appears in `sinceChapter` itself and
- * nowhere later is reported with `missed: 0` — it did not drop off *before* that
- * chapter, it simply has not been seen since.
+ * "After" is strictly after, so an entity that appears in `sinceChapter` itself and
+ * nowhere later has `missed: 0` — it did not drop off *before* that chapter, it simply
+ * has not been seen since, and it is still onstage. Those rows are therefore filtered
+ * out by `minMissed` (default 1); the contract is stated once, here, and the caller
+ * gets a finding list rather than a cast list it has to filter itself.
  *
  * `undefined` means the index is unusable, or the chapter is unknown, or the
  * chapter carries no `seq` — in all three cases there is no honest ordering to
  * report, so the caller says so instead of returning an empty list.
  */
-export function absentEntities(root: string, sinceChapter: string, limit?: number): AbsentEntity[] | undefined {
+export function absentEntities(
+  root: string,
+  sinceChapter: string,
+  options: AbsentQueryOptions = {},
+): AbsentEntity[] | undefined {
+  const minMissed = Math.max(options.minMissed ?? DEFAULT_MIN_MISSED, 0)
   const db = openIndex(root)
   if (db === undefined) return undefined
   try {
@@ -308,6 +395,10 @@ export function absentEntities(root: string, sinceChapter: string, limit?: numbe
     const absent: AbsentEntity[] = []
     for (const [entityKey, last] of lastSeen) {
       if (last.seq !== undefined && last.seq > sinceSeq) continue
+      const missed = last.seq === undefined ? countAbove(ordered, sinceSeq) : countAbove(ordered, last.seq)
+      // `missed: 0` means the entity is still onstage in `sinceChapter` itself; only a
+      // caller that asked for the whole cast (`minMissed: 0`) wants those rows.
+      if (missed < minMissed) continue
       const entity = titles.get(entityKey)
       absent.push({
         entityKey,
@@ -315,7 +406,7 @@ export function absentEntities(root: string, sinceChapter: string, limit?: numbe
         title: entity?.title ?? idOf(entityKey),
         lastChapterId: last.chapterId,
         ...(last.seq === undefined ? {} : { lastSeq: last.seq }),
-        missed: last.seq === undefined ? countAbove(ordered, sinceSeq) : countAbove(ordered, last.seq),
+        missed,
       })
     }
 
@@ -323,7 +414,7 @@ export function absentEntities(root: string, sinceChapter: string, limit?: numbe
       if (left.missed !== right.missed) return right.missed - left.missed
       return left.entityKey < right.entityKey ? -1 : left.entityKey > right.entityKey ? 1 : 0
     })
-    return absent.slice(0, clamp(limit))
+    return absent.slice(0, clamp(options.limit))
   } catch {
     return undefined
   } finally {

@@ -154,7 +154,7 @@ export type { DomainWriteView } from './domains/index.js'
 export { MENTIONS_DDL, MENTIONS_TABLE, MENTION_SOURCES, chaptersOf, insertMentions, scanMentions } from './domains/mentions.js'
 export type { MentionChapter, MentionRow, MentionSource } from './domains/mentions.js'
 export { absentEntities, chaptersMentioning, mentionsOf } from './domains/mentions-query.js'
-export type { AbsentEntity, MentionChapterHit, MentionHit, MentionQueryOptions } from './domains/mentions-query.js'
+export type { AbsentEntity, AbsentQueryOptions, MentionChapterHit, MentionHit, MentionQueryOptions } from './domains/mentions-query.js'
 
 /**
  * World book (#26): the keyword matcher, the write-side half of I-08 and the tree

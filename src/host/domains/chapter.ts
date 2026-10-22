@@ -30,6 +30,10 @@ export interface ChapterRow {
    * and an author's `pov: 清音` is a stronger statement than a name occurring in the
    * prose. Only this module parses chapter frontmatter, so it is the only place
    * that can hand it over — re-reading the file later would be a second truth.
+   *
+   * In-memory only: no `chapters.pov` column exists. The mention scan turns the
+   * declaration into an `explicit` row in `entity_mentions`, and that row is what
+   * reads later get; a column would be a second copy of it with no reader.
    */
   pov?: string
 }
@@ -109,7 +113,11 @@ export const chapterDomain: DomainModule = {
   schema() {
     return {
       ddl: [
-        'CREATE TABLE chapters (id TEXT PRIMARY KEY, path TEXT NOT NULL, seq INTEGER, title TEXT NOT NULL, volume TEXT, status TEXT NOT NULL, word_count INTEGER NOT NULL, pov TEXT)',
+        // `pov` is deliberately **not** a column: it stays a `ChapterRow` field read
+        // in memory (`chaptersOf()` in `mentions.ts` is its only consumer, via the
+        // scan it receives), because a mention row already records the declaration —
+        // storing it a second time would be a column with no reader.
+        'CREATE TABLE chapters (id TEXT PRIMARY KEY, path TEXT NOT NULL, seq INTEGER, title TEXT NOT NULL, volume TEXT, status TEXT NOT NULL, word_count INTEGER NOT NULL)',
         'CREATE INDEX ix_chapters_seq ON chapters(seq)',
         // The body lives only in FTS: it is never read as a row, and keeping it out
         // of `chapters` keeps the table small enough to scan on every query.
@@ -117,11 +125,11 @@ export const chapterDomain: DomainModule = {
       ],
       insert(db, scan): void {
         const insert = db.prepare(
-          'INSERT OR REPLACE INTO chapters (id, path, seq, title, volume, status, word_count, pov) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT OR REPLACE INTO chapters (id, path, seq, title, volume, status, word_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
         )
         const insertFts = db.prepare('INSERT INTO chapters_fts (chapter_id, title, body) VALUES (?, ?, ?)')
         for (const row of rowsOf<ChapterRow>(scan, 'chapters')) {
-          insert.run(row.id, row.path, row.seq ?? null, row.title, row.volume ?? null, row.status, row.wordCount, row.pov ?? null)
+          insert.run(row.id, row.path, row.seq ?? null, row.title, row.volume ?? null, row.status, row.wordCount)
           insertFts.run(row.id, row.title, row.body)
         }
       },

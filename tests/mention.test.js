@@ -105,15 +105,15 @@ test('a name hit and an alias hit are recorded with their own source', async () 
     await buildIndex(root)
 
     const byName = mentionsOf(root, 'c-1', { kind: 'characters' }) ?? []
-    const ch1 = byName.filter((hit) => hit.chapterId === 'ch-1' && hit.source !== 'explicit')
+    const ch1 = byName.filter((hit) => hit.chapterId === 'ch-1' && hit.offset >= 0)
     assert.equal(ch1.length, 1, 'the body mentions 清音 exactly once in ch-1')
-    assert.equal(ch1[0].source, 'name')
+    assert.deepEqual(ch1[0].sources, ['name'])
     assert.ok(ch1[0].offset >= 0, 'a body mention carries a body offset')
     assert.equal(chapterBody(root, 'ch-1').slice(ch1[0].offset, ch1[0].offset + '清音'.length), '清音')
 
     const ch3 = byName.filter((hit) => hit.chapterId === 'ch-3')
     assert.equal(ch3.length, 1)
-    assert.equal(ch3[0].source, 'alias', '静水 is an alias, not the character name')
+    assert.deepEqual(ch3[0].sources, ['alias'], '静水 is an alias, not the character name')
     assert.equal(chapterBody(root, 'ch-3').slice(ch3[0].offset, ch3[0].offset + '静水'.length), '静水')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -128,15 +128,25 @@ test('the chapter frontmatter declaration is an explicit mention, separate from 
     await buildIndex(root)
 
     const hits = (mentionsOf(root, 'c-1', { kind: 'characters' }) ?? []).filter((hit) => hit.chapterId === 'ch-1')
-    const explicit = hits.filter((hit) => hit.source === 'explicit')
+    const explicit = hits.filter((hit) => hit.sources.includes('explicit'))
     assert.equal(explicit.length, 1, '`pov: 清音` is one explicit mention')
     assert.ok(explicit[0].offset < 0, 'a frontmatter mention has no body offset')
-    assert.equal(hits.filter((hit) => hit.source === 'name').length, 1, 'the body hit is still its own row')
+    assert.equal(hits.filter((hit) => hit.sources.includes('name')).length, 1, 'the body hit is still its own row')
+
+    // `offset` of the declaration is -1, i.e. not a place in the text. A consumer that
+    // places a caret at "the first mention" must therefore be handed the body position:
+    // `firstBodyOffset` is the prose offset (never -1), and body occurrences are ordered
+    // before the declaration so `hits[0]` of a chapter is always real text.
+    const named = hits.find((hit) => hit.sources.includes('name'))
+    assert.ok(named !== undefined)
+    assert.equal(explicit[0].firstBodyOffset, named.offset, 'the declaration points at the prose, not at -1')
+    assert.equal(named.firstBodyOffset, named.offset, 'a body hit is its own first body offset')
+    assert.ok(hits[0].offset >= 0, 'the frontmatter row sorts last inside its chapter')
 
     // A chapter that declares nobody carries no explicit row, and an unresolvable
     // `pov` value is silence rather than a dangling entity_key.
     assert.deepEqual(
-      (mentionsOf(root, 'w-1', { kind: 'world' }) ?? []).filter((hit) => hit.source === 'explicit'),
+      (mentionsOf(root, 'w-1', { kind: 'world' }) ?? []).filter((hit) => hit.sources.includes('explicit')),
       [],
     )
   } finally {
@@ -196,14 +206,68 @@ test('“how many chapters has this character been gone” answers from the last
     assert.equal(whiteCrane?.kind, 'world')
 
     // "After ch-3" is strictly-after: 清音 does appear in ch-3 itself, so nothing
-    // follows its last appearance and `missed` is 0 — the chapter it is in is not
-    // one it was missing from. 白鹤门 keeps counting from ch-2.
+    // follows its last appearance and `missed` is 0 — the chapter it is in is not one
+    // it was missing from. `missed: 0` is therefore not a finding and is filtered out
+    // by the default `minMissed`, which is what keeps a still-onstage character off the
+    // 掉线 list.
     const afterThree = absentEntities(root, 'ch-3') ?? []
-    assert.equal(afterThree.find((entity) => entity.entityKey === 'characters:c-1')?.missed, 0)
+    assert.equal(
+      afterThree.find((entity) => entity.entityKey === 'characters:c-1'),
+      undefined,
+      'missed: 0 means it is still onstage, not fallen off',
+    )
     assert.equal(afterThree.find((entity) => entity.entityKey === 'world:w-1')?.missed, 1)
+
+    // `minMissed: 0` is the "whole cast plus its position" view, where a 0 is visible.
+    const cast = absentEntities(root, 'ch-3', { minMissed: 0 }) ?? []
+    assert.equal(cast.find((entity) => entity.entityKey === 'characters:c-1')?.missed, 0)
 
     // An unknown chapter id cannot be judged — undefined, not an empty verdict.
     assert.equal(absentEntities(root, 'ch-nope'), undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a character known only from `pov` is not reported as having dropped out', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    // 赵孤 narrates the last chapter (ch-2) without ever being named in its prose — the
+    // exact shape that used to show up in the 掉线 list with `missed: 0`, i.e. "present"
+    // reported as "gone": its last appearance *is* the chapter being asked about, and
+    // nothing follows it.
+    writeMarkdown(root, 'chapters/vol-01/0001-甲.md', ['id: ch-1', 'title: 甲', 'seq: 1'], '白鹤门的三位长老坐在堂中。')
+    writeMarkdown(root, 'chapters/vol-01/0002-乙.md', ['id: ch-2', 'title: 乙', 'seq: 2', 'pov: 赵孤'], '风雪灌进来。')
+    writeMarkdown(root, 'characters/赵孤.md', ['id: c-9', 'name: 赵孤'], '独行的剑客。')
+    writeMarkdown(root, 'world/门派/白鹤门.md', ['id: w-1', 'title: 白鹤门'], '山中剑派。')
+    await buildIndex(root)
+
+    // The declaration itself has no body position, so `firstBodyOffset` is absent and a
+    // caret would have nowhere to go — which is exactly why it must not be -1.
+    const declared = mentionsOf(root, 'c-9', { kind: 'characters' }) ?? []
+    assert.equal(declared.length, 1)
+    assert.ok(declared[0].offset < 0)
+    assert.equal(declared[0].firstBodyOffset, undefined, 'no prose occurrence, so nothing to jump to')
+
+    // Asked about its own chapter the character is onstage: `missed: 0` — and the default
+    // threshold keeps a 0 off the list, which is the false positive this guards.
+    const afterTwo = absentEntities(root, 'ch-2') ?? []
+    assert.equal(
+      afterTwo.find((entity) => entity.entityKey === 'characters:c-9'),
+      undefined,
+      'still onstage in ch-2, so not a finding',
+    )
+    assert.equal(afterTwo.find((entity) => entity.entityKey === 'world:w-1')?.missed, 1, '白鹤门 really is gone')
+
+    // `minMissed: 0` is how a caller sees the raw position; the 0 is the documented
+    // "in the given chapter" value rather than a fallback.
+    const all = absentEntities(root, 'ch-2', { minMissed: 0 }) ?? []
+    const onstage = all.find((entity) => entity.entityKey === 'characters:c-9')
+    assert.equal(onstage?.missed, 0, '0 means "in the given chapter", per the documented definition')
+    assert.equal(onstage?.lastChapterId, 'ch-2')
+    assert.equal(onstage?.title, '赵孤')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -223,7 +287,7 @@ test('names are matched through nameKey folding, and the offset still points at 
 
     const hits = (mentionsOf(root, 'c-2', { kind: 'characters' }) ?? []).filter((hit) => hit.chapterId === 'ch-5')
     assert.equal(hits.length, 1)
-    assert.equal(hits[0].source, 'name')
+    assert.deepEqual(hits[0].sources, ['name'])
     const body = chapterBody(root, 'ch-5')
     assert.equal(body.slice(hits[0].offset, hits[0].offset + 'ＡＫＩＲＡ'.length), 'ＡＫＩＲＡ')
   } finally {
