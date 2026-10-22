@@ -55,7 +55,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 - 左侧栏多出 **InkFlow 书库** 图标（`sidebar.panellist`，id `inkflow-hub`，order 35；主体在 `main` 的同名 key）→ 书库：一行一本已注册工作区、四态徽标、`~/…` 路径、卷/章数、`目录不在了` / `不是书目录` / `重复注册` 标记；空态与「刷新」；「新开书」「共享内容」为禁用占位（#86 / #87）；
 - 会话的「对话 / 轨迹」栏多出 **InkFlow** 页签（`conversation.view`，id `inkflow`，order 40）→ 写作工作台：项目标题 + 四态徽章 + 相对项目根、卷 → 章章节树、编辑器；非 `usable` 时显示 `missing[]` / `actions[]` 清单与只读的初始化计划；
-- 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search` / `inkflow_chapter_create` / `inkflow_chapter_write` / `inkflow_chapter_move` / `inkflow_chapter_delete` / `inkflow_volume_create` / `inkflow_volume_rename`。
+- 工具列表出现 `inkflow_project_status` / `inkflow_project_plan` / `inkflow_project_init` / `inkflow_index_rebuild` / `inkflow_chapter_list` / `inkflow_chapter_search` / `inkflow_chapter_create` / `inkflow_chapter_write` / `inkflow_chapter_move` / `inkflow_chapter_delete` / `inkflow_volume_create` / `inkflow_volume_rename` / `inkflow_character_list` / `inkflow_character_upsert`。
 
 > 入口按职责分两处（[ADR-0010](.agents/adrs/0010-book-hub-entry.md)）：**书库**用 root 作用域的 `sidebar.panellist` + `main`（书单只能来自 DSH 的工作区注册表），**创作工作台**用 session 作用域的 `conversation.view`（[ADR-0008](.agents/adrs/0008-panel-data-channel.md) D1 对工作台仍成立）。两者都只读——写正文与初始化都要走用户确认后的工具调用。
 

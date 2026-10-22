@@ -154,7 +154,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
-插件提供六个工具，DSH 里的 AI 会在需要时自己调用：
+插件提供十四个工具，DSH 里的 AI 会在需要时自己调用：
 
 | 工具 | 作用 | 你可以这样说 |
 |---|---|---|
@@ -170,6 +170,8 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_chapter_write` | 改标题 / 正文 / 状态；只改你指定的字段，改标题会同时改文件名 | 「把这一章改成《夜行》，状态标成 revised」 |
 | `inkflow_chapter_move` | 移卷或移出卷（`volume` 跟着改，章 id 不变） | 「把第三章挪到第二卷」/「把这篇外传移出卷」 |
 | `inkflow_chapter_delete` | 删章（**物理删除**，恢复靠 git 历史） | 「删掉那一章」 |
+| `inkflow_character_list` | 列角色卡（名字 / 别名 / 分组 / 角色 / 视角 / 出场章 / 语言基因 / 按章状态），可按分组或名字片段筛；带上章号就问「第 30 章时他是什么状态」 | 「列一下门派里有哪些人」/「第 30 章时清音是什么身份」 |
+| `inkflow_character_upsert` | 建或改角色卡：同名再写就是改这张卡；名字与别名项目内必须唯一（撞名直接拒），必须带确认 | 「给清音建张人物卡，别名青音，属白鹤门」/「把她第 30 章的状态改成代掌门」 |
 
 向导的两段式是刻意设计的：先看清单（`plan`），你点头之后才落盘（`init` + 确认）。修复老项目时它只补缺失项——已有的正文、设定、`inkflow.json` 一个字节都不会动；唯一例外是**坏掉的** `inkflow.json`：它会先把原文（超长会截断并标注）给你看，你确认后才重建。
 

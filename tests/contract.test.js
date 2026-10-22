@@ -202,12 +202,18 @@ test('registers the twelve built-ins, the tools of every registered domain, and 
     // (#26, roadmap §2.1 X-5). An unexpected entry here means a domain was wired
     // without extending this baseline.
     assert.deepEqual([...harness.tools.keys()].sort(), [
+      // Built-ins in `tools.ts`…
       'inkflow_chapter_create',
       'inkflow_chapter_delete',
       'inkflow_chapter_list',
       'inkflow_chapter_move',
       'inkflow_chapter_search',
       'inkflow_chapter_write',
+      // …plus the tools a domain module publishes through `tools()` (#25). A new
+      // domain adds its names here, which is the point: the shipped surface stays
+      // an explicit list instead of whatever happens to be registered.
+      'inkflow_character_list',
+      'inkflow_character_upsert',
       'inkflow_index_rebuild',
       // #24: the outline domain's own tools, contributed through `domainTools()`.
       'inkflow_outline_move',

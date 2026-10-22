@@ -127,6 +127,20 @@ export type {
 } from './domains/world-plan.js'
 /** Exported for the tool-surface contract test: it asserts the aggregate is wired. */
 export { buildTools } from './tools.js'
+/**
+ * Character cards (#25): `planCharacterUpsert` is the write-side I-03 decision and
+ * is a pure function precisely so it can be asserted without a disk; the card
+ * reader answers "what was he at chapter 30" outside a tool call too.
+ */
+export { planCharacterUpsert } from './domains/character-write.js'
+export type {
+  CharacterIdentity,
+  CharacterRejectCode,
+  CharacterUpsertPlan,
+  CharacterUpsertPlanInput,
+} from './domains/character-write.js'
+export { listCharacters } from './domains/character-query.js'
+export type { CharacterListOptions, CharacterSummary } from './domains/character-query.js'
 export type {
   DomainDatabase,
   DomainEntityRef,
@@ -138,6 +152,7 @@ export type {
   DomainScanResult,
   DomainSchema,
   DomainTableRows,
+  DomainToolDeps,
   DomainValidateInput,
 } from './domains/types.js'
 
