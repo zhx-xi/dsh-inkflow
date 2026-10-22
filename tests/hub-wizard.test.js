@@ -274,6 +274,36 @@ test('plan anchors a directory inside a registered workspace without outsideRegi
   assert.equal(existsSync(join(inside, 'chapters')), false)
 })
 
+test('a registry path spelled through a junction still anchors its contents (and itself)', async () => {
+  // Windows CI runners keep the temp directory behind a junction, so the
+  // registry says one spelling while the picker answers another (resolved) one.
+  // Comparing only one side canonicalised both `in-workspace` and `registered`
+  // into `ANCHOR_REQUIRED` on windows-latest while passing locally (PR #97).
+  const base = workdir()
+  const real = book(join(base, 'real-book'))
+  const link = join(base, 'link-book')
+  try {
+    symlinkSync(real, link, 'junction')
+  } catch {
+    return // junctions need no admin on Windows, but other platforms may refuse
+  }
+  const inside = join(real, 'draft-book')
+  mkdirSync(inside)
+
+  // 1) registry holds the junction spelling, the picker answers the real path.
+  const harness = createHarness({ workspaces: [{ id: 'ws-link', path: link, title: '书乙' }] })
+  const insideResponse = await post(harness, '/plan', { candidate: inside })
+  assert.equal(insideResponse.status, 200, JSON.stringify(insideResponse.json))
+  assert.equal(insideResponse.json.value.anchor, 'in-workspace')
+
+  // 2) registry holds the real path, the picker answers the junction spelling.
+  const harnessAgain = createHarness({ workspaces: [{ id: 'ws-real', path: real, title: '书乙' }] })
+  const registeredResponse = await post(harnessAgain, '/plan', { candidate: link })
+  assert.equal(registeredResponse.status, 200, JSON.stringify(registeredResponse.json))
+  assert.equal(registeredResponse.json.value.anchor, 'registered')
+  assert.equal(registeredResponse.json.value.planToken, undefined)
+})
+
 test('plan on an already registered book returns its state and NO planToken', async () => {
   const { base, registered, workspaces } = fixture()
   const harness = createHarness({ workspaces: workspaces.map((workspace) => ({ ...workspace })) })

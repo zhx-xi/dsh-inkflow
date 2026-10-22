@@ -320,11 +320,20 @@ export async function hubPlan(
   const picked = resolve(candidate)
   const canonical = realpathLoose(picked)
   const registry = listRegisteredWorkspaces(ctx)
+  /**
+   * Registry paths must be compared in the SAME form as the picker's answer.
+   * `realpathSync.native` resolves junctions and 8.3 short names, so a registry
+   * that stored `D:\…` while the temp directory is a junction to `C:\…` (which
+   * is what a Windows CI runner does) makes every containment test fail and
+   * turns a directory inside a known workspace into `ANCHOR_REQUIRED` — the two
+   * Windows-only failures PR #97 hit. Canonicalise both sides, never just one.
+   */
+  const canonicalEntry = (path: string): string => realpathLoose(resolve(path))
   const title = text(body['title'])
 
   // Anchor 1 (ADR-0010 D6): already a book the user has. No token: the write
   // path for a registered directory is its session's `inkflow_project_init`.
-  const registered = registry?.find((entry) => pathKey(entry.path) === pathKey(canonical))
+  const registered = registry?.find((entry) => pathKey(canonicalEntry(entry.path)) === pathKey(canonical))
   if (registered !== undefined) {
     const plan = planWorkspace(canonical)
     return {
@@ -344,10 +353,17 @@ export async function hubPlan(
     }
   }
 
-  // Anchor 2: inside a registered workspace. Containment is judged on the TEXT
-  // the picker returned; the gate below judges the RESOLVED path, which is how a
-  // junction that leaves the workspace becomes `PATH_OUT_OF_SCOPE`.
-  const containing = registry?.find((entry) => isWithin(resolve(entry.path), picked))
+  // Anchor 2: inside a registered workspace.
+  //
+  // TEXTUAL containment decides first, on purpose (ADR-0010 D6): a junction that
+  // lives inside the workspace but resolves outside must still be anchored here,
+  // so the gate below can refuse it with the precise `PATH_OUT_OF_SCOPE` instead
+  // of a vague `ANCHOR_REQUIRED`. The canonical comparison is the second chance
+  // and exists only for the spelling mismatch: a registry that stored one form
+  // (junction / 8.3 short name) while the picker answered another.
+  const containing = registry?.find(
+    (entry) => isWithin(resolve(entry.path), picked) || isWithin(canonicalEntry(entry.path), canonical),
+  )
   let anchor: HubPlanAnchor
   let scope: string
   if (containing !== undefined) {
