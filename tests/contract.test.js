@@ -198,9 +198,9 @@ test('registers the twelve built-ins, the tools of every registered domain, and 
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
     // Built-ins first (imported by `tools.ts`), then whatever `DOMAIN_MODULES`
-    // declares — the world domain adds its two tools on top of the fixed twelve
-    // (#26, roadmap §2.1 X-5). An unexpected entry here means a domain was wired
-    // without extending this baseline.
+    // declares (roadmap §2.1 X-5): #26 adds the two world tools, #27 the two
+    // relation tools. An unexpected entry here means a domain was wired without
+    // extending this baseline.
     assert.deepEqual([...harness.tools.keys()].sort(), [
       'inkflow_chapter_create',
       'inkflow_chapter_delete',
@@ -216,6 +216,8 @@ test('registers the twelve built-ins, the tools of every registered domain, and 
       'inkflow_project_init',
       'inkflow_project_plan',
       'inkflow_project_status',
+      'inkflow_relation_list',
+      'inkflow_relation_upsert',
       'inkflow_volume_create',
       'inkflow_volume_rename',
       'inkflow_world_tree',
