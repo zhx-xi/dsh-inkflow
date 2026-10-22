@@ -70,6 +70,15 @@ export interface ClientContext {
   slots: SlotsService
   layout?: LayoutService
   effect(setup: () => void | (() => void)): () => void
+  /**
+   * Optional service lookup (`ctx.get('uiWorkspace')`).
+   *
+   * The hub's new-book wizard is the one place that needs a Client SERVICE
+   * rather than a slot: the user-chosen directory comes from
+   * `uiWorkspace.pickDirectory()` and from nowhere else (ADR-0010 E6 / issue
+   * #86). A profile without it renders the manual-path fallback instead.
+   */
+  get?: (name: string) => unknown
 }
 
 /** One workspace as the Client's `workspaces` service lists it. */

@@ -13,9 +13,15 @@
  * when the panel opens and again when the user presses 刷新: no polling, because
  * every answer costs one judgment per book (ADR-0010 D8).
  *
- * WHAT THIS ISSUE DOES NOT DO: no 新开书 wizard (#86). The shared-content page
- * is its own view (`hub-shared.tsx`, #87); the wizard still renders disabled with
- * its release note, and is not stubbed with dead code.
+ * WHAT THE WIZARD ADDS (#86): the 「新开书」 button is real. It opens
+ * `HubWizard`, which asks the Host to plan a directory, shows the plan, and
+ * applies it after confirmation. A successful apply merges the new book into
+ * this list IN PLACE — no refetch, because the host's answer already carries the
+ * row (ADR-0010 D8 "apply 成功后就地更新该行").
+ *
+ * WHAT THE SHARED PAGE ADDS (#87): 「共享内容」 opens `SharedLibraryView`, a
+ * read-only browse of `dataDir/shared` (`hub-shared.tsx`). It owns no book, so it
+ * never touches this list; copy/ref edges belong to #40.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -23,8 +29,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchInternal } from './internal.js'
 import { SharedLibraryView } from './hub-shared.js'
 import {
-  HUB_NEW_BOOK_LABEL,
-  HUB_PLACEHOLDER_NOTE,
   HUB_SHARED_LABEL,
   HUB_TEXTS,
   badgeOf,
@@ -36,6 +40,9 @@ import {
   rowTitle,
 } from './hub-model.js'
 import type { HubBadgeTone, HubBookRow, HubBooksValue, HubState } from './hub-model.js'
+import { HubWizard } from './hub-wizard.js'
+import type { HubAppliedRow } from './hub-wizard.js'
+import { HUB_WIZARD_LABEL, mergeHubRow } from './hub-wizard-model.js'
 
 // ---------------------------------------------------------------------------
 // Theme tokens only: every visible colour comes from --dsw-alias-* (AGENTS.md §6)
@@ -86,12 +93,6 @@ const buttonStyle = {
   cursor: 'pointer',
 } as const
 
-const disabledButtonStyle = {
-  ...buttonStyle,
-  color: 'var(--dsw-alias-label-secondary)',
-  cursor: 'not-allowed',
-} as const
-
 function toneColor(tone: HubBadgeTone): string {
   return `var(--dsw-alias-state-${tone}-primary)`
 }
@@ -137,15 +138,6 @@ function BookCard({ row, home }: { row: HubBookRow; home: string | null }) {
   )
 }
 
-/** A disabled entry point: the new-book wizard (#86) is not here yet. */
-function Placeholder({ label }: { label: string }) {
-  return (
-    <button type="button" style={disabledButtonStyle} title={HUB_PLACEHOLDER_NOTE} disabled>
-      {label}（{HUB_PLACEHOLDER_NOTE}）
-    </button>
-  )
-}
-
 const INITIAL: HubState = { status: 'ready', books: [], home: null, total: 0, truncated: false, capped: false }
 
 export function HubView() {
@@ -155,6 +147,8 @@ export function HubView() {
   // The shared library is a page of its own (#87). A root-scoped panel has one
   // body area, so it is a mode of this view instead of a second slot.
   const [view, setView] = useState<'books' | 'shared'>('books')
+  /** The wizard is a panel of its own: its confirm card does not belong in the header row. */
+  const [wizardOpen, setWizardOpen] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -177,13 +171,33 @@ export function HubView() {
 
   if (view === 'shared') return <SharedLibraryView onClose={() => setView('books')} />
 
+  /**
+   * The wizard's answer, merged into the list in place (issue #86).
+   *
+   * No refetch: `apply` already returned everything a row needs, and asking the
+   * Host to judge every book again would be exactly the cost ADR-0010 D8 caps.
+   */
+  const applied = useCallback((row: HubAppliedRow) => {
+    setState((current) => {
+      if (current.status !== 'ready') return current
+      const existed = current.books.some((book) => pathKey(book.path) === pathKey(row.path))
+      return {
+        ...current,
+        books: mergeHubRow(current.books, row),
+        total: existed ? current.total : current.total + 1,
+      }
+    })
+  }, [])
+
   return (
     <div style={sheetStyle}>
       <div style={headerStyle}>
         <span style={{ fontWeight: 600 }}>{HUB_TEXTS.title}</span>
         <span style={{ ...muted, fontSize: 12 }}>{loading ? HUB_TEXTS.loading : hubSummary(state)}</span>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          <Placeholder label={HUB_NEW_BOOK_LABEL} />
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button type="button" style={buttonStyle} onClick={() => setWizardOpen(true)} disabled={wizardOpen}>
+            {HUB_WIZARD_LABEL}
+          </button>
           <button type="button" style={buttonStyle} onClick={() => setView('shared')}>
             {HUB_SHARED_LABEL}
           </button>
@@ -192,6 +206,12 @@ export function HubView() {
           </button>
         </span>
       </div>
+
+      {wizardOpen ? (
+        <div style={cardStyle}>
+          <HubWizard onApplied={applied} onClose={() => setWizardOpen(false)} />
+        </div>
+      ) : null}
 
       {state.status === 'error' ? (
         <div style={{ ...cardStyle, borderColor: 'var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)' }}>
@@ -214,6 +234,11 @@ export function HubView() {
       <div style={{ ...muted, marginTop: 'auto', paddingTop: 6, fontSize: 12 }}>{HUB_TEXTS.readOnly}</div>
     </div>
   )
+}
+
+/** Path identity for the in-place merge: Windows compares case-insensitively. */
+function pathKey(path: string | undefined): string {
+  return typeof path === 'string' ? path.replaceAll('\\', '/').replace(/\/+$/u, '').toLowerCase() : ''
 }
 
 /** The sidebar glyph: an open book, drawn with `currentColor` so the theme decides. */

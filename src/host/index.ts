@@ -171,6 +171,7 @@ export type {
   HubBooksOptions,
   HubBooksResult,
   HubBooksValue,
+  HubWorkspaceEntry,
 } from './hub.js'
 
 /**
@@ -197,6 +198,32 @@ export type {
   SharedEntry,
 } from './hub-shared.js'
 export { sharedDir } from './config.js'
+
+/**
+ * The hub's new-book wizard (ADR-0010 D4/D6, issue #86). Exported because the
+ * two properties that make it safe are only testable from outside the route
+ * handler: a plan token is ONE-SHOT and TTL-bounded (so the store takes an
+ * injected clock), and `apply` accepts no path at all. The routes are a thin
+ * envelope over these two functions, and the tests drive both the envelope and
+ * the functions to prove they agree.
+ */
+export {
+  HUB_PLAN_TOKEN_TTL_MS,
+  createHubPlanTokenStore,
+  hubApply,
+  hubPlan,
+  hubPlanTokens,
+} from './hub-wizard.js'
+export type {
+  HubPlanAnchor,
+  HubPlanTokenLookup,
+  HubPlanTokenRecord,
+  HubPlanTokenStatus,
+  HubPlanTokenStore,
+  HubPlanTokenStoreOptions,
+  HubWizardOptions,
+  HubWizardReply,
+} from './hub-wizard.js'
 
 /**
  * GBK mojibake detection (issue #89): a pure function over the title text, so the

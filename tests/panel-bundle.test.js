@@ -84,9 +84,27 @@ async function loadSharedModel() {
   return import(`data:text/javascript;base64,${code}`)
 }
 
+/** The wizard's pure view model (issue #86), bundled the same way. */
+async function loadWizardModel() {
+  const esbuild = require('esbuild')
+  const result = await esbuild.build({
+    entryPoints: [join(ROOT, 'src/client', 'hub-wizard-model.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    target: 'node22',
+    write: false,
+    logLevel: 'silent',
+  })
+  const file = result.outputFiles[0]
+  const code = Buffer.from(file.text, 'utf8').toString('base64')
+  return import(`data:text/javascript;base64,${code}`)
+}
+
 const model = await loadPanelModel()
 const hub = await loadHubModel()
 const shared = await loadSharedModel()
+const wizard = await loadWizardModel()
 
 // ---------------------------------------------------------------------------
 // 1. The built bundle: one registration, in the session-scoped View slot
@@ -122,21 +140,18 @@ test('client bundle registers the book hub pair: sidebar.panellist icon + keyed 
   assert.equal((text.match(/slots\.register\(/g) ?? []).length, 3, 'three registrations: view, icon, body')
 })
 
-test('the hub keeps the wizard disabled and opens the shared page for real', () => {
+test('both hub entry points are real: no disabled placeholder is left', () => {
   const text = readBundle()
-  // A clickable button that does nothing is worse than a disabled one, so the
-  // entry #86 still owns must be disabled AND carry its release note.
-  for (const marker of ['新开书', '0.1.0 后续项']) {
-    assert.ok(text.includes(marker), `bundle is missing the hub placeholder wording: ${marker}`)
-  }
-  assert.match(text, /title: HUB_PLACEHOLDER_NOTE, disabled: true|title: HUB_PLACEHOLDER_NOTE,\s*disabled/, 'the placeholder is really disabled')
-  assert.ok(text.includes('共享内容'), 'the shared-content entry is still labelled')
-  // #87 is not a placeholder any more: it is a page. Exactly one entry stays
-  // disabled (the wizard), and the shared page is a shipped component.
-  assert.equal((text.match(/Placeholder, \{/g) ?? []).length, 1, 'one disabled entry: the wizard')
+  // #86 made 新开书 real and #87 made 共享内容 real, so the release-note
+  // placeholder component is gone from the hub entirely — a UI that keeps a
+  // dead button and a live one side by side is the worst of both.
+  assert.equal((text.match(/Placeholder, \{/g) ?? []).length, 0, 'no disabled placeholder remains')
+  assert.ok(text.includes('新开书'), 'the new-book entry is labelled')
+  assert.ok(text.includes('共享内容'), 'the shared-content entry is labelled')
+  assert.ok(text.includes('HubWizard'), 'the wizard component is mounted')
   assert.equal((text.match(/SharedLibraryView, \{/g) ?? []).length, 1, 'the shared page is mounted, not stubbed')
   assert.ok(text.includes('还没有书'), 'the empty state is shipped, not just the loaded list')
-  assert.ok(text.includes('用下面的「新开书」创建（#86 提供）'), 'the empty state points at the wizard that will fill it')
+  assert.ok(text.includes('用上面的「新开书」创建'), 'the empty state points at the wizard that fills it')
   assert.ok(text.includes('刷新'), 'the hub refreshes on a user action, never on a timer')
   assert.equal(/setInterval/.test(text), false, 'no polling: every answer costs a judgment per book (ADR-0010 D8)')
 })
@@ -150,6 +165,25 @@ test('the client bundle ships the read-only shared-content page (issue #87)', ()
   assert.ok(text.includes('数据来源：内存扫描，未写回 index.json'), 'the rescan source says it was not written back')
   assert.ok(text.includes('返回书单'), 'the page can go back to the book list')
   assert.equal(/setInterval/.test(text), false, 'the shared page never polls: one read per open + 刷新')
+})
+
+test('the new-book wizard ships its two hub routes and still no polling (issue #86)', () => {
+  const text = readBundle()
+  // ADR-0010 D3/D4: plan is the only route carrying a path (`candidate`), apply
+  // carries a one-shot token. Both are sessionless, like every hub call.
+  assert.ok(text.includes('/hub/plan'), 'the wizard plans over the hub channel')
+  assert.ok(text.includes('/hub/apply'), 'the wizard applies over the hub channel')
+  assert.ok(text.includes('planToken'), 'apply sends a plan token, not a path')
+  assert.ok(text.includes('outsideRegistry'), 'a directory outside the registry needs the explicit second confirmation')
+  assert.ok(text.includes('confirm: true'), 'the apply body states the confirmation the Host demands')
+  assert.equal(/setInterval/.test(text), false, 'the wizard adds no polling loop')
+  // Degradation A (ADR-0010 D4) is shipped as wording, not as a fake navigation.
+  assert.ok(text.includes('书已就绪'), 'the done card says the book is ready')
+  assert.ok(text.includes('新会话'), 'and names the only remaining manual step')
+  assert.ok(text.includes('导入已有书'), 'importing an existing book is explained as the same flow')
+  // A picker that cannot be resolved must not leave the panel stuck.
+  assert.ok(text.includes('pickDirectory'), 'the user-chosen directory comes from uiWorkspace.pickDirectory')
+  assert.ok(text.includes('目录的绝对路径'), 'there is a manual-path fallback when the picker is absent')
 })
 
 test('client bundle talks only to the private internal channel', () => {
@@ -199,7 +233,7 @@ test('the stale-build banner sits above the tabs, so every gate state shows it',
 })
 
 test('client sources draw every colour from theme tokens', () => {
-  for (const file of ['index.tsx', 'hub.tsx', 'hub-shared.tsx']) {
+  for (const file of ['index.tsx', 'hub.tsx', 'hub-shared.tsx', 'hub-wizard.tsx']) {
     const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')
     assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(source), false, `no hardcoded colour literals in ${file} (AGENTS.md §6)`)
     assert.ok(source.includes('var(--dsw-alias-'), `colours come from --dsw-alias-* tokens in ${file}`)
@@ -209,7 +243,7 @@ test('client sources draw every colour from theme tokens', () => {
 })
 
 test('panel-model has no runtime coupling to the channel', () => {
-  for (const file of ['panel-model.ts', 'hub-model.ts', 'hub-shared-model.ts']) {
+  for (const file of ['panel-model.ts', 'hub-model.ts', 'hub-shared-model.ts', 'hub-wizard-model.ts']) {
     const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')
     for (const match of source.matchAll(/import\s+(type\s+)?[^'\n]*from\s+'\.\/internal\.js'/g)) {
       assert.ok(match[1] !== undefined, `${file} may only \`import type\` from ./internal.js (it stays pure)`)
@@ -689,4 +723,123 @@ test('a refused shared call becomes a sentence, not a bare code', () => {
   assert.equal(describeSharedError(undefined), '共享内容通道没有返回内容')
   const failed = readSharedLibrary({ ok: false, status: 200, error: { code: 'SHARED_UNAVAILABLE' } })
   assert.equal(failed.status, 'error')
+})
+
+// ---------------------------------------------------------------------------
+// 5. The wizard's view model (issue #86): four outcomes, one row merge
+// ---------------------------------------------------------------------------
+
+test('readHubPlan separates "ready" from "anchor needed", "blocked" and "refused"', () => {
+  const { readHubPlan, isAnchorRequired, anchorConfirmation } = wizard
+  const ready = readHubPlan({
+    ok: true,
+    status: 200,
+    value: { path: '/books/new', anchor: 'outside-registry', canApply: true, planToken: 'tok-1', willCreate: ['git-init'] },
+  })
+  assert.equal(ready.status, 'ready')
+  assert.equal(ready.token, 'tok-1')
+  assert.equal(ready.path, '/books/new')
+
+  // A registered book: no token, so "blocked" — never a confirm card.
+  const blocked = readHubPlan({
+    ok: true,
+    status: 200,
+    value: { path: '/books/old', anchor: 'registered', alreadyRegistered: true, canApply: false, willCreate: [], hint: '在工作台里打开它' },
+  })
+  assert.equal(blocked.status, 'blocked')
+  assert.match(blocked.message, /已经在书库里/)
+  assert.match(blocked.hint, /工作台/)
+
+  const newer = readHubPlan({ ok: true, status: 200, value: { path: '/books/future', canApply: false, blockedReason: 'newer plugin', hint: '' } })
+  assert.equal(newer.status, 'blocked')
+  assert.match(newer.message, /newer plugin/, 'the Host reason is shown, not replaced by a canned sentence')
+
+  // The second confirmation is its own outcome: the panel must ask again.
+  const anchor = { ok: false, status: 400, error: { code: 'ANCHOR_REQUIRED', path: '/books/new' } }
+  assert.equal(isAnchorRequired(anchor), true)
+  assert.equal(anchorConfirmation(anchor).path, '/books/new')
+  assert.match(anchorConfirmation(anchor).message, /全新的目录|不在任何已打开的工作区/)
+
+  const refused = readHubPlan({ ok: false, status: 403, error: { code: 'PATH_FORBIDDEN' } })
+  assert.equal(refused.status, 'refused')
+  assert.match(refused.message, /盘符根|家目录/)
+})
+
+test('readHubApply returns the degradation-A card and the row, never a fake success', () => {
+  const { readHubApply, doneMessage, appliedTitle } = wizard
+  assert.equal(doneMessage('入山记'), '书已就绪。在左侧工作区「入山记」点「新会话」开始创作')
+
+  const applied = readHubApply(
+    {
+      ok: true,
+      status: 200,
+      value: {
+        path: '/books/new',
+        state: 'usable',
+        registered: true,
+        workspace: { path: '/books/new', title: '入山记' },
+        nextStep: { kind: 'open-new-session', title: '入山记', path: '/books/new', message: '书已就绪。在左侧工作区「入山记」点「新会话」开始创作' },
+      },
+    },
+    '',
+  )
+  assert.equal(applied.status, 'applied')
+  assert.equal(applied.title, '入山记')
+  assert.equal(applied.path, '/books/new')
+  assert.equal(applied.registered, true)
+  assert.match(applied.message, /书已就绪/)
+
+  // The Host could not register the workspace: say so, keep the book.
+  const unregistered = readHubApply(
+    { ok: true, status: 200, value: { path: '/books/new', state: 'usable', registered: false, hint: '在左侧手动打开该目录' } },
+    '我起的名字',
+  )
+  assert.equal(unregistered.registered, false)
+  assert.equal(unregistered.title, '我起的名字', 'what the user typed wins over the directory name')
+  assert.match(unregistered.hint, /手动打开/)
+
+  const refused = readHubApply({ ok: false, status: 409, error: { code: 'TOKEN_CONSUMED' } })
+  assert.equal(refused.status, 'refused')
+  assert.match(refused.message, /用过了/)
+
+  assert.equal(appliedTitle('/books/新书', {}, ''), '新书', 'the last path segment is the fallback title')
+})
+
+test('mergeHubRow updates the row in place or appends, and never refetches', () => {
+  const { mergeHubRow } = wizard
+  const books = [
+    { workspaceId: 'ws-a', path: String.raw`D:\novels\old`, title: '书甲', state: 'usable', dirStatus: 'ok' },
+    { workspaceId: 'ws-b', path: String.raw`D:\novels\notyet`, title: '空目录', state: 'needs-setup', notABook: true, dirStatus: 'ok' },
+  ]
+  const replaced = mergeHubRow(books, { path: String.raw`d:\novels\NOTYET`, title: '新写的书', state: 'usable' })
+  assert.equal(replaced.length, 2, 'a known directory is replaced, not duplicated (case-insensitive)')
+  assert.equal(replaced[1].path, String.raw`d:\novels\NOTYET`, 'the applied canonical path is what the row shows')
+  assert.equal(replaced[1].title, '新写的书')
+  assert.equal(replaced[1].state, 'usable')
+  assert.equal(replaced[1].workspaceId, 'ws-b', 'the registration id survives the merge')
+  assert.equal('notABook' in replaced[1], false, 'the "not a book yet" marker is gone once it is a book')
+  assert.equal(replaced[0], books[0], 'the untouched row is the same object: no re-projection of the list')
+
+  // A trailing separator is not a different directory.
+  assert.equal(mergeHubRow([{ path: '/books/x' }], { path: '/books/x/', title: 'x', state: 'usable' }).length, 1)
+
+  const appended = mergeHubRow(books, { path: String.raw`D:\novels\brand-new`, title: '新的书', state: 'usable' })
+  assert.equal(appended.length, 3)
+  assert.equal(appended[2].title, '新的书')
+  assert.equal(appended[2].dirStatus, 'ok')
+  assert.deepEqual(appended[2].missing, [], 'a freshly built book lists nothing missing')
+})
+
+test('the wizard names every action it will perform, and knows when a title is required', () => {
+  const { describeWillCreate, planNeedsTitle, defaultTitleFor, HUB_WIZARD_TEXTS } = wizard
+  const lines = describeWillCreate({ willCreate: ['git-init', 'create-dir', 'create-gitkeep', 'create-meta', 'create-gitignore'] })
+  assert.equal(lines.length, 5, 'every announced action gets a sentence')
+  assert.match(lines[0], /git init/)
+  assert.match(lines[3], /inkflow\.json/)
+  assert.match(lines[4], /gitignore/)
+  assert.equal(planNeedsTitle({ willCreate: ['git-init', 'create-meta'] }), true)
+  assert.equal(planNeedsTitle({ willCreate: ['create-dir'] }), false)
+  assert.equal(defaultTitleFor(String.raw`D:\小说\入山记`), '入山记')
+  assert.match(HUB_WIZARD_TEXTS.anchorBody, /不会覆盖/, 'the second confirmation promises only additive writes')
+  assert.equal(wizard.readHubApply({ ok: false, status: 400, error: { code: 'META_TITLE_REQUIRED' } }).status, 'refused')
 })

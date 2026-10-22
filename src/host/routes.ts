@@ -41,8 +41,9 @@
  * the Host workspace registry instead (see `hub.ts`) and are dispatched before
  * the session chain. They reuse every guard above except the session itself:
  * loopback host/origin/peer, per-route methods, the path-parameter ban, the body
- * cap. A hub write route (none yet: `plan`/`apply` arrive with #86) additionally
- * requires a same-origin `Origin` (ADR-0010 D6 #6).
+ * cap, and a body-field allowlist per route. A hub write route (`plan`/`apply`,
+ * ADR-0010 D4) additionally requires an `Origin` that is the SAME ORIGIN as
+ * `Host`, not merely loopback (ADR-0010 D6 #6).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -51,6 +52,7 @@ import type { HostContext } from './context.js'
 import { sharedDir } from './config.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
 import { buildHubShared } from './hub-shared.js'
+import { hubApply, hubPlan } from './hub-wizard.js'
 import {
   INTERNAL_PREFIX,
   MAX_INTERNAL_BODY_BYTES,
@@ -346,8 +348,8 @@ function matchRoute(path: string): RouteMatch | undefined {
 //     the same panel may be opened from a session page, and a stray query
 //     argument must not turn a global list into a session-scoped one;
 //   * no session is resolved, so no `NO_SESSION_CONTEXT` is possible here;
-//   * a write route (there is none yet — `plan`/`apply` arrive with #86) must
-//     carry a same-origin `Origin`, not merely a loopback one (ADR-0010 D6 #6).
+//   * a write route (`plan`/`apply`) must carry an `Origin` that is the SAME
+//     ORIGIN as `Host`, not merely a loopback one (ADR-0010 D6 #6).
 // ---------------------------------------------------------------------------
 
 interface HubRouteInput {
@@ -369,13 +371,22 @@ interface HubRoute {
   readonly name: string
   readonly pattern: RegExp
   readonly methods: readonly HttpMethod[]
+  /**
+   * The body fields this route accepts. Anything else is 400
+   * `UNEXPECTED_BODY_FIELD`: the wizard takes exactly one path-bearing field
+   * (`candidate`, plan only) and one credential (`planToken`, apply only), so a
+   * client cannot smuggle a directory or a future knob past the guards.
+   */
+  readonly body?: readonly string[]
   readonly handle: (input: HubRouteInput) => Promise<RouteReply> | RouteReply
 }
 
 /**
- * The hub's capability whitelist (ADR-0010 D3). Two read routes today (`books`,
- * `shared`); the wizard (`plan`/`apply`) arrives with #86 and must declare its
- * own verbs here — never a blanket write switch.
+ * The hub's capability whitelist (ADR-0010 D3/D4). Two read routes (`books`,
+ * `shared`), and the wizard's two POST steps (`plan`, `apply`) which
+ * additionally require an `Origin` that is the SAME ORIGIN as `Host` (D6 #6) —
+ * see `handleHubRequest`. Every capability declares its own verb here; there is
+ * never a blanket write switch.
  */
 const HUB_ROUTES: readonly HubRoute[] = [
   {
@@ -387,6 +398,26 @@ const HUB_ROUTES: readonly HubRoute[] = [
       if (result.ok) return { status: 200, body: ok(result.value) }
       return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
     },
+  },
+  {
+    // The only route on this channel that accepts a PATH — and only as
+    // `candidate`, because `root`/`path`/`cwd`/`workspace`/`projectRoot` are
+    // refused before any handler runs. Read-only: no token is issued for a
+    // book the user already has (ADR-0010 D4 step 2).
+    name: 'hub-plan',
+    pattern: /^\/hub\/plan$/,
+    methods: ['POST'],
+    body: ['candidate', 'outsideRegistry', 'title'],
+    handle: ({ ctx, body }) => hubPlan(ctx, body),
+  },
+  {
+    // The write route names NO path at all: a one-shot token plus `confirm`
+    // (ADR-0010 D3 "为什么 plan 要一个路径、而 apply 不要").
+    name: 'hub-apply',
+    pattern: /^\/hub\/apply$/,
+    methods: ['POST'],
+    body: ['planToken', 'confirm', 'title'],
+    handle: ({ ctx, body }) => hubApply(ctx, body),
   },
   {
     // The shared library (ADR-0010 D5, issue #87): read-only browsing of
@@ -414,9 +445,31 @@ function matchHubRoute(path: string): HubRoute | undefined {
   return undefined
 }
 
-/** Whether the request is for the hub channel at all (`/hub`, `/hub/…`). */
+/** `/hub` is the segment after `/inkflow/internal`; the route table lives here. */
 function isHubPath(internalPath: string): boolean {
   return internalPath === HUB_SEGMENT || internalPath.startsWith(`${HUB_SEGMENT}/`)
+}
+
+/**
+ * Same-origin, not merely loopback (ADR-0010 D6 #6).
+ *
+ * The session channel's write routes only need a loopback `Origin`, because the
+ * Host derives their path from a session it resolved itself. A hub WRITE is
+ * different: `plan` takes a directory the user picked and `apply` spends the
+ * token it minted, so "another page on this machine" must not be able to drive
+ * it — only the page the Host is serving (same scheme-less authority, port
+ * included).
+ */
+function isSameOrigin(origin: string, host: string): boolean {
+  if (origin === '' || host === '') return false
+  let parsed: URL
+  try {
+    parsed = new URL(origin)
+  } catch {
+    // `Origin: null` (sandboxed frame / file://) is not a page the Host serves.
+    return false
+  }
+  return parsed.host.toLowerCase() === host.trim().toLowerCase()
 }
 
 async function handleHubRequest(input: {
@@ -426,8 +479,9 @@ async function handleHubRequest(input: {
   internalPath: string
   url: URL
   origin: string
+  host: string
 }): Promise<void> {
-  const { deps, req, res, internalPath, url, origin } = input
+  const { deps, req, res, internalPath, url, origin, host } = input
 
   // A path parameter is refused before the route is even matched: no handler and
   // no filesystem access may run for it (ADR-0010 D6 #5).
@@ -449,12 +503,25 @@ async function handleHubRequest(input: {
     return
   }
 
-  // Write guards (ADR-0010 D6 #6/#7). Unreachable while the whitelist has only
-  // read routes; kept adjacent to the whitelist so #86's POST routes cannot ship
-  // without them.
+  // Write guards (ADR-0010 D6 #6/#7): the hub's POST routes are `plan`/`apply`.
+  // Read routes stay usable without an `Origin` — a same-origin `fetch` from the
+  // panel may omit it — but a write must come from the page the Host serves.
   if (method !== 'GET') {
     if (origin === '') {
-      sendJson(res, 403, failure('forbidden-origin', { reason: 'origin-required', hint: 'a hub write must carry a loopback Origin' }))
+      sendJson(res, 403, failure('forbidden-origin', { reason: 'origin-required', hint: 'a hub write must carry the hosting page’s Origin' }))
+      return
+    }
+    if (!isSameOrigin(origin, host)) {
+      sendJson(
+        res,
+        403,
+        failure('forbidden-origin', {
+          reason: 'origin-mismatch',
+          origin,
+          host,
+          hint: 'a hub write must be same-origin with the Host, not merely loopback',
+        }),
+      )
       return
     }
     if (!isJsonContentType(headerValue(req, 'content-type'))) {
@@ -481,6 +548,13 @@ async function handleHubRequest(input: {
   if (forbiddenBody !== undefined) {
     sendJson(res, 400, failure('ROOT_PARAM_NOT_ALLOWED', { reason: 'unexpected-path-param', param: forbiddenBody, in: 'body' }))
     return
+  }
+  if (method !== 'GET' && route.body !== undefined) {
+    const unexpected = unexpectedBodyField(parsed.value, route.body)
+    if (unexpected !== undefined) {
+      sendJson(res, 400, failure('UNEXPECTED_BODY_FIELD', { field: unexpected, route: route.name }))
+      return
+    }
   }
 
   const reply = await route.handle({
@@ -530,7 +604,7 @@ export function createHttpHandler(deps: HttpDeps) {
     // The hub channel is dispatched by its own table, before the session chain:
     // it takes no session and therefore never reaches `NO_SESSION_CONTEXT`.
     if (isHubPath(internalPath)) {
-      await handleHubRequest({ deps, req, res, internalPath, url, origin })
+      await handleHubRequest({ deps, req, res, internalPath, url, origin, host })
       return
     }
 

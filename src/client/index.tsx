@@ -37,6 +37,7 @@ import type { InternalResult } from './internal.js'
 import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
 import { HubIcon, HubView } from './hub.js'
+import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
 import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
 import {
   EMPTY_MESSAGES,
@@ -697,6 +698,11 @@ export const inject = ['slots']
  *     wizard (#86/#87).
  */
 export function apply(ctx: ClientContext): void {
+  // The hub's wizard is the only Client surface that needs a SERVICE (the
+  // directory picker), not a slot: hand it over before either hub entry
+  // registers, so the first click already has it (issue #86 / ADR-0010 E6).
+  setHubDirectoryPicker(createDirectoryPicker((name) => ctx.get?.(name)))
+
   ctx.effect(() =>
     ctx.slots.inject('conversation.view', () =>
       ctx.slots.register({ name: 'conversation.view', id: 'inkflow', order: 40, label: () => 'InkFlow' }, InkflowView),

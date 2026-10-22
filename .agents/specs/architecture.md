@@ -95,9 +95,9 @@
 | 信任锚点 | 会话 → 工作区 → 目录 | **工作区注册表**（`workspaceRegistry.list()`）+ 绝对拒绝集；写动作另加一次性 `planToken` |
 | 路径从哪来 | Host 从会话推出 | 读：注册表；写：只有 `planToken`（调用方永远拼不出路径） |
 | `sessionId` | 必需（缺 → `NO_SESSION_CONTEXT`） | **不适用**：不读、不要求；带了也忽略 |
-| 方法 | 逐路由声明 | 逐路由声明（`/hub/books` 只有 GET） |
-| 写守卫 | 写路由要 loopback `Origin` + JSON | 写路由要 **`Origin` 与 `Host` 同源** + JSON（更严，ADR-0010 D6 #6） |
-| 错误码 | `NO_SESSION_CONTEXT` / 门禁码 | `HUB_UNAVAILABLE`（无注册表）、`ROOT_PARAM_NOT_ALLOWED`（同一个码）、预留 `HUB_CAPABILITY_DENIED` |
+| 方法 | 逐路由声明 | 逐路由声明（`/hub/books` 只有 GET；`/hub/plan`、`/hub/apply` 只有 POST） |
+| 写守卫 | 写路由要 loopback `Origin` + JSON | 写路由要 **`Origin` 与 `Host` 同源（含端口）** + JSON + body 字段白名单（更严，ADR-0010 D6 #6/#7） |
+| 错误码 | `NO_SESSION_CONTEXT` / 门禁码 | `HUB_UNAVAILABLE`（无注册表）、`ROOT_PARAM_NOT_ALLOWED`（同一个码）、向导的 `ANCHOR_REQUIRED` / `TOKEN_*` / `PLAN_CHANGED`、预留 `HUB_CAPABILITY_DENIED` |
 
 `/hub/books` 的投影实现在 `src/host/hub.ts`（不是 `internal.ts`）：每行 `state`/`missing`/`actions` 与工作台、工具**同一份** `inspectProject(root, { recreateIndexDir: false })`，另加 `dirStatus`（注册还在但目录已删）、`counts`（只读**已提交** catalog，缺失即未知）、`notABook`（无 meta 且无内容目录）。成本上限：并发 4、单本 2 s → 该行 `state:'timeout'` 不重试、整次预算 3 s → `truncated`、单次 200 行 → `capped`（ADR-0010 D8）。客户端**不轮询**：打开取一次 + 手动「刷新」。
 
@@ -132,6 +132,31 @@
 - **失败形态更好**：清单坏了只是"这次扫描"；扫描被预算截断只是"这次少列 + `truncated:true`"。两者都不留下半写状态。
 
 **成本上限**：见 [conventions.md](conventions.md) §6.2.2。常量在 `hub-shared.ts` 顶部导出，测试注入而非真的等待 1.5 秒。
+
+#### 4.2.2 向导线（plan → apply）— `src/host/hub-wizard.ts`（唯一的 hub 写面）
+
+```
+用户点「新开书」
+  → Client uiWorkspace.pickDirectory()（能拿到"用户意图目录"的唯一能力，不读内容）
+  → POST /hub/plan {candidate, outsideRegistry?, title?}
+      ① 路径参数禁令：`candidate` 是唯一允许的路径字段，其余路径参数一律 400 ROOT_PARAM_NOT_ALLOWED
+      ② 锚点：注册表命中            → anchor='registered'（回既有状态，不发 token）
+              在注册工作区之内      → anchor='in-workspace'（作用域 = 该工作区）
+              都不命中 + 无 outsideRegistry → 400 ANCHOR_REQUIRED（UI 二次确认后才带 true）
+              都不命中 + outsideRegistry   → anchor='outside-registry'（作用域 = 自身，只剩绝对拒绝集）
+      ③ checkProjectRootScope(canonical, 作用域) → PATH_FORBIDDEN / PATH_OUT_OF_SCOPE
+      ④ inspectProject(root, {recreateIndexDir:false}) + planWorkspace(root)   ← 零写盘
+      ⑤ 签发 planToken（绑定 canonical path + anchor + plan 摘要）
+  → Client 确认卡：canonical path、willCreate[]、notices[]、书名
+  → POST /hub/apply {planToken, confirm: true, title?}
+      confirm 校验（不消耗 token）→ 消耗 token → 重新推导 plan 并比对摘要（PLAN_CHANGED）
+      → applyWorkspace(root, {confirm:true, title, expected: metaFingerprint})
+      → workspaceRegistry.create(path, title)（缺失/抛错 → registered:false + hint）
+      → nextStep（降级 A 文案 + canonical path）
+  → Client 就地更新该书行（不重拉整页、不轮询）
+```
+
+**`planToken` 生命周期**：进程内 `Map`，**一次性**，TTL 5 分钟（`HUB_PLAN_TOKEN_TTL_MS`，测试可注入时钟与 TTL），不落盘；消耗发生在**重新推导 plan 与任何写盘之前**，所以重放必然是 `409 TOKEN_CONSUMED` 且零写盘，目录在 plan 之后被改动则是 `409 PLAN_CHANGED` 且零写盘。token 存储、摘要与两条写路由的业务逻辑都在 `hub-wizard.ts`；`routes.ts` 只做守卫与 `{status, body}` 信封。
 
 ### 4.3 Client 槽位 — `ctx.slots`
 
@@ -361,10 +386,13 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete`） | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError` | HTTP 加固、写作品文件、自己决定是否重建 |
-| `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE` | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
-| `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封；另含**书库路由组** `/hub/*` 的独立分派（无会话，写路由要同源 `Origin`） | 业务规则、写真相文件、解析会话 |
+| `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE`；对外只暴露"列注册表"这一个只读入口（`listRegisteredWorkspaces`），供向导线解析锚点 | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
+| `src/host/hub-wizard.ts` | **新开书向导**（ADR-0010 D4/D6）：`plan`（锚点三级判定 → 路径闸门 → 只读 plan → 签发 token）与 `apply`（消耗 token → 摘要比对 → `applyWorkspace` → `workspaceRegistry.create`）、一次性 `planToken` 存储（TTL 5 分钟、可注入时钟）、`nextStep` 降级 A 文案 | 自己写文件（一律走 `workspace.ts`）、接受 `apply` 的路径、发 token 给已注册目录、commit/配远端 |
+| `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封、body 字段白名单；另含**书库路由组** `/hub/*` 的独立分派（无会话；写路由要求 `Origin` 与 `Host` 同源） | 业务规则、写真相文件、解析会话 |
 | `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 章节树 / 编辑器 / 向导清单）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
-| `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、两个禁用占位入口（#86/#87） | 写动作、轮询、拼路径参数 |
+| `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、「新开书」向导入口（`HubWizard`）、共享内容的禁用占位（#87）、`apply` 成功后**就地合并**书单行 | 写动作本身、轮询、拼路径参数 |
+| `src/client/hub-wizard.tsx` | 新开书向导的视图：`pickDirectory` → plan → 确认卡（`willCreate[]` / `notices[]` / 书名 / `outsideRegistry` 二次确认）→ apply → 降级 A 卡片；目录选择器不可用时退化为手输绝对路径 | 拼第二套规则、跳转/建会话、轮询 |
+| `src/client/hub-wizard-model.ts` | 向导的纯视图模型：`plan` 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填判定、降级 A 文案、`mergeHubRow`（就地更新或追加） | React、网络、IO |
 | `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
 | `src/client/hub-model.ts` | 书库的纯视图模型：徽标（含 `timeout`）、`~/…` 相对化、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案、信封折叠 | React、网络、IO |
 | `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路；`sessionless: true` 只放行 `/hub/*` | 拼路径参数、文件 IO |
@@ -418,7 +446,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | OVK 语义检索（peer / 分块 / 按章重建 / 降级） | 未落地；当前只有 FTS5 | #41 |
 | 写入器之上的提案制（改写正文需确认） | `io.ts` 已落地，提案制未落地 | #45 |
 | 增量重建 / 大文件流式解析 | 未落地 | 随索引 v2 |
-| 书库的新开书向导与共享内容页 | `/hub/plan`、`/hub/apply`、`/hub/shared` 三条路由与两个入口位（「新开书」「共享内容」）均未落地；书库本期只有只读书单 | #86 / #87 |
+| 书库的共享内容页 | `/hub/shared` 与「共享内容」入口位未落地；书单与「新开书」向导已落地 | #87 |
 
 ### 9.2 未验证（已实现但未观测）
 
@@ -426,8 +454,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 |---|---|---|
 | 新 Host 代码在**运行中的 DSH** 里生效 | 未验证（需重启加载新 generation） | 重启后复核工具表 |
 | 面板视觉（四态徽章、章节树、只读正文预览、禁用页签） | 未验证（契约测试打构建产物，未在运行中的 DSH 里看过） | 重启后目视：会话的「对话 / 轨迹」栏第三个页签 InkFlow |
-| 左侧栏书库面板的渲染与选中态 | 未验证：注册形状（`sidebar.panellist` 只渲染图标、`main` 按 `key` 渲染主体、缺 key 会抛错）来自 0.2.1-rc.2 打包产物的代码读取，**没有在运行中的 DSH 里点开过**；`cordis_inspect_query` 的 client/Slots 在本机 10 s 超时 | 重启 DSH 后点左侧栏「InkFlow 书库」图标：书库主体出现、卡片状态与 `inkflow_project_status` 一致、空态与刷新按钮可用、两个占位入口为禁用态 |
+| 左侧栏书库面板的渲染与选中态 | 未验证：注册形状（`sidebar.panellist` 只渲染图标、`main` 按 `key` 渲染主体、缺 key 会抛错）来自 0.2.1-rc.2 打包产物的代码读取，**没有在运行中的 DSH 里点开过**；`cordis_inspect_query` 的 client/Slots 在本机 10 s 超时 | 重启 DSH 后点左侧栏「InkFlow 书库」图标：书库主体出现、卡片状态与 `inkflow_project_status` 一致、空态与刷新按钮可用、「共享内容」为禁用态 |
 | 向导在运行中的 DSH 里的交互（plan → apply、`git init`） | 契约测试全绿（打 `lib/index.js`），未在重启后的会话里跑过 | 重启后手动跑一次全流程 |
+| 书库「新开书」按钮背后的 `uiWorkspace.pickDirectory()` | 未验证：调用形状（返回 `string` / `{path}` / 取消时的形态）与是否存在都是按能力名推断的；Client 侧因此同时实现了返回值归一化与"没有选择器就手输绝对路径"的降级 | 重启后在真实 DSH 里点一次「新开书」：确认选择器弹出、选中后确认卡出现、取消不会把面板卡住 |
 | 59 万字全量重建耗时 | 未验证 | 用真实库基准（当前样例 7 文件 10ms） |
 | 面板的项目来源（会话 → 工作区） | 契约测试全绿（打 `lib/index.js`，含 registry → workingDirectory → header 三级链）；运行中 DSH 未观测 | 重启后在小说会话打开面板，确认 `/inkflow/internal/status` 的 `resolvedFrom` 与 `root` 指向该书 |
 | 增量重建 / 大文件流式解析 | 未做 | P1 |
