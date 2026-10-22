@@ -90,6 +90,24 @@ export type { IndexBuildErrorCode, IndexBuildFailure } from './index-build.js'
 export type { IndexBuildResult } from './indexer.js'
 
 /**
+ * Domain module registry (#101): the seam every 0.2.0 data domain plugs into
+ * (roadmap §2.1 X-5). Exported so the contract tests can assert that the tool
+ * surface is "built-ins + registered modules" without mutating the registry.
+ */
+export { DOMAIN_MODULES, domainTools } from './domains/index.js'
+export type {
+  DomainDatabase,
+  DomainEntityRef,
+  DomainFile,
+  DomainModule,
+  DomainScanInput,
+  DomainScanResult,
+  DomainSchema,
+  DomainTableRows,
+  DomainValidateInput,
+} from './domains/types.js'
+
+/**
  * Index freshness (issue #5): `checkIndexFreshness` is the read-only verdict and
  * `ensureIndex` is the **single** place that decides to rebuild. Exported for
  * embedders and tests the same way `buildIndex` is — the tools and the panel

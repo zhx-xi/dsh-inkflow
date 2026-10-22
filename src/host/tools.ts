@@ -21,6 +21,7 @@ import { ensureIndex } from './index-freshness.js'
 import type { EnsureIndexResult } from './index-freshness.js'
 import { listChapters, readIndexMeta } from './indexer.js'
 import { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
+import { domainTools } from './domains/index.js'
 import type { FileExpectation } from './file-cas.js'
 import { applyWorkspace, planWorkspace } from './workspace.js'
 import type { ProjectProbe, ProjectState, ScopeRejection } from './project.js'
@@ -1181,6 +1182,9 @@ export function buildTools(deps: ToolDeps): ToolDefinition[] {
     chapterWrite,
     chapterMove,
     chapterDelete,
+    // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
+    // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
+    ...domainTools(),
   ]
 }
 
