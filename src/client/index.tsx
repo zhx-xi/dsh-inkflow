@@ -36,6 +36,7 @@ import { fetchInternal, setActiveSessionId, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
 import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
+import { LibraryView } from './library.js'
 import { HubIcon, HubView } from './hub.js'
 import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
 import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
@@ -271,6 +272,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const [detailError, setDetailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [planVisible, setPlanVisible] = useState(false)
+  // Which declared tab is open. Only `available` tabs are switchable, so this
+  // never names a page that does not exist (issue #30 added 设定库).
+  const [tab, setTab] = useState('chapters')
   // New-chapter form (issue #19): title + volume, nothing else.
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -403,26 +407,34 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       <StaleBuildBanner build={build} />
 
       <div style={tabRowStyle}>
-        {PANEL_TABS.map((tab) =>
-          tab.available ? (
-            <span
-              key={tab.id}
+        {PANEL_TABS.map((entry) =>
+          entry.available ? (
+            // A live tab is a real switch between pages that exist in this build.
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => setTab(entry.id)}
+              aria-pressed={tab === entry.id}
               style={{
+                border: 'none',
+                background: 'transparent',
+                color: tab === entry.id ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-secondary)',
                 padding: '6px 4px',
-                borderBottom: '2px solid var(--dsw-alias-label-primary)',
                 fontSize: 12,
+                cursor: 'pointer',
+                borderBottom: tab === entry.id ? '2px solid var(--dsw-alias-label-primary)' : '2px solid transparent',
               }}
             >
-              {tab.label}
-            </span>
+              {entry.label}
+            </button>
           ) : (
             // Disabled on purpose: no page exists yet, so a live tab would be a
             // dead button. The note is the tooltip and the visible sub-label.
             <button
-              key={tab.id}
+              key={entry.id}
               type="button"
               disabled
-              title={tab.note}
+              title={entry.note}
               style={{
                 border: 'none',
                 background: 'transparent',
@@ -432,8 +444,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
                 cursor: 'not-allowed',
               }}
             >
-              {tab.label}
-              <span style={{ ...muted, marginLeft: 4 }}>{tab.note}</span>
+              {entry.label}
+              <span style={{ ...muted, marginLeft: 4 }}>{entry.note}</span>
             </button>
           ),
         )}
@@ -508,6 +520,11 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
             </div>
           ) : null}
         </div>
+      ) : tab === 'library' ? (
+        // Issue #30: the setting library — eight-kind tree, read-only detail and
+        // the problem panel. It talks to its own three routes, so this tab costs
+        // the chapter tree nothing.
+        <LibraryView sessionId={sessionId} />
       ) : (
         <div style={bodyStyle}>
           <div style={columnStyle}>
