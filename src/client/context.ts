@@ -21,9 +21,22 @@
  *     owner props      : inspectCall, viewRequest, openView, completeViewRequest
  *     occupants        : chat (id 'chat', order 0), trajectory (id 'trajectory', 10)
  *
- * `sidebar.panellist` and `main` are ROOT-scoped: they never see a session, so
- * they cannot name the book the panel is about (ADR-0008 D1). This plugin
- * registers none of them.
+ *   sidebar.panellist   kind = list, scope = ROOT (global panel icons)
+ *     register options : id (required), order, label — `label` is the visible
+ *                        text, the accessible name and the collapsed tooltip
+ *     occupant props   : {size, active} — this slot renders the ICON only
+ *     owner            : dsh-client-ui-sidebar, `SidebarRoot` → `PanelRow`
+ *
+ *   main                kind = KEYED, scope = ROOT (the panel body)
+ *     register options : key (required), order — `id` is ignored here
+ *     selection        : `layout.selectPanel(panelId)` uses the same panel id;
+ *                        a missing `main` entry throws "main panel … is not
+ *                        registered" and leaves the current selection alone
+ *
+ * So the root book hub is a PAIR (ADR-0010 D1): the icon in `sidebar.panellist`
+ * and the body in `main`, both keyed `inkflow-hub`. Neither slot sees a session —
+ * which is exactly why the hub reads its data over the no-session hub channel
+ * (ADR-0010 D3) and never names a directory.
  */
 
 import type { ComponentType } from 'react'
@@ -33,6 +46,13 @@ export interface SlotRegisterOptions {
   name: string
   /** Entry key inside that slot; `conversation.view` requires it. */
   id?: string
+  /**
+   * Entry key inside a **keyed** slot (`main`). A list slot such as
+   * `sidebar.panellist` uses `id` instead; `main` ignores `id` entirely, so a
+   * panel registered there without `key` is invisible *and* selecting it throws
+   * ("main panel … is not registered", verified on 0.2.1-rc.2).
+   */
+  key?: string
   order?: number
   label?: string | (() => string)
 }

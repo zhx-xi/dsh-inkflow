@@ -756,3 +756,48 @@ test('internal channel: /status omits titleSuspicious for an ordinary title', as
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 10. The hub branch does not move the session channel (ADR-0010 D3/D7)
+//
+// The hub is a SEPARATE route group with a separate anchor, so the session
+// routes must keep every property they had: still no `/inkflow/api/*` alias,
+// still a mandatory session, still `NO_SESSION_CONTEXT` when it cannot be
+// resolved. Conversely the hub must answer with no session at all — and a stray
+// `sessionId` must not turn it into a session route.
+// ---------------------------------------------------------------------------
+
+test('internal channel: the hub route needs no session while the session routes still do', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+
+    // A registry with no sessions in it: the hub can answer, session routes cannot.
+    const harness = createHarness({ workspace: root, workspaces: [{ path: root, sessionIds: [] }] })
+
+    const hubWithoutSession = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/books` }))
+    assert.equal(hubWithoutSession.status, 200)
+    assert.equal(hubWithoutSession.json.ok, true, 'the hub is the no-session channel')
+    assert.equal(hubWithoutSession.json.value.books.length, 1)
+
+    const hubWithSession = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/books?sessionId=session-1` }))
+    assert.equal(hubWithSession.status, 200, 'a sessionId must not be required, refused or interpreted here')
+    assert.equal(hubWithSession.json.ok, true)
+
+    // The same profile and request shape on a SESSION route: unchanged behaviour.
+    const status = await internalCall(harness, '/status', { sessionId: null })
+    assert.equal(status.status, 200)
+    assert.equal(status.json.error.code, 'NO_SESSION_CONTEXT', 'session routes still refuse to guess a book')
+
+    // The old prefix and undeclared hub paths stay 404 (the hub added no alias).
+    for (const url of ['/inkflow/api/status', '/inkflow/api/hub/books']) {
+      const gone = await callRoute(harness, fakeRequest({ url }))
+      assert.equal(gone.status, 404, `${url} must stay gone`)
+    }
+    const unknownHub = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/plan` }))
+    assert.equal(unknownHub.status, 404, 'a hub route this issue does not declare answers 404, not 405')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

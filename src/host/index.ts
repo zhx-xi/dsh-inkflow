@@ -158,6 +158,22 @@ export { inspectProject } from './project.js'
 export type { ProjectProbe, ProjectState } from './project.js'
 
 /**
+ * Book hub (ADR-0010, issue #85): the no-session projection of the workspace
+ * registry. Exported because the cost contract — four judgments at a time, 2 s
+ * per book, 3 s budget, 200 rows — is only testable with an injected probe, and
+ * because "which books does the hub see" must be answerable without a browser.
+ */
+export { HUB_BOOK_TIMEOUT_MS, HUB_CONCURRENCY, HUB_MAX_BOOKS, HUB_SEGMENT, HUB_TOTAL_BUDGET_MS, buildHubBooks } from './hub.js'
+export type {
+  HubBookCounts,
+  HubBookRow,
+  HubBookState,
+  HubBooksOptions,
+  HubBooksResult,
+  HubBooksValue,
+} from './hub.js'
+
+/**
  * GBK mojibake detection (issue #89): a pure function over the title text, so the
  * tests can pin the precision bar (genuine Chinese/Japanese/emoji must not trip
  * it) without building a project on disk.

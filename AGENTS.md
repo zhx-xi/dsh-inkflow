@@ -94,7 +94,7 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 |---|---|---|
 | 1 | `cordis.patch.yml` 漏 `- insert:` | 新增行一律写在 `- insert:` 下（漏了整条静默丢弃） |
 | 2 | 改完 `lib/` 直接测 | HMR 不热替换已加载插件，必须重启 DSH；面板出现 stale build 警告条（或启动日志说磁盘有更新构建）时先重启——刷新面板不会生效 |
-| 3 | 面板指错书 / 有图标没页面 | 面板入口用 session 作用域的 `conversation.view`；root 插槽拿不到工作区，不能靠"上次打开的书"猜（[ADR-0008](.agents/adrs/0008-panel-data-channel.md)） |
+| 3 | 面板指错书 / 有图标没页面 | 入口按职责分两处：**书库** = root 的 `sidebar.panellist`（图标）+ `main`（主体，按 `key` 注册，缺 key 点击即抛错），**创作工作台** = session 的 `conversation.view`（[ADR-0010](.agents/adrs/0010-book-hub-entry.md)）。root 插槽拿不到工作区，书库的书单只能来自工作区注册表，不能靠"上次打开的书"猜（[ADR-0008](.agents/adrs/0008-panel-data-channel.md) D1 对工作台仍成立） |
 | 4 | Windows 写 BOM | 读 `inkflow.json`/frontmatter 前剥 BOM |
 | 5 | 给索引写 `ALTER TABLE` | 索引是缓存：改 schema 版本号 → 删库重建 |
 | 6 | 把证据/过程稿写进仓库 | 证据 → issue/PR comment；仓库只留手册与规范 |

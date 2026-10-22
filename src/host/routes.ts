@@ -35,11 +35,20 @@
  * keep working without `Origin` because a same-origin `fetch` from the panel may
  * omit it. Anything that writes goes through `chapters.ts`, never through this
  * file: see `internal.ts` for the domain mapping and the CAS plumbing.
+ *
+ * THE HUB CHANNEL IS SEPARATE (`/inkflow/internal/hub/*`, ADR-0010 D3): the
+ * root-scoped book hub has no session, so those routes take their anchor from
+ * the Host workspace registry instead (see `hub.ts`) and are dispatched before
+ * the session chain. They reuse every guard above except the session itself:
+ * loopback host/origin/peer, per-route methods, the path-parameter ban, the body
+ * cap. A hub write route (none yet: `plan`/`apply` arrive with #86) additionally
+ * requires a same-origin `Origin` (ADR-0010 D6 #6).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { HostContext } from './context.js'
+import { HUB_SEGMENT, buildHubBooks } from './hub.js'
 import {
   INTERNAL_PREFIX,
   MAX_INTERNAL_BODY_BYTES,
@@ -322,6 +331,142 @@ function matchRoute(path: string): RouteMatch | undefined {
   return undefined
 }
 
+// ---------------------------------------------------------------------------
+// The hub channel: `/inkflow/internal/hub/*` — no session, no path (ADR-0010 D3)
+//
+// A root-scoped panel has no session, so these routes deliberately do NOT use
+// the session chain above. Their anchor is the Host workspace registry plus the
+// absolute refusal set (ADR-0010 D6), and the browser still names nothing: the
+// same path-parameter ban applies, so `?root=`/`{path}` is a 400 before any
+// filesystem access. What is different, and stays different on purpose:
+//
+//   * no `sessionId` is required, and one that arrives is ignored (not refused):
+//     the same panel may be opened from a session page, and a stray query
+//     argument must not turn a global list into a session-scoped one;
+//   * no session is resolved, so no `NO_SESSION_CONTEXT` is possible here;
+//   * a write route (there is none yet — `plan`/`apply` arrive with #86) must
+//     carry a same-origin `Origin`, not merely a loopback one (ADR-0010 D6 #6).
+// ---------------------------------------------------------------------------
+
+interface HubRouteInput {
+  ctx: HostContext
+  version: string
+  method: HttpMethod
+  query: URLSearchParams
+  body: JsonRecord
+}
+
+interface HubRoute {
+  readonly name: string
+  readonly pattern: RegExp
+  readonly methods: readonly HttpMethod[]
+  readonly handle: (input: HubRouteInput) => Promise<RouteReply> | RouteReply
+}
+
+/**
+ * The hub's capability whitelist (ADR-0010 D3). One read route today; the
+ * wizard (`plan`/`apply`) and the shared library arrive with #86/#87 and must
+ * declare their own verbs here — never a blanket write switch.
+ */
+const HUB_ROUTES: readonly HubRoute[] = [
+  {
+    name: 'hub-books',
+    pattern: /^\/hub\/books$/,
+    methods: ['GET'],
+    handle: async ({ ctx, version }) => {
+      const result = await buildHubBooks(ctx, { pluginVersion: version })
+      if (result.ok) return { status: 200, body: ok(result.value) }
+      return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
+    },
+  },
+]
+
+function matchHubRoute(path: string): HubRoute | undefined {
+  for (const route of HUB_ROUTES) {
+    if (route.pattern.test(path)) return route
+  }
+  return undefined
+}
+
+/** Whether the request is for the hub channel at all (`/hub`, `/hub/…`). */
+function isHubPath(internalPath: string): boolean {
+  return internalPath === HUB_SEGMENT || internalPath.startsWith(`${HUB_SEGMENT}/`)
+}
+
+async function handleHubRequest(input: {
+  deps: HttpDeps
+  req: IncomingMessage
+  res: ServerResponse
+  internalPath: string
+  url: URL
+  origin: string
+}): Promise<void> {
+  const { deps, req, res, internalPath, url, origin } = input
+
+  // A path parameter is refused before the route is even matched: no handler and
+  // no filesystem access may run for it (ADR-0010 D6 #5).
+  const forbiddenQuery = findPathParam(url.searchParams.entries())
+  if (forbiddenQuery !== undefined) {
+    sendJson(res, 400, failure('ROOT_PARAM_NOT_ALLOWED', { reason: 'unexpected-path-param', param: forbiddenQuery, in: 'query' }))
+    return
+  }
+
+  const route = matchHubRoute(internalPath)
+  if (route === undefined) {
+    sendJson(res, 404, failure('not-found', { path: internalPath }))
+    return
+  }
+
+  const method = (req.method ?? 'GET').toUpperCase()
+  if (!isHttpMethod(method) || !route.methods.includes(method)) {
+    sendJson(res, 405, failure('method-not-allowed', { method, route: route.name }), { allow: route.methods.join(', ') })
+    return
+  }
+
+  // Write guards (ADR-0010 D6 #6/#7). Unreachable while the whitelist has only
+  // read routes; kept adjacent to the whitelist so #86's POST routes cannot ship
+  // without them.
+  if (method !== 'GET') {
+    if (origin === '') {
+      sendJson(res, 403, failure('forbidden-origin', { reason: 'origin-required', hint: 'a hub write must carry a loopback Origin' }))
+      return
+    }
+    if (!isJsonContentType(headerValue(req, 'content-type'))) {
+      sendJson(
+        res,
+        415,
+        failure('unsupported-media-type', { expected: 'application/json', hint: 'a hub write must send a JSON object body' }),
+      )
+      return
+    }
+  }
+
+  const body = await readBody(req)
+  if (!body.ok) {
+    sendJson(res, 413, failure('payload-too-large', { limitBytes: MAX_INTERNAL_BODY_BYTES }))
+    return
+  }
+  const parsed = parseBody(body.text)
+  if (!parsed.ok) {
+    sendJson(res, 400, failure('invalid-body', { hint: 'send a JSON object, or no body at all' }))
+    return
+  }
+  const forbiddenBody = findPathParamInBody(parsed.value)
+  if (forbiddenBody !== undefined) {
+    sendJson(res, 400, failure('ROOT_PARAM_NOT_ALLOWED', { reason: 'unexpected-path-param', param: forbiddenBody, in: 'body' }))
+    return
+  }
+
+  const reply = await route.handle({
+    ctx: deps.ctx,
+    version: deps.version,
+    method,
+    query: url.searchParams,
+    body: parsed.value,
+  })
+  sendJson(res, reply.status, reply.body, reply.headers ?? {})
+}
+
 export function createHttpHandler(deps: HttpDeps) {
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // ---- guards: identity of the peer, then of the page -------------------
@@ -354,6 +499,13 @@ export function createHttpHandler(deps: HttpDeps) {
       return
     }
     const internalPath = path.slice(INTERNAL_PREFIX.length)
+
+    // The hub channel is dispatched by its own table, before the session chain:
+    // it takes no session and therefore never reaches `NO_SESSION_CONTEXT`.
+    if (isHubPath(internalPath)) {
+      await handleHubRequest({ deps, req, res, internalPath, url, origin })
+      return
+    }
 
     // A path parameter is refused before the route is even matched: no handler
     // and no filesystem access may run for it (ADR-0008 D4).
