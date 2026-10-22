@@ -13,16 +13,21 @@
  * when the panel opens and again when the user presses 刷新: no polling, because
  * every answer costs one judgment per book (ADR-0010 D8).
  *
- * WHAT THIS ISSUE DOES NOT DO: no 新开书 wizard (#86) and no shared-content page
- * (#87). Both are rendered disabled with their release note; the two write
- * actions themselves are not stubbed with dead code.
+ * WHAT THE WIZARD ADDS (#86): the 「新开书」 button is real now. It opens
+ * `HubWizard`, which asks the Host to plan a directory, shows the plan, and
+ * applies it after confirmation. A successful apply merges the new book into
+ * this list IN PLACE — no refetch, because the host's answer already carries the
+ * row (ADR-0010 D8 "apply 成功后就地更新该行").
+ *
+ * WHAT IS STILL NOT HERE: the shared-content page (#87). It stays a disabled
+ * placeholder with its release note; a button that looks clickable and does
+ * nothing is worse than a disabled one.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
 import { fetchInternal } from './internal.js'
 import {
-  HUB_NEW_BOOK_LABEL,
   HUB_PLACEHOLDER_NOTE,
   HUB_SHARED_LABEL,
   HUB_TEXTS,
@@ -35,6 +40,9 @@ import {
   rowTitle,
 } from './hub-model.js'
 import type { HubBadgeTone, HubBookRow, HubBooksValue, HubState } from './hub-model.js'
+import { HubWizard } from './hub-wizard.js'
+import type { HubAppliedRow } from './hub-wizard.js'
+import { HUB_WIZARD_LABEL, mergeHubRow } from './hub-wizard-model.js'
 
 // ---------------------------------------------------------------------------
 // Theme tokens only: every visible colour comes from --dsw-alias-* (AGENTS.md §6)
@@ -136,7 +144,7 @@ function BookCard({ row, home }: { row: HubBookRow; home: string | null }) {
   )
 }
 
-/** A disabled entry point: the wizard (#86) and the shared library (#87) are not here yet. */
+/** The shared-content entry point: reserved for #87, disabled with its release note. */
 function Placeholder({ label }: { label: string }) {
   return (
     <button type="button" style={disabledButtonStyle} title={HUB_PLACEHOLDER_NOTE} disabled>
@@ -151,6 +159,8 @@ export function HubView() {
   const [state, setState] = useState<HubState>(INITIAL)
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
+  /** The wizard is a panel of its own: its confirm card does not belong in the header row. */
+  const [wizardOpen, setWizardOpen] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -171,19 +181,45 @@ export function HubView() {
     setRevision((current) => current + 1)
   }, [])
 
+  /**
+   * The wizard's answer, merged into the list in place (issue #86).
+   *
+   * No refetch: `apply` already returned everything a row needs, and asking the
+   * Host to judge every book again would be exactly the cost ADR-0010 D8 caps.
+   */
+  const applied = useCallback((row: HubAppliedRow) => {
+    setState((current) => {
+      if (current.status !== 'ready') return current
+      const existed = current.books.some((book) => pathKey(book.path) === pathKey(row.path))
+      return {
+        ...current,
+        books: mergeHubRow(current.books, row),
+        total: existed ? current.total : current.total + 1,
+      }
+    })
+  }, [])
+
   return (
     <div style={sheetStyle}>
       <div style={headerStyle}>
         <span style={{ fontWeight: 600 }}>{HUB_TEXTS.title}</span>
         <span style={{ ...muted, fontSize: 12 }}>{loading ? HUB_TEXTS.loading : hubSummary(state)}</span>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          <Placeholder label={HUB_NEW_BOOK_LABEL} />
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button type="button" style={buttonStyle} onClick={() => setWizardOpen(true)} disabled={wizardOpen}>
+            {HUB_WIZARD_LABEL}
+          </button>
           <Placeholder label={HUB_SHARED_LABEL} />
           <button type="button" style={buttonStyle} onClick={refresh} disabled={loading}>
             {HUB_TEXTS.refresh}
           </button>
         </span>
       </div>
+
+      {wizardOpen ? (
+        <div style={cardStyle}>
+          <HubWizard onApplied={applied} onClose={() => setWizardOpen(false)} />
+        </div>
+      ) : null}
 
       {state.status === 'error' ? (
         <div style={{ ...cardStyle, borderColor: 'var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)' }}>
@@ -206,6 +242,11 @@ export function HubView() {
       <div style={{ ...muted, marginTop: 'auto', paddingTop: 6, fontSize: 12 }}>{HUB_TEXTS.readOnly}</div>
     </div>
   )
+}
+
+/** Path identity for the in-place merge: Windows compares case-insensitively. */
+function pathKey(path: string | undefined): string {
+  return typeof path === 'string' ? path.replaceAll('\\', '/').replace(/\/+$/u, '').toLowerCase() : ''
 }
 
 /** The sidebar glyph: an open book, drawn with `currentColor` so the theme decides. */

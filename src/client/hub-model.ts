@@ -30,12 +30,12 @@ export const HUB_PANEL_LABEL = 'InkFlow 书库'
 export const HUB_PANEL_ORDER = 35
 
 /**
- * The two entries this issue only reserves: the new-book wizard (#86) and the
- * shared-content page (#87). They render disabled with this release note —
- * a button that looks clickable and does nothing is worse than a disabled one.
+ * The one entry this issue only reserves: the shared-content page (#87). The
+ * new-book wizard (#86) is a real button now, so only this one stays disabled
+ * with its release note — a button that looks clickable and does nothing is
+ * worse than a disabled one.
  */
 export const HUB_PLACEHOLDER_NOTE = '0.1.0 后续项'
-export const HUB_NEW_BOOK_LABEL = '新开书'
 export const HUB_SHARED_LABEL = '共享内容'
 
 /** The hub's card texts. */
@@ -44,9 +44,9 @@ export const HUB_TEXTS = {
   refresh: '刷新',
   loading: '正在读取书单…',
   emptyTitle: '还没有书',
-  emptyBody: '用下面的「新开书」创建（#86 提供）',
+  emptyBody: '用上面的「新开书」创建，或选中一本已有书的目录把它导入',
   emptyHint: 'DSH 的工作区就是书库的一行：把已存在的小说目录打开成工作区，这里就会出现它。',
-  readOnly: '书库只读：不改目录、不建索引、不修复项目。',
+  readOnly: '书单只读：不改目录、不建索引、不修复项目；书库唯一会写盘的是「新开书」，且只在你确认之后。',
 } as const
 
 /** The four gate states plus the hub's own "no verdict this time". */

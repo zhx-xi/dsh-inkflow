@@ -224,11 +224,21 @@ export function fetchInternal<T>(
  * create/save/move and `DELETE` for a delete. The body is always a JSON object
  * — a delete sends `{}` — because the Host refuses a write without
  * `Content-Type: application/json` (415) before it looks at anything else.
+ *
+ * `sessionless` is the hub exception (ADR-0010 D3/D4): the book hub's
+ * `plan`/`apply` have no session at all. It goes through the SAME `/hub/*` pin
+ * as the read path, so a write cannot use it to reach a session route.
  */
 export function writeInternal<T>(
   path: string,
   body: unknown,
-  options: { method?: 'POST' | 'DELETE'; sessionId?: string | null; signal?: AbortSignal; timeoutMs?: number } = {},
+  options: {
+    method?: 'POST' | 'DELETE'
+    sessionId?: string | null
+    signal?: AbortSignal
+    timeoutMs?: number
+    sessionless?: boolean
+  } = {},
 ): Promise<InternalResult<T>> {
   return requestInternal<T>(path, {
     method: options.method ?? 'POST',
@@ -236,5 +246,6 @@ export function writeInternal<T>(
     sessionId: options.sessionId,
     signal: options.signal,
     timeoutMs: options.timeoutMs,
+    sessionless: options.sessionless,
   })
 }
