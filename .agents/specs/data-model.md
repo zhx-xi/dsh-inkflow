@@ -119,15 +119,21 @@
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
 | `title` | string | ✅ | 事件名 |
-| `worldTime` | object | ✅ | 世界内时间：`{era, year, month, day, precision}`；`precision` ∈ `era`/`year`/`month`/`day` |
-| `narrativeOrder` | number | — | 叙事顺序（书内出现次序），可与 `worldTime` 不一致 |
-| `chapterId` | string | — | 关联章 |
-| `participants` | string[] | — | 参与角色 id |
+| `worldTime` | string | ✅（`confirmed` 时） | 世界内时间，**扁平标量** `YYYY` / `YYYY-MM` / `YYYY-MM-DD`；`precision` 由段数推导（1 段=年、2 段=月、3 段=日），不写字段 |
+| `narrativeOrder` | number | — | 叙事顺序：**书内出现次序（book-wide），不是章内索引**；可与 `worldTime` 不一致（倒叙/回忆是正常写法） |
+| `chapterId` | string | — | 关联章 id。frontmatter 键名 `chapterId`；读兼容旧文件里的 `chapter`；派生索引表 `timeline_events` 的列名是 `chapter`（§4.1） |
+| `participants` | string[] | — | 参与角色 id；空格连接存储、读回成列表（id 内不得含空白 `,` `[` `]`，否则读回成两个 id） |
 | `place` | string | — | 地点（世界观条目 id） |
-| `status` | enum | — | `confirmed`（缺省）/ `pending`（时间未定，进待确认区） |
-| `calendar` | string | — | 历法 id（多纪元历法落地后使用） |
+| `status` | enum | — | `confirmed`（缺省）/ `unconfirmed`（时间未定，进待确认区）；`pending` 只作**读兼容**，等同 `unconfirmed` |
+| `calendar` | string | — | 历法 id（多纪元历法落地后使用，见 [open-questions](open-questions.md) Q7） |
 
-`worldTime` 与 `narrativeOrder` 是两条独立排序轴（双时间轴）；`status: pending` 的事件不参与时间轴排序，只出现在待确认区。
+`worldTime` 与 `narrativeOrder` 是两条独立排序轴（双时间轴）；`status: unconfirmed` 的事件不参与时间轴排序，只出现在待确认区。
+
+两条轴各有一套判定口径（详见 §5 的 I-16–I-19）：
+
+- **`worldTime` 用扁平标量而不是 `{era, year, month, day, precision}` 对象**：项目读取器只支持标量、行内数组与块数组，嵌套映射会被读回成一整个字符串；而对象里 `precision` 要表达的信息恰好是「作者写了几段日期」，因此由段数推导。纪元（`era`）留给多纪元历法（Q7）。
+- **`narrativeOrder` 是书内出现次序**：叙事轴按它全局排序，槽位冲突也在全书一个桶里判（跨章同槽即矛盾）。
+- **叙事顺序与世界顺序不一致本身不是错误**：倒叙/回忆正是双时间轴要表达的东西，重建期报 `TIMELINE_WORLD_TIME_REVERSED` 作为提示，写入侧放行。
 
 ### 3.5 事实账本 `facts/<subject>.md`
 
@@ -168,7 +174,7 @@
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v4（现行，`PRAGMA user_version = 4`）
+### 4.1 v5（现行，`PRAGMA user_version = 5`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
@@ -182,6 +188,7 @@
 | `world_entries` | id | path / title / category / parent / keywords / always / priority | 世界观树、世界书关键词（#26） |
 | `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `relations` | id | path / title / relation_kind / source / target / direction / since / until / chapter | 关系图谱查询与校验（#27） |
+| `timeline_events` | id | path / title / world_time / narrative_order / chapter / participants / status | 双轴排序、待确认区、冲突检测（#28） |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
@@ -244,6 +251,10 @@
 | I-13 | 卷目录名与 `volumeId` / 卷大纲一致 | 拒绝 | `VOLUME_DIR_MISMATCH` |
 | I-14 | catalog 引用的章文件必须存在 | 拒绝 | `CHAPTER_FILE_MISSING` |
 | I-15 | `entities` 投影与各域表同源：同一行事实在两张表里的 `id` / `path` / `title` / `name_key` 必须一致（由同一次 scan、同一事务产出；投影主键为 `(kind, id)`） | 同一 scan 产出，无独立写入 | `ENTITIES_DRIFT` |
+| I-16 | 时间线 `confirmed` 事件必须带 `worldTime`（时间未定就该标 `unconfirmed`，进待确认区） | 拒 | `TIMELINE_TIME_MISSING` |
+| I-17 | 时间线 `worldTime` 必须是真实日期 `YYYY[-MM[-DD]]`（月 13、2 月 30 日都不合法） | 拒 | `TIMELINE_TIME_INVALID` |
+| I-18 | 同一叙事槽位（book-wide `narrativeOrder`，跨章也同槽）不得声明两个不同世界时间 | 拒 | `TIMELINE_ORDER_CONFLICT` |
+| I-19 | 叙事槽位递增时世界时间不得倒退（＝倒叙/回忆，正常写法） | 报（不拒） | `TIMELINE_WORLD_TIME_REVERSED` |
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 

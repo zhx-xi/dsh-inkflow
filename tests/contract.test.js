@@ -224,6 +224,8 @@ test('registers the twelve built-ins, the tools of every registered domain, and 
       'inkflow_project_status',
       'inkflow_relation_list',
       'inkflow_relation_upsert',
+      'inkflow_timeline_list',
+      'inkflow_timeline_upsert',
       'inkflow_volume_create',
       'inkflow_volume_rename',
       'inkflow_world_tree',

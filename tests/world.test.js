@@ -91,11 +91,11 @@ test('world-book fields land in world_entries, and the schema version says so', 
       [],
       'the fixture is a valid world tree',
     )
-    // Pinned literal on purpose: v3 added these columns, and a later domain that adds
-    // its own must bump the constant (v4 is #25's `characters`/`character_states`) —
-    // otherwise `ensureIndex()` calls a stale file fresh and every read degrades to
-    // `INDEX_UNAVAILABLE`. A bump here is the reminder, not an accident.
-    assert.equal(INDEX_SCHEMA_VERSION, 4, 'the world-book columns are a schema bump, not an ALTER')
+    // Pinned literal on purpose: v3 added these columns, v4 was #25 (characters +
+    // character_states), v5 is this branch (timeline_events), and a later domain that
+    // adds its own must bump the constant again — otherwise `ensureIndex()` calls a
+    // stale file fresh and every read degrades to `INDEX_UNAVAILABLE`.
+    assert.equal(INDEX_SCHEMA_VERSION, 5, 'the world-book columns are a schema bump, not an ALTER')
 
     const { DatabaseSync } = await import('node:sqlite')
     const db = new DatabaseSync(join(root, 'index', 'inkflow.db'))

@@ -113,6 +113,24 @@ export type { RelationEdge } from './domains/query.js'
  * domain stays behind `DOMAIN_MODULES`, like every other module.
  */
 export { planRelationUpsert } from './domains/relation-write.js'
+
+/** Timeline planners and views (#28): pure, so both axes are test-driven directly. */
+export {
+  planTimelineUpsert,
+  planTimelineView,
+  timelineConflicts,
+  timelineValidate,
+  parseWorldTime,
+} from './domains/timeline-plan.js'
+export type {
+  TimelineConflict,
+  TimelineConflictCode,
+  TimelineRow,
+  TimelineStatus,
+  TimelineUpsertPlan,
+  WorldTime,
+} from './domains/timeline-plan.js'
+export { listTimelineEvents } from './domains/query.js'
 export type {
   RelationDirection,
   RelationErrorCode,

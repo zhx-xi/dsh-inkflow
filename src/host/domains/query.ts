@@ -17,6 +17,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from '../conventions.js'
 import { entityFromRow } from './entities.js'
 import { splitTerms } from './scan-helpers.js'
+import { statusOf } from './timeline-plan.js'
+import type { TimelineRow } from './timeline-plan.js'
 import type { DomainEntityRef } from './types.js'
 
 export interface EntitySummary extends DomainEntityRef {
@@ -305,6 +307,41 @@ export function listEntityIds(root: string): Set<string> | undefined {
   try {
     const rows = db.prepare('SELECT id FROM entities').all() as unknown as Array<{ id?: unknown }>
     return new Set(rows.map((row) => String(row.id ?? '')).filter((id) => id !== ''))
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Every timeline event, ordered by path so two builds of the same book list them the
+ * same way. The **axes** are not sorted here: `planTimelineView()` owns both orders,
+ * so the world axis and the narrative axis are judged by one pure function (#28)
+ * instead of by an SQL ORDER BY that a caller could forget to ask for.
+ *
+ * Read from `timeline_events` rather than from the `entities` projection: `worldTime`,
+ * `chapter` and `participants` are timeline fields and are deliberately not columns of
+ * the projection (X-1 fixes that column set), so the projection cannot answer "what
+ * happened before some date".
+ */
+export function listTimelineEvents(root: string): TimelineRow[] | undefined {
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const rows = db
+      .prepare('SELECT id, path, title, world_time, narrative_order, chapter, participants, status FROM timeline_events ORDER BY path')
+      .all() as unknown as Array<Record<string, unknown>>
+    return rows.map((row) => ({
+      id: String(row['id'] ?? ''),
+      path: String(row['path'] ?? ''),
+      title: String(row['title'] ?? ''),
+      ...(typeof row['world_time'] === 'string' && row['world_time'] !== '' ? { worldTime: row['world_time'] } : {}),
+      ...(typeof row['narrative_order'] === 'number' ? { narrativeOrder: row['narrative_order'] } : {}),
+      ...(typeof row['chapter'] === 'string' && row['chapter'] !== '' ? { chapter: row['chapter'] } : {}),
+      participants: splitTerms(typeof row['participants'] === 'string' ? row['participants'] : undefined),
+      status: statusOf(typeof row['status'] === 'string' ? row['status'] : undefined),
+    }))
   } catch {
     return undefined
   } finally {
