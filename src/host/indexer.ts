@@ -20,6 +20,7 @@ import { boolField, parseMarkdown, stringField } from './frontmatter.js'
 import type { ProjectProbe } from './project.js'
 import { DOMAIN_MODULES } from './domains/index.js'
 import { ENTITIES_DDL, insertEntities } from './domains/entities.js'
+import { MENTIONS_DDL, chaptersOf, insertMentions, scanMentions } from './domains/mentions.js'
 import { readText } from './domains/scan-helpers.js'
 import type { DomainDatabase, DomainEntityRef, DomainScanResult, DomainTableRows } from './domains/types.js'
 
@@ -319,6 +320,13 @@ CREATE TABLE library_files (path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime 
 CREATE TABLE validation_issues (seq INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, path TEXT, detail TEXT NOT NULL);
 `)
     for (const statement of ENTITIES_DDL) db.exec(statement)
+    // Mentions (#29) are a cross-cutting scan, not a domain: `mentions` owns no
+    // content directory, so its table is created here beside the projection. The rows
+    // are written by `insertMentions` below rather than contributed as a domain table
+    // because they carry no `path`: `applyCandidate()` replaces a table's rows by path,
+    // and `rowsOf()` reads one bucket per table — a whole-book row set with neither
+    // address cannot be patched per file (see `domains/mentions.ts`).
+    for (const statement of MENTIONS_DDL) db.exec(statement)
     for (const module of DOMAIN_MODULES) {
       for (const statement of module.schema().ddl) db.exec(statement)
     }
@@ -336,6 +344,9 @@ CREATE TABLE validation_issues (seq INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT
     const domainScan: DomainScanResult = { tables, entities, issues }
     for (const module of DOMAIN_MODULES) module.schema().insert(domainDatabase, domainScan)
     insertEntities(domainDatabase, entities)
+    // Mentions last, from the rows already scanned: the chapter bodies the chapter
+    // domain parsed and the projection this build just wrote — no file is read twice.
+    insertMentions(domainDatabase, scanMentions(chaptersOf(tables), entities))
 
     const insertLibrary = db.prepare('INSERT INTO library_files (path, size, mtime) VALUES (?, ?, ?)')
     for (const file of libraryFiles) insertLibrary.run(file.path, file.size, file.mtime)

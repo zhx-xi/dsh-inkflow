@@ -23,6 +23,19 @@ export interface ChapterRow {
   status: string
   wordCount: number
   body: string
+  /**
+   * `pov` from frontmatter: who the chapter is told from (data-model §3.1).
+   *
+   * Carried for one reason (#29): a mention scan has to cover the frontmatter too,
+   * and an author's `pov: 清音` is a stronger statement than a name occurring in the
+   * prose. Only this module parses chapter frontmatter, so it is the only place
+   * that can hand it over — re-reading the file later would be a second truth.
+   *
+   * In-memory only: no `chapters.pov` column exists. The mention scan turns the
+   * declaration into an `explicit` row in `entity_mentions`, and that row is what
+   * reads later get; a column would be a second copy of it with no reader.
+   */
+  pov?: string
 }
 
 interface ParsedChapter {
@@ -50,6 +63,7 @@ function parseChapter(path: string, text: string): ParsedChapter {
       status: (CHAPTER_STATUSES as readonly string[]).includes(status ?? '') ? (status as string) : 'draft',
       wordCount: countChars(parsed.body),
       body: parsed.body,
+      pov: stringField(parsed.data, 'pov'),
     },
   }
 }
@@ -99,6 +113,10 @@ export const chapterDomain: DomainModule = {
   schema() {
     return {
       ddl: [
+        // `pov` is deliberately **not** a column: it stays a `ChapterRow` field read
+        // in memory (`chaptersOf()` in `mentions.ts` is its only consumer, via the
+        // scan it receives), because a mention row already records the declaration —
+        // storing it a second time would be a column with no reader.
         'CREATE TABLE chapters (id TEXT PRIMARY KEY, path TEXT NOT NULL, seq INTEGER, title TEXT NOT NULL, volume TEXT, status TEXT NOT NULL, word_count INTEGER NOT NULL)',
         'CREATE INDEX ix_chapters_seq ON chapters(seq)',
         // The body lives only in FTS: it is never read as a row, and keeping it out

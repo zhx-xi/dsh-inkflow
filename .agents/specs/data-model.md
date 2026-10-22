@@ -3,7 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 / 派生索引 / 不写迁移）、[ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 卷章 catalog）、[ADR-0007](../adrs/0007-plugin-shared-library.md)（共享库 / `origin`）、[ADR-0009](../adrs/0009-ovk-semantic-search.md)（语义检索）。
 > **依赖**：[conventions.md](conventions.md)（目录、文件格式、门禁、写入纪律）。
 > **相关 ADR**：0005、0006、0007、0009。
-> **状态**：活跃（v3）。本文只描述**数据形状**与**不变量**；未实现的表/字段在 §4.2 与 §7 显式标注。
+> **状态**：活跃（v6）。本文只描述**数据形状**与**不变量**；未实现的表/字段在 §4.2 与 §7 显式标注。
 
 ## 1. 一句话
 
@@ -174,7 +174,7 @@
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v5（现行，`PRAGMA user_version = 5`）
+### 4.1 v6（现行，`PRAGMA user_version = 6`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
@@ -189,9 +189,12 @@
 | `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `relations` | id | path / title / relation_kind / source / target / direction / since / until / chapter | 关系图谱查询与校验（#27） |
 | `timeline_events` | id | path / title / world_time / narrative_order / chapter / participants / status | 双轴排序、待确认区、冲突检测（#28） |
+| `entity_mentions` | (entity_key, chapter_id, offset, source) | entity_key / chapter_id / offset / source | 正文与 frontmatter 的提及定位（#29）；`entity_key` = `kind:id`，`explicit` 行的 offset 为 -1 |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
+
+**`entity_mentions` 由接缝建**（`indexer.ts` 的 `writeIndexDatabase`），不属任何域模块：`mentions` 不在 `CONTENT_DIRS` 里，且它是一次全书扫描的结果（自动机由全部实体建、走全部章节），不是某个目录的行集。
 
 **表归谁建（X-2）**：`chapters`/`chapters_fts`、`characters`、`world_entries`、`outline_nodes` 由各自的域模块提供 DDL 与写入（[`src/host/domains/`](../../src/host/domains/)）；`meta`、`files`、`library_files`、`validation_issues`、`entities`、`entities_fts` 由索引构建与接缝层提供。没有一张表在两处创建。
 
@@ -221,10 +224,7 @@
 | 表 | 用途 | 状态 |
 |---|---|---|
 | `foreshadowings` | 状态机查询、超期列表 | 未实现（#31） |
-| `timeline_events` | 双轴排序、待确认区 | 未实现（#28） |
-| `relations` | 关系图谱查询、孤立/冲突校验 | 未实现（#27） |
 | `facts` | 账本跨章查询 | 未实现（#32） |
-| `entity_mentions` | 别名/名称正文扫描、影响面、掉线检测（`entity_key` = `kind:id` 指向 `entities`） | 未实现（#29） |
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
