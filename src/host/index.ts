@@ -96,6 +96,10 @@ export type { IndexBuildResult } from './indexer.js'
  * (`applyCandidate`) keeps `I-04` honest.
  */
 export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
+/** Cross-class projection queries (#23): the nine-class panel and mention work read through these. */
+export { entityCounts, listEntities, searchEntities } from './domains/query.js'
+export type { EntitySummary } from './domains/query.js'
+export { ENTITY_COLUMNS, entityFromRow, entityKey } from './domains/entities.js'
 export type { DomainWriteView } from './domains/index.js'
 /** Exported for the tool-surface contract test: it asserts the aggregate is wired. */
 export { buildTools } from './tools.js'
@@ -156,7 +160,7 @@ export type {
   WriteResult,
   WriteTarget,
 } from './io.js'
-export { CONTENT_DIRS, WRITE_DIRS } from './conventions.js'
+export { CONTENT_DIRS, INDEX_SCHEMA_VERSION, WRITE_DIRS } from './conventions.js'
 
 /**
  * Volume/chapter catalog (issue #15, ADR-0006 D6): a reviewable, committed

@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { join, parse as parsePath } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { apply, inject, name } from '../lib/index.js'
+import { INDEX_SCHEMA_VERSION, apply, inject, name } from '../lib/index.js'
 
 // ADR-0006 D1: nine content directories plus the derived index/, each with a
 // `.gitkeep` (git does not track empty directories).
@@ -359,7 +359,7 @@ test('index is a cache: a foreign schema version is rebuilt automatically', asyn
 
     const after = new DatabaseSync(join(root, 'index', 'inkflow.db'), { readOnly: true })
     const version = after.prepare('PRAGMA user_version').get()
-    assert.equal(version.user_version, 1)
+    assert.equal(version.user_version, INDEX_SCHEMA_VERSION)
     after.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })

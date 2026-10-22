@@ -164,19 +164,25 @@
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v1（现行，`PRAGMA user_version = 1`）
+### 4.1 v2（现行，`PRAGMA user_version = 2`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
-| `meta` | key | builtAt / root / indexSchemaVersion / fileCount | 索引元信息（`builtAt` 只作诊断，**不作新鲜度判据**，见下） |
+| `meta` | key | builtAt / root / indexSchemaVersion / fileCount / entityCount | 索引元信息（`builtAt` 只作诊断，**不作新鲜度判据**，见下） |
 | `files` | path | dir / kind / size / mtime | 全量文件清单，**同时是新鲜度对拍基线** |
+| `entities` | (kind, id) | path / title / name_key / category / parent / order_index / status / keywords / aliases | 跨类统一投影：九分类树、跨类 id 冲突、提及定位（X-1） |
+| `entities_fts` | (virtual) | entity_key / title / aliases / keywords，`tokenize='trigram'` | 全实体检索（X-3）；1–2 字走 `LIKE` 兜底 |
 | `chapters` | id | path / seq / title / volume / status / word_count | 章列表、字数统计 |
 | `characters` | id | path / name / name_key / group_name / role | 角色查询、重名校验 |
 | `world_entries` | id | path / title / category / parent | 世界观树 |
 | `outline_nodes` | id | path / kind / title / parent / order_index | 大纲树与不变量校验 |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
-| `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
+| `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
+
+**表归谁建（X-2）**：`chapters`/`chapters_fts`、`characters`、`world_entries`、`outline_nodes` 由各自的域模块提供 DDL 与写入（[`src/host/domains/`](../../src/host/domains/)）；`meta`、`files`、`library_files`、`validation_issues`、`entities`、`entities_fts` 由索引构建与接缝层提供。没有一张表在两处创建。
+
+**`entities` 主键是复合的 `(kind, id)`，不是单列 `id`**：不同内容目录是不同表、各有自己的主键，所以两个 kind 可以合法地共用一个 id —— 这种冲突由 I-04 报 `DUPLICATE_ID`，**两行都保留**（`(kind, id)` 足以表示）。单列主键会把这种既有合法状态判成不可表示。
 
 **`files` 是新鲜度的对拍基线**（`checkIndexFreshness`，契约见 [conventions.md §4.0](conventions.md)）：
 
@@ -195,24 +201,24 @@
   - 短片段取命中词前后各 40 字（连续空白折叠），**不返回命中偏移的字符位置**；`chapterId` 是 `chapters.id`，`file` 是项目内相对路径。
   - 索引缺失 / `user_version` 不符 → `INDEX_UNAVAILABLE`（读路径零写盘）；重建只由 `ensureIndex` 决定并执行一次（[conventions.md §4.0](conventions.md)）。
 
-### 4.2 v2（规划，未实现，归 #22 / #23）
+### 4.2 v2 里尚未落地的表
+
+`entities`、`entities_fts` 与四个既有域表已在 §4.1 落地；下表是 v2 剩余部分，尚未实现。
 
 | 表 | 用途 | 状态 |
 |---|---|---|
-| `entities`（跨类统一投影） | 九分类树、跨类重名与提及定位；列集 `kind / id / path / title / name_key / category / parent / order_index / status / keywords / aliases`，`kind` 与内容目录对齐（契约见 [roadmap.md](roadmap.md) §2.1 X-1） | 未实现 |
-| `outline_nodes`（扩） | 情节点/故事线结构化 | 未实现 |
-| `characters`（扩） | `voice` / `states` / `aliases` / `first_appearance` 等角色卡字段（v1 只有 name/name_key/group_name/role，见 §4.1） | 未实现 |
-| `world_entries`（扩） | 世界书的 `keywords` / `always` / `priority`（v1 只有 title/category/parent） | 未实现 |
-| `foreshadowings` | 状态机查询、超期列表 | 未实现 |
-| `timeline_events` | 双轴排序、待确认区 | 未实现 |
-| `relations` | 关系图谱查询、孤立/冲突校验 | 未实现 |
-| `facts` | 账本跨章查询 | 未实现 |
-| `entity_mentions` | 别名/名称正文扫描、影响面、掉线检测 | 未实现 |
-| `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现 |
-| 全实体 FTS | 角色/世界观/伏笔/时间线/关系/账本统一检索（章正文 FTS 已在 v1 可用，见 §4.1） | 未实现 |
-| `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（归 #41） |
+| `outline_nodes`（扩） | 情节点/故事线结构化 | 未实现（#24） |
+| `characters`（扩） | `voice` / `states` / `first_appearance` 等角色卡字段（现只有 name/name_key/group_name/role，见 §4.1） | 未实现（#25） |
+| `world_entries`（扩） | 世界书的 `keywords` / `always` / `priority`（现只有 title/category/parent；`keywords` 已进 `entities` 投影供检索） | 未实现（#26） |
+| `foreshadowings` | 状态机查询、超期列表 | 未实现（#31） |
+| `timeline_events` | 双轴排序、待确认区 | 未实现（#28） |
+| `relations` | 关系图谱查询、孤立/冲突校验 | 未实现（#27） |
+| `facts` | 账本跨章查询 | 未实现（#32） |
+| `entity_mentions` | 别名/名称正文扫描、影响面、掉线检测（`entity_key` = `kind:id` 指向 `entities`） | 未实现（#29） |
+| `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
+| `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
-v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本**。本表整体【未实现】，归 #15（catalog）/ #23（索引 v2）/ #29（提及）/ #41（语义块）。
+**新增表不加 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
 
 ## 5. 不变量与强制手段
 
@@ -223,7 +229,7 @@ v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本
 | I-01 | 每项目恰 1 条 `overall` 大纲 | 拒绝第二份 | `OUTLINE_NO_OVERALL` / `OUTLINE_MULTIPLE_OVERALL` |
 | I-02 | 卷大纲必须挂 overall；禁止卷中卷 | 拒绝 | `OUTLINE_VOLUME_PARENT` / `OUTLINE_VOLUME_IN_VOLUME` |
 | I-03 | 角色名项目内唯一（归一化） | 拒绝 | `CHARACTER_NAME_DUPLICATE` |
-| I-04 | 实体 id 跨类唯一（章/角色/世界观/大纲共用一个命名空间） | 拒绝 | `DUPLICATE_ID` |
+| I-04 | 同一 kind 内 id 唯一（域表主键）；**跨 kind 同 id 只报不丢**（不同表各有主键，投影的 `(kind, id)` 可表示） | 拒绝 | `DUPLICATE_ID` |
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |
 | I-06 | 章状态取值合法 | 拒绝 | 非法值降级为 `draft`（不阻断） |
 | I-07 | 正文文件必须是 `.md` | 拒绝 | `CHAPTER_NOT_MARKDOWN` |
@@ -234,7 +240,7 @@ v2 落地时 `INDEX_SCHEMA_VERSION` 递增并删库重建；**不写迁移脚本
 | I-12 | 同一章不得同时出现在两个卷或两条 catalog 项 | 拒绝 | `CATALOG_DUPLICATE` |
 | I-13 | 卷目录名与 `volumeId` / 卷大纲一致 | 拒绝 | `VOLUME_DIR_MISMATCH` |
 | I-14 | catalog 引用的章文件必须存在 | 拒绝 | `CHAPTER_FILE_MISSING` |
-| I-15 | `entities` 投影与各域表同源：同一行事实在两张表里的 `id` / `path` / `title` / `name_key` 必须一致（由同一次 scan、同一事务产出） | 同一 scan 产出，无独立写入 | `ENTITIES_DRIFT` |
+| I-15 | `entities` 投影与各域表同源：同一行事实在两张表里的 `id` / `path` / `title` / `name_key` 必须一致（由同一次 scan、同一事务产出；投影主键为 `(kind, id)`） | 同一 scan 产出，无独立写入 | `ENTITIES_DRIFT` |
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 

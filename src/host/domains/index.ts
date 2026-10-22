@@ -1,29 +1,31 @@
 /**
  * Domain module registry — roadmap §2.1 (X-5).
  *
- * Every content directory that grows its own parser, invariants, tables and tools
- * registers one module here. Empty on purpose today: #101 only establishes the
- * seam, so the batch that follows (#24–#29) adds a line instead of editing
- * `indexer.ts` or the 880-line literal in `tools.ts`.
+ * Every content directory that owns a parser, invariants, tables and tools registers
+ * one module here; the index only aggregates what the registry returns. The list is
+ * the single place a domain touches, ordered by `kind` so two domain branches
+ * conflict on adjacent lines at worst, which rebase resolves mechanically.
  *
- * Two things live here besides the list: `domainTools()` (the tool aggregate) and
- * `applyCandidate()` (the **only** implementation of "replace one path's rows").
- * Both are pure, so the tests drive them with a stub module and no registry
- * mutation — the registry itself stays a read-only list in production.
+ * Two helpers live here besides the list: `domainTools()` (the tool aggregate) and
+ * `applyCandidate()` (the **only** implementation of "replace one path's rows"). Both
+ * are pure, so the contract test drives them with a stub module and leaves the
+ * production registry untouched.
  */
 
 import type { ToolDefinition } from '../context.js'
+import { chapterDomain } from './chapter.js'
+import { characterDomain } from './character.js'
+import { outlineDomain } from './outline.js'
+import { worldDomain } from './world.js'
 import type { DomainEntityRef, DomainFileParse, DomainModule, DomainScanResult } from './types.js'
 
-/**
- * Registered modules, in a stable order.
- *
- * `readonly` is deliberate (X-5): a domain adds one entry here, never rewrites the
- * array. Insertion point is by `kind` in alphabetical order so two domain branches
- * conflict on adjacent lines at worst, which rebase resolves mechanically.
- */
+/** Registered modules, ordered by `kind`. */
 export const DOMAIN_MODULES: readonly DomainModule[] = [
-  // #24 outlines · #25 characters · #26 world · #27 relations · #28 timeline · #29 mentions
+  chapterDomain,
+  characterDomain,
+  outlineDomain,
+  worldDomain,
+  // #27 relations · #28 timeline · #29 mentions · #31 foreshadowing state machine
 ]
 
 /** Flatten every registered module's tools; the aggregate stays a pure function. */
