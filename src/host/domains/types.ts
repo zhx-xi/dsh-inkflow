@@ -24,7 +24,13 @@ export type DomainFile = WalkedFile
 
 /** One table's rows, as a domain contributes them to the derived index. */
 export interface DomainTableRows {
-  /** Table name; its DDL must come from the same module's `schema()` (X-2). */
+  /**
+   * Table name; its DDL must come from the same module's `schema()` (X-2).
+   *
+   * One bucket per table, and **every row must carry `path`** — `applyCandidate()`
+   * replaces a write's rows by path, so a row without one would survive its own
+   * edit and linger in the index.
+   */
   readonly table: string
   readonly rows: readonly Readonly<Record<string, unknown>>[]
 }
@@ -106,6 +112,12 @@ export interface DomainValidateInput {
   /**
    * Set only when this validation runs on the write path, and already applied.
    *
+   * Semantics: with `candidate` present, `validate()` returns **only** the issues
+   * that must block this write, and the caller treats every returned issue as
+   * blocking (there is no severity field to distinguish). Rebuild-only diagnostics
+   * — `ENTITIES_DRIFT`, catalog staleness — belong to the caller and must not be
+   * returned here, or a permanent rebuild warning would block every edit.
+   *
    * Scope (X-4): this covers **create and update** of one file — the write always
    * has content at a known path. A delete or a move has no content to judge, so it
    * is validated by the trash/move paths (#35, `moveChapter`) instead; when those
@@ -130,13 +142,13 @@ export interface DomainSchema {
   /**
    * Write this domain's rows inside the build transaction.
    *
-   * Error discipline (settled, not either/or): a duplicate that the rebuild would
-   * report as an issue stays a **row plus an issue**, never a silent overwrite and
-   * never a failed build — that is the existing `DUPLICATE_ID` behaviour in
-   * `indexer.ts`. Throw only for a structural error that cannot be attributed to a
-   * row (bad SQL, missing table); the caller turns it into `INDEX_BUILD_FAILED`.
-   * The caller owns the transaction boundary and guarantees atomicity by discarding
-   * the temporary index file on failure (`index-build.ts`).
+   * Error discipline (settled, not either/or): a duplicate the rebuild would report
+   * as an issue stays **one row plus an issue** — the existing implementation gets
+   * there with `INSERT OR REPLACE` (`indexer.ts`) so a derived index can never brick
+   * a project, and the scan reports `DUPLICATE_ID` separately. Throw only for a
+   * structural error that cannot be attributed to a row (bad SQL, missing table);
+   * the caller turns it into `INDEX_BUILD_FAILED` and discards the temporary index
+   * file, which is what makes the build atomic.
    */
   insert(db: DomainDatabase, scan: DomainScanResult): void
 }
