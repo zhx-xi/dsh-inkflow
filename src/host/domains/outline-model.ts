@@ -311,7 +311,7 @@ export function validateOutlineScan(
         detail: 'volume outline must have parent = overall outline id',
       })
     }
-    // chapter-under-volume is allowed; chapter-under-chapter is not part of the
+    // chapter-under-volume is allowed; chapter-under-chapter is refused by I-02 below.
     // I-02 also caps the tree at three levels: `chapter` may hang under the overall
     // outline or a volume, never under another chapter. Reporting it here as well as on
     // the write path is deliberate — the write path refusing is not a substitute for the
