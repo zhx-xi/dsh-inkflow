@@ -353,6 +353,11 @@ interface LockedInput {
  * Both baselines are checked before a single byte is written (§5.5), so a
  * refusal leaves the file byte-identical; the second check catches the author's
  * own editor, which takes no lock.
+ *
+ * Coverage note: only the first comparison has a failing test (removing it turns the
+ * 409 case red). The second one is defensive — reaching it needs a writer that changes
+ * the file between the patch and the rename while holding no lock, which no test can
+ * stage without a seam just for that. It stays because the cost is one `stat`.
  */
 function writeLocked(root: string, input: LockedInput): LockedWrite {
   const absolute = join(root, ...input.path.split('/'))
