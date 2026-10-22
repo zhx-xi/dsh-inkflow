@@ -314,7 +314,7 @@ test('the chapter frontmatter is not manuscript text: a title-only name is no me
 })
 
 test('the schema version moved so every project rebuilds once', async () => {
-  assert.equal(INDEX_SCHEMA_VERSION, 4, 'a new table is a new schema version, never an ALTER')
+  assert.equal(INDEX_SCHEMA_VERSION, 6, 'a new table is a new schema version, never an ALTER')
 })
 
 test('a 590k-character / 2900-entity scan stays inside the 5 s budget', () => {
