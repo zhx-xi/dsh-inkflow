@@ -232,6 +232,35 @@ test('the stale-build banner sits above the tabs, so every gate state shows it',
   assert.ok(source.includes('readBuild(status)'), 'the panel reads the stamp out of /status, not from a guess')
 })
 
+test('every live tab has a page in the renderer map (roadmap X-12)', () => {
+  // The tab row is driven by PANEL_TABS, the page by the map in index.tsx. A tab that
+  // is `available` with no page in that map renders an empty panel with no error —
+  // exactly the failure this guard exists to catch before a user finds it.
+  const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
+  const mapStart = source.indexOf('const pageRenderers: Readonly<Record<string, () => ReactNode>> = {')
+  assert.ok(mapStart > 0, 'index.tsx keeps the page map the tabs are resolved against')
+  const mapEnd = source.indexOf('\n  }', mapStart)
+  assert.ok(mapEnd > mapStart)
+  const mapBody = source.slice(mapStart, mapEnd)
+  const registered = [...mapBody.matchAll(/^\s{4}([a-z][a-z-]*):/gm)].map((match) => match[1])
+  assert.ok(registered.length > 0, 'the map declares at least one page')
+
+  for (const tab of model.PANEL_TABS) {
+    if (!tab.available) continue
+    // `chapters` is the inline default page, never a map entry.
+    if (tab.id === 'chapters') {
+      assert.ok(source.includes("tab !== 'chapters'"), 'the default page is the chapters tree')
+      continue
+    }
+    assert.ok(registered.includes(tab.id), `tab ${tab.id} is live but has no page in pageRenderers`)
+  }
+  // The reverse direction: a page nobody can reach is dead code in the bundle.
+  for (const id of registered) {
+    const tab = model.PANEL_TABS.find((entry) => entry.id === id)
+    assert.ok(tab !== undefined && tab.available, `pageRenderers.${id} is not a live tab`)
+  }
+})
+
 test('client sources draw every colour from theme tokens', () => {
   for (const file of ['index.tsx', 'hub.tsx', 'hub-shared.tsx', 'hub-wizard.tsx']) {
     const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')

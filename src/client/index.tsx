@@ -31,6 +31,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { ClientContext, ConversationViewProps, WorkspaceView } from './context.js'
 import { fetchInternal, setActiveSessionId, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
@@ -261,6 +262,18 @@ function findSessionWorkspace(workspaces: WorkspaceView[] | undefined, sessionId
   return workspaces.find((workspace) => Array.isArray(workspace.sessionIds) && candidates.some((candidate) => workspace.sessionIds?.includes(candidate)))
 }
 
+/**
+ * Render the page a non-default tab names (roadmap X-12).
+ *
+ * `undefined` renders nothing rather than falling back to the chapter tree: silently
+ * showing the wrong page is harder to notice than an empty one, and "a live tab has
+ * a page" is the contract `PANEL_TABS` and this map keep together.
+ */
+function renderExtraPage(registry: Readonly<Record<string, () => ReactNode>>, tab: string): ReactNode {
+  const render = registry[tab]
+  return render === undefined ? null : render()
+}
+
 export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces }: ConversationViewProps) {
   const workspaceItems = useWorkspaces((state) => state.items)
   const sessionsById = useSessions((state) => state.byId)
@@ -366,6 +379,25 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   // one tooltip — the panel has no way to fix the file itself, so it says so.
   const titleWarning = describeTitleSuspicion(gate)
   const routeHint = status !== null && !status.ok ? describeRouteError(status.error) : null
+
+  /**
+   * Every tab that is not `chapters` renders from this map (roadmap X-12).
+   *
+   * `chapters` stays inline below: it is the default page and carries the editor,
+   * the scroll box and most of this component's state, so extracting it would move
+   * ~160 lines for no gain. Every *other* page is one line here — a new panel adds
+   * its entry and its component file and never edits the render tree.
+   *
+   * `PANEL_TABS` decides what a user can click (`available`), this map decides what
+   * exists. A live tab with no page here renders nothing, which is why the two are
+   * meant to be changed in the same commit.
+   */
+  const pageRenderers: Readonly<Record<string, () => ReactNode>> = {
+    // Issue #30: the setting library — eight-kind tree, one entry's detail, the
+    // editor and the problem panel. It talks to its own three routes, so this tab
+    // costs the chapter tree nothing.
+    library: () => <LibraryView sessionId={sessionId} />,
+  }
 
   /**
    * Create one chapter. Only a title is required; `volumeId` is omitted for a
@@ -529,11 +561,12 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
             </div>
           ) : null}
         </div>
-      ) : tab === 'library' ? (
-        // Issue #30: the setting library — eight-kind tree, read-only detail and
-        // the problem panel. It talks to its own three routes, so this tab costs
-        // the chapter tree nothing.
-        <LibraryView sessionId={sessionId} />
+      ) : tab !== 'chapters' ? (
+        // Extra pages (roadmap X-12): one entry per tab in `pageRenderers` above.
+        // A new panel adds ONE line to that map plus its component file and touches
+        // nothing here — two pages landing in the same milestone then never collide
+        // inside the render tree.
+        renderExtraPage(pageRenderers, tab)
       ) : (
         <div ref={scrollBox.ref} style={{ ...bodyStyle, ...SCROLL_BOX_STYLE, ...scrollBox.style }}>
           <div style={columnStyle}>
