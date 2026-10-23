@@ -444,8 +444,9 @@ test('outline: the rebuilt index stores plot points per outline node', async () 
       const version = { ...db.prepare('PRAGMA user_version').get() }
       // v3 introduced these two columns; the current version is pinned as a literal so
       // an added column without a bump fails here instead of silently reading a stale
-      // database (`AGENTS.md` §8 trap 5). v4 is #25's character-card schema.
-      assert.equal(version.user_version, 6)
+      // database (`AGENTS.md` §8 trap 5). v4 is #25's character-card schema, v6 #29's
+      // mentions, v7 #32's fact ledger.
+      assert.equal(version.user_version, 7)
       const row = { ...db.prepare('SELECT id, kind, plot_point_count, plot_points FROM outline_nodes WHERE id = ?').get('ov') }
       assert.equal(row.plot_point_count, 3)
       assert.deepEqual(JSON.parse(row.plot_points), [

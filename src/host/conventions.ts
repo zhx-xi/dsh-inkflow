@@ -148,6 +148,10 @@ export const FILE_SCHEMA_VERSION = 1
  * frontmatter — `pov`, `first_appearance`, `aliases`, `voice` — and a new
  * `character_states` table holds one row per recorded state, so "what was he at
  * chapter 30" is a `chapter <=` query instead of a JSON scan.
+ * v7 (#32): the `facts` table — one row per ledger line (`facts/<subject>.md`), with its
+ * 1-based `line` so a finding can point at it and with `since` / `until` so "which facts
+ * hold at chapter N" is a range query instead of a re-parse. `facts/` stops being a
+ * frontmatter-only directory: it publishes one entity per subject.
  *
  * **Bump this for every column/table a domain adds, even when the file mtime does
  * not move** (AGENTS.md §8 trap 5): a stale `user_version` makes `ensureIndex()` call
@@ -157,7 +161,7 @@ export const FILE_SCHEMA_VERSION = 1
  * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file is
  * discarded.
  */
-export const INDEX_SCHEMA_VERSION = 6
+export const INDEX_SCHEMA_VERSION = 7
 
 export const CHAPTER_STATUSES = ['draft', 'revised', 'final'] as const
 export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const
