@@ -1023,3 +1023,12 @@ export type { TrashReply, TrashSource } from './trash-channel.js'
 
 export { buildForeshadowBoard } from './domains/foreshadowing-query.js'
 export type { ForeshadowSource } from './domains/foreshadowing-query.js'
+// ---------------------------------------------------------------------------
+// issue #33 — the consistency audit. The engine lives in `audit.ts` (scan → findings →
+// Markdown; no HTTP, no writes on the read path), the two channel replies in
+// `audit-channel.ts`; both are re-exported here so `routes.ts` keeps ONE entry point for
+// the channel — the same arrangement the bin (#35) and the impact listing (#34) use.
+// ---------------------------------------------------------------------------
+
+export { AUDIT_EXPORT_BODY_FIELDS, auditWire, buildAudit, exportAudit, findingWire } from './audit-channel.js'
+export type { AuditReply, AuditSource } from './audit-channel.js'

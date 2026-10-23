@@ -251,6 +251,69 @@ export function foreshadowValidate(rows: readonly ForeshadowRow[], candidatePath
   return issues
 }
 
+/**
+ * The two findings a **report** makes about lateness (#33, X-14).
+ *
+ * Why they are produced here and not in `audit.ts`: "late" is the foreshadow domain's
+ * own rule (`foreshadowUrgency`), and a report that re-derived it would be a second
+ * definition of 超期 — the exact failure this module was written to prevent. The audit
+ * only aggregates, groups and sorts.
+ *
+ * Why they are **not** part of `foreshadowValidate`: nothing here is refused and no
+ * rebuild reports it. `overdue` is computed from where the book stands today, so writing
+ * it as an invariant would make every rebuild's `validation_issues` a moving target, and
+ * a stale copy of yesterday's answer would look authoritative. `dueNow` is weaker still —
+ * it is "this is the chapter to pay it off in", a reminder and not a defect.
+ *
+ * Why `path` and no line: a foreshadow is one file, so the file *is* the address; the
+ * deadline and the current position are named in `detail` instead.
+ *
+ * Deterministic by construction: the caller's row order (walk order, i.e. path order) is
+ * kept, and no clock or index state enters the text.
+ */
+export function foreshadowAuditIssues(
+  rows: readonly ForeshadowRow[],
+  current: ChapterPosition | undefined,
+  positions: ReadonlyMap<string, ChapterPosition>,
+  volumes: ReadonlySet<number>,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = []
+  for (const row of rows) {
+    const urgency = foreshadowUrgency(row, current, positions, volumes)
+    const due = (row.dueBy ?? '').trim()
+    const where = describePosition(current)
+    // The *progress* state, not `urgency.status`: the latter says "overdue", which is the
+    // verdict these lines are reporting — quoting it back would read as "状态还是 overdue".
+    const progress = baseStatusOf(row)
+    // Two branches rather than one conditional `code:` — the findings test discovers codes by
+    // scanning for the literal `code:` + upper-case string form, and a ternary hides both
+    // from it.
+    if (urgency.overdue) {
+      issues.push({
+        code: 'FORESHADOW_OVERDUE',
+        path: row.path,
+        detail: `dueBy「${due}」已经在${where}之前过去，进度还停在「${progress}」`,
+      })
+      continue
+    }
+    if (urgency.dueNow) {
+      issues.push({
+        code: 'FORESHADOW_DUE_NOW',
+        path: row.path,
+        detail: `dueBy「${due}」正好是${where}：这是回收它的最后机会`,
+      })
+    }
+  }
+  return issues
+}
+
+/** A chapter position as "第 N 章（vol-02）", or "书里还没有章" when the book is empty. */
+function describePosition(position: ChapterPosition | undefined): string {
+  if (position === undefined) return '书里还没有章'
+  const volume = position.volume === undefined ? '' : `（${position.volume}）`
+  return `第 ${String(position.seq)} 章${volume}`
+}
+
 /** The projection row: `overdue` is never published (it depends on the current chapter). */
 export function foreshadowEntity(row: ForeshadowRow): DomainEntityRef {
   return {

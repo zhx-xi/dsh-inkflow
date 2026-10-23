@@ -40,8 +40,11 @@ import { useScrollBox } from './layout.js'
 import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
 import { LibraryView } from './library.js'
+import type { LibraryFocus } from './library-model.js'
 import { TrashView } from './trash.js'
 import { ForeshadowView } from './foreshadow.js'
+import { AuditView } from './audit.js'
+import type { AuditJumpTarget } from './audit-model.js'
 import { HubIcon, HubView } from './hub.js'
 import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
 import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
@@ -295,6 +298,10 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   // Which declared tab is open. Only `available` tabs are switchable, so this
   // never names a page that does not exist (issue #30 added 设定库).
   const [tab, setTab] = useState('chapters')
+  // One entry the current tab wants the setting library to open (#33's audit rows). The
+  // nonce makes a repeated request for the same entry a *new* prop, so the library re-selects
+  // it instead of ignoring an equal value.
+  const [libraryFocus, setLibraryFocus] = useState<LibraryFocus | null>(null)
   // New-chapter form (issue #19): title + volume, nothing else.
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -394,16 +401,40 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
    * exists. A live tab with no page here renders nothing, which is why the two are
    * meant to be changed in the same commit.
    */
+  /**
+   * Take the reader to an audit finding's target (#33): a chapter opens in this page's own
+   * editor, an entity opens in the setting library.
+   *
+   * Lives here rather than in the audit page because the two destinations are *this*
+   * component's state (the selected chapter) and another page's props (the library's focus).
+   * An audit row therefore carries an address, and the workbench decides what an address
+   * means — the report never guesses a route.
+   */
+  const openFromAudit = useCallback((target: AuditJumpTarget): void => {
+    if (target.kind === 'chapter') {
+      setTab('chapters')
+      setSelected(target.chapterId)
+      return
+    }
+    // A new nonce so that asking for the same entry twice still re-focuses it (React would
+    // otherwise see an equal prop and skip the effect that selects the row).
+    setLibraryFocus({ kind: target.entityKind, id: target.id, nonce: Date.now() })
+    setTab('library')
+  }, [])
+
   const pageRenderers: Readonly<Record<string, () => ReactNode>> = {
     // Issue #30: the setting library — eight-kind tree, one entry's detail, the
     // editor and the problem panel. It talks to its own three routes, so this tab
     // costs the chapter tree nothing.
-    library: () => <LibraryView sessionId={sessionId} />,
+    library: () => <LibraryView sessionId={sessionId} focus={libraryFocus} />,
     // Issue #35: the recovery bin — what a delete moved into `.inkflow/trash/`,
     // with restore (one click) and purge (two). One route pair of its own.
     trash: () => <TrashView sessionId={sessionId} />,
     // Issue #31: the read-only foreshadow board (超期 / 未回收 / 按角色).
     foreshadowing: () => <ForeshadowView sessionId={sessionId} />,
+    // Issue #33: the five-family consistency audit — counts, findings with their
+    // addresses, and the Markdown export into `.inkflow/audit/`.
+    audit: () => <AuditView sessionId={sessionId} onOpen={openFromAudit} />,
   }
 
   /**

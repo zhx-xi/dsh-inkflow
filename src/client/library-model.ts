@@ -68,6 +68,36 @@ export interface LibraryTree {
   indexAvailable: boolean
 }
 
+/**
+ * "Open this entry for me" — a request from another page (#33's audit rows), not state the
+ * library owns.
+ *
+ * `nonce` exists because a second click on the *same* finding must re-focus the same row:
+ * without it React sees an equal prop and skips the effect, so the second click would look
+ * dead. The library never stores the nonce; it only uses it to tell "same request again"
+ * from "no request".
+ */
+export interface LibraryFocus {
+  kind: string
+  id: string
+  nonce: number
+}
+
+/** The row a focus request names, found in the tree the panel already built. */
+export function findFocusItem(tree: LibraryTree, focus: LibraryFocus | null | undefined): LibraryTreeItem | undefined {
+  if (focus === null || focus === undefined) return undefined
+  for (const group of tree.groups) {
+    if (group.kind !== focus.kind) continue
+    const direct = group.items.find((item) => item.id === focus.id)
+    if (direct !== undefined) return direct
+    for (const category of group.categories) {
+      const item = category.items.find((candidate) => candidate.id === focus.id)
+      if (item !== undefined) return item
+    }
+  }
+  return undefined
+}
+
 /** `GET /inkflow/internal/library` → `value` (only what the panel reads). */
 export interface LibraryValue {
   indexAvailable?: boolean
@@ -172,6 +202,22 @@ export const ISSUE_LABELS: Record<string, string> = {
   TIMELINE_TIME_INVALID: '时间线时间不合法',
   TIMELINE_TIME_REVERSED: '世界时间倒流',
   TIMELINE_ORDER_CONFLICT: '叙事次序冲突',
+  // #31 / #32 / #33 filled the codes these two families actually emit: before that the
+  // panel printed them verbatim (`FACT_CONFLICT`), which reads as a bug report rather
+  // than as a problem in the book. `FORESHADOW_OVERDUE` / `FORESHADOW_DUE_NOW` are the
+  // audit's two lateness codes (data-model §5, "仅体检期诊断").
+  FORESHADOW_RESOLVED_WITHOUT_CHAPTER: '伏笔标了已回收但没写回收章',
+  FORESHADOW_TRANSITION_INVALID: '伏笔状态与历史字段矛盾',
+  FORESHADOW_OVERDUE: '伏笔已超期未回收',
+  FORESHADOW_DUE_NOW: '伏笔正好本期到期',
+  FACT_LINE_MALFORMED: '账本行写不成一条事实',
+  FACT_CONFLICT: '账本同一属性前后矛盾',
+  RELATION_FIELD_DEPRECATED: '关系文件用了废弃字段',
+  ID_PATH_DIVERGED: '实体 id 是改名前的老路径',
+  CATALOG_STALE: '卷章目录与正文不一致',
+  CATALOG_DUPLICATE: '同一章出现在两条目录项',
+  VOLUME_DIR_MISMATCH: '卷目录名与卷 id 不符',
+  CHAPTER_FILE_MISSING: '目录引用的章文件不存在',
   FILE_UNREADABLE: '文件读不出来',
 }
 

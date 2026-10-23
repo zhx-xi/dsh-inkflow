@@ -338,6 +338,15 @@
 
 **仅重建期诊断**（不是不变量，写入侧放行）：`RELATION_FIELD_DEPRECATED`——关系文件里出现已废弃字段（如 `direction`），重建时提示、写入时按新字段名归一，不阻断。
 
+**仅体检期诊断**（不是不变量，写入侧与重建侧都不报，只出现在一致性体检报告里）：
+
+| code | 含义 | 判据与产出 |
+|---|---|---|
+| `FORESHADOW_OVERDUE` | 伏笔已过 `dueBy` 仍未回收 | §3.2.2 的三条件同时成立（有效状态不是 `resolved` + `dueBy` 可解析 + 当前位置严格晚于到期位置），由 `foreshadowing-plan.ts` 的 `foreshadowUrgency()` 判定 |
+| `FORESHADOW_DUE_NOW` | 伏笔正好本期到期（当前位置 = 到期位置） | 同上的第 1、2 条件成立且位置相等；是「该回收了」的提示，不是缺陷（严重级 info） |
+
+两者都是「书走到哪儿」的函数而不是文件属性，所以不写进 `validation_issues`（每天的答案都不同，存进索引就会过期）；它们进 `FINDING_CODES` 是为了让报告与修复共用一套词（X-14）。
+
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 
 ## 6. 2.0 同步为什么更容易了

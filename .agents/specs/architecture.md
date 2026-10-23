@@ -419,6 +419,8 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError` | HTTP 加固、写作品文件、自己决定是否重建 |
 | `src/host/findings.ts` | **「问题」的唯一形状**（roadmap X-14）：`Finding` / `FindingLocator` / 五个报告分组 / `FINDING_CODES` 目录 / `compareFindings` 的稳定排序 | 任何检查实现、任何 IO（#33 产出、#36 消费） |
+| `src/host/audit.ts` | **一致性体检**（#33，X-14）：五类发现聚合成一份 `Finding[]`（只聚合 / 分组 / 排序 / 给人话 hint，判定一律调域模块）＋ Markdown 报告渲染 ＋ 唯一写动作（`exportAuditReport` → `.inkflow/audit/`） | 判任何不变量（那是 `scanProject` / `validateCatalog` / 域模块的事）、重建索引、在只读路径写盘 |
+| `src/host/audit-channel.ts` | 体检的通道半：`GET /audit` 的投影（分组计数 + 前 N 条 + 定位与地址）与 `POST /audit/export` 的信封、`CONFIRM_REQUIRED` 闸门、失败码到 HTTP 状态的映射 | 体检规则、Markdown 排版、写盘（一律调 `audit.ts` 与 `io.ts`） |
 | `src/host/private-state.ts` | 私有状态目录 `.inkflow/` 的三个共享助手（ADR-0012）：相对路径拼装、`isPrivateStatePath`、`ensurePrivateStateIgnored`（append-only 补 ignore 行，失败返回而不抛） | 决定什么时候删/备份（归 #35/#36）、清单格式 |
 | `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE`；对外只暴露"列注册表"这一个只读入口（`listRegisteredWorkspaces`），供向导线解析锚点 | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
 | `src/host/hub-wizard.ts` | **新开书向导**（ADR-0010 D4/D6）：`plan`（锚点三级判定 → 路径闸门 → 只读 plan → 签发 token）与 `apply`（消耗 token → 摘要比对 → `applyWorkspace` → `workspaceRegistry.create`）、一次性 `planToken` 存储（TTL 5 分钟、可注入时钟）、`nextStep` 降级 A 文案 | 自己写文件（一律走 `workspace.ts`）、接受 `apply` 的路径、发 token 给已注册目录、commit/配远端 |
@@ -434,6 +436,23 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/client/layout-model.ts` | 面板滚动 box 的纯几何（§4.3.1）：可用底边规则、`Math.floor` 定高、CSS 变量与兜底、两列共享的样式常量 | React、DOM、配色 |
 | `src/client/layout.ts` | 高度实测的 DOM 读取与 React 接线：`useScrollBox()`（每次渲染复测 + `ResizeObserver` + `window.resize`），把高度写成 `--inkflow-body-h`；量不到返回空样式走 CSS 兜底 | 业务规则、网络、写文件 |
 | `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路；`sessionless: true` 只放行 `/hub/*` | 拼路径参数、文件 IO |
+| `src/client/audit-model.ts` | 体检页的纯视图模型：信封折叠、分组与严重级文案、`定位` 的人话标签（`.` = 整本书）、`jumpTargetOf`（能不能跳、跳到哪）、导出与失败文案 | React、网络、IO |
+| `src/client/audit.tsx` | 体检页：五组计数 + 逐条 finding（code / 严重级 / 地址 / 说明 / 处理建议）+ 导出按钮（标签里写明落点） | 判问题是否成立、判严重级（都来自 Host）、写报告 |
+
+### 6.1 一致性体检（#33）的取数与落点
+
+| 分组 | 唯一实现 | 体检做的事 |
+|---|---|---|
+| `structure` | `scanProject()` 的 `validation_issues` | 换 code → 分组/严重级/hint；定位解析成实体/章/文件行 |
+| `ledger` | 同上（`facts-plan.ts` 产出 `FACT_*`） | 同上（行锚 `path#L<n>` 拆成 `line`） |
+| `foreshadow` | 同上 ＋ `foreshadowing-plan.ts` 的 `foreshadowAuditIssues()`（`FORESHADOW_OVERDUE` / `FORESHADOW_DUE_NOW`） | 位置表**读文件**（`chapterPositionsFromFiles`），不用索引：过期缓存会让超期静默消失 |
+| `timeline` | 同上（`timeline-plan.ts` 产出 `TIMELINE_*`） | 同上 |
+| `catalog` | `scanProject()`（`CHAPTER_NOT_MARKDOWN`）＋ `validateCatalog()` | 同上；catalog 文件本身定位成 `catalog[:卷 id]` |
+
+- **只读**：体检走 `scanProject`（纯读），**不** `ensureIndex`、不建 `.inkflow/`、不碰 `index/`。缓存状态作为 `indexState` 上报，由人决定要不要重建。
+- **排序**：`compareFindings`（X-14）＋ `detail` 作最后决胜键 → 同一份未改动的书两次导出正文逐字相同（文件名带时间戳，正文不带）。
+- **导出落点**：`<book>/.inkflow/audit/audit-<YYYYMMDD-HHmmss>.md`（[ADR-0012](../adrs/0012-plugin-private-state-dir.md) #6：派生物、可删、不进 git）；写入经 `writeTextAtomic` → `resolveWriteTarget` 白名单，首次写入时 `ensurePrivateStateIgnored()` 追加 `.gitignore` 行。工具侧 `inkflow_project_audit` 的 `export: true` 与通道侧 `POST /audit/export` 都要求 `confirm: true`。
+- **通道**：`GET /audit`（读）与 `POST /audit/export`（写）；面板页 = `PANEL_TABS` 的 `audit` + `pageRenderers.audit`（X-12）。
 
 ## 7. 数据流
 
