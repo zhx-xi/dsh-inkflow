@@ -65,10 +65,12 @@ import {
   INTERNAL_PREFIX,
   LIBRARY_WRITE_BODY_FIELDS,
   MAX_INTERNAL_BODY_BYTES,
+  RENAME_BODY_FIELDS,
   SESSION_ID_HEADER,
   SESSION_ID_PARAM,
   buildChapter,
   buildChapters,
+  buildImpact,
   buildLibrary,
   buildLibraryItem,
   buildLibraryIssues,
@@ -81,6 +83,7 @@ import {
   isSessionId,
   moveChapterViaChannel,
   noSessionContextBody,
+  renameEntity,
   resolveChannelTarget,
   writeChapterViaChannel,
   writeLibraryItem,
@@ -243,6 +246,40 @@ const ROUTES: readonly InternalRoute[] = [
     pattern: /^\/library\/issues$/,
     methods: ['GET'],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildLibraryIssues(target, version)) }),
+  },
+  {
+    // The impact listing (#34, conventions §5.6): what a setting change would touch
+    // across the manuscript, the graph and the three file-only reference sites.
+    //
+    // GET-only and **read-only**: unlike `/chapters` and `/search` it does NOT call
+    // `ensureIndex`, because the author is looking at a report to decide whether to
+    // write — rebuilding the cache under them would be a write during a question.
+    // A cache that is missing or stale is reported (`indexAvailable` / `indexState`)
+    // instead of being silently replaced.
+    //
+    // `slug` / `newTitle` preview the rename plan; the dialog shows it, and simply
+    // closing the dialog is therefore zero writes by construction.
+    name: 'impact',
+    pattern: /^\/impact$/,
+    methods: ['GET'],
+    handle: async ({ target, query, version }) =>
+      buildImpact(target, version, {
+        kind: query.get('kind') ?? '',
+        ...(query.get('id') === null ? {} : { id: query.get('id') ?? '' }),
+        ...(query.get('title') === null ? {} : { title: query.get('title') ?? '' }),
+        ...(query.get('slug') === null ? {} : { slug: query.get('slug') ?? '' }),
+        ...(query.get('newTitle') === null ? {} : { newTitle: query.get('newTitle') ?? '' }),
+      }),
+  },
+  {
+    // The rename itself (#34, ADR-0014): move the file, pin the OLD id, rewrite no
+    // reference. A write route, so it carries every write guard declared above plus
+    // the mandatory CAS baseline (`expected`, §5.5).
+    name: 'impact-rename',
+    pattern: /^\/impact\/rename$/,
+    methods: ['POST'],
+    body: RENAME_BODY_FIELDS,
+    handle: async ({ target, version, body }) => renameEntity({ source: target, version, body }),
   },
 ]
 

@@ -479,6 +479,21 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 **验证**：`node --test tests/file-cas.test.js`（外部改动被拒且目标文件不变、基线正确时正常写入、初始化的两会话竞争）。
 
+### 5.6 改名与影响面
+
+改设定前先看影响面，改名**只写一次**（[ADR-0014](../adrs/0014-entity-id-pinning.md)，roadmap X-15）：
+
+| 项 | 契约 |
+|---|---|
+| 影响清单 | `GET /inkflow/internal/impact?kind=&id=`（`id` 省略时按 `title` 模糊匹配，多命中回候选）列五处：①提及它的章（`entity_mentions`，带章标题与出现次数）②以它为端点的关系 ③时间线里它参与或作为地点的事件 ④账本里以它为主体的条目 ⑤伏笔 `linkedEntities` 关联项，外加总计数。**只读、零写盘**：不 `ensureIndex`、不写 `state.json`、不碰真相文件 |
+| 改名的文件效应 | 在同一目录内换文件名 + 把**旧 id** 写进新文件 frontmatter 的 `id`；引用方（关系 `source`/`target`、时间线 `participants`/`place`、账本 `subject`、伏笔 `linkedEntities`、`entity_mentions.entity_key`）**一个都不改** |
+| 索引效应 | 重建后 `entities` 行的 `id` 不变、`path` 更新；`entity_mentions` 命中条数不变。id 与路径不一致是合法状态（I-20 `ID_PATH_DIVERGED`，info、不阻断） |
+| 拒绝 | 目标已存在 → `409 TARGET_EXISTS`；基线不符 → `409 FILE_CHANGED`（两者都零写入）；`facts` 不参与改名（文件名即主体，主体改名等账本口径定案，见 #32） |
+| 取消零写入 | 只生成清单、不执行（关掉对话框）→ 项目树全量 hash 与 `sha256` 不变 |
+| 重复改名 | 沿用文件里已有的 `id`，不再生成新的；只有「改名」写 `id`，新建实体不钉 |
+
+**验证**：`node --test tests/impact.test.js tests/identity.test.js`。
+
 ## 6. 门禁与向导返回约定
 
 非 `usable` 时的拒绝返回（结构化清单，不是异常）：
@@ -550,6 +565,8 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `/inkflow/internal/library/item` | GET | `sessionId`、`kind`、`id` | 实体投影行 + 该文件的 `frontmatter` / `body` / `bodyChars` / `issues` / `fingerprint`（写路由的 `expected` 基线）；`KIND_REQUIRED`/`KIND_INVALID`(附 `allowed[]`)/`ID_REQUIRED`；索引不可用时 200 + `INDEX_UNAVAILABLE` | `400 KIND_REQUIRED`、`400 KIND_INVALID`、`400 ID_REQUIRED`、`404 library-item-not-found` |
 | `/inkflow/internal/library/issues` | GET | `sessionId` | `issues[]`（`code`/`path`/`detail`）+ `counts`（按 code）+ `truncated` | `SESSION_ID_INVALID` |
 | `/inkflow/internal/library/item` | POST | `sessionId`；`kind`、`id`（实体地址，**不是路径**）、`frontmatter`（键→string/number/boolean/数组；`null` 或 `[]` 删除该键）、`body`（整体替换正文）、`expected`（**必填**基线） | 写后的 `path`/`frontmatter`/`body`/`bodyChars`、`replaced`、`changed[]`（`replacedKeys`/`appendedKeys`/`removedKeys`）、新 `fingerprint`、`indexRebuilt`/`indexState`（失败时 `indexError`/`indexReasons`） | `400 KIND_REQUIRED`/`KIND_INVALID`/`ID_REQUIRED`/`PATH_OUT_OF_SCOPE`/`BODY_INVALID`/`EXPECTED_REQUIRED`/`EXPECTED_INVALID`/`FRONTMATTER_INVALID`/`FRONTMATTER_VALUE_INVALID`/`EMPTY_UPDATE`、`404 library-item-not-found`、`409 FILE_CHANGED`、`200 + indexError`（索引不可用不阻止写） |
+| `/inkflow/internal/impact` | GET | `sessionId`、`kind`；`id` 或 `title`（二选一），可选 `slug` / `newTitle` 出改名预览 | 影响清单（§5.6）：`chapters[]`（`chapterId`/`title`/`seq`/`path`/`mentions`）、`relations[]`、`events[]`、`facts[]`、`foreshadowing[]`、`totals`、`fingerprint`、`indexAvailable`/`indexState`、`rename`（预览计划：`from`/`to`/`slug`/`title`/`pinId`/`targetExists`/`blockers[]`）；只读、零写盘 | `400 KIND_REQUIRED`/`KIND_INVALID`/`SELECTOR_REQUIRED`/`TITLE_AMBIGUOUS`（附 `candidates[]`）、`404 impact-entity-not-found` |
+| `/inkflow/internal/impact/rename` | POST | `sessionId`；`kind`、`id`（实体地址）、`slug`/`title`（至少一个改动）、`expected`（**必填**基线） | 改名结果（§5.6）：`path`（新）/`previousPath`/`id`（不变）/`title`、`pinnedId: true`、新 `fingerprint`、`entities` 前后行（`id` 同、`path` 变）、`mentions` 前后条数、`indexRebuilt`/`indexState` | `400 KIND_REQUIRED`/`KIND_INVALID`/`ID_REQUIRED`/`SLUG_INVALID`/`TITLE_INVALID`/`RENAME_NO_CHANGE`/`KIND_NOT_RENAMEABLE`/`EXPECTED_REQUIRED`、`404 impact-entity-not-found`、`409 TARGET_EXISTS`/`FILE_CHANGED` |
 | `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`status`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId`、`fingerprint`（`size`/`mtimeMs`/`sha256`，写路由的 `expected` 基线） | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
 | `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'`、`indexRebuilt`、`indexState`（+ 失败时的 `indexError`/`indexReasons`） | `400 QUERY_REQUIRED` |
 | `/inkflow/internal/chapters` | POST | `sessionId`；`title`（必填）、`volumeId`（`vol-NN` 或 `null`＝散章）、`slug`、`seq` | 新建章 `chapter`（`chapterId`/`file`/`title`/`seq`/`volumeId`/`status`）+ `fingerprint` + `catalogRebuilt`/`indexRebuilt` | `400 TITLE_REQUIRED`/`SEQ_INVALID`/`VOLUME_ID_INVALID`、`404 VOLUME_NOT_FOUND`、`409 CHAPTER_EXISTS`/`SEQ_CONFLICT` |

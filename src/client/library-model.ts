@@ -96,6 +96,8 @@ export interface LibraryItemValue {
   /** Present on a save when the derived index could not be rebuilt afterwards. */
   indexError?: { code?: string; message?: string }
   indexRebuilt?: boolean
+  /** The freshness verdict after a write (`fresh` / `stale` / `missing` / `incompatible`). */
+  indexState?: string
   readError?: { code?: string; message?: string }
 }
 
@@ -180,13 +182,17 @@ export function describeIssueCode(code: string): string {
 
 // ---------------------------------------------------------------------------
 // Shape readers: the panel drops what it cannot name instead of rendering holes
+//
+// `asRecord` / `optionalString` are exported because `impact-model.ts` folds the
+// same Host payloads and must drop malformed rows the same way — one rule, two
+// models, instead of a second copy that drifts.
 // ---------------------------------------------------------------------------
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined
 }
 
-function optionalString(value: unknown): string | null {
+export function optionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
 }
 
@@ -493,6 +499,21 @@ export const KIND_FIELDS: Record<string, readonly LibraryFieldSpec[]> = {
 /** The editable fields of one kind; an unknown kind has none (its body is still editable). */
 export function fieldsForKind(kind: string): readonly LibraryFieldSpec[] {
   return KIND_FIELDS[kind] ?? []
+}
+
+/**
+ * The frontmatter key a kind keeps its display name in, if the form edits one.
+ *
+ * `characters` spells it `name` (its projection `title` comes from `name`), every
+ * other kind that has one spells it `title`. Returns `undefined` for a kind whose
+ * form has no name field, so the rename dialog hides the input instead of writing
+ * a key the form does not own.
+ */
+export function renameTitleField(kind: string): string | undefined {
+  const fields = fieldsForKind(kind)
+  if (fields.some((spec) => spec.key === 'name')) return 'name'
+  if (fields.some((spec) => spec.key === 'title')) return 'title'
+  return undefined
 }
 
 /** How a value is shown in the form: one item per line for a list, `true`/`false` for a boolean. */

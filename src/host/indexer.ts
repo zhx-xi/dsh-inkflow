@@ -15,7 +15,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { CONTENT_DIRS, INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from './conventions.js'
+import { CHAPTERS_DIR, CONTENT_DIRS, INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from './conventions.js'
 import { boolField, parseMarkdown, stringField } from './frontmatter.js'
 import type { ProjectProbe } from './project.js'
 import { DOMAIN_MODULES } from './domains/index.js'
@@ -231,7 +231,31 @@ export function scanProject(root: string): ScanResult {
     }
   }
 
-  // 4) Domain invariants run on the domain's own rows with the whole book's projection
+  // 4) I-20 (ADR-0014): an entity whose id is a **former path**. That is the normal
+  //    state after a rename — the old id stays pinned in the file so every reference
+  //    keeps resolving — so this is reported for the audit report (#33) to show as
+  //    **info** and never blocks a build or a write. Reported rather than ignored
+  //    because "why can I not find this file by its id?" is otherwise unanswerable.
+  //
+  //    Two deliberate narrowings, or the code would cry wolf:
+  //      * chapters are excluded: their id is a catalog-assigned uuid, never a path
+  //        (data-model §3.1/§4.1), so every chapter would be listed forever;
+  //      * only a path-SHAPED id counts. A hand-written `id: char-1` in
+  //        `characters/清音.md` is an identity, not proof of a rename — reporting it
+  //        would tell the author "this name was changed" about a name that never
+  //        was. A pinned id is always an old project-relative path.
+  for (const entity of entities) {
+    if (entity.kind === CHAPTERS_DIR) continue
+    if (entity.id === entity.path) continue
+    if (!(entity.id.includes('/') && entity.id.toLowerCase().endsWith('.md'))) continue
+    issues.push({
+      code: 'ID_PATH_DIVERGED',
+      path: entity.path,
+      detail: `${entity.kind} "${entity.id}" lives at ${entity.path} (the id is a former path, pinned by a rename — ADR-0014)`,
+    })
+  }
+
+  // 5) Domain invariants run on the domain's own rows with the whole book's projection
   //    available, so a domain can resolve references across directories.
   for (const { module, result } of scanned) {
     issues.push(...module.validate({ root, scan: result, entities }))
