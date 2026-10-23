@@ -222,7 +222,15 @@ function manifestOf(root) {
 function trunkChanges(root) {
   // `git status --porcelain -uall`: the only acceptable mention of `.inkflow/`
   // is none at all (it is ignored from the first write, ADR-0012 #2).
-  const output = execFileSync('git', ['status', '--porcelain', '-uall'], { cwd: root, encoding: 'utf8' })
+  //
+  // `core.quotepath=false` is not cosmetic: with the default, git escapes every
+  // non-ASCII byte (`"\345\274\200\347\257\207"`), so a Chinese file name matches
+  // nothing on Linux while matching on Windows. The claim is about the path, so
+  // the path is what the command must print.
+  const output = execFileSync('git', ['-c', 'core.quotepath=false', 'status', '--porcelain', '-uall'], {
+    cwd: root,
+    encoding: 'utf8',
+  })
   return output.split('\n').filter((line) => line.trim() !== '')
 }
 
