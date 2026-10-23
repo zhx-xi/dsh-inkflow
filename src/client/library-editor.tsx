@@ -295,9 +295,13 @@ export function LibraryItemEditor({ item, detail, sessionId, onSaved, onReloaded
           the old position was the top of the editor, which on a long entry is
           several screens away — the author clicked 保存 and saw nothing happen. */}
       {error === null ? null : (
-        <div style={{ ...cardStyle, ...(conflict ? errorTone() : {}) }} role="alert">
+        <div style={{ ...cardStyle, ...(conflict ? errorTone() : {}) }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>{conflict ? '文件已被改动' : '保存失败'}</div>
-          <div style={{ ...muted, ...(conflict ? { color: 'var(--dsw-alias-state-error-primary)' } : {}) }}>{error}</div>
+          {/* `role="alert"` covers the TEXT only: wrapping the buttons would make a
+              screen reader announce them assertive on every failed save. */}
+          <div role="alert" style={{ ...muted, ...(conflict ? { color: 'var(--dsw-alias-state-error-primary)' } : {}) }}>
+            {error}
+          </div>
           {conflict ? (
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button type="button" style={buttonStyle} disabled={saving} onClick={() => void reload()}>

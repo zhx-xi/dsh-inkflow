@@ -319,16 +319,20 @@ async function readBody(req: IncomingMessage): Promise<BodyRead> {
   if (typeof stream[Symbol.asyncIterator] !== 'function') return { ok: true, text: '' }
 
   let bytes = 0
-  const chunks: string[] = []
+  // Collect BYTES and decode ONCE. Decoding per chunk splits every multibyte
+  // character that straddles a chunk boundary into two U+FFFD and writes the
+  // damaged text back out — measured before this fix: a 300 KB body came back
+  // `200 OK` with 8 replacement characters already on disk (issue #115 review).
+  const chunks: Buffer[] = []
   for await (const chunk of req as AsyncIterable<unknown>) {
     const buffer =
       typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk instanceof Uint8Array ? Buffer.from(chunk) : undefined
     if (buffer === undefined) continue
     bytes += buffer.byteLength
     if (bytes > MAX_INTERNAL_BODY_BYTES) return { ok: false }
-    chunks.push(buffer.toString('utf8'))
+    chunks.push(buffer)
   }
-  return { ok: true, text: chunks.join('') }
+  return { ok: true, text: Buffer.concat(chunks).toString('utf8') }
 }
 
 type BodyParse = { ok: true; value: JsonRecord } | { ok: false }
