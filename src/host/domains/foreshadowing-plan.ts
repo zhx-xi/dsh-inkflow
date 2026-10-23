@@ -146,8 +146,8 @@ export function parseForeshadowFile(path: string, text: string): ForeshadowParse
   const parsed = parseMarkdown(text)
   const issues: ValidationIssue[] = parsed.issues.map((detail) => ({ code: 'FRONTMATTER_ISSUE', path, detail }))
 
-  const declaredStatus = statusValue(stringField(parsed.data, 'status'))
   const rawStatus = (stringField(parsed.data, 'status') ?? '').trim()
+  const declaredStatus = statusValue(rawStatus)
   if (rawStatus !== '' && declaredStatus === undefined) {
     issues.push({
       code: 'FRONTMATTER_ISSUE',
@@ -156,29 +156,41 @@ export function parseForeshadowFile(path: string, text: string): ForeshadowParse
     })
   }
 
-  const hasResolved = Object.prototype.hasOwnProperty.call(parsed.data, 'resolved')
-  const resolved = hasResolved ? boolField(parsed.data, 'resolved') : undefined
+  const resolvedOf = Object.prototype.hasOwnProperty.call(parsed.data, 'resolved')
+  const resolved = resolvedOf ? boolField(parsed.data, 'resolved') : undefined
 
   // `status` wins; the boolean is only a fallback for files written before it existed.
   const status: ForeshadowStatus = declaredStatus ?? (resolved === true ? 'resolved' : 'planted')
 
-  const advancedAt = stringArrayField(parsed.data, 'advancedAt')
+  // A file with no `title` (or an empty one) is titled after its own name: a
+  // foreshadow nobody can list is worse than one with a derived title.
+  const declaredTitle = stringField(parsed.data, 'title')
+  const title = declaredTitle === undefined || declaredTitle.trim() === '' ? basename(path, extname(path)) : declaredTitle
+
   const row: ForeshadowRow = {
     id: stringField(parsed.data, 'id') ?? path,
     path,
-    title: stringField(parsed.data, 'title') ?? basename(path, extname(path)),
+    title,
     status,
     ...(declaredStatus === undefined ? {} : { declaredStatus }),
     ...(resolved === undefined ? {} : { resolved }),
-    ...(stringField(parsed.data, 'plantedAt') === undefined ? {} : { plantedAt: stringField(parsed.data, 'plantedAt') }),
-    advancedAt,
-    ...(stringField(parsed.data, 'dueBy') === undefined ? {} : { dueBy: stringField(parsed.data, 'dueBy') }),
-    ...(stringField(parsed.data, 'resolvedChapter') === undefined
-      ? {}
-      : { resolvedChapter: stringField(parsed.data, 'resolvedChapter') }),
+    ...scalarField(parsed.data, 'plantedAt', 'plantedAt'),
+    advancedAt: stringArrayField(parsed.data, 'advancedAt'),
+    ...scalarField(parsed.data, 'dueBy', 'dueBy'),
+    ...scalarField(parsed.data, 'resolvedChapter', 'resolvedChapter'),
     linkedEntities: stringArrayField(parsed.data, 'linkedEntities'),
   }
   return { row, issues }
+}
+
+/** One optional scalar field, spreadable: absent stays absent (no `undefined` keys in the row). */
+function scalarField<K extends string>(
+  data: Record<string, unknown>,
+  key: string,
+  as: K,
+): { [P in K]?: string } {
+  const value = stringField(data, key)
+  return value === undefined ? {} : ({ [as]: value } as { [P in K]?: string })
 }
 
 // ---------------------------------------------------------------------------
