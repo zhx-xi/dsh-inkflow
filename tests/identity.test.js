@@ -368,6 +368,156 @@ test('identity: renaming again keeps the pinned id instead of generating a new o
 })
 
 // ---------------------------------------------------------------------------
+// 1b. What a request may and may not write into the file
+// ---------------------------------------------------------------------------
+
+test('identity: a title-only edit writes no `id:` — only a move pins', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    await buildIndex(root)
+
+    // ADR-0014 §4 / §5.6: "只有「改名」写 `id`". A file whose name did not change has
+    // nothing for the id to hold on to, so writing one would make the file claim it had
+    // been renamed — and #33's audit would then list `ID_PATH_DIVERGED` for a rename
+    // that never happened.
+    const value = okBody(
+      await renameEntity({
+        source: sourceFor(root),
+        version: '1.0.0',
+        body: { kind: 'world', id: ENTRY_ID, title: '白云观（重修）', expected: fingerprintOf(root, ENTRY_ID) },
+      }),
+    )
+    assert.equal(value.path, ENTRY_ID, 'a title-only edit keeps the file name')
+    assert.deepEqual(value.changed, ['title'], 'the file did not move, so neither `file` nor `id` changed')
+    assert.equal(value.pinnedId, false, 'nothing is pinned: the id still equals the path')
+
+    const written = readFileSync(join(root, ENTRY_ID), 'utf8')
+    assert.match(written, /\ntitle: 白云观（重修）\n/u)
+    assert.equal(/(^|\n)id:/u.test(written), false, 'no `id:` line was added')
+    assert.deepEqual(
+      validationCodes(root).filter((issue) => issue.code === 'ID_PATH_DIVERGED'),
+      [],
+      'I-20 stays quiet: this entry is not a renamed one',
+    )
+
+    // The move that follows pins as before — the rule is about the move, not about
+    // the request that happens to carry a title.
+    const renamed = okBody(
+      await renameEntity({
+        source: sourceFor(root),
+        version: '1.0.0',
+        body: { kind: 'world', id: ENTRY_ID, slug: '云台观', expected: fingerprintOf(root, ENTRY_ID) },
+      }),
+    )
+    assert.deepEqual(renamed.changed, ['file', 'id'])
+    assert.equal(renamed.pinnedId, true)
+    assert.match(
+      readFileSync(join(root, NEW_ID_UNUSED), 'utf8'),
+      new RegExp(`\nid: ${ENTRY_ID.replaceAll('/', '\\/')}\n`, 'u'),
+      'a real move still pins the old id',
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('identity: renaming a BOM+CRLF entry keeps the body and lands as plain LF with the pin', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // The file a Windows editor leaves behind: UTF-8 BOM + CRLF. Reading must tolerate
+    // it (H11) while the write normalises it (io.ts `normalizeText`, §5) — the pair a
+    // hand-rolled rename gets wrong in one direction or the other.
+    writeFileSync(join(root, ENTRY_ID), '\uFEFF---\r\ntitle: 白云观\r\ncategory: 门派\r\n---\r\n\r\n山中道观。\r\n', 'utf8')
+    await buildIndex(root)
+
+    const value = okBody(
+      await renameEntity({
+        source: sourceFor(root),
+        version: '1.0.0',
+        body: { kind: 'world', id: ENTRY_ID, slug: '云台观', title: '云台观', expected: fingerprintOf(root, ENTRY_ID) },
+      }),
+    )
+    assert.deepEqual(value.changed, ['file', 'id', 'title'])
+
+    const written = readFileSync(join(root, NEW_ID_UNUSED), 'utf8')
+    assert.equal(written.startsWith('\uFEFF'), false, 'the BOM does not survive the write')
+    assert.equal(written.includes('\r'), false, 'CRLF is normalised to LF at the write door, in one place')
+    assert.match(written, /^---\ntitle: 云台观\ncategory: 门派\nid: [^\n]+\n---\n/u, 'frontmatter order and keys survive; the pin is appended')
+    assert.match(written, new RegExp(`\nid: ${ENTRY_ID.replaceAll('/', '\\/')}\n`, 'u'))
+    assert.equal(written.endsWith('山中道观。\n'), true, 'the prose survives byte for byte (after normalisation)')
+    assert.equal(existsSync(join(root, ENTRY_ID)), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('identity: a renamed entry answers to its NEW path as well as to its pinned id', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    await buildIndex(root)
+    okBody(
+      await renameEntity({
+        source: sourceFor(root),
+        version: '1.0.0',
+        body: { kind: 'world', id: ENTRY_ID, slug: '云台观', expected: fingerprintOf(root, ENTRY_ID) },
+      }),
+    )
+
+    // A pinned id is a *former* path, so the file's current location no longer matches
+    // any id. Whoever reads the tree (or the panel row) holds the path, and asking for
+    // the impact of that path must land on the entry carrying the old id.
+    const byPath = await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', id: NEW_ID_UNUSED })
+    assert.equal(byPath.status, 200, JSON.stringify(byPath.body))
+    assert.equal(byPath.body.value.id, ENTRY_ID, 'the entry is still addressed by its pinned id')
+    assert.equal(byPath.body.value.path, NEW_ID_UNUSED)
+    assert.equal(byPath.body.value.totals.chapters, 3, 'and its mentions still resolve')
+
+    const byId = await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', id: ENTRY_ID })
+    assert.equal(byId.status, 200, 'the old id keeps working too — that is the point of pinning it')
+    assert.equal(byId.body.value.path, NEW_ID_UNUSED)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('identity: deleting the renamed entry afterwards is what dangles the references', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    await buildIndex(root)
+    okBody(
+      await renameEntity({
+        source: sourceFor(root),
+        version: '1.0.0',
+        body: { kind: 'world', id: ENTRY_ID, slug: '云台观', expected: fingerprintOf(root, ENTRY_ID) },
+      }),
+    )
+    assert.deepEqual(
+      validationCodes(root).filter((issue) => issue.code === 'RELATION_ENDPOINT'),
+      [],
+      'the rename itself dangles nothing',
+    )
+
+    // The entry is deleted for real (the author's own action): now the relation's
+    // `target` names an id that no file carries any more. This is the failure the
+    // pinning exists to prevent *for renames* — a deletion is the one case it cannot.
+    rmSync(join(root, NEW_ID_UNUSED))
+    await buildIndex(root)
+    const dangling = validationCodes(root).filter((issue) => issue.code === 'RELATION_ENDPOINT')
+    assert.equal(dangling.length > 0, true, 'with the file gone, `RELATION_ENDPOINT` is the honest report')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 2. Refusals: each one has to leave the tree exactly as it was
 // ---------------------------------------------------------------------------
 
@@ -467,6 +617,52 @@ test('identity: a missing baseline, a no-op rename and a ledger file are each re
 
     assert.equal(hashTruth(root), before, 'all three refusals are zero-write')
     assert.equal(indexDigest(root), indexBefore, '…and none of them rebuilds the index')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('identity: a dot-leading file name is refused with SLUG_INVALID and writes nothing', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+
+    // Why this is a refusal and not a style rule: both scanners skip dot entries
+    // (`indexer.ts`'s walk, `impact.ts`'s listing), so a written `.hidden.md` exists on
+    // disk and in no listing — the entry is invisible, its mentions are zero and the
+    // relations naming it start reporting `RELATION_ENDPOINT`. Placing one by hand
+    // demonstrates exactly that; git would be the only way back.
+    writeMarkdown(root, 'world/门派/.hidden.md', ['title: 隐藏观', 'category: 门派'], '不该出现在任何清单里。')
+    await buildIndex(root)
+    const invisible = await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', title: '隐藏观' })
+    assert.equal(invisible.status, 404, 'a dot file is invisible to the listing — which is why the writer must refuse it')
+    rmSync(join(root, 'world', '门派', '.hidden.md'))
+
+    const before = hashTruth(root)
+    const indexBefore = indexDigest(root)
+    for (const slug of ['.', '..', '.hidden']) {
+      const reply = await renameEntity({
+        source: sourceFor(root),
+        version: '1.0.0',
+        body: { kind: 'world', id: ENTRY_ID, slug, expected: fingerprintOf(root, ENTRY_ID) },
+      })
+      assert.equal(reply.status, 400, `slug ${JSON.stringify(slug)} must be refused`)
+      assert.equal(reply.body.error.code, 'SLUG_INVALID', JSON.stringify(reply.body))
+    }
+
+    assert.equal(hashTruth(root), before, '零写入: no dot file, no renamed file, no byte changed')
+    assert.equal(indexDigest(root), indexBefore, 'a refusal does not rebuild the index')
+    assert.deepEqual(
+      readdirSync(join(root, 'world', '门派')).filter((name) => name.endsWith('.md')),
+      ['白云观.md'],
+      'the only entry is the one that was already there',
+    )
+    assert.equal(
+      (await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', id: ENTRY_ID })).status,
+      200,
+      'the entry is still reachable — the refusal is what kept it that way',
+    )
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -71,9 +71,18 @@ export function slugify(title: string): string {
   return [...trimmed].slice(0, SLUG_MAX).join('').replace(/[-. ]+$/u, '')
 }
 
-/** Is this slug portable as one path segment? */
+/**
+ * Is this slug portable as one path segment — and **visible**?
+ *
+ * The leading-dot rule is not cosmetic. Both scanners skip dot entries
+ * (`indexer.ts`'s walk and `impact.ts`'s listing), so a file named `.hidden.md`
+ * would be written successfully and then be invisible: the tool answered 200, yet
+ * `GET /library`/`GET /impact` cannot find it, the index has no row for it, and
+ * the relations that name it report `RELATION_ENDPOINT` — the entry is gone, with
+ * git as the only way back (#34 review). `.`/`..` are refused by the same line.
+ */
 export function isPortableSlug(slug: string): boolean {
-  return slug !== '' && !UNSAFE_SEGMENT.test(slug) && !slug.includes('/')
+  return slug !== '' && !slug.startsWith('.') && !UNSAFE_SEGMENT.test(slug) && !slug.includes('/')
 }
 
 /** Index failure, in the same shape `tools.ts` answers with. */

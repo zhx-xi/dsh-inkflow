@@ -54,6 +54,8 @@ import {
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { INDEX_DIR, PRIVATE_STATE_DIR, PRIVATE_STATE_SUBDIRS, WRITE_DIRS } from './conventions.js'
+import { checkSegment } from './path-rules.js'
+import type { SegmentProblem } from './path-rules.js'
 import { isWithin, realpathLoose } from './project.js'
 
 // ---------------------------------------------------------------------------
@@ -160,8 +162,6 @@ const INDEX_BUILD_LOCK_FILE = '.lock'
  * `.tmp-<pid>-<rand>` suffix added to the same directory.
  */
 const MAX_WRITE_PATH = 240
-/** Per-component limit on NTFS. */
-const MAX_SEGMENT = 255
 /** A lock older than this was left behind by a hung/crashed writer. */
 const STALE_LOCK_MS = 10 * 60_000
 /** The lock file is created before its pid is written: do not judge it too early. */
@@ -172,23 +172,6 @@ const MAX_ERROR_MESSAGE = 300
 
 /** `<name>.tmp-<pid>-<rand>` — see docs/conventions.md §5. */
 const TEMP_FILE = /\.tmp-(\d+)-[0-9a-f]+$/
-
-/**
- * Device names Windows reserves: `CON.md` creates a file that no tool can open
- * again, and `COM1` writes to a serial port. Checked on every platform so a
- * project stays portable between the machines that share it.
- */
-const WINDOWS_RESERVED = new Set<string>([
-  'CON',
-  'PRN',
-  'AUX',
-  'NUL',
-  ...Array.from({ length: 9 }, (_unused, index) => `COM${index + 1}`),
-  ...Array.from({ length: 9 }, (_unused, index) => `LPT${index + 1}`),
-])
-
-/** Characters NTFS treats specially; legal on POSIX, but not portable. */
-const UNSAFE_SEGMENT_CHARS = /[<>:"|?*]/
 
 // ---------------------------------------------------------------------------
 // Failure helpers
@@ -293,30 +276,7 @@ function toFailure(cause: unknown, root: string, path: string | undefined): IoFa
 // Path resolution: the only way in
 // ---------------------------------------------------------------------------
 
-type SegmentCheck = { code: IoErrorCode; message: string }
-
-function checkSegment(segment: string): SegmentCheck | undefined {
-  if (segment === '') return { code: 'PATH_INVALID', message: 'a write path must not contain empty segments' }
-  if (segment === '.' || segment === '..') {
-    return { code: 'PATH_INVALID', message: `"${segment}" segments are not allowed; the path is already relative to the project root` }
-  }
-  if (segment.length > MAX_SEGMENT) {
-    return { code: 'PATH_TOO_LONG', message: `the file name is ${segment.length} characters; the limit is ${MAX_SEGMENT}` }
-  }
-  if (UNSAFE_SEGMENT_CHARS.test(segment)) {
-    return { code: 'PATH_INVALID', message: `the file name contains a character that is not portable: ${segment}` }
-  }
-  // Windows strips trailing dots and spaces, so `x.md.` and `x.md ` silently
-  // address the same file as `x.md` while looking like different chapters.
-  if (/[. ]$/.test(segment)) {
-    return { code: 'PATH_INVALID', message: `a file name must not end with a dot or a space: ${segment}` }
-  }
-  const stem = (segment.split('.')[0] ?? '').toUpperCase()
-  if (WINDOWS_RESERVED.has(stem)) {
-    return { code: 'PATH_RESERVED', message: `"${segment}" uses the reserved Windows device name ${stem}` }
-  }
-  return undefined
-}
+type SegmentCheck = SegmentProblem
 
 interface ParsedRelativePath {
   segments: string[]

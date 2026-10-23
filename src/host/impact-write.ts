@@ -17,7 +17,8 @@
  * Ordering inside the lock is deliberate and is the reverse of what feels natural:
  *
  *   1. read the source bytes and compare the baseline (`FILE_CHANGED` before a
- *      single byte is written — §5.5),
+ *      single byte is written — §5.5), and re-check that the target name is still
+ *      free: the preview ran outside this lock, so a file may have appeared there,
  *   2. write the NEW file (atomically, `io.ts`),
  *   3. remove the OLD one, and if that removal fails, remove the new file again
  *      (a copy left behind would be a second entry with the same pinned id → the
@@ -30,7 +31,7 @@
  * ago by a bug).
  */
 
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { ContentDir } from './conventions.js'
@@ -45,6 +46,7 @@ import { removeProjectFile, withProjectWriteLock, writeTextAtomic } from './io.j
 import type { IoFailure } from './io.js'
 import { chaptersMentioning } from './domains/mentions-query.js'
 import { readExpectation } from './library-request.js'
+import { isSingleLine } from './path-rules.js'
 
 /** A plain JSON payload, the channel's envelope half. */
 type JsonRecord = Record<string, unknown>
@@ -76,18 +78,25 @@ interface PinResult {
 /**
  * Put `pinId` into the file's frontmatter, and the new display title with it.
  *
- * `patchFrontmatter` is the same line-level patcher the library editor uses, so
- * key order, comments, quoting, unknown keys and line endings survive — a rename
- * must not reformat an author's file. A file with **no** frontmatter block gets one
- * created: without a block there is nowhere to pin the id, and writing the file
- * back unchanged would be a silent no-op that still reported success.
+ * `pinId === undefined` means the file is **not moving**: only a rename pins the id
+ * (conventions §5.6, ADR-0014 §4 — "只有「改名」写 `id`"). A title-only edit on a
+ * file that never had an `id:` must not grow one, or the file would claim to be a
+ * renamed entry it is not, and #33's audit would list it as `ID_PATH_DIVERGED`.
+ *
+ * `patchFrontmatter` is the same line-level patcher the library editor uses, so key
+ * order, comments, quoting, unknown keys and line endings survive. Two deviations
+ * are deliberate: `io.ts` normalises the text it writes (CRLF → LF, BOM stripped —
+ * the encoding invariant every write obeys, so a rename of a BOM+CRLF file lands as
+ * BOM-less LF), and a file with **no** frontmatter block gets one created — without
+ * a block there is nowhere to write the pin, and writing the bytes back unchanged
+ * would be a silent no-op that still reported success.
  */
-function pinId(text: string, pinId: string, title: { field: string; value: string } | undefined): PinResult {
+function patchEntry(text: string, pinId: string | undefined, title: { field: string; value: string } | undefined): PinResult {
   const parsed = parseMarkdown(text)
   const declared = stringField(parsed.data, 'id')
   const entries: Record<string, FrontmatterValue> = {}
-  const wroteId = (declared ?? '').trim() !== pinId
-  if (wroteId) entries['id'] = pinId
+  const wroteId = pinId !== undefined && (declared ?? '').trim() !== pinId
+  if (wroteId && pinId !== undefined) entries['id'] = pinId
   const wroteTitle = title !== undefined && (stringField(parsed.data, title.field) ?? '') !== title.value
   if (wroteTitle && title !== undefined) entries[title.field] = title.value
   if (!wroteId && !wroteTitle) return { text, wroteId: false, wroteTitle: false }
@@ -140,10 +149,6 @@ function indexDegradation(ensured: EnsureIndexResult): JsonRecord {
     indexError: { code: ensured.failure.code, errno: ensured.failure.errno, message: ensured.failure.message },
     indexReasons: ensured.freshness.reasons,
   }
-}
-
-function singleLine(value: string): boolean {
-  return !/[\r\n]/u.test(value)
 }
 
 /** Total occurrences across the chapters that name the entity (0 when the index cannot answer). */
@@ -210,8 +215,25 @@ function renameLocked(root: string, input: {
   }
 
   const text = bytes.toString('utf8')
-  const pin = pinId(text, input.pinId, input.title)
   const moved = input.to !== input.entity.path
+  // Only a real move pins the id (§5.6, ADR-0014 §4): a title-only edit leaves the
+  // file where it is, so there is nothing for the id to survive.
+  const pin = patchEntry(text, moved ? input.pinId : undefined, input.title)
+
+  // The plan already said the target was free, but the author's editor does not
+  // take this lock: a file can appear at `to` between the preview and the write.
+  // Writing over it would erase an entry that the plan never mentioned.
+  const targetAbsolute = join(root, ...input.to.split('/'))
+  if (moved && existsSync(targetAbsolute)) {
+    return {
+      ok: false,
+      reply: refused(409, 'TARGET_EXISTS', {
+        target: input.to,
+        nothingWritten: true,
+        hint: 'another file appeared at that name after the preview; reload the entry and pick a different name',
+      }),
+    }
+  }
 
   const written = writeTextAtomic(root, input.to, pin.text)
   if (!written.ok) return { ok: false, reply: ioRefusal(written.error) }
@@ -288,9 +310,6 @@ export async function renameEntity(request: RenameRequest): Promise<ImpactReply>
     return refused(400, 'TITLE_INVALID', { field: 'title', hint: '`title` must be the new display name' })
   }
   const newTitle = typeof titleRaw === 'string' ? titleRaw.trim() : ''
-  if (newTitle !== '' && !singleLine(newTitle)) {
-    return refused(400, 'TITLE_INVALID', { field: 'title', reason: 'not-single-line', hint: 'a display name cannot contain a line break' })
-  }
 
   const expected = readExpectation(body)
   if (!expected.ok) return expected.reply
@@ -306,12 +325,20 @@ export async function renameEntity(request: RenameRequest): Promise<ImpactReply>
   const entity = resolved.entity
 
   const plan = planRename(source.root, entity, { slug: typeof slugRaw === 'string' ? slugRaw : undefined, newTitle })
+  // The plan is the single judge of "would this run?", and this route answers with
+  // the plan's own verdict — one code set, preview and write (§5.6). `SLUG_INVALID`
+  // covers both halves of the name question: `isPortableSlug` (one visible segment,
+  // so no dot-file the scanners would skip) and `io.ts`'s per-segment rule (reserved
+  // device names, trailing dot, over-long).
   if (plan.blockers.includes('SLUG_INVALID')) {
     return refused(400, 'SLUG_INVALID', {
       field: 'slug',
       value: plan.slug,
-      hint: 'a file name cannot contain a path separator, a control byte or a Windows-reserved character',
+      hint: 'a file name cannot start with a dot, contain a path separator or a control byte, or use a Windows-reserved name such as `con` / `nul` / `COM1`',
     })
+  }
+  if (plan.blockers.includes('TITLE_INVALID')) {
+    return refused(400, 'TITLE_INVALID', { field: 'title', reason: 'not-single-line', hint: 'a display name cannot contain a line break' })
   }
   if (plan.blockers.includes('RENAME_NO_CHANGE')) {
     return refused(400, 'RENAME_NO_CHANGE', {
@@ -338,6 +365,10 @@ export async function renameEntity(request: RenameRequest): Promise<ImpactReply>
 
   const ensured = await ensureIndex(source.root, { rebuild: true })
   const after = mentionCount(source.root, renamedKind, entity.id)
+  // "The id is pinned" is a fact about the entry (its id no longer equals its path),
+  // not a claim that this request wrote a pin: a title-only edit pins nothing, so it
+  // reports whatever the file already said.
+  const moved = locked.value.written.path !== entity.path
 
   return {
     status: 200,
@@ -352,7 +383,7 @@ export async function renameEntity(request: RenameRequest): Promise<ImpactReply>
         path: locked.value.written.path,
         previousPath: entity.path,
         title: newTitle === '' ? entity.title : newTitle,
-        pinnedId: true,
+        pinnedId: entity.pinnedId || moved,
         changed: locked.value.written.changed,
         fingerprint: fingerprintProjectFile(source.root, locked.value.written.path) ?? null,
         before: { id: entity.id, path: entity.path },

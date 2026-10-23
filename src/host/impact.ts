@@ -49,6 +49,7 @@ import { checkIndexFreshness } from './index-freshness.js'
 import type { IndexFreshnessState } from './index-freshness.js'
 import { LIBRARY_KINDS } from './library-view.js'
 import type { LibrarySource } from './library-view.js'
+import { checkSegment, isSingleLine } from './path-rules.js'
 
 /** A plain JSON payload, the channel's envelope half. */
 type JsonRecord = Record<string, unknown>
@@ -153,7 +154,14 @@ export interface ImpactRenamePlan {
   /** The id to pin into the moved file: always the CURRENT id (ADR-0014). */
   pinId: string
   targetExists: boolean
-  /** Codes that would refuse the rename; empty means it can run. */
+  /**
+   * Codes that would refuse the rename; empty means it can run (§5.6).
+   *
+   * The same code set the write route answers 400 with — `KIND_NOT_RENAMEABLE`,
+   * `SLUG_INVALID`, `TITLE_INVALID`, `RENAME_NO_CHANGE`, plus `TARGET_EXISTS` for
+   * the 409 — so the dialog never shows "executable" for a request the write
+   * would refuse.
+   */
   blockers: string[]
 }
 
@@ -324,9 +332,15 @@ function foldTitle(value: string): string {
 }
 
 /**
- * `id` first (exact, then as a path), then `title` (exact, then substring).
+ * `id` first (exact, then `\`/`./`-normalised, then as a **path**), then `title`
+ * (exact, then substring).
  *
- * Substring matches are reported **as candidates** rather than resolved: silently
+ * The path tier is what keeps a renamed entry addressable by where it lives now: a
+ * pinned id is a *former* path, so "the file at `world/门派/云台观.md`" no longer
+ * matches any id — the caller that just listed the tree (or read the panel's row)
+ * has the path, and it must resolve to the entry carrying the old id.
+ *
+ * Substring title matches are reported **as candidates** rather than resolved: silently
  * picking the first of two 白云观 entries would print a confident impact list about
  * the wrong one, which is worse than asking.
  */
@@ -337,7 +351,10 @@ export function resolveEntity(root: string, kind: ContentDir, request: { id?: st
   const id = (request.id ?? '').trim()
   if (id !== '') {
     const normalized = id.replaceAll('\\', '/').replace(/^\.\//u, '')
-    const hit = all.find((entity) => entity.id === id) ?? all.find((entity) => entity.id === normalized)
+    const hit =
+      all.find((entity) => entity.id === id) ??
+      all.find((entity) => entity.id === normalized) ??
+      all.find((entity) => entity.path === normalized)
     if (hit !== undefined) return { ok: true, entity: hit }
     return { ok: false, code: 'not-found' }
   }
@@ -443,7 +460,19 @@ export function planRename(root: string, entity: ResolvedEntity, request: { slug
 
   const blockers: string[] = []
   if (RENAME_REFUSED[entity.kind] !== undefined) blockers.push('KIND_NOT_RENAMEABLE')
-  if (!isPortableSlug(slug)) blockers.push('SLUG_INVALID')
+  // Two halves of one question — "will this name be written as is?" — and both
+  // report `SLUG_INVALID`, because that is the code the write route answers with:
+  //   * `isPortableSlug` says the name is one visible segment (no separator, no
+  //     control byte, no leading dot the scanners would skip);
+  //   * `checkSegment` is `io.ts`'s own rule, so `con` / `nul` / `COM1`, a
+  //     trailing dot and an over-long name are refused **here**, in the preview,
+  //     instead of turning into a `400 PATH_RESERVED` after the author confirmed.
+  //     §5.6 reads "blockers empty means it can run": the preview owes the writer's
+  //     answer, so it borrows the writer's rule rather than approximating it.
+  if (!isPortableSlug(slug) || checkSegment(basename(to)) !== undefined) blockers.push('SLUG_INVALID')
+  // A display name lands on one `key: value` line; a line break would silently
+  // become a second frontmatter key.
+  if (proposedTitle !== '' && !isSingleLine(proposedTitle)) blockers.push('TITLE_INVALID')
   // Case-insensitive on purpose: the target platform may be Windows (case-folding),
   // and two files differing only by case would be two entries the author cannot keep
   // apart — so "the name is taken" has to mean the folded name too.

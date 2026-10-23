@@ -1,12 +1,15 @@
 /**
  * The impact dialog's view model (#34, conventions §5.6, ADR-0014).
  *
- * Split from `library-model.ts` rather than appended to it: that file already
- * carries the tree, the problem panel and the entry editor (~700 lines), and this
- * half is a different question — "what would this change touch" — with its own
- * wire shape (`GET /impact`). Two models, one rule: everything here is a plain
- * function over plain data, so `node --test` covers the dialog wording without a
- * DOM, and the client half still does no file IO (ADR-0008 D4).
+ * Split from `library-model.ts` rather than appended to it. That is **not** a
+ * line-count fix: `library-model.ts` was already past the 600-line guideline
+ * (AGENTS.md §10.5) before this dialog existed, and it still is. The reason is that
+ * this half answers a different question — "what would this change touch" — with
+ * its own wire shape (`GET /impact`); putting it beside the tree, the problem panel
+ * and the entry editor would make two unrelated contracts share one file. Two
+ * models, one rule: everything here is a plain function over plain data, so
+ * `node --test` covers the dialog wording without a DOM, and the client half still
+ * does no file IO (ADR-0008 D4).
  */
 
 import type { InternalError } from './internal.js'
@@ -311,7 +314,10 @@ export function describeRenameError(error: InternalError | undefined): string {
     return '文件已被改动：磁盘上的内容已经不是影响清单里那一版，所以这次没有写入任何字节。重新打开再改名。'
   }
   if (error.code === 'KIND_NOT_RENAMEABLE') return '这一类不能改名：它的文件名就是它的主体（账本口径还没定），改名等于改它说的事。'
-  if (error.code === 'SLUG_INVALID') return '这个文件名不能用：不能含路径分隔符、控制字符或 Windows 保留字符。'
+  if (error.code === 'SLUG_INVALID') {
+    return '这个文件名不能用：不能以点开头（扫描会跳过点开头的条目，写进去就找不回来了），不能含路径分隔符或控制字符，也不能用 con / nul / COM1 这类 Windows 保留名。'
+  }
+  if (error.code === 'TITLE_INVALID') return '显示名不能换行：frontmatter 里一个名字只占一行。'
   if (error.code === 'RENAME_NO_CHANGE') return '新名字和现在一样，没有可写的内容。'
   if (error.code === 'EXPECTED_REQUIRED') return '改名缺少基线指纹（面板内部错误），重新打开这一条再试。'
   if (error.code === 'EXPECTED_INVALID') return '基线指纹格式不对（面板内部错误），重新打开这一条再试。'

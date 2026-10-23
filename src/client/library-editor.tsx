@@ -259,7 +259,11 @@ function RenameImpactPanel({
             ? '同一个目录里已经有这个文件名，改名会被拒绝。'
             : plan.blockers.includes('KIND_NOT_RENAMEABLE')
               ? '这一类的文件名就是它的主体，不能改名。'
-              : `无法改名：${plan.blockers.join('、')}`}
+              : plan.blockers.includes('SLUG_INVALID')
+                ? '这个文件名不能用：不能以点开头（那样写出来谁也看不见），不能含路径分隔符，也不能用 con / nul / COM1 这类保留名。'
+                : plan.blockers.includes('TITLE_INVALID')
+                  ? '显示名不能换行：frontmatter 里一个名字只占一行。'
+                  : `无法改名：${plan.blockers.join('、')}`}
         </div>
       ) : null}
       {error === null ? null : (
@@ -338,7 +342,8 @@ function FieldInput({ spec, value, onChange }: { spec: LibraryFieldSpec; value: 
   )
 }
 
-/** Read-only preview of a key the form does not edit. */function PreviewRow({ name, value }: { name: string; value: unknown }) {
+/** Read-only preview of a key the form does not edit. */
+function PreviewRow({ name, value }: { name: string; value: unknown }) {
   const shown =
     value === null || value === undefined
       ? '—'

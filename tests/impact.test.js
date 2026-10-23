@@ -323,6 +323,53 @@ test('impact: ?slug= previews the rename target and its blockers, and the previe
   }
 })
 
+test('impact: every code the writer refuses is already a blocker in the preview', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    addSecondEntry(root)
+    await buildIndex(root)
+    const before = hashTree(root)
+
+    // The hole the review found: `.` / `..` / `.hidden` planned cleanly (`blockers: []`),
+    // the write answered 200, and the entry then existed but was invisible — both
+    // scanners skip dot entries, so `GET /impact` / `GET /library` could never find it
+    // again and the relations naming it started reporting `RELATION_ENDPOINT`.
+    for (const slug of ['.', '..', '.hidden']) {
+      const value = readReport(await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', id: ENTRY_ID, slug }))
+      assert.deepEqual(value.rename.blockers, ['SLUG_INVALID'], `slug ${JSON.stringify(slug)} must be refused in the preview`)
+    }
+
+    // A path separator — the assertion that used to have no guard at all.
+    const separator = readReport(await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', id: ENTRY_ID, slug: '门派/云台观' }))
+    assert.deepEqual(separator.rename.blockers, ['SLUG_INVALID'])
+
+    // `io.ts`'s own per-segment rules now answer before the click too (§5.6:
+    // "blockers empty means it can run"). These used to preview `[]` and then answer
+    // `400 PATH_RESERVED` after the author confirmed.
+    for (const slug of ['con', 'nul', 'COM1']) {
+      const value = readReport(await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', id: ENTRY_ID, slug }))
+      assert.deepEqual(value.rename.blockers, ['SLUG_INVALID'], `slug ${slug} is a reserved device name`)
+    }
+
+    // A display name lands on one frontmatter line, so a break in it is refused here
+    // rather than becoming a second key in the file.
+    const multiline = readReport(
+      await buildImpact(sourceFor(root), '1.0.0', { kind: 'world', id: ENTRY_ID, slug: '云台观', newTitle: '云台观\ncategory: 邪派' }),
+    )
+    assert.deepEqual(multiline.rename.blockers, ['TITLE_INVALID'])
+
+    // The ledger's file name IS its subject: renaming it is a ledger decision (#32).
+    const ledger = readReport(await buildImpact(sourceFor(root), '1.0.0', { kind: 'facts', id: 'facts/白云观.md', slug: '白云观-旧' }))
+    assert.deepEqual(ledger.rename.blockers, ['KIND_NOT_RENAMEABLE'])
+
+    assert.equal(hashTree(root), before, 'every refusal above is a preview: the tree is untouched')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('impact: a chapter-side entity (character) reports the chapters that name it', async () => {
   const dir = workdir()
   try {
