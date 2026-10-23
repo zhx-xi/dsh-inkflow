@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writ
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { apply } from '../lib/index.js'
+import { MAX_INTERNAL_BODY_BYTES, apply } from '../lib/index.js'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -447,18 +447,18 @@ test('internal channel: every response is uncached, nosniff and CORS-free', asyn
 // 8. Bounded request bodies
 // ---------------------------------------------------------------------------
 
-test('internal channel: a request body above 64 KiB is refused with 413', async () => {
+test('internal channel: a request body above the ceiling is refused with 413', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
     bookProject(root)
     const harness = createHarness({ workspace: root })
 
-    const declared = await internalCall(harness, '/status', { contentLength: 64 * 1024 + 1 })
+    const declared = await internalCall(harness, '/status', { contentLength: MAX_INTERNAL_BODY_BYTES + 1 })
     assert.equal(declared.status, 413)
     assert.equal(declared.json.error.code, 'payload-too-large')
 
-    const oversized = await internalCall(harness, '/status', { body: 'x'.repeat(64 * 1024 + 1) })
+    const oversized = await internalCall(harness, '/status', { body: 'x'.repeat(MAX_INTERNAL_BODY_BYTES + 1) })
     assert.equal(oversized.status, 413)
   } finally {
     rmSync(dir, { recursive: true, force: true })

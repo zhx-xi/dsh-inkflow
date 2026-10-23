@@ -653,3 +653,17 @@ test('the built client bundle ships the setting-library tab and its three routes
   assert.match(text, /\/library\/issues/, 'the problem panel route must be called')
   assert.match(text, /按 code 分组/, 'the problem panel must be rendered')
 })
+
+test('library-model: a refusal that carries a size says the size (issue 115)', async () => {
+  const model = await loadLibraryModel()
+  // The library editor had the same blind spot as the chapter editor: the refusal
+  // carried `limitBytes` and the panel showed a bare code at the top of a long form.
+  const tooLarge = model.describeSaveError({ code: 'payload-too-large', limitBytes: 1024 * 1024 })
+  assert.match(tooLarge, /太长/)
+  assert.match(tooLarge, /1\.0 MB/)
+  assert.match(tooLarge, /原文没有改动/)
+  assert.doesNotMatch(tooLarge, /payload-too-large/)
+  assert.match(model.describeSaveError({ code: 'payload-too-large', limitBytes: 96 * 1024 }), /96 KB/)
+  // Every other code keeps its own wording: the new branch must not swallow them.
+  assert.match(model.describeSaveError({ code: 'FILE_CHANGED' }), /文件已被改动/)
+})

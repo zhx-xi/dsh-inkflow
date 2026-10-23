@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { apply } from '../lib/index.js'
+import { MAX_INTERNAL_BODY_BYTES, apply } from '../lib/index.js'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -599,6 +599,36 @@ test('write route: a non-usable book refuses writes with the gate checklist and 
   }
 })
 
+test('write route: a long chapter saves (the ceiling counts bytes, not characters)', async () => {
+  // issue 115: the ceiling used to be 64 KiB of *serialised* JSON. A chapter of
+  // 20,000 Chinese characters serialises to ~70 KB, so the panel answered
+  // `413 payload-too-large` and the author could not save a long chapter at all.
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    // 30,000 Chinese characters ≈ 90 KB of UTF-8, ≈ 90 KB more once JSON-escaped
+    // per line: well past the old ceiling, comfortably inside the new one.
+    const longBody = Array.from({ length: 300 }, () => '他在灯下改了这一章的三百字。'.repeat(10)).join(String.fromCharCode(10))
+    const saved = await writeCall(harness, '/chapters/ch-1', { payload: { body: longBody } })
+    assert.equal(saved.status, 200, JSON.stringify(saved.json).slice(0, 200))
+    assert.equal(saved.json.ok, true, 'a long chapter is a normal save, not a refusal')
+    assert.ok(readChapter(root).includes('他在灯下改了这一章的三百字。'))
+
+    // The ceiling still exists: above it the refusal names the number.
+    const refused = await writeCall(harness, '/chapters/ch-1', {
+      payload: { body: 'x'.repeat(MAX_INTERNAL_BODY_BYTES) },
+    })
+    assert.equal(refused.status, 413)
+    assert.equal(refused.json.error.code, 'payload-too-large')
+    assert.equal(refused.json.error.limitBytes, MAX_INTERNAL_BODY_BYTES)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('write route: an oversized body is a 413 and an undeclared verb is a 405', async () => {
   const dir = workdir()
   try {
@@ -607,7 +637,7 @@ test('write route: an oversized body is a 413 and an undeclared verb is a 405', 
     const harness = createHarness({ workspace: root })
     const before = hashTree(root)
 
-    const huge = await writeCall(harness, '/chapters/ch-1', { payload: { body: 'x'.repeat(64 * 1024 + 10) } })
+    const huge = await writeCall(harness, '/chapters/ch-1', { payload: { body: 'x'.repeat(MAX_INTERNAL_BODY_BYTES + 10) } })
     assert.equal(huge.status, 413)
     assert.equal(huge.json.error.code, 'payload-too-large')
 

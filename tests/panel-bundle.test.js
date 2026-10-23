@@ -397,6 +397,18 @@ test('describeRouteError and describeAction explain failures and wizard steps', 
   assert.equal(describeRouteError({ code: 'weird', message: 'boom' }), 'boom')
   assert.equal(describeRouteError({ code: 'weird' }), 'weird')
 
+  // Issue 115: the refusal that carries a size must say the size in the author's
+  // words — the old answer was the bare English code next to a dead-looking Save.
+  const tooLarge = describeRouteError({ code: 'payload-too-large', limitBytes: 1024 * 1024 })
+  assert.match(tooLarge, /太长/)
+  assert.match(tooLarge, /1\.0 MB/)
+  assert.doesNotMatch(tooLarge, /payload-too-large/, 'the code is not the message')
+  assert.match(describeRouteError({ code: 'payload-too-large', limitBytes: 70 * 1024 }), /70 KB/)
+  // Without the number, the sentence still stands (no `undefined` leaking out).
+  const noLimit = describeRouteError({ code: 'payload-too-large' })
+  assert.match(noLimit, /太长/)
+  assert.doesNotMatch(noLimit, /undefined|NaN/)
+
   assert.equal(describeAction({ type: 'create-dir', path: 'chapters', reason: '缺正文目录' }), '建目录 · chapters · 缺正文目录')
   assert.equal(describeAction({ type: 'git-init', path: '/books/a' }), 'git init · /books/a')
   assert.equal(describeAction({}), '需人工处理')
