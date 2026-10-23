@@ -214,6 +214,10 @@ test('registers the twelve built-ins, the tools of every registered domain, and 
       // an explicit list instead of whatever happens to be registered.
       'inkflow_character_list',
       'inkflow_character_upsert',
+      // #32: the fact ledger's three tools (append / snapshot / list).
+      'inkflow_facts_append',
+      'inkflow_facts_list',
+      'inkflow_facts_snapshot',
       'inkflow_index_rebuild',
       // #24: the outline domain's own tools, contributed through `domainTools()`.
       'inkflow_outline_move',

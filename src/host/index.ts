@@ -518,3 +518,38 @@ export {
   privateStateDirRelative,
   privateStateRelative,
 } from './private-state.js'
+
+/**
+ * The fact ledger (#32): the line format as a parse/render **pair** (ADR-0013), the
+ * interval judgement (I-23) and the "which facts hold at chapter N" query. Pure, so the
+ * round-trip and the conflict rule are test-driven directly instead of through a tool.
+ */
+export {
+  DEFAULT_FACT_SOURCE,
+  FACT_KEYS,
+  FACT_SOURCES,
+  isFactLine,
+  parseFactLine,
+  renderFactLine,
+} from './domains/facts-line.js'
+export type { FactKnownKey, FactLine, FactSource, ParsedFactLine } from './domains/facts-line.js'
+export {
+  FACTS_TABLE,
+  chapterIdsUsed,
+  chapterSeqFrom,
+  chapterSeqFromMap,
+  conflictsTouching,
+  factAnchor,
+  factInEffect,
+  factsConflicts,
+  factsFileParse,
+  factsSnapshot,
+  factsValidate,
+  parseFactsFile,
+  sortFacts,
+  unresolvedChapterIds,
+} from './domains/facts-plan.js'
+export type { ChapterSeq, FactConflict, FactRow, ParsedFacts } from './domains/facts-plan.js'
+export { CHAPTER_INDEX_LIMIT, chapterIndex, readFactsRows, seqOfChapters } from './domains/facts-query.js'
+export type { ChapterIndex } from './domains/facts-query.js'
+export { MAX_SEGMENT_FACTS, factsSegment } from './domains/facts-prompt.js'

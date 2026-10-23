@@ -26,8 +26,6 @@ const repoRoot = join(here, '..')
 /**
  * Catalogue entries that **no host code emits today**, each for a stated reason:
  *
- *   * `FACT_LINE_MALFORMED` / `FACT_CONFLICT` — invariants I-22 / I-23, reserved for
- *     #32 (the ledger domain does not exist yet);
  *   * `FORESHADOW_TRANSITION_INVALID` — invariant I-21, reserved for #31;
  *   * `ENTITIES_DRIFT` — invariant I-15, which #23 made *unrepresentable* instead of
  *     checked (rows and projection are written from one scan in one transaction), so
@@ -38,8 +36,6 @@ const repoRoot = join(here, '..')
  */
 const RESERVED_CODES = new Set([
   'ENTITIES_DRIFT',
-  'FACT_CONFLICT',
-  'FACT_LINE_MALFORMED',
   'FORESHADOW_TRANSITION_INVALID',
   // I-20, emitted by the impact/rename work (#34): nothing diverges until a rename
   // pins an id, and renames do not exist yet.
@@ -58,8 +54,10 @@ const RESERVED_CODES = new Set([
  */
 const WRITE_SIDE_CODES = new Set([
   // argument/shape rejections (write plans and tools)
+  'ATTRIBUTE_REQUIRED',
   'CATEGORY_INVALID',
   'CHAPTER_INVALID',
+  'CHAPTER_NOT_FOUND',
   'CHARACTER_ALIAS_DUPLICATE',
   'CHARACTER_FIELD_INVALID',
   'CHARACTER_FIRST_APPEARANCE_INVALID',
@@ -67,16 +65,22 @@ const WRITE_SIDE_CODES = new Set([
   'CHARACTER_STATE_INVALID',
   'CONFIRM_REQUIRED',
   'ENTITY_REQUIRED',
+  'FACTS_APPEND_REQUIRES_CONFIRMATION',
+  'FACT_SOURCE_INVALID',
+  'FACT_SUBJECT_MISMATCH',
+  'FACT_VALUE_INVALID',
   'KEYWORD_INVALID',
   'ORDER_INVALID',
   'OUTLINE_KIND_UNKNOWN',
   'PARTICIPANT_INVALID',
   'PRIORITY_INVALID',
   'SLUG_INVALID',
+  'SUBJECT_REQUIRED',
   'TIMELINE_STATUS_INVALID',
   'TIMELINE_UPSERT_REQUIRES_CONFIRMATION',
   'TITLE_INVALID',
   'TITLE_REQUIRED',
+  'VALUE_REQUIRED',
   'WORLD_UPSERT_REQUIRES_CONFIRMATION',
   // infrastructure: not a problem in the book, a state of the plugin or the disk
   'CONFIRM_REQUIRED_DUPLICATE_PLACEHOLDER',

@@ -190,7 +190,7 @@
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v6（现行，`PRAGMA user_version = 6`）
+### 4.1 v7（现行，`PRAGMA user_version = 7`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
@@ -205,6 +205,7 @@
 | `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `relations` | id | path / title / relation_kind / source / target / direction / since / until / chapter | 关系图谱查询与校验（#27） |
 | `timeline_events` | id | path / title / world_time / narrative_order / chapter / participants / status | 双轴排序、待确认区、冲突检测（#28） |
+| `facts` | id（`= path#L<line>`） | path / line / subject / attribute / value / since / until / chapter / source | 账本「截至第 N 章生效中」快照与区间冲突校验（#32）；一条事实一行，`line` 是 1-based 行锚 |
 | `entity_mentions` | (entity_key, chapter_id, offset, source) | entity_key / chapter_id / offset / source | 正文与 frontmatter 的提及定位（#29）；`entity_key` = `kind:id`，`explicit` 行的 offset 为 -1 |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
@@ -240,11 +241,10 @@
 | 表 | 用途 | 状态 |
 |---|---|---|
 | `foreshadowings` | 状态机查询、超期列表 | 未实现（#31） |
-| `facts` | 账本跨章查询 | 未实现（#32） |
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
-**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）；**v4 = v3 + `characters` 四列**（`pov` / `first_appearance` / `aliases` / `voice`）**+ `character_states` 表**。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
+**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）；**v4 = v3 + `characters` 四列**（`pov` / `first_appearance` / `aliases` / `voice`）**+ `character_states` 表**；**v5 = v4 + `timeline_events` 表**（双时间轴）；**v6 = v5 + `entity_mentions` 表**（提及定位）；**v7 = v6 + `facts` 表**（账本一行一事实，行号即锚）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
 
 ## 5. 不变量与强制手段
 
@@ -273,10 +273,10 @@
 | I-19 | 叙事槽位递增时世界时间不得倒退（＝倒叙/回忆，正常写法） | 报（不拒） | `TIMELINE_WORLD_TIME_REVERSED` |
 | I-20 | 实体 `id` 与文件路径可以不一致（改名时旧 id 被钉住，[ADR-0014](../adrs/0014-entity-id-pinning.md)）；唯一性仍按 `(kind, id)` 判 | 放行；体检列为提示 | `ID_PATH_DIVERGED`（info，不阻断） |
 | I-21 | 伏笔状态机只允许 `planted → advanced → resolved`，以及任一未终态 → `overdue`；`resolved` 是终态 | 拒 | `FORESHADOW_TRANSITION_INVALID`（#31） |
-| I-22 | 账本每行必须可解析为一条事实（键集合、必填键、`\|` 转义） | 不阻断，报行锚 | `FACT_LINE_MALFORMED`（#32） |
-| I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同 | 拒 | `FACT_CONFLICT`（#32） |
+| I-22 | 账本每行必须可解析为一条事实：`attribute` + `value` 必填，段形如 `键: 值` 且以 `\|` 分隔，值内含字面 `\|` 时写 `\|`；未知键保留不报错 | 不阻断，报行锚 `path#L<n>`（1-based） | `FACT_LINE_MALFORMED` |
+| I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同（`since` 含、`until` 不含；缺省 `until` = 至今成立）。区间按**章序**（`chapters.seq`）比较，不按 id 字典序；章序解析不出的边界不参与判定 | 拒 | `FACT_CONFLICT` |
 
-> I-21–I-23 的编号在本里程碑内预留给 #31 / #32，避免两单各自新增时撞号；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
+> I-21 的编号在本里程碑内预留给 #31（避免与 I-22 / I-23 撞号）；I-22 / I-23 由账本域 [`domains/facts.ts`](../../src/host/domains/facts.ts) 产出；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
 
 **仅重建期诊断**（不是不变量，写入侧放行）：`RELATION_FIELD_DEPRECATED`——关系文件里出现已废弃字段（如 `direction`），重建时提示、写入时按新字段名归一，不阻断。
 
@@ -300,8 +300,7 @@
 
 | 契约 | 现状 | 归属 |
 |---|---|---|
-| 索引 v2（伏笔/时间线/关系/账本/提及/全实体 FTS） | 未落地 | #22 / #23 |
+| 索引 v2 剩余部分（`foreshadowings` 表 + 伏笔解析器与状态机校验） | 未落地 | #31 |
 | 故事线 / 场景契约 / 角色分组独立文件 | 未落地 | 对应功能 issue |
 | 共享库与 `origin` 溯源 | 未落地 | #40 |
 | OVK 语义块与 `semantic_blocks` | 未落地 | #41 |
-| 伏笔/时间线/关系/账本的字段字典 | 本文已定；**尚无解析器与校验器** | #31 / #27 / #28 / #32 |

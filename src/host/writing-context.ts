@@ -24,6 +24,7 @@
 
 import { basename } from 'node:path'
 
+import { factsSegment } from './domains/facts-prompt.js'
 import type { ProjectState } from './project.js'
 import { inspectProject } from './project.js'
 import type { ChapterHead, ChapterPair, OutlinedChapter, ProjectStats, TailSlice, WorldSelection } from './writing-sources.js'
@@ -119,11 +120,11 @@ export interface ExtraSegmentInput {
 }
 
 /**
- * Segments registered by domains. Empty in B0 on purpose: the seam lands first so
- * `#31`/`#32` each add ONE entry from their own module instead of editing the
- * renderer. With this array empty the produced text is byte-identical to before.
+ * Segments registered by domains. The array's order **is** the segment order (roadmap
+ * X-13: `… → world → facts → foreshadow`), so a contributor inserts at the position the
+ * contract names instead of reordering anything else.
  */
-export const EXTRA_SEGMENTS: readonly ExtraSegmentSpec[] = []
+export const EXTRA_SEGMENTS: readonly ExtraSegmentSpec[] = [factsSegment]
 
 export interface WritingContextSegment {
   name: WritingContextSegmentName
