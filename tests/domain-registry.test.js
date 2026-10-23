@@ -30,12 +30,16 @@ import { CONTENT_DIRS, DOMAIN_MODULES, apply, applyCandidate, buildTools, domain
  * over key-sorted JSON — renaming a tool or editing one schema property changes a
  * hash, which is exactly the regression this guards. Recorded from the pre-seam
  * build; an empty registry must reproduce it exactly.
+ *
+ * Appended since: `inkflow_project_audit` (#33) — a new built-in, not a change to an
+ * existing one, which is why the twelve recorded hashes above still hold.
  */
 const BUILT_IN_TOOLS = [
   ['inkflow_project_status', 'cc6903de'],
   ['inkflow_index_rebuild', '51a5555a'],
   ['inkflow_chapter_list', '4a6eecc1'],
   ['inkflow_chapter_search', 'd10a9b63'],
+  ['inkflow_project_audit', '2e5349da'],
   ['inkflow_project_plan', '52c0ddec'],
   ['inkflow_project_init', '4226bc54'],
   ['inkflow_volume_create', 'a805a3ed'],

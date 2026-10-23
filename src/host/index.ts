@@ -617,6 +617,26 @@ export {
 } from './domains/foreshadowing-query.js'
 
 /**
+ * The consistency audit (issue #33, roadmap X-14). Exported so tests can drive the engine
+ * directly — the report body's determinism and the locator mapping are assertions about
+ * plain data, not about a tool envelope.
+ */
+export {
+  AUDIT_LIST_LIMIT,
+  SCAN_ONLY_CODES,
+  auditProject,
+  auditReportName,
+  exportAuditReport,
+  hintOf,
+  renderAuditReport,
+  severityOf,
+  sortFindings,
+} from './audit.js'
+export type { AuditCounts, AuditExportResult, AuditReport, RenderOptions } from './audit.js'
+export { auditWire, buildAudit, exportAudit, findingWire } from './audit-channel.js'
+export type { AuditReply, AuditSource } from './audit-channel.js'
+
+/**
  * Maintenance (#36, ADR-0015): the rollback package, the 6→9 migration and the
  * three-stage repair pass. Exported for the tests and for embedders; the two tools
  * that expose them are registered through `tools.ts` like every other built-in.

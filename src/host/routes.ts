@@ -99,6 +99,9 @@ import {
   purgeTrashReply,
   restoreTrashReply,
   trashListReply,
+  AUDIT_EXPORT_BODY_FIELDS,
+  buildAudit,
+  exportAudit,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 
@@ -329,6 +332,36 @@ const ROUTES: readonly InternalRoute[] = [
     pattern: /^\/foreshadow$/,
     methods: ['GET'],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildForeshadowBoard(target, version)) }),
+  },
+  {
+    // The consistency audit (#33, roadmap X-14): five families — structure / ledger /
+    // foreshadow / timeline / catalog — as one sorted `Finding[]`, with the first `limit`
+    // of them and the counts of all.
+    //
+    // GET-only and **read-only**: unlike `/chapters`, `/search` and `/foreshadow` it does
+    // NOT call `ensureIndex`, because the audit answers from the files (`audit.ts`'s header
+    // says why) and a report about integrity must not change the tree it reports on. The
+    // cache's state travels as `indexState` instead, so the panel can suggest a rebuild
+    // without doing one behind the author's back.
+    name: 'audit',
+    pattern: /^\/audit$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const raw = Number(query.get('limit') ?? '')
+      return buildAudit(target, version, Number.isFinite(raw) && raw > 0 ? { limit: raw } : {})
+    },
+  },
+  {
+    // The report file (#33): `.inkflow/audit/audit-<时间戳>.md`, derived and deletable
+    // (ADR-0012 #6). A write route, so it carries every write guard declared above plus
+    // `confirm: true` — the panel asks once with an explicit label, this is the net under
+    // it. The audit is re-run here rather than trusting a client-supplied body: the report
+    // must describe the files now.
+    name: 'audit-export',
+    pattern: /^\/audit\/export$/,
+    methods: ['POST'],
+    body: AUDIT_EXPORT_BODY_FIELDS,
+    handle: ({ target, version, body }) => exportAudit(target, version, body),
   },
 ]
 

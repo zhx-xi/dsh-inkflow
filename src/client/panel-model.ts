@@ -589,12 +589,12 @@ export interface PanelTab {
 /**
  * The tabs the workbench shows.
  *
- * Four pages exist in this build: 章节 (the chapter tree + editor, issue #19),
+ * Five pages exist in this build: 章节 (the chapter tree + editor, issue #19),
  * 设定库 (issue #30 — the eight-kind tree, read-only detail and the problem panel),
- * 回收站 (issue #35 — the recovery bin, restore or purge) and 伏笔 (issue #31 — the
- * read-only board: late / open / by linked entity). 大纲 stays DISABLED with its
- * release note: a button that opens nothing is worse than a disabled one that says
- * when it arrives.
+ * 回收站 (issue #35 — the recovery bin, restore or purge), 伏笔 (issue #31 — the
+ * read-only board: late / open / by linked entity) and 体检 (issue #33 — the five-family
+ * consistency report with one-click export). 大纲 stays DISABLED with its release note:
+ * a button that opens nothing is worse than a disabled one that says when it arrives.
  */
 export const PANEL_TABS: PanelTab[] = [
   { id: 'chapters', label: '章节', available: true },
@@ -602,5 +602,6 @@ export const PANEL_TABS: PanelTab[] = [
   { id: 'outline', label: '大纲', available: false, note: '0.2.0 起' },
   { id: 'foreshadowing', label: '伏笔', available: true },
   { id: 'trash', label: '回收站', available: true },
+  { id: 'audit', label: '体检', available: true },
 ]
 

@@ -109,6 +109,14 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   // foreshadow — foreshadowing/ (data-model I-09, I-21)
   { code: 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER', group: 'foreshadow', fixable: true, meaning: 'resolved: true 缺 resolvedChapter' },
   { code: 'FORESHADOW_TRANSITION_INVALID', group: 'foreshadow', fixable: false, meaning: '伏笔状态非法流转' },
+  // The two **audit-only** codes (#33). They are not invariants: nothing is refused and
+  // no rebuild reports them, because "late" is a fact about where the book stands today,
+  // not about the file being wrong (data-model §3.2.2). They live in the catalogue anyway
+  // so the report cannot invent a second vocabulary for the same idea (X-14), and they are
+  // emitted by `foreshadowing-plan.ts` — the module that owns the lateness rule — so #36
+  // sees the same wording the audit prints.
+  { code: 'FORESHADOW_OVERDUE', group: 'foreshadow', fixable: false, meaning: '伏笔已过 dueBy 仍未回收' },
+  { code: 'FORESHADOW_DUE_NOW', group: 'foreshadow', fixable: false, meaning: '伏笔正好到期（本期该回收）' },
 
   // timeline — timeline/ (data-model I-16…I-19)
   { code: 'TIMELINE_TIME_MISSING', group: 'timeline', fixable: false, meaning: 'confirmed 事件缺 worldTime' },

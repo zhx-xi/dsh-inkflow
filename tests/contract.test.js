@@ -226,6 +226,9 @@ test('registers the fourteen built-ins, the tools of every registered domain, an
       'inkflow_outline_move',
       'inkflow_outline_tree',
       'inkflow_outline_upsert',
+      // #33: the consistency audit. A built-in and not a domain tool: it aggregates all five
+      // families and owns no content directory (roadmap X-14).
+      'inkflow_project_audit',
       'inkflow_project_init',
       // #36: the maintenance pair (repair / migrate), built-ins in tools.ts.
       'inkflow_project_migrate',

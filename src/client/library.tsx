@@ -28,10 +28,11 @@ import {
   describeIssueRow,
   describeLibraryError,
   describeLibraryFacts,
-  fingerprintOf,
+  findFocusItem,
   findItemByPath,
+  fingerprintOf,
 } from './library-model.js'
-import type { LibraryIssuesValue, LibraryItemValue, LibraryTreeItem, LibraryValue } from './library-model.js'
+import type { LibraryFocus, LibraryIssuesValue, LibraryItemValue, LibraryTreeItem, LibraryValue } from './library-model.js'
 
 /**
  * The unsaved-changes question.
@@ -253,7 +254,7 @@ function DetailPane({
   )
 }
 
-export function LibraryView({ sessionId }: { sessionId: string }) {
+export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: LibraryFocus | null }) {
   const [library, setLibrary] = useState<InternalResult<LibraryValue> | null>(null)
   const [issues, setIssues] = useState<InternalResult<LibraryIssuesValue> | null>(null)
   const [loading, setLoading] = useState(true)
@@ -347,6 +348,27 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
     setDraftDirty(false)
     setStatus(null)
   }, [mayLeaveDraft])
+
+  /**
+   * Open the entry another page asked for (#33's audit rows).
+   *
+   * Keyed on `focus.nonce` rather than on the object so a second click on the same finding
+   * re-selects the same row instead of being swallowed as an equal prop. It waits for the
+   * tree: the request can arrive before `GET /library` answers, and a selection of a row the
+   * tree does not hold yet would render an empty detail pane. A focused id the tree never
+   * holds (a finding about a file the index cannot see) selects nothing — silently, because
+   * the audit row already shows the address, and a toast about a missing row would be noise
+   * on top of the problem the author opened the audit to read.
+   */
+  useEffect(() => {
+    if (focus === undefined || focus === null) return
+    const item = findFocusItem(tree, focus)
+    if (item === undefined) return
+    pick(item)
+    // Deps are deliberately `focus.nonce` + `tree`, not `pick`: `pick` changes identity
+    // whenever `draftDirty` flips, so depending on it would re-select the row on every
+    // editor keystroke and throw the author's draft away on a confirm.
+  }, [focus?.nonce, tree])
 
   /** A save landed: take the new bytes, refresh the tree, leave edit mode. */
   const handleSaved = useCallback(
