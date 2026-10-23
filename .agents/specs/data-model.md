@@ -137,17 +137,33 @@
 
 ### 3.5 事实账本 `facts/<subject>.md`
 
+**frontmatter**（只放身份）：
+
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
 | `subject` | string | ✅ | 事实主体（角色/物品/地点 id） |
-| `attribute` | string | ✅ | 事实维度（年龄/境界/持有物/生死…） |
-| `value` | string | ✅ | 当前值 |
-| `since` / `until` | string | — | 生效/失效位置（章 id） |
-| `chapterId` | string | — | 登记该事实的章 |
-| `source` | enum | — | `text`（正文推导）/ `manual`（人工登记）/ `extract`（提取采纳） |
-| `conflictsWith` | string[] | — | 冲突事实的文件 id 或行锚 |
+| `title` / `aliases` | string / string[] | — | 展示名与别名（可选） |
 
-账本按「主体」一文件（`facts/<subject>.md`），文件内每条事实一个列表项或一张表行；跨章校验的输入是同一 `subject + attribute` 的多个 `since` 区段。
+**正文**：一条事实一个列表项，字段用竖线分隔（[ADR-0013](../adrs/0013-facts-ledger-line-format.md)）：
+
+```markdown
+- attribute: 境界 | value: 筑基后期 | since: ch-0007 | chapterId: ch-0009 | source: text
+- attribute: 持有物 | value: 青锋剑 | since: ch-0012 | until: ch-0061 | source: manual
+```
+
+| 键 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| `attribute` | string | ✅ | 事实维度（年龄/境界/持有物/生死…） |
+| `value` | string | ✅ | 该区段内的取值 |
+| `since` / `until` | string | — | 生效 / 失效位置（章 id）；缺省 `until` 表示至今成立 |
+| `chapterId` | string | — | 登记该事实的章 |
+| `source` | enum | — | `text`（正文推导）/ `manual`（人工登记，缺省）/ `extract`（提取采纳） |
+| `conflictsWith` | string[] | — | **仅索引列**，不写文件：由校验算出的冲突事实行锚 |
+
+- 一主体一文件、一文件多事实；跨章校验的输入是同一 `subject + attribute` 的多个 `since` 区段。
+- 值里要含字面 `|` 时写 `\|`；未知键**保留不报错**（与 frontmatter 未知字段同策略）。
+- 不可解析的行报 `FACT_LINE_MALFORMED` 并带行锚 `path#L<n>`，不阻断整文件。
+- 为什么不用 frontmatter 块数组或 Markdown 表格：见 ADR-0013 的备选表（嵌套映射读回成一个字符串；表格与中文竖线冲突且 diff 不可读）。
 
 ### 3.6 资料卡片 `library/<slug>.md`
 
@@ -255,6 +271,14 @@
 | I-17 | 时间线 `worldTime` 必须是真实日期 `YYYY[-MM[-DD]]`（月 13、2 月 30 日都不合法） | 拒 | `TIMELINE_TIME_INVALID` |
 | I-18 | 同一叙事槽位（book-wide `narrativeOrder`，跨章也同槽）不得声明两个不同世界时间 | 拒 | `TIMELINE_ORDER_CONFLICT` |
 | I-19 | 叙事槽位递增时世界时间不得倒退（＝倒叙/回忆，正常写法） | 报（不拒） | `TIMELINE_WORLD_TIME_REVERSED` |
+| I-20 | 实体 `id` 与文件路径可以不一致（改名时旧 id 被钉住，[ADR-0014](../adrs/0014-entity-id-pinning.md)）；唯一性仍按 `(kind, id)` 判 | 放行；体检列为提示 | `ID_PATH_DIVERGED`（info，不阻断） |
+| I-21 | 伏笔状态机只允许 `planted → advanced → resolved`，以及任一未终态 → `overdue`；`resolved` 是终态 | 拒 | `FORESHADOW_TRANSITION_INVALID`（#31） |
+| I-22 | 账本每行必须可解析为一条事实（键集合、必填键、`\|` 转义） | 不阻断，报行锚 | `FACT_LINE_MALFORMED`（#32） |
+| I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同 | 拒 | `FACT_CONFLICT`（#32） |
+
+> I-21–I-23 的编号在本里程碑内预留给 #31 / #32，避免两单各自新增时撞号；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
+
+**仅重建期诊断**（不是不变量，写入侧放行）：`RELATION_FIELD_DEPRECATED`——关系文件里出现已废弃字段（如 `direction`），重建时提示、写入时按新字段名归一，不阻断。
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 

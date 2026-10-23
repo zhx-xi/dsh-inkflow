@@ -53,7 +53,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
-import { INDEX_DIR, WRITE_DIRS } from './conventions.js'
+import { INDEX_DIR, PRIVATE_STATE_DIR, PRIVATE_STATE_SUBDIRS, WRITE_DIRS } from './conventions.js'
 import { isWithin, realpathLoose } from './project.js'
 
 // ---------------------------------------------------------------------------
@@ -373,14 +373,25 @@ export function resolveWriteTarget(projectRoot: string, relativePath: string): R
   const segments = parsed.value.segments
   const dir = segments[0] ?? ''
 
-  if (!(WRITE_DIRS as readonly string[]).includes(dir)) {
-    return fail('PATH_NOT_WRITABLE', `writes are limited to ${WRITE_DIRS.join(', ')} (got "${dir}")`, {
+  // The private state directory (ADR-0012) is writable only inside its declared
+  // subdirectories: `trash/`, `backup/`, `audit/`. `.inkflow/` itself and any
+  // other name under it stay outside the whitelist, so the widening is three
+  // paths rather than "a whole dot-directory the caller may shape freely".
+  const privateSub = dir === PRIVATE_STATE_DIR ? (segments[1] ?? '') : ''
+  const inPrivateState = (PRIVATE_STATE_SUBDIRS as readonly string[]).includes(privateSub)
+
+  if (!inPrivateState && !(WRITE_DIRS as readonly string[]).includes(dir)) {
+    return fail('PATH_NOT_WRITABLE', `writes are limited to ${WRITE_DIRS.join(', ')} and ${PRIVATE_STATE_DIR}/{${PRIVATE_STATE_SUBDIRS.join(',')}} (got "${dir}")`, {
       root,
       path: relativePath,
       hint: 'a write target always lives inside one of the project directories; project metadata is written by the scaffolding tools',
     })
   }
-  if (segments.length < 2) {
+  // A private-state target is `<dir>/<sub>/<file…>`, one segment deeper than a
+  // content-directory target: `.inkflow/trash/a.md` names a file, `.inkflow/trash`
+  // does not.
+  const minimumSegments = inPrivateState ? 3 : 2
+  if (segments.length < minimumSegments) {
     return fail('PATH_INVALID', 'a write target must name a file inside an allowed directory', { root, path: relativePath })
   }
   if (dir === INDEX_DIR) {

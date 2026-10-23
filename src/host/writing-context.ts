@@ -77,7 +77,53 @@ export interface WritingContextOptions {
   chapterSeq?: number
 }
 
-export type WritingContextSegmentName = 'project' | 'chapter' | 'tail' | 'world'
+export type WritingContextSegmentName = 'project' | 'chapter' | 'tail' | 'world' | 'facts' | 'foreshadow'
+
+/**
+ * One segment a domain contributes, in the fixed order of `EXTRA_SEGMENTS`
+ * (roadmap X-13: `project → chapter → tail → world → facts → foreshadow`).
+ *
+ * Why a registry instead of another `if` in the renderer: two domains land their
+ * own segment in the same milestone (facts #32, foreshadow #31), and the render
+ * function is a single 40-line block with a hand-written trim ladder — without a
+ * seam they queue on the same lines and every rebase is a semantic merge.
+ *
+ * A contributor supplies the text and its own cap, never the order: the order is
+ * the array's order, and the drop order is `world → extras (in array order) → tail`
+ * (see the ladder in `buildWritingContext`).
+ */
+export interface ExtraSegmentSpec {
+  readonly name: WritingContextSegmentName
+  /** Label used in the `[trimmed: …]` marker — the author's word, not the code's. */
+  readonly label: string
+  /**
+   * Share of the token budget this segment may occupy, as a **character** cap of
+   * `floor(capRatio × budgetTokens)`. Characters because `estimateTokens` counts a
+   * CJK glyph as one token: the cap is then exact in the worst case and generous
+   * for Latin text, which is the safe direction for a cap.
+   */
+  readonly capRatio: number
+  /**
+   * The segment's text for the chapter being written, or `undefined` when this
+   * book has nothing to say (which renders no segment at all, not an empty one).
+   */
+  build(input: ExtraSegmentInput): string | undefined
+}
+
+export interface ExtraSegmentInput {
+  readonly root: string
+  /** The chapter being written; `undefined` when the book has no chapters yet. */
+  readonly current: ChapterHead | undefined
+  /** The chapter's outline body (its title/plot), already read for the chapter segment. */
+  readonly outlineBody: string
+}
+
+/**
+ * Segments registered by domains. Empty in B0 on purpose: the seam lands first so
+ * `#31`/`#32` each add ONE entry from their own module instead of editing the
+ * renderer. With this array empty the produced text is byte-identical to before.
+ */
+export const EXTRA_SEGMENTS: readonly ExtraSegmentSpec[] = []
 
 export interface WritingContextSegment {
   name: WritingContextSegmentName
@@ -105,7 +151,16 @@ interface RenderState {
   dropOutline: boolean
   dropTail: boolean
   dropWorld: boolean
+  /** Drops every registered extra segment at once (roadmap X-13's `facts`/`foreshadow`). */
+  dropExtras: boolean
   tailLimit: number
+}
+
+/** One registered extra segment, already built and clipped to its own cap. */
+interface RenderedExtra {
+  name: WritingContextSegmentName
+  label: string
+  text: string
 }
 
 interface RenderInput {
@@ -118,6 +173,7 @@ interface RenderInput {
   outline: OutlinedChapter | undefined
   tail: TailSlice | undefined
   world: WorldSelection
+  extras: readonly RenderedExtra[]
 }
 
 interface RenderedContext {
@@ -176,34 +232,60 @@ export function buildWritingContext(root: string, options: WritingContextOptions
   // later drops or shrinks them: the hits describe the chapter, not the slice.
   const world = matchWorldEntries(loadWorldEntries(probe.root), `${outline?.body ?? ''}\n${tail?.body ?? ''}`)
 
+  // Registered segments are built once, before the ladder: their content depends on
+  // the chapter, never on a rung. An empty registry (B0's state) produces no extra,
+  // so the rendered text stays byte-identical to the pre-seam version.
+  const extras: RenderedExtra[] = EXTRA_SEGMENTS.map((spec) => {
+    const built = spec.build({ root: probe.root, current: pair.current, outlineBody: outline?.body ?? '' })
+    if (built === undefined || built.trim() === '') return undefined
+    const capChars = Math.max(1, Math.floor(spec.capRatio * budgetTokens))
+    return { name: spec.name, label: spec.label, text: clipHead(built, capChars) }
+  }).filter((extra): extra is RenderedExtra => extra !== undefined)
+
   const base: RenderState = {
     dropSummary: false,
     dropOutline: false,
     dropTail: false,
     dropWorld: false,
+    dropExtras: false,
     tailLimit: tailChars,
   }
   const shrunk = Math.min(SHRUNK_TAIL_CHARS, tailChars)
-  // Drop order: summary → current-chapter outline → world book → tail (shrink
-  // first, then drop). The world book goes before the tail because the tail is
-  // the only segment with no way back (the model cannot re-read the previous
-  // chapter, but it can fetch a world entry). The current chapter is never
-  // removed. See the matching rationale in renderWritingContext.
+  // Drop order: summary → current-chapter outline → world book → registered extras →
+  // tail (shrink first, then drop). The world book goes before the tail because the
+  // tail is the only segment with no way back (the model cannot re-read the previous
+  // chapter, but it can fetch a world entry). The current chapter is never removed.
+  // See the matching rationale in renderWritingContext.
+  //
+  // The extra-drop rung sits between them, and is a no-op when nothing is registered:
+  // a rung that renders identically to the one above it is skipped below, so the
+  // ladder's behaviour is unchanged while the registry is empty.
   const ladder: RenderState[] = [
     base,
     { ...base, dropSummary: true },
     { ...base, dropSummary: true, dropOutline: true },
     { ...base, dropSummary: true, dropOutline: true, dropWorld: true },
+    ...(extras.length === 0
+      ? []
+      : [{ ...base, dropSummary: true, dropOutline: true, dropWorld: true, dropExtras: true }]),
     ...(shrunk < tailChars
-      ? [{ ...base, dropSummary: true, dropOutline: true, dropWorld: true, tailLimit: shrunk }]
+      ? [{ ...base, dropSummary: true, dropOutline: true, dropWorld: true, dropExtras: true, tailLimit: shrunk }]
       : []),
-    { ...base, dropSummary: true, dropOutline: true, dropWorld: true, tailLimit: shrunk, dropTail: true },
+    {
+      ...base,
+      dropSummary: true,
+      dropOutline: true,
+      dropWorld: true,
+      dropExtras: true,
+      tailLimit: shrunk,
+      dropTail: true,
+    },
   ]
 
   let chosen: RenderedContext | undefined
   let previousText: string | undefined
   for (const state of ladder) {
-    const rendered = renderWritingContext({ state, tailChars, title, stats, pair, outline, tail, world })
+    const rendered = renderWritingContext({ state, tailChars, title, stats, pair, outline, tail, world, extras })
     // A rung that renders identically to the one above it (e.g. a book with no
     // outline) must not be reported as "trimmed": nothing was dropped.
     if (rendered.text === previousText) continue
@@ -238,6 +320,11 @@ function renderWritingContext(input: RenderInput): RenderedContext {
   if (input.state.dropSummary) trimmed.push(TRIM_SUMMARY)
   if (input.state.dropOutline && input.outline !== undefined) trimmed.push(TRIM_OUTLINE)
   if (input.state.dropWorld && input.world.shown.length > 0) trimmed.push(TRIM_WORLD)
+  // Registered extras are reported between the world book and the tail: that is the
+  // documented drop order (X-13), and the marker's list is read as the ladder order.
+  if (input.state.dropExtras) {
+    for (const extra of input.extras) trimmed.push(extra.label)
+  }
   if (input.tail !== undefined) {
     if (input.state.dropTail) {
       trimmed.push(TRIM_TAIL)
@@ -267,6 +354,12 @@ function renderWritingContext(input: RenderInput): RenderedContext {
 
   if (!input.state.dropWorld && input.world.shown.length > 0) {
     segments.push({ name: 'world', text: renderWorld(input.world) })
+  }
+
+  // Registry order is the documented segment order (X-13): after `world`, before the
+  // trim marker. An extra is present exactly when it was built and not dropped.
+  if (!input.state.dropExtras) {
+    for (const extra of input.extras) segments.push({ name: extra.name, text: extra.text })
   }
 
   const marker = trimmed.length === 0 ? '' : renderTrimMarker(trimmed, notes)

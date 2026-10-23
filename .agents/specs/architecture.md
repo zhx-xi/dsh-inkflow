@@ -411,17 +411,19 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
 | `src/host/skills.ts` | 5 个写作技能的读取与校验、按 cwd 门禁的 provider、注册与降级 | 写作品数据、生成正文 |
-| `src/host/writing-context.ts` | 写作上下文的**纯投影**：四段渲染、单段上限、预算阶梯、裁剪标记 | 会话/服务/日志、写任何作品数据 |
+| `src/host/writing-context.ts` | 写作上下文的**纯投影**：四段渲染、单段上限、预算阶梯、裁剪标记；另含**扩展段注册表** `EXTRA_SEGMENTS`（roadmap X-13：域只声明 `{name,label,capRatio,build}`，顺序与裁剪阶梯归本模块） | 会话/服务/日志、写任何作品数据 |
 | `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
 | `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete`） | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError` | HTTP 加固、写作品文件、自己决定是否重建 |
+| `src/host/findings.ts` | **「问题」的唯一形状**（roadmap X-14）：`Finding` / `FindingLocator` / 五个报告分组 / `FINDING_CODES` 目录 / `compareFindings` 的稳定排序 | 任何检查实现、任何 IO（#33 产出、#36 消费） |
+| `src/host/private-state.ts` | 私有状态目录 `.inkflow/` 的三个共享助手（ADR-0012）：相对路径拼装、`isPrivateStatePath`、`ensurePrivateStateIgnored`（append-only 补 ignore 行，失败返回而不抛） | 决定什么时候删/备份（归 #35/#36）、清单格式 |
 | `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE`；对外只暴露"列注册表"这一个只读入口（`listRegisteredWorkspaces`），供向导线解析锚点 | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
 | `src/host/hub-wizard.ts` | **新开书向导**（ADR-0010 D4/D6）：`plan`（锚点三级判定 → 路径闸门 → 只读 plan → 签发 token）与 `apply`（消耗 token → 摘要比对 → `applyWorkspace` → `workspaceRegistry.create`）、一次性 `planToken` 存储（TTL 5 分钟、可注入时钟）、`nextStep` 降级 A 文案 | 自己写文件（一律走 `workspace.ts`）、接受 `apply` 的路径、发 token 给已注册目录、commit/配远端 |
 | `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封、body 字段白名单；另含**书库路由组** `/hub/*` 的独立分派（无会话；写路由要求 `Origin` 与 `Host` 同源） | 业务规则、写真相文件、解析会话 |
-| `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 章节树 / 编辑器 / 向导清单）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
+| `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 章节树 / 编辑器 / 向导清单）、页表 `pageRenderers`（roadmap X-12：非 `chapters` 页一行一页，JSX 里不再有页分支）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
 | `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、「新开书」向导入口（`HubWizard`）、共享内容的禁用占位（#87）、`apply` 成功后**就地合并**书单行 | 写动作本身、轮询、拼路径参数 |
 | `src/client/hub-wizard.tsx` | 新开书向导的视图：`pickDirectory` → plan → 确认卡（`willCreate[]` / `notices[]` / 书名 / `outsideRegistry` 二次确认）→ apply → 降级 A 卡片；目录选择器不可用时退化为手输绝对路径 | 拼第二套规则、跳转/建会话、轮询 |
 | `src/client/hub-wizard-model.ts` | 向导的纯视图模型：`plan` 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填判定、降级 A 文案、`mergeHubRow`（就地更新或追加） | React、网络、IO |
