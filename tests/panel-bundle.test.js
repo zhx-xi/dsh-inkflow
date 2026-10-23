@@ -408,6 +408,17 @@ test('describeRouteError and describeAction explain failures and wizard steps', 
   const noLimit = describeRouteError({ code: 'payload-too-large' })
   assert.match(noLimit, /太长/)
   assert.doesNotMatch(noLimit, /undefined|NaN/)
+  // An unusable count must not print "-1 B" or "NaN B" into the sentence.
+  const absurd = describeRouteError({ code: 'payload-too-large', limitBytes: -1 })
+  assert.match(absurd, /上限 \?/)
+  assert.doesNotMatch(absurd, /-1 B|NaN/)
+
+  // The chapter mapper is the only place `CHAPTER_AMBIGUOUS` can arrive (the write
+  // route resolves a chapter by id and demands uniqueness), so its wording lives
+  // here -- and it must not be the Host's English sentence.
+  const ambiguous = describeRouteError({ code: 'CHAPTER_AMBIGUOUS', message: 'id "ch-1" is used by 2 chapters' })
+  assert.match(ambiguous, /共用/)
+  assert.doesNotMatch(ambiguous, /is used by/)
 
   assert.equal(describeAction({ type: 'create-dir', path: 'chapters', reason: '缺正文目录' }), '建目录 · chapters · 缺正文目录')
   assert.equal(describeAction({ type: 'git-init', path: '/books/a' }), 'git init · /books/a')

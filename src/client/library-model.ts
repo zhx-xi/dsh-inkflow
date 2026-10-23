@@ -657,12 +657,6 @@ export function describeSaveError(error: InternalError | undefined): string {
     return '文件已被改动：磁盘上的内容已经不是这次加载的版本，所以这次没有写入任何字节。'
   }
   if (error.code === 'library-item-not-found') return '这一条在目录里找不到了：可能已被改名或删除。'
-  if (error.code === 'CHAPTER_AMBIGUOUS') {
-    // The write route resolves a chapter by id and demands uniqueness: two files
-    // sharing one `id:` make the chapter unsavable, and the Host's own words are
-    // an English sentence with a path in it.
-    return '这个 id 被两章共用，写路径无法确定改哪一章：请给其中一章换一个 id 后再保存。'
-  }
   if (error.code === 'PATH_OUT_OF_SCOPE') return '这个 id 会逃出它的内容目录，已拒绝。'
   if (error.code === 'EXPECTED_REQUIRED') return '保存缺少基线指纹（面板内部错误），重新加载这一条后再改。'
   if (error.code === 'EXPECTED_INVALID') return '基线指纹格式不对（面板内部错误），重新加载这一条后再改。'
