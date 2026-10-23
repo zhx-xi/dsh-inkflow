@@ -23,6 +23,7 @@ import { listChapters, readIndexMeta } from './indexer.js'
 import { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
 import { domainTools } from './domains/index.js'
 import { sessionCwd } from './session-cwd.js'
+import { repairTools } from './repair-tools.js'
 import { DOMAIN_MODULES } from './domains/index.js'
 import type { DomainModule } from './domains/types.js'
 import type { FileExpectation } from './file-cas.js'
@@ -1097,6 +1098,9 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     chapterWrite,
     chapterMove,
     chapterDelete,
+    // Maintenance (#36): repair and migration own their own gate allowance (a book
+    // that is `needs-repair` must still be repairable) and their own module.
+    ...repairTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),

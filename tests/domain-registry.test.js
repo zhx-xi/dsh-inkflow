@@ -44,6 +44,10 @@ const BUILT_IN_TOOLS = [
   ['inkflow_chapter_write', '4e531ce4'],
   ['inkflow_chapter_move', '8fb67189'],
   ['inkflow_chapter_delete', 'a2b2198a'],
+  // #36: the maintenance pair (repair + 6→9 migration). Built-ins, not domain tools:
+  // they judge the book's *layout*, not one content directory.
+  ['inkflow_project_repair', 'e9825bce'],
+  ['inkflow_project_migrate', '2a0f5b4b'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */
