@@ -17,6 +17,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { fetchInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
+import { useScrollBox } from './layout.js'
 import { LibraryItemEditor } from './library-editor.js'
 import {
   LIBRARY_EMPTY,
@@ -46,21 +48,22 @@ function confirmDiscard(message: string): boolean {
 
 // Every visible colour comes from the host theme (`--dsw-alias-*`); the panel
 // keeps its own small style set rather than importing `index.tsx`'s, which
-// would make the two modules import each other.
+// would make the two modules import each other. The HEIGHT is the shared
+// `SCROLL_BOX_STYLE` (issue 116): same rule as the chapters tab, one source.
 const panelStyle = {
   display: 'grid',
   gridTemplateColumns: '300px minmax(0, 1fr)',
-  flex: 1,
   minHeight: 0,
 } as const
 
+// The tree and the detail/editor are two independent scroll boxes: a long entry
+// form scrolls in its own column, down to its 保存 button, without moving the tree.
 const columnStyle = {
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
   padding: 14,
-  minHeight: 0,
-  overflowY: 'auto',
+  ...SCROLL_COLUMN_STYLE,
 } as const
 
 const dividerStyle = { borderLeft: '1px solid var(--dsw-alias-border-l1)' } as const
@@ -263,6 +266,10 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
   const [editing, setEditing] = useState(false)
   const [draftDirty, setDraftDirty] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  // Same measured height as the chapters tab (issue 116): the tab row above this
+  // grid is the harness chrome, so the grid has to state its own height or the
+  // library columns scroll as one page with the panel.
+  const scrollBox = useScrollBox()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -377,7 +384,7 @@ export function LibraryView({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div style={panelStyle}>
+    <div ref={scrollBox.ref} style={{ ...panelStyle, ...SCROLL_BOX_STYLE, ...scrollBox.style }}>
       <div style={columnStyle}>
         <SectionTitle>设定库（八类）</SectionTitle>
         <div style={{ ...muted, ...mono }}>{describeLibraryFacts(tree)}</div>

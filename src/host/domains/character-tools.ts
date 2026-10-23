@@ -368,8 +368,8 @@ export function characterTools(deps: DomainToolDeps, domain: DomainModule): Tool
         projectRoot: PROJECT_ROOT_PARAM,
         group: { type: 'string', description: 'Exact group name (`group:` in the card), e.g. "白鹤门".' },
         query: { type: 'string', description: 'Fragment of a name or an alias.' },
-        chapter: { type: 'integer', minimum: 0, description: 'Chapter number for the state-in-force answer.' },
-        limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Maximum cards to return. Default 100.' },
+        chapter: { type: 'integer', description: 'Chapter number for the state-in-force answer (0 or higher).' },
+        limit: { type: 'integer', description: 'Maximum cards to return (1–500). Default 100.' },
       },
       additionalProperties: false,
     },
@@ -477,7 +477,7 @@ export function characterTools(deps: DomainToolDeps, domain: DomainModule): Tool
         group: { type: 'string', description: 'Group the card belongs to (门派/阵营/…); the list tool filters on it.' },
         role: { type: 'string', description: 'Narrative role, e.g. 主角 / 配角 / 反派.' },
         pov: { type: 'string', description: 'Point of view this character is narrated in.' },
-        firstAppearance: { type: 'integer', minimum: 1, description: 'Chapter number of the first appearance.' },
+        firstAppearance: { type: 'integer', description: 'Chapter number of the first appearance (1 or higher).' },
         voice: {
           type: 'array',
           items: { type: 'string' },
@@ -488,7 +488,7 @@ export function characterTools(deps: DomainToolDeps, domain: DomainModule): Tool
           items: {
             type: 'object',
             properties: {
-              chapter: { type: 'integer', minimum: 1, description: 'Chapter number the state starts at.' },
+              chapter: { type: 'integer', description: 'Chapter number the state starts at (1 or higher).' },
               status: { type: 'string', description: 'What the character is at that point.' },
             },
             required: ['chapter', 'status'],

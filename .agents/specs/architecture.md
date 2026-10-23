@@ -187,7 +187,39 @@
 
 纯视图逻辑（四态徽标文案、卷章树、空态判定、`root` 相对化、页签表、`previewText` / `describeAction`）在 `src/client/panel-model.ts`：不碰 React、不发请求，由 `tests/panel-bundle.test.js` 直接打这个模块（`node --test` 无 DOM，组件本身只按构建产物做静态断言）。书库同理：徽标（含 `timeout` 的"无判定"档）、`~/…` 路径、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案全在 `src/client/hub-model.ts`。
 
+#### 4.3.1 面板高度契约：两个独立滚动 box（issue 116）
+
+**症状**：章节页签里章节树（左）与正文（右）没有各自的滚动条，两栏跟着整页一起滚。
+
+**实测高度链**（DSH 0.2.1-rc.2 桌面版，独立 Electron 窗口载入 `http://127.0.0.1:8162`，窗口 1280×900 → 视口 1266×838，探针会话指向副本小说）：
+
+| 层 | 高度 | 关键计算值 |
+|---|---|---|
+| 面板根（`height:'100%'`） | 2539px | 百分比**解析成功**，但基准是内容高度 |
+| 两列 body（原 `flex:1`） | 2428px | `grid-template-rows` 为 `auto` |
+| 左右两列（`overflowY:'auto'`） | 2428px | `scrollHeight === clientHeight` → `auto` 永不触发 |
+| 槽位包装（flex 项，`min-height:auto`） | 2539px | 自动最小尺寸：不会缩到内容以下 |
+| 会话滚动框（`overflow-y:auto`） | 762px（内容 2667px） | 页面上**唯一**的滚动条＝整页滚 |
+
+结论：issue 的【推断】「`height:100%` 退化成 auto」只对了一半——百分比解析是成功的，问题在它的基准（槽位包装）本身是内容尺寸，面板拿不到任何"被视口截断"的高度。因此方案 A（最小改动）不成立；常数方案 B 会撞上下面 P3 的座位问题。
+
+**契约**（`src/client/layout.ts` 读 DOM + `src/client/layout-model.ts` 算数）：
+
+| # | 规则 | 理由（实测） |
+|---|---|---|
+| P1 | 两列 body 的高度由**运行时实测**写进 CSS 变量 `--inkflow-body-h`：`ResizeObserver` 观察滚动框及其子元素 + `window.resize` + 每次渲染复测 | 侧边栏折叠/面板切换会改宽度而不触发 `window.resize`；页头在窄窗换行、stale 构建警告条出现也会改面板自身 chrome |
+| P2 | 量不到（无 DOM／无滚动祖先／几何退化）时兜底为 CSS `100%` | 即修复前行为：不理想但绝不塌成 0；不能因为测量失败把面板弄没 |
+| P3 | 可用底边 = min(视口高, 最近滚动祖先底边, **同一滚动流里本 box 之后第一个元素的顶边**) | DSH 把输入框座位放在同一个滚动框里（实测高 128px、顶边 710）。按滚动框底边定高会让两列下沿钻到座位下面，并留下 128px 页面滚动条 |
+| P4 | 取「之后的元素」用结构规则，**不认任何 harness 类名或 dom id** | `Dc7zOa_*` 是构建哈希，随 DSH 升级变 |
+| P5 | 高度取 `Math.floor`，不四舍五入 | 886×638 下四舍五入留 1px 溢出＝一条页面滚动条 |
+| P6 | body 加 `grid-template-rows: minmax(0,1fr)` 与 `flex: 0 0 auto` | `flex:1` 即 `flex-basis:0%`，会覆盖显式 `height`；实测只加 height 时 body 仍是 2428px |
+
+**实测验收**（同一 GUI，按上述规则把高度手工写进 DOM 后量得）：body 523px 时外层滚动框 `scrollHeight 890 → 762 = clientHeight`（溢出 0）；左列 `clientHeight 523 / scrollHeight 2428` 自滚，滚它 120px 后右列与外层 `scrollTop` 仍为 0、面板顶边不动；`describeFacts` 那行统计在左列滚到底时可见（底边 696 < 列底 710）；900×700（视口 886×638）下可用 288px、外层溢出 0、两列不重叠、无横向溢出。
+
+**不在范围**：非 `usable` 状态的单列卡片（不参与两列布局，走 P2 兜底）。
+
 ### 4.4 主题
+
 
 只用 `--dsw-alias-*`（明暗双份）：`bg-base`、`bg-layer-1/2`、`border-l1/l2`、`label-primary/secondary`、`state-success/warn/error/idle-primary`。字面色只用于图标。
 
@@ -395,6 +427,8 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/client/hub-wizard-model.ts` | 向导的纯视图模型：`plan` 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填判定、降级 A 文案、`mergeHubRow`（就地更新或追加） | React、网络、IO |
 | `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
 | `src/client/hub-model.ts` | 书库的纯视图模型：徽标（含 `timeout`）、`~/…` 相对化、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案、信封折叠 | React、网络、IO |
+| `src/client/layout-model.ts` | 面板滚动 box 的纯几何（§4.3.1）：可用底边规则、`Math.floor` 定高、CSS 变量与兜底、两列共享的样式常量 | React、DOM、配色 |
+| `src/client/layout.ts` | 高度实测的 DOM 读取与 React 接线：`useScrollBox()`（每次渲染复测 + `ResizeObserver` + `window.resize`），把高度写成 `--inkflow-body-h`；量不到返回空样式走 CSS 兜底 | 业务规则、网络、写文件 |
 | `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路；`sessionless: true` 只放行 `/hub/*` | 拼路径参数、文件 IO |
 
 ## 7. 数据流

@@ -64,7 +64,12 @@ const PROJECT_ROOT_PARAM = {
     'Absolute path of the InkFlow project root. Omit to resolve from the process working directory (walks up to the nearest project).',
 } as const
 
-const OUTPUT_SCHEMA: JsonSchemaNode = { type: 'object', required: ['ok'], additionalProperties: true }
+const OUTPUT_SCHEMA: JsonSchemaNode = {
+  type: 'object',
+  properties: { ok: { type: 'boolean' } },
+  required: ['ok'],
+  additionalProperties: true,
+}
 
 /** Characters a slug or a category may never carry: path separators, control bytes, Windows-reserved shapes. */
 const UNSAFE_SEGMENT = /[<>:"|?*\\/\u0000-\u001f]/u

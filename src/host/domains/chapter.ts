@@ -8,7 +8,7 @@
 
 import { basename, extname, join } from 'node:path'
 
-import { CHAPTER_STATUSES } from '../conventions.js'
+import { CATALOG_FILE, CHAPTER_STATUSES } from '../conventions.js'
 import { intField, parseMarkdown, stringField } from '../frontmatter.js'
 import { rowsBucket } from './types.js'
 import type { DomainEntityRef, DomainFileParse, DomainModule, DomainScanResult, ValidationIssue } from './types.js'
@@ -86,6 +86,10 @@ export const chapterDomain: DomainModule = {
     const rows: ChapterRow[] = []
     const issues: ValidationIssue[] = []
     for (const file of files) {
+      // The catalog (`chapters/index.json`, `chapters/<vol>/index.json`) is a
+      // committed projection written by this plugin, not a chapter: walking it as
+      // one reported CHAPTER_NOT_MARKDOWN for every volume on every rebuild.
+      if (basename(file.path) === CATALOG_FILE) continue
       const parsed = parseChapter(file.path, readText(join(root, file.path)))
       issues.push(...parsed.issues)
       if (parsed.row !== undefined) rows.push(parsed.row)

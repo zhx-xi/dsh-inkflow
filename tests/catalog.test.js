@@ -621,3 +621,40 @@ test('catalog: the catalog is not a gate requirement and the index build never w
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 8. The catalog is a projection, not a chapter (#114)
+// ---------------------------------------------------------------------------
+
+test('index: the catalog JSON is never walked as a chapter', async () => {
+  const dir = workdir()
+  try {
+    const root = project(dir)
+    chapter(root, 'chapters/vol-01-入山/0001-入山.md', { title: '第一章 入山', volume: 'vol-01', seq: 1 })
+    chapter(root, 'chapters/vol-01-入山/0002-夜行.md', { title: '第二章 夜行', volume: 'vol-01', seq: 2 })
+    assert.equal(rebuildCatalog(root).ok, true)
+
+    // The plugin writes `chapters/index.json` and `chapters/<vol>/index.json`
+    // itself; before #114 the chapter domain walked them and reported
+    // CHAPTER_NOT_MARKDOWN for the root and for every volume, on every rebuild.
+    assert.equal(existsSync(join(root, ROOT_CATALOG)), true)
+    assert.equal(existsSync(join(root, volumeCatalogPath('vol-01-入山'))), true)
+    const built = await buildIndex(root)
+    assert.deepEqual(
+      built.issues.filter((issue) => issue.code === 'CHAPTER_NOT_MARKDOWN'),
+      [],
+      'a committed catalog file is a projection, not a badly named chapter',
+    )
+    assert.ok(built.counts.chapters >= 2)
+
+    // The skip is not a blanket mute: a real stray file under chapters/ is still
+    // reported, so the catalog exemption cannot hide a genuinely broken tree.
+    writeFileSync(join(root, 'chapters', '笔记.txt'), '随手记\n', 'utf8')
+    const again = await buildIndex(root)
+    const stray = again.issues.filter((issue) => issue.code === 'CHAPTER_NOT_MARKDOWN')
+    assert.equal(stray.length, 1, `exactly the stray file is reported, got ${JSON.stringify(stray)}`)
+    assert.equal(stray[0].path, 'chapters/笔记.txt')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
