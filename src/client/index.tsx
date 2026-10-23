@@ -41,6 +41,7 @@ import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
 import { LibraryView } from './library.js'
 import { TrashView } from './trash.js'
+import { ForeshadowView } from './foreshadow.js'
 import { HubIcon, HubView } from './hub.js'
 import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
 import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
@@ -401,6 +402,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // Issue #35: the recovery bin — what a delete moved into `.inkflow/trash/`,
     // with restore (one click) and purge (two). One route pair of its own.
     trash: () => <TrashView sessionId={sessionId} />,
+    // Issue #31: the read-only foreshadow board (超期 / 未回收 / 按角色).
+    foreshadowing: () => <ForeshadowView sessionId={sessionId} />,
   }
 
   /**

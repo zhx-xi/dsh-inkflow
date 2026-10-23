@@ -84,17 +84,70 @@
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| `title` | string | ✅ | 伏笔名 |
-| `status` | enum | ✅ | `planted`（已埋）/ `advanced`（已推进）/ `resolved`（已回收）/ `overdue`（超期） |
-| `plantedAt` | string | ✅ | 埋设位置：章 id 或 `chapterId#charRange` |
-| `advancedAt` | string[] | — | 推进位置列表，按时间顺序 |
-| `resolved` | bool | — | 是否已回收；`true` 时 `resolvedChapter` 必填（I-09，现行实现校验） |
-| `resolvedChapter` | string | — | 回收所在章 id；`resolved: true` 时必填 |
-| `dueBy` | string | — | 期望回收的章 id 或卷 id；超期判定输入 |
-| `linkedEntities` | string[] | — | 相关角色/世界观条目 id |
+| `id` | string | — | 稳定标识；缺省用相对路径。工具写入时显式落 `id`，此后改名不再换 id（I-20） |
+| `title` | string | ✅ | 伏笔名；缺省回退为文件名（去掉扩展名），**不报问题**——存量手写文件大量没有 `title` |
+| `status` | enum | — | `planted`（已埋）/ `advanced`（已推进）/ `resolved`（已回收）/ `overdue`（超期）。缺省由 `resolved` 推导（见下） |
+| `plantedAt` | string | — | 埋设位置：章 id。**不是必填**：没有对应的问题 code，把存量文件全标成问题只会制造噪声；工具建新条目时提示填 |
+| `advancedAt` | string[] | — | 推进位置列表，按时间顺序（块列表写入，读 `stringArrayField`） |
+| `resolved` | bool | — | **读兼容字段**：老文件/手写文件用它表达「已回收」；`true` 时 `resolvedChapter` 必填（I-09） |
+| `resolvedChapter` | string | — | 回收所在章 id；回收状态必填（I-09） |
+| `dueBy` | string | — | 期望回收的章 id 或卷 id（`vol-NN`）；**超期判定的唯一输入**（§3.2.2） |
+| `linkedEntities` | string[] | — | 相关角色/世界观条目 id；看板「按角色分组」的来源 |
 | `notes` | string | — | 自由备注 |
 
-状态机只允许 `planted → advanced → resolved` 的推进，以及任一未终态 → `overdue`；`resolved` 是终态（非法流转拒绝，见 [product-scope.md](product-scope.md) A-06）。
+**`status` 与 `resolved` 的关系**（两个字段都表达「是否回收」，不能各自为政）：
+
+- `status` 是状态机的唯一真相字段；`resolved` 只为读兼容保留。
+- 文件只写 `resolved`（没有 `status`）：`resolved: true` → 有效状态 `resolved`；其余 → `planted`。
+- 两者同时出现且矛盾（`resolved: true` 而 `status` 不是 `resolved`，或反之）→ 报 `FORESHADOW_TRANSITION_INVALID`，**以 `status` 为准**。
+- `status` 取值不在枚举内 → 报 `FRONTMATTER_ISSUE`，并按 `resolved` 回退推导。
+
+#### 3.2.1 状态机（I-21）
+
+四个状态：`planted`（已埋）→ `advanced`（已推进）→ `resolved`（已回收）；`overdue`（超期）是可写进文件的**标记态**，不承载进度。
+
+允许的转换（`from → to`；「无变化」是幂等写，不构成流转）：
+
+| from \ to | `planted` | `advanced` | `resolved` | `overdue` |
+|---|---|---|---|---|
+| `planted` | ✅ 无变化 | ✅ | ✅ | ✅ |
+| `advanced` | ❌ | ✅ 无变化 | ✅ | ✅ |
+| `resolved` | ❌ | ❌ | ✅ 无变化 | ❌ |
+| `overdue` | ❌ | ✅ | ✅ | ✅ 无变化 |
+
+- `resolved` 是**终态**：从它出发的任何改变都拒绝（只允许「仍是 `resolved`」）。
+- `overdue` 只表达「该回收了却没收」，因此**回到 `planted` 被拒绝**（那是退步），而「继续推进 / 回收」允许——超期是标记，不是进度。
+- 非法流转 → `FORESHADOW_TRANSITION_INVALID`，**写入侧与重建侧各一条网**：
+  - **写入侧**：`inkflow_foreshadow_upsert` 用候选状态与已有行的状态比这张表，拒绝且不落盘。
+  - **重建侧**：文件自带的历史字段与 `status` 矛盾即报——① `resolved: true` 但 `status` 不是 `resolved`（或反之）；② `status: planted` 却有 `advancedAt`；③ `status: advanced` 却没有 `advancedAt`。重建期只报不阻断，与其它不变量一致。
+- 判定只有一处实现（`src/host/domains/foreshadowing-plan.ts` 的 `foreshadowTransitionAllowed()` / `parseForeshadowFile()`），写入侧调同一个函数，不写第二份（X-4）。
+
+#### 3.2.2 超期（`overdue`）的判定
+
+`overdue` 是**算出来的看板状态**，不存进索引表；文件里的 `status: overdue` 只是作者/工具留下的标记。
+
+**判定输入**（三个条件同时成立才算超期）：
+
+1. 有效状态不是 `resolved`（回收了就永不超期）；
+2. `dueBy` 非空且**能解析**：命中 catalog 的章 id，或命中 catalog 的卷 id（`vol-NN`，即 `chapters/vol-*` 里存在的卷）；解析不到 → 不算超期（无法判定），payload 用 `dueKind: "unknown"` 说出来。**不存在的卷 id（如 `vol-99`）算解析不到**——否则「书已经越过卷 99」恒真，一个拼错的卷号会让所有条目永远显示超期；
+3. **当前位置严格晚于到期位置**：
+   - 当前位置 = 当前章的 `(卷序, seq)`。卷序 = `volumeId` 的数值部分（`vol-02` → 2；与 catalog 的 `volumes[].order` 同源）；**散章（无 `volume`）卷序记 0**，即排在所有卷之前。`seq` 是**卷内**序号（建章取同卷最大 `seq` + 1），取 frontmatter，缺省取文件名前导数字，两者都没有记 1。
+   - `dueBy` 是**章** → 到期位置 = 该章的 `(卷序, seq)`；到期那章本身是「本期到期」，**不超期**。
+   - `dueBy` 是**卷** → 到期位置 = `(卷序, +∞)`：当前章进入**更后的卷**才超期，同卷内不超期（卷内哪一章兑现由作者排）。
+   - 比较只用这两个数字，**不用文件名字典序**（字典序里 `10` 排在 `9` 前面），**也不能只用 `seq`**（`seq` 是卷内序号：卷一两章 + 卷二一章时，只看 `seq` 会把卷一的第 3 章当成全书最后一章）。
+
+**优先级**：算出来的结果**优先于**文件里的 `status`。
+
+- 算出来超期、文件写 `planted`/`advanced` → 看板显示 `overdue`；**文件不改**，索引里仍是文件值（索引是缓存，不替作者写回）。
+- 文件写 `overdue`、算出来不超期 → 看板回落：`advancedAt` 非空 → `advanced`，否则 `planted`。此时把 `planted` 写回文件仍被状态机拒绝（那是对文件里已声明标记的退步），拒绝的 hint 必须说清「看板显示的是算出来的值，要改就写 `advanced`/`resolved` 或手改文件」。
+- 因此工具与面板 payload 同时给两个值：`status`（算出来的看板值）与 `declaredStatus`（文件里的值）。
+
+**当前章**：看板与 `inkflow_foreshadow_list` 默认取**全书位置最靠后的一章**（`(卷序, seq)` 最大者），页脚文案按 `（卷 id 第 N 章）` 标出位置；`inkflow_foreshadow_list` 的 `chapter` 参数可改判「截至某一章」。
+
+**写作上下文段（X-13）的「当前章」** = **正在写的那一章**：同样按 `(卷序, seq)` 取最大者，但**数据来自文件**而不是索引——写入路径在 prompt provider 里，既不能等待异步重建，也不能假设索引是最新的（作者在编辑器里加了一章、切了分支、上一轮工具没重建都会让它过期）。索引过期时若从索引取位置，`dueBy` 指向的新章会解析成 `unknown`，整段提示**静默消失**，作者会从一本有超期伏笔的书里读到「没有该回收的」。因此位置表（`chapterPositionsFromFiles`）与超期判定都用文件，索引路径（`chapterPositions`）只服务看板与工具，两者对同一棵树必须给出同一份位置表。
+
+
+**列表上限**：`inkflow_foreshadow_list` 与看板一次最多列 `500` 条。`counts` 按**全部**条目统计（不是被截断后的那一截——`total: 500` 会让一本有 527 条伏笔的书看起来"刚好 500"），列表被截断时 payload 带 `truncated: true`。
 
 ### 3.3 关系 `relations/<slug>.md`
 
@@ -207,6 +260,7 @@
 | `relations` | id | path / title / relation_kind / source / target / direction / since / until / chapter | 关系图谱查询与校验（#27） |
 | `timeline_events` | id | path / title / world_time / narrative_order / chapter / participants / status | 双轴排序、待确认区、冲突检测（#28） |
 | `facts` | id（`= path#L<line>`） | path / line / subject / attribute / value / since / until / chapter / source | 账本「截至第 N 章生效中」快照与区间冲突校验（#32）；一条事实一行，`line` 是 1-based 行锚 |
+| `foreshadowings` | id | path / title / status / planted_at / advanced_at / due_by / resolved_chapter / linked_entities | 状态机查询、超期列表与看板（#31）。`status` 存**文件里的值**；`overdue` 是算出来的看板状态，**不进表**（§3.2.2）；`advanced_at` / `linked_entities` 空格连接（与 `participants` 同策略） |
 | `entity_mentions` | (entity_key, chapter_id, offset, source) | entity_key / chapter_id / offset / source | 正文与 frontmatter 的提及定位（#29）；`entity_key` = `kind:id`，`explicit` 行的 offset 为 -1 |
 | `library_files` | path | size / mtime | 资料登记 |
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
@@ -243,11 +297,10 @@
 
 | 表 | 用途 | 状态 |
 |---|---|---|
-| `foreshadowings` | 状态机查询、超期列表 | 未实现（#31） |
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
-**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）；**v4 = v3 + `characters` 四列**（`pov` / `first_appearance` / `aliases` / `voice`）**+ `character_states` 表**；**v5 = v4 + `timeline_events` 表**（双时间轴）；**v6 = v5 + `entity_mentions` 表**（提及定位）；**v7 = v6 + `facts` 表**（账本一行一事实，行号即锚）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
+**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）；**v4 = v3 + `characters` 四列**（`pov` / `first_appearance` / `aliases` / `voice`）**+ `character_states` 表**；**v5 = v4 + `timeline_events` 表**（双时间轴）；**v6 = v5 + `entity_mentions` 表**（提及定位）；**v7 = v6 + `facts` 表**（账本一行一事实，行号即锚）；**v8 = v7 + `foreshadowings` 表**（伏笔状态机与到期输入）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
 
 ## 5. 不变量与强制手段
 
@@ -275,11 +328,11 @@
 | I-18 | 同一叙事槽位（book-wide `narrativeOrder`，跨章也同槽）不得声明两个不同世界时间 | 拒 | `TIMELINE_ORDER_CONFLICT` |
 | I-19 | 叙事槽位递增时世界时间不得倒退（＝倒叙/回忆，正常写法） | 报（不拒） | `TIMELINE_WORLD_TIME_REVERSED` |
 | I-20 | 实体 `id` 与文件路径可以不一致（改名时旧 id 被钉住，[ADR-0014](../adrs/0014-entity-id-pinning.md)）；唯一性仍按 `(kind, id)` 判。**报出条件**：`id ≠ path` **且** id 形如旧路径（含 `/` 且以 `.md` 结尾）；**章除外**（id 是 catalog 给的 uuid，永远不等于路径）；**手写短 id 不报**（`id: char-1` 是身份，不是改名留下的痕迹） | 放行；体检列为提示（判据＝上行「报出条件」，提示的呈现归 #33） | `ID_PATH_DIVERGED`（info，不阻断） |
-| I-21 | 伏笔状态机只允许 `planted → advanced → resolved`，以及任一未终态 → `overdue`；`resolved` 是终态 | 拒 | `FORESHADOW_TRANSITION_INVALID`（#31） |
+| I-21 | 伏笔状态机按 §3.2.1 的 4×4 矩阵：`planted → advanced → resolved`，任一未终态 → `overdue`；`overdue` 只可继续推进或回收（回退到 `planted` 拒）；`resolved` 是终态。文件的历史字段（`resolved` / `advancedAt`）与 `status` 矛盾同样算非法流转（§3.2.1 的两条网） | 拒 | `FORESHADOW_TRANSITION_INVALID` |
 | I-22 | 账本每行必须可解析为一条事实：`attribute` + `value` 必填，段形如 `键: 值` 且以 `\|` 分隔，值内含字面 `\|` 时写 `\|`；未知键保留不报错 | 不阻断，报行锚 `path#L<n>`（1-based） | `FACT_LINE_MALFORMED` |
 | I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同（`since` 含、`until` 不含；缺省 `until` = 至今成立）。区间按**章序**（`chapters.seq`）比较，不按 id 字典序；章序解析不出的边界不参与判定。**空区间不算区间**：`until <= since`（含 `until == since` 的 `[c,c)` 与写反的 `until < since`）永不成立，既不进快照也不参与冲突配对——把它当跨段比对会诬告一条永不在生效的事实 | 拒 | `FACT_CONFLICT` |
 
-> I-21 的编号在本里程碑内预留给 #31（避免与 I-22 / I-23 撞号）；I-22 / I-23 由账本域 [`domains/facts.ts`](../../src/host/domains/facts.ts) 产出；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
+> I-21 由伏笔域 [`domains/foreshadowing-plan.ts`](../../src/host/domains/foreshadowing-plan.ts) 产出（写入侧与重建侧各一条网）；I-22 / I-23 由账本域 [`domains/facts.ts`](../../src/host/domains/facts.ts) 产出；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
 
 > **I-04 与账本主体**：`facts/<subject>.md` 的 `subject` **有意复用**所描述主体的 id（`characters/qingyin.md` 的 `id: char-qingyin` + `facts/char-qingyin.md` 的 `subject: char-qingyin` 是标准写法），**不算违规**：账本实体不作为 id 发布——它在 `entities` 里的 id 是**文件路径**（§4.1），`subject` 只是引用字段；`entity_mentions` 也**不扫 `facts`**（账本条目没有自己的名字，`title` 就是主体名，扫了会在同一处正文双计）。
 

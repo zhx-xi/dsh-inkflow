@@ -76,6 +76,7 @@ import {
   SESSION_ID_PARAM,
   buildChapter,
   buildChapters,
+  buildForeshadowBoard,
   buildImpact,
   buildLibrary,
   buildLibraryItem,
@@ -318,6 +319,16 @@ const ROUTES: readonly InternalRoute[] = [
     methods: ['POST'],
     body: TRASH_PURGE_BODY_FIELDS,
     handle: ({ target, version, body }) => purgeTrashReply(target, version, body),
+  },
+  {
+    // The foreshadow board (issue #31, data-model §3.2): read-only, three groupings
+    // of the same entries (open / late / by linked entity). Lateness is computed by
+    // the Host against the latest chapter — the panel never re-derives it, so there
+    // is exactly one definition of "超期" in the product.
+    name: 'foreshadow',
+    pattern: /^\/foreshadow$/,
+    methods: ['GET'],
+    handle: async ({ target, version }) => ({ status: 200, body: ok(await buildForeshadowBoard(target, version)) }),
   },
 ]
 

@@ -143,8 +143,19 @@ function readChapterPairFromIndex(root: string, chapterSeq: number | undefined):
     const rows = db
       .prepare(
         'SELECT path, seq, title, volume, status FROM chapters' +
-          ' WHERE seq IS NOT NULL AND (? IS NULL OR seq <= ?)' +
-          ' ORDER BY seq DESC, path DESC LIMIT 2',
+          ' WHERE (? IS NULL OR seq <= ?)' +
+          // Chapter order is (volume order, volume-local seq) — data-model §3.2.2.
+          // `seq` is **volume-local** (chapter creation takes the volume's max seq + 1),
+          // so `ORDER BY seq DESC` answers "the longest volume's last chapter": with
+          // vol-01 holding chapters 1-3 and vol-02 holding chapter 1, it named vol-01/3
+          // the chapter being written while the author was in vol-02. The volume's number
+          // is the `vol-NN` prefix (`substr(volume, 5)` → `01`), the same number
+          // `volumeOrderOf()` reads in foreshadowing-plan.ts.
+          // A loose chapter (no `volume`) is order 0, i.e. **before every volume**
+          // (§3.2.2) — hence the COALESCE: a bare `CAST(NULL …)` sorts first under
+          // DESC and would steal "current chapter" for the loosest chapter in the book.
+          ' ORDER BY COALESCE(CAST(substr(volume, 5) AS INTEGER), 0) DESC, COALESCE(seq, 1) DESC, path DESC' +
+          ' LIMIT 2',
       )
       .all(chapterSeq ?? null, chapterSeq ?? null) as unknown as Array<Record<string, unknown>>
     const heads = rows.map(chapterHeadFromRow)

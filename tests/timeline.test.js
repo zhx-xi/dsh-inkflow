@@ -328,6 +328,28 @@ test('timeline: a write without confirm reports the path and writes nothing', as
 // 4. The table itself
 // ---------------------------------------------------------------------------
 
+test('timeline: a participant id with a line break is refused instead of written', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    // `participants` is rendered as one inline array line. A line break inside an id does
+    // not throw there — it writes a file whose frontmatter no longer parses — so the
+    // shared id-list reader has to refuse it (tool-support `readIdList`).
+    const refused = await callTool('inkflow_timeline_upsert', {
+      projectRoot: root,
+      title: '两派签约',
+      participants: ['char-a\nchar-b'],
+      confirm: true,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error.code, 'TITLE_INVALID')
+    assert.equal(existsSync(join(root, 'timeline', '两派签约.md')), false, 'nothing was written')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('timeline: the schema bump carries timeline_events, and every row has a path', async () => {
   const dir = workdir()
   try {

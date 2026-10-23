@@ -218,6 +218,9 @@ test('registers the twelve built-ins, the tools of every registered domain, and 
       'inkflow_facts_append',
       'inkflow_facts_list',
       'inkflow_facts_snapshot',
+      // #31: the foreshadowing domain's own tools, contributed through `domainTools()`.
+      'inkflow_foreshadow_list',
+      'inkflow_foreshadow_upsert',
       'inkflow_index_rebuild',
       // #24: the outline domain's own tools, contributed through `domainTools()`.
       'inkflow_outline_move',

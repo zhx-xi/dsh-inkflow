@@ -40,6 +40,7 @@ import {
   isPortableSlug,
   optionalBoolean,
   optionalString,
+  readIdList,
   slugify,
   text,
   withProject,
@@ -58,20 +59,6 @@ import {
   timelineValidate,
 } from './timeline-plan.js'
 import type { TimelineRow, TimelineStatus, TimelineUpsertCandidate } from './timeline-plan.js'
-
-/** Tool argument → id list: an array, or one comma/、separated string. */
-function readIdList(value: unknown): string[] {
-  const split = (raw: string): string[] =>
-    raw
-      .split(/[,，、]/u)
-      .map((item) => item.trim())
-      .filter((item) => item !== '')
-  if (typeof value === 'string') return split(value)
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === 'string').flatMap((item) => split(item))
-  }
-  return []
-}
 
 function readAxis(value: unknown): 'world' | 'narrative' | 'both' {
   return value === 'world' || value === 'narrative' ? value : 'both'
@@ -344,6 +331,22 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
           }
         }
 
+        // `participants` is rendered as an inline array line, which does not throw on a
+        // line break — it writes a file whose frontmatter no longer parses. Refuse it
+        // with the same reader the foreshadow tools use.
+        const participantsRead = a['participants'] === undefined ? undefined : readIdList(a['participants'])
+        if (participantsRead?.multiline !== undefined) {
+          return {
+            ok: false,
+            root,
+            error: {
+              code: 'TITLE_INVALID',
+              message: 'every participants item must be a single line',
+              hint: 'nothing was written; split the ids into separate array items',
+            },
+          }
+        }
+
         const status = readStatus(a['status'])
         if (status === 'invalid') {
           return {
@@ -385,7 +388,7 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
         const worldTime = worldTimeArg ?? existing?.worldTime
         const narrativeOrder = (typeof rawOrder === 'number' ? rawOrder : undefined) ?? existing?.narrativeOrder
         const chapter = optionalString(a['chapter']) ?? existing?.chapter
-        const participants = a['participants'] === undefined ? existing?.participants : readIdList(a['participants'])
+        const participants = a['participants'] === undefined ? existing?.participants : participantsRead?.ids
         const resolvedStatus = status ?? existing?.status ?? 'confirmed'
 
         const candidate: TimelineUpsertCandidate = {

@@ -1016,3 +1016,10 @@ export {
   trashListReply,
 } from './trash-channel.js'
 export type { TrashReply, TrashSource } from './trash-channel.js'
+// ---------------------------------------------------------------------------
+// issue #31 — the foreshadow board (data-model §3.2). One read-only projection,
+// so the payload layer keeps growing in its own module instead of in this one.
+// ---------------------------------------------------------------------------
+
+export { buildForeshadowBoard } from './domains/foreshadowing-query.js'
+export type { ForeshadowSource } from './domains/foreshadowing-query.js'
