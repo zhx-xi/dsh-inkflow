@@ -19,6 +19,7 @@
  * through `./internal.js` (ADR-0008 D4 — a session id, never a directory).
  */
 
+import { describeTooLarge } from './error-text.js'
 import type { InternalError, InternalResult } from './internal.js'
 
 /** The four gate states. Anything else means "we have not learnt it yet". */
@@ -190,6 +191,10 @@ export const ERROR_HINTS: Record<string, string> = {
 /** Message for a failed call: the hint table first, then the Host's own words. */
 export function describeRouteError(error: InternalError | undefined): string {
   if (error === undefined) return '面板通道没有返回内容'
+  // The one refusal whose text has to carry numbers (issue 115): a save larger
+  // than the channel's ceiling names the ceiling and says nothing was written.
+  const tooLarge = describeTooLarge(error)
+  if (tooLarge !== null) return tooLarge
   return ERROR_HINTS[error.code] ?? error.message ?? error.code
 }
 

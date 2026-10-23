@@ -245,21 +245,6 @@ export function LibraryItemEditor({ item, detail, sessionId, onSaved, onReloaded
         {dirty ? <span style={{ ...muted, fontSize: 12 }}>· 未保存</span> : null}
       </div>
 
-      {error === null ? null : (
-        <div style={{ ...cardStyle, ...(conflict ? errorTone() : {}) }}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>{conflict ? '文件已被改动' : '保存失败'}</div>
-          <div style={{ ...muted, ...(conflict ? { color: 'var(--dsw-alias-state-error-primary)' } : {}) }}>{error}</div>
-          {conflict ? (
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button type="button" style={buttonStyle} disabled={saving} onClick={() => void reload()}>
-                重新加载
-              </button>
-              <span style={{ ...muted, fontSize: 11 }}>重新加载会丢弃你没保存的改动，不会覆盖磁盘上的文件。</span>
-            </div>
-          ) : null}
-        </div>
-      )}
-      {notice === null ? null : <div style={{ ...muted, ...mono }}>{notice}</div>}
 
       <div style={cardStyle}>
         <div style={{ ...muted, fontSize: 12, marginBottom: 6 }}>常见字段（{item.kind}）</div>
@@ -305,6 +290,25 @@ export function LibraryItemEditor({ item, detail, sessionId, onSaved, onReloaded
         />
         <div style={{ ...muted, ...mono, marginTop: 4 }}>{[...draft.body.replace(/\s+/gu, '')].length} 字</div>
       </div>
+
+      {/* The refusal/notice sits NEXT TO the button that produced it (issue 115):
+          the old position was the top of the editor, which on a long entry is
+          several screens away — the author clicked 保存 and saw nothing happen. */}
+      {error === null ? null : (
+        <div style={{ ...cardStyle, ...(conflict ? errorTone() : {}) }} role="alert">
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>{conflict ? '文件已被改动' : '保存失败'}</div>
+          <div style={{ ...muted, ...(conflict ? { color: 'var(--dsw-alias-state-error-primary)' } : {}) }}>{error}</div>
+          {conflict ? (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button type="button" style={buttonStyle} disabled={saving} onClick={() => void reload()}>
+                重新加载
+              </button>
+              <span style={{ ...muted, fontSize: 11 }}>重新加载会丢弃你没保存的改动，不会覆盖磁盘上的文件。</span>
+            </div>
+          ) : null}
+        </div>
+      )}
+      {notice === null ? null : <div style={{ ...muted, ...mono }} role="status">{notice}</div>}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <button type="button" style={primaryButtonStyle} disabled={saving || payload === null} onClick={() => void save()}>

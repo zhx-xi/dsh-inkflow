@@ -55,11 +55,18 @@ import { findProjectRoot, inspectProject, isWithin, projectLabel, realpathLoose 
 export const INTERNAL_PREFIX = '/inkflow/internal'
 
 /**
- * Upper bound for a request body. This channel answers GET projections; any
- * body at all is unusual, so the ceiling is a guard against a local page
- * pushing megabytes through a socket the plugin never reads.
+ * Upper bound for a request body.
+ *
+ * Why 1 MiB and not the 64 KiB this used to be (#115): a save carries a whole
+ * chapter or a whole setting entry as ONE JSON string, and the ceiling counts the
+ * serialised bytes, not the prose. Measured on a real book: a body with 20,000
+ * Chinese characters serialises to ~70 KB, so a long chapter could not be saved at
+ * all — the panel answered `413 payload-too-large` and stayed in the editor. 1 MiB
+ * is ~350k Chinese characters: far beyond any single chapter, still a guard
+ * against a local page pushing megabytes through a socket nobody reads. The value
+ * is exported so the tests state the ceiling once instead of hard-coding it.
  */
-export const MAX_INTERNAL_BODY_BYTES = 64 * 1024
+export const MAX_INTERNAL_BODY_BYTES = 1024 * 1024
 
 /** Where the client puts its session identity (query wins over header). */
 export const SESSION_ID_PARAM = 'sessionId'
