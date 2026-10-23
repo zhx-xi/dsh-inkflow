@@ -537,7 +537,8 @@ export type {
   TrashFileResult,
   TrashListResult,
 } from './trash.js'
-=======
+
+/**
  * The fact ledger (#32): the line format as a parse/render **pair** (ADR-0013), the
  * interval judgement (I-23) and the "which facts hold at chapter N" query. Pure, so the
  * round-trip and the conflict rule are test-driven directly instead of through a tool.
