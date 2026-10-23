@@ -24,6 +24,7 @@
 
 import { basename } from 'node:path'
 
+import { factsSegment } from './domains/facts-prompt.js'
 import type { ProjectState } from './project.js'
 import { inspectProject } from './project.js'
 import type { ChapterHead, ChapterPair, OutlinedChapter, ProjectStats, TailSlice, WorldSelection } from './writing-sources.js'
@@ -116,14 +117,28 @@ export interface ExtraSegmentInput {
   readonly current: ChapterHead | undefined
   /** The chapter's outline body (its title/plot), already read for the chapter segment. */
   readonly outlineBody: string
+  /**
+   * This segment's character budget: `floor(capRatio × budgetTokens)`, computed once by
+   * the seam (the field is read-only — a contributor must not re-derive or grow it).
+   *
+   * Why the builder needs it: a segment that lists one item per line cannot honour a
+   * character cap it cannot see. The first version of the `facts` segment counted a
+   * dozen facts, rendered them, and was then cut mid-line by the seam's `clipHead` —
+   * the header said "12 条" while four lines came out and the last one ended inside a
+   * value. A builder that packs **whole lines** up to `capChars` is the only shape that
+   * can report a truthful count, and it is also the only shape that can decide
+   * "header + one line does not fit, so say nothing at all" instead of emitting a
+   * truncated heading that the trim ladder will never revisit.
+   */
+  readonly capChars: number
 }
 
 /**
- * Segments registered by domains. Empty in B0 on purpose: the seam lands first so
- * `#31`/`#32` each add ONE entry from their own module instead of editing the
- * renderer. With this array empty the produced text is byte-identical to before.
+ * Segments registered by domains. The array's order **is** the segment order (roadmap
+ * X-13: `… → world → facts → foreshadow`), so a contributor inserts at the position the
+ * contract names instead of reordering anything else.
  */
-export const EXTRA_SEGMENTS: readonly ExtraSegmentSpec[] = []
+export const EXTRA_SEGMENTS: readonly ExtraSegmentSpec[] = [factsSegment]
 
 export interface WritingContextSegment {
   name: WritingContextSegmentName
@@ -236,9 +251,12 @@ export function buildWritingContext(root: string, options: WritingContextOptions
   // the chapter, never on a rung. An empty registry (B0's state) produces no extra,
   // so the rendered text stays byte-identical to the pre-seam version.
   const extras: RenderedExtra[] = EXTRA_SEGMENTS.map((spec) => {
-    const built = spec.build({ root: probe.root, current: pair.current, outlineBody: outline?.body ?? '' })
-    if (built === undefined || built.trim() === '') return undefined
+    // The cap is the seam's to compute (it owns the budget) and the segment's to honour
+    // (it owns the line structure). `clipHead` below stays as the last-resort guard: a
+    // contributor that ignores `capChars` must not be able to displace the rest.
     const capChars = Math.max(1, Math.floor(spec.capRatio * budgetTokens))
+    const built = spec.build({ root: probe.root, current: pair.current, outlineBody: outline?.body ?? '', capChars })
+    if (built === undefined || built.trim() === '') return undefined
     return { name: spec.name, label: spec.label, text: clipHead(built, capChars) }
   }).filter((extra): extra is RenderedExtra => extra !== undefined)
 

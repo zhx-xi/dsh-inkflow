@@ -265,7 +265,7 @@ test('every shipped tool schema stays inside the Host-supported subset', () => {
   const tools = registeredTools()
   // Exact, not `>=`: dropping a domain tool would otherwise stay green, and the
   // baseline below only names the 12 built-ins.
-  assert.equal(tools.size, 23, `expected the full tool surface, got ${tools.size}`)
+  assert.equal(tools.size, 26, `expected the full tool surface, got ${tools.size}`)
 
   const failures = []
   for (const [name, tool] of tools) {
@@ -286,7 +286,7 @@ test('the domain tools the registry contributes are covered by the same guard', 
   // `domainTools()` is what `apply()` registers beyond the built-ins; asserting the
   // count keeps this file honest when a new domain lands.
   const domain = domainTools({ ctx: {}, dataDir: tmpdir(), version: 'test' })
-  assert.equal(domain.length, 11, `expected the eleven domain tools, got ${domain.length}`)
+  assert.equal(domain.length, 14, `expected the fourteen domain tools, got ${domain.length}`)
   const failures = []
   for (const tool of domain) {
     if (tool.parameters === undefined) failures.push(`${tool.name}: no parameters schema`)
