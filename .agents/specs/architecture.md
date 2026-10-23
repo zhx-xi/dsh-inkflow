@@ -411,7 +411,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
 | `src/host/skills.ts` | 5 个写作技能的读取与校验、按 cwd 门禁的 provider、注册与降级 | 写作品数据、生成正文 |
-| `src/host/writing-context.ts` | 写作上下文的**纯投影**：四段渲染、单段上限、预算阶梯、裁剪标记；另含**扩展段注册表** `EXTRA_SEGMENTS`（roadmap X-13：域只声明 `{name,label,capRatio,build}`，顺序与裁剪阶梯归本模块） | 会话/服务/日志、写任何作品数据 |
+| `src/host/writing-context.ts` | 写作上下文的**纯投影**：四段渲染、单段上限、预算阶梯、裁剪标记；另含**扩展段注册表** `EXTRA_SEGMENTS`（roadmap X-13：域只声明 `{name,label,capRatio,build}`，顺序与裁剪阶梯归本模块；`build()` 的入参带 `capChars = floor(capRatio × budgetTokens)`，段自己按整行装填——计数与装填必须由一处算，否则 header 会写着 N 条而实际只渲染出几行） | 会话/服务/日志、写任何作品数据 |
 | `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |

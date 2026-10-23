@@ -27,16 +27,22 @@
  * A resolvable session whose directory fails the four-state gate answers the
  * same structured checklist the tools return, and nothing is written.
  *
- * WRITE ROUTES: five live on this build — four chapter routes
- * (`POST /chapters`, `POST|DELETE /chapters/:id`, `POST /chapters/:id/move`)
- * and the setting library's save (`POST /library/item`). They are POST/DELETE
+ * WRITE ROUTES: seven live on this build — four chapter routes
+ * (`POST /chapters`, `POST|DELETE /chapters/:id`, `POST /chapters/:id/move`),
+ * the setting library's save (`POST /library/item`), and the recovery bin's two
+ * actions (`POST /trash/restore`, `POST /trash/purge`). They are POST/DELETE
  * only, require `Content-Type: application/json` (415 otherwise) and require a
  * loopback `Origin` to be PRESENT (403 otherwise) — the same-origin check is
  * mandatory exactly for requests that write. Read routes keep working without
  * `Origin` because a same-origin `fetch` from the panel may omit it. The chapter
- * routes go through `chapters.ts`, the library save through `library-write.ts`;
- * never through this file: see `internal.ts` for the domain mapping and the CAS
- * plumbing.
+ * routes go through `chapters.ts`, the library save through `library-write.ts`,
+ * the bin through `trash.ts`; never through this file: see `internal.ts` for the
+ * domain mapping and the CAS plumbing.
+ *
+ * THE RECOVERY BIN (issue #35, roadmap X-9/X-10) is one read route — `/trash` —
+ * plus those two writes. An entry is addressed by its manifest `id`, so the
+ * browser still names no directory; `POST /trash/purge` needs `confirm: true`
+ * in the body, which is the second half of ADR-0012 #4.
  *
  * THE SETTING LIBRARY (issue #30) is three read routes — `/library` (the
  * eight-kind tree, X-7), `/library/item?kind=&id=` (one entry) and
@@ -87,6 +93,11 @@ import {
   resolveChannelTarget,
   writeChapterViaChannel,
   writeLibraryItem,
+  TRASH_PURGE_BODY_FIELDS,
+  TRASH_RESTORE_BODY_FIELDS,
+  purgeTrashReply,
+  restoreTrashReply,
+  trashListReply,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 
@@ -280,6 +291,33 @@ const ROUTES: readonly InternalRoute[] = [
     methods: ['POST'],
     body: RENAME_BODY_FIELDS,
     handle: async ({ target, version, body }) => renameEntity({ source: target, version, body }),
+  },
+  {
+    // The recovery bin (#35, roadmap X-9/X-10): what a delete moved to
+    // `.inkflow/trash/`, newest first. Read-only and read-only by design — the
+    // bin never prunes itself (ADR-0012 #4), so this route only looks.
+    name: 'trash',
+    pattern: /^\/trash$/,
+    methods: ['GET'],
+    handle: ({ target, version }) => trashListReply(target, version),
+  },
+  {
+    // One entry back to its original path: `id` only, never a path. The bin
+    // refuses an occupied target instead of overwriting (RESTORE_TARGET_EXISTS).
+    name: 'trash-restore',
+    pattern: /^\/trash\/restore$/,
+    methods: ['POST'],
+    body: TRASH_RESTORE_BODY_FIELDS,
+    handle: ({ target, version, body }) => restoreTrashReply(target, version, body),
+  },
+  {
+    // Forever: copy plus entry. `confirm: true` is required in the body — the
+    // panel asks twice, and this is the net under that (ADR-0012 #4).
+    name: 'trash-purge',
+    pattern: /^\/trash\/purge$/,
+    methods: ['POST'],
+    body: TRASH_PURGE_BODY_FIELDS,
+    handle: ({ target, version, body }) => purgeTrashReply(target, version, body),
   },
 ]
 

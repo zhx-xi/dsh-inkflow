@@ -355,7 +355,14 @@ function generateBook(root) {
     )
   }
   for (let index = 1; index <= 5; index += 1) {
-    markdown(root, `facts/ft-0${index}.md`, [`id: ft-0${index}`, 'entity: 清音', 'key: 年龄', `value: ${20 + index}`], '账本。')
+    // `subject` is required by data-model §3.5 and now reported as a `FRONTMATTER_ISSUE`
+    // warning when it is missing, so a fixture that wants *no* findings must write it.
+    markdown(
+      root,
+      `facts/ft-0${index}.md`,
+      [`subject: ft-0${index}`, 'entity: 清音', 'key: 年龄', `value: ${20 + index}`],
+      '账本。',
+    )
   }
 
   // ---- library: 6 files (4 markdown + 2 raw) ----

@@ -17,6 +17,7 @@
 import type { ToolDefinition } from '../context.js'
 import { chapterDomain } from './chapter.js'
 import { characterDomain } from './character.js'
+import { factsDomain } from './facts.js'
 import { outlineDomain } from './outline.js'
 import { relationDomain } from './relation.js'
 import { timelineDomain } from './timeline.js'
@@ -32,11 +33,12 @@ import type {
 export const DOMAIN_MODULES: readonly DomainModule[] = [
   chapterDomain,
   characterDomain,
+  factsDomain,
   outlineDomain,
   relationDomain,
   timelineDomain,
   worldDomain,
-  // #28 timeline · #29 mentions · #31 foreshadowing state machine
+  // #31 foreshadowing state machine
 ]
 
 /**

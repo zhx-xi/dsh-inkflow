@@ -781,6 +781,9 @@ const CONFLICT_CODES = new Set([
   'TARGET_EXISTS',
   'VOLUME_EXISTS',
   'PROJECT_BUSY',
+  // The recovery bin refused the move because that path already owns a slot in it
+  // (PR #123 review B1): a state conflict, not a server fault.
+  'TRASH_ENTRY_EXISTS',
 ])
 
 const FILE_CHANGED_HINT =
@@ -953,6 +956,8 @@ export async function deleteChapterViaChannel(request: WriteRequest): Promise<Wr
         sessionId: request.target.sessionId,
         root: request.target.root,
         deleted: result.deleted,
+        // #35: the delete is reversible, so the wire says where the copy went.
+        trashed: result.trashed,
         catalogRebuilt: result.catalogRebuilt,
         indexRebuilt: result.indexRebuilt,
         ...(result.indexError === undefined ? {} : { indexError: result.indexError }),
@@ -1000,3 +1005,14 @@ export { IMPACT_KINDS, buildImpact } from './impact.js'
 export type { ImpactReply, ImpactRequest, ImpactSource } from './impact.js'
 export { RENAME_BODY_FIELDS, renameEntity } from './impact-write.js'
 export type { RenameRequest } from './impact-write.js'
+// The recovery bin (#35): the domain lives in `trash.ts` (imported by
+// `chapters.ts` as well), the three channel replies in `trash-channel.ts`. Both
+// are re-exported here so `routes.ts` keeps ONE entry point for the channel.
+export {
+  TRASH_PURGE_BODY_FIELDS,
+  TRASH_RESTORE_BODY_FIELDS,
+  purgeTrashReply,
+  restoreTrashReply,
+  trashListReply,
+} from './trash-channel.js'
+export type { TrashReply, TrashSource } from './trash-channel.js'

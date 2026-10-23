@@ -487,8 +487,10 @@ test('projectFacts reports derived state without implying it is the truth', () =
 test('PANEL_TABS leaves unimplemented pages disabled with their release note', () => {
   const { PANEL_TABS } = model
   const available = PANEL_TABS.filter((tab) => tab.available)
-  // Issue #30 added the second page: 设定库 (the eight-kind setting library).
-  assert.deepEqual(available.map((tab) => tab.id), ['chapters', 'library'], '章节 and 设定库 exist in this build')
+  // Issue #30 added the second page (设定库, the eight-kind setting library);
+  // issue #35 the third (回收站, the recovery bin). This list is the build's own
+  // claim about what a user can click, so it is spelled out rather than derived.
+  assert.deepEqual(available.map((tab) => tab.id), ['chapters', 'library', 'trash'], '章节, 设定库 and 回收站 exist in this build')
   const disabled = PANEL_TABS.filter((tab) => !tab.available)
   assert.deepEqual(disabled.map((tab) => tab.id), ['outline', 'foreshadowing'])
   for (const tab of disabled) assert.equal(tab.note, '0.2.0 起', `tab ${tab.id} must say when it arrives`)
