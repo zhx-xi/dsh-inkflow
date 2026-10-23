@@ -518,3 +518,22 @@ export {
   privateStateDirRelative,
   privateStateRelative,
 } from './private-state.js'
+
+/**
+ * The recovery bin (#35, roadmap X-9/X-10): move one file into `.inkflow/trash/`,
+ * list what is there, put an entry back byte-identically, or purge one entry —
+ * the last only with `confirm: true`.
+ */
+export { listTrash, purgeTrash, restoreTrash, trashFile, undoTrashFile } from './trash.js'
+export type {
+  PurgeInput,
+  PurgeResult,
+  RestoreInput,
+  RestoreResult,
+  TrashEntry,
+  TrashEntryView,
+  TrashError,
+  TrashFileInput,
+  TrashFileResult,
+  TrashListResult,
+} from './trash.js'
