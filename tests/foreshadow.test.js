@@ -21,8 +21,9 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -39,7 +40,6 @@ import {
   foreshadowTransitionAllowed,
   listEntities,
 } from '../lib/index.js'
-import { hashTree } from './hash-tree.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const HOST = '127.0.0.1:2149'
@@ -150,6 +150,35 @@ function readDb(root, run) {
   }
 }
 
+/**
+ * Fingerprint of every **file** on disk: path, size and mtime.
+ *
+ * Same idea as `hash-tree.mjs` but deliberately without directory entries. A refused
+ * write must leave the bytes AND the timestamps alone (an atomic rewrite with
+ * identical content is still a write), while a directory's mtime on Windows is
+ * reported lazily — under a loaded run it can move between two snapshots taken around
+ * a call that wrote nothing, which would make this assertion fail for a reason that
+ * has nothing to do with the code under test.
+ */
+function hashFiles(root) {
+  const hash = createHash('sha256')
+  const walk = (relative) => {
+    const dir = relative === '' ? root : join(root, relative)
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    for (const entry of entries) {
+      const child = relative === '' ? entry.name : `${relative}/${entry.name}`
+      if (entry.isDirectory()) {
+        walk(child)
+        continue
+      }
+      const info = statSync(join(root, child))
+      hash.update(`${child}|${String(info.size)}|${String(info.mtimeMs)}\n`)
+    }
+  }
+  walk('')
+  return hash.digest('hex')
+}
+
 async function list(args) {
   const result = await callTool('inkflow_foreshadow_list', args)
   assert.equal(result.ok, true, JSON.stringify(result.error))
@@ -195,7 +224,7 @@ test('foreshadow: the write path refuses all five illegal transitions and writes
         }---\n\n正文。\n`
         writeFileSync(join(root, 'foreshadowing', '格子.md'), start, 'utf8')
         const expected = ALLOWED.has(`${from}->${to}`)
-        const before = hashTree(root)
+        const before = hashFiles(root)
         const result = await callTool('inkflow_foreshadow_upsert', {
           projectRoot: root,
           id: 'fs-cell',
@@ -214,7 +243,7 @@ test('foreshadow: the write path refuses all five illegal transitions and writes
           assert.equal(result.ok, false, `${from}->${to} must be refused`)
           assert.equal(result.error.code, 'FORESHADOW_TRANSITION_INVALID', `${from}->${to} names the rule`)
           // Zero write: the bytes AND the mtimes of the whole tree are unchanged.
-          assert.equal(hashTree(root), before, `${from}->${to} wrote something`)
+          assert.equal(hashFiles(root), before, `${from}->${to} wrote something`)
           assert.equal(readFileSync(join(root, 'foreshadowing', '格子.md'), 'utf8'), start)
         }
       }
@@ -473,7 +502,7 @@ test('foreshadow: a missing title and a bad status are refused before anything i
   try {
     const root = join(dir, 'book')
     book(root)
-    const before = hashTree(root)
+    const before = hashFiles(root)
 
     const noTitle = await callTool('inkflow_foreshadow_upsert', { projectRoot: root, status: 'planted', confirm: true })
     assert.equal(noTitle.error.code, 'TITLE_REQUIRED')
@@ -494,7 +523,7 @@ test('foreshadow: a missing title and a bad status are refused before anything i
     })
     assert.equal(multiline.error.code, 'FORESHADOW_FIELD_INVALID')
 
-    assert.equal(hashTree(root), before, 'a refused call writes nothing at all')
+    assert.equal(hashFiles(root), before, 'a refused call writes nothing at all')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
