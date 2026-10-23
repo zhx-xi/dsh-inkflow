@@ -435,6 +435,114 @@ test('purging needs confirm: true, then empties the bin', async () => {
 })
 
 // ---------------------------------------------------------------------------
+// 4b. One slot per original path (PR #123 review B1)
+//
+// The copy is keyed by the ORIGINAL path, so two deletions of that path would
+// share one location: the second `writeTextAtomic` would silently replace the
+// first version's bytes while its entry went on saying `present: true`. The
+// refusal is `TRASH_ENTRY_EXISTS`, and the slot frees again through restore or
+// purge — the two tests after this one are the legal halves of the same rule.
+// ---------------------------------------------------------------------------
+
+test('deleting the same path twice is refused, and the earlier copy keeps its bytes', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    assert.equal((await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })).status, 200)
+    const firstEntry = manifestOf(root).entries[0]
+    const copyPath = join(root, TRASH_ROOT, CHAPTER)
+    const firstCopy = readFileSync(copyPath)
+
+    // The author writes a second version onto the same path (same chapter id,
+    // different body) and deletes it too — v1 and v2 want the same slot.
+    writeChapterFile(root, CHAPTER, undefined, ['id: ch-1', 'title: 开篇（新）', 'volume: vol-01', 'seq: 1'], '第二版正文。')
+    const secondBytes = readFileSync(join(root, CHAPTER))
+    assert.equal((await read(harness, '/chapters')).json.ok, true)
+    const before = fileTree(root)
+
+    const second = await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })
+    assert.equal(second.status, 409, JSON.stringify(second.json).slice(0, 200))
+    assert.equal(second.json.ok, false)
+    assert.equal(second.json.error.code, 'TRASH_ENTRY_EXISTS', JSON.stringify(second.json).slice(0, 200))
+    assert.equal(second.json.error.nothingWritten, true)
+
+    assert.equal(fileTree(root), before, 'the refused second delete writes nothing at all')
+    assert.deepEqual(readFileSync(copyPath), firstCopy, 'the bin copy is still v1, byte for byte')
+    assert.deepEqual(readFileSync(join(root, CHAPTER)), secondBytes, 'v2 is still in the working tree')
+    const manifest = manifestOf(root)
+    assert.equal(manifest.entries.length, 1, 'no second entry was recorded')
+    assert.equal(manifest.entries[0].id, firstEntry.id)
+
+    // The point of the whole rule: v1 is still there to be recovered. While v2
+    // occupies the path the restore refuses (that is 3's rule), and once the path
+    // is free the bin hands v1 back unchanged.
+    const blocked = await writeCall(harness, '/trash/restore', { payload: { id: firstEntry.id } })
+    assert.equal(blocked.json.error.code, 'RESTORE_TARGET_EXISTS')
+    rmSync(join(root, CHAPTER))
+    const restored = await writeCall(harness, '/trash/restore', { payload: { id: firstEntry.id } })
+    assert.equal(restored.status, 200, JSON.stringify(restored.json).slice(0, 200))
+    assert.deepEqual(readFileSync(join(root, CHAPTER)), firstCopy, 'v1 came back out of the bin')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('delete → restore → delete is legal: a restore frees the slot', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+    const original = readFileSync(join(root, CHAPTER))
+
+    assert.equal((await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })).status, 200)
+    const id = manifestOf(root).entries[0].id
+    assert.equal((await writeCall(harness, '/trash/restore', { payload: { id } })).status, 200)
+    assert.deepEqual(readFileSync(join(root, CHAPTER)), original)
+
+    const again = await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })
+    assert.equal(again.status, 200, JSON.stringify(again.json).slice(0, 200))
+    assert.equal(existsSync(join(root, CHAPTER)), false)
+    const manifest = manifestOf(root)
+    assert.equal(manifest.entries.length, 1, 'exactly one entry: the first one was consumed by the restore')
+    assert.notEqual(manifest.entries[0].id, id, 'the second delete minted its own id')
+    assert.deepEqual(readFileSync(join(root, TRASH_ROOT, CHAPTER)), original)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('delete → purge → delete is legal: a purge frees the slot', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    assert.equal((await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })).status, 200)
+    const id = manifestOf(root).entries[0].id
+    const purged = await writeCall(harness, '/trash/purge', { payload: { id, confirm: true } })
+    assert.equal(purged.status, 200, JSON.stringify(purged.json).slice(0, 200))
+    assert.deepEqual(manifestOf(root).entries, [])
+    assert.equal(existsSync(join(root, TRASH_ROOT, CHAPTER)), false)
+
+    // A purge is forever, so the file has to come back some other way (the author
+    // retypes the chapter, or restores it from git) before it can be deleted again.
+    writeChapterFile(root, CHAPTER, undefined, ['id: ch-1', 'title: 开篇（重写）', 'volume: vol-01', 'seq: 1'], '重写的正文。')
+    assert.equal((await read(harness, '/chapters')).json.ok, true)
+    const again = await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })
+    assert.equal(again.status, 200, JSON.stringify(again.json).slice(0, 200))
+    assert.equal(manifestOf(root).entries.length, 1)
+    assert.equal(existsSync(join(root, TRASH_ROOT, CHAPTER)), true, 'the freshly deleted copy is in the bin')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 5. The text writer's one blind spot: bytes that are not valid UTF-8
 // ---------------------------------------------------------------------------
 
@@ -472,6 +580,40 @@ test('a file the text writer cannot reproduce byte-exactly is never deleted', as
 })
 
 // ---------------------------------------------------------------------------
+// 5b. "Nothing was written" includes `.gitignore`
+//
+// The ignore line is appended only after the copy and its manifest entry exist,
+// so a delete that could not make its copy must not have touched `.gitignore`
+// either — otherwise the refusal's `nothingWritten: true` is a lie.
+// ---------------------------------------------------------------------------
+
+test('a delete whose copy cannot be written leaves .gitignore alone', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+    // A file where the copy needs a directory: `.inkflow/trash/chapters/...` can
+    // then never be created, which is a copy failure with the original untouched.
+    mkdirSync(join(root, TRASH_ROOT), { recursive: true })
+    writeFileSync(join(root, TRASH_ROOT, 'chapters'), 'not a directory\n', 'utf8')
+    assert.equal((await read(harness, '/chapters')).json.ok, true)
+    const before = fileTree(root)
+
+    const refused = await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })
+    assert.equal(refused.json.ok, false, JSON.stringify(refused.json).slice(0, 200))
+    assert.equal(refused.json.error.nothingWritten, true)
+
+    assert.equal(fileTree(root), before, 'the failed delete writes nothing')
+    assert.equal(existsSync(join(root, '.gitignore')), false, '`.gitignore` was not appended before the copy existed')
+    assert.equal(existsSync(join(root, CHAPTER)), true, 'the chapter is still there')
+    assert.equal(existsSync(join(root, MANIFEST)), false, 'no manifest entry was recorded')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 6. A corrupt manifest is refused, never overwritten
 // ---------------------------------------------------------------------------
 
@@ -497,6 +639,152 @@ test('a corrupt manifest refuses every trash operation instead of overwriting it
     assert.equal(refused.json.error.code, 'TRASH_MANIFEST_INVALID')
     assert.equal(fileTree(root), before, 'the chapter is not deleted when its copy cannot be recorded')
     assert.equal(readFileSync(join(root, MANIFEST), 'utf8'), '{ this is not json', 'the manifest is left alone')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 6b. The spec's other two restore refusals, and the manifest shapes it refuses
+// ---------------------------------------------------------------------------
+
+test('restoring an entry whose copy was cleaned by hand is TRASH_COPY_MISSING and writes nothing', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    assert.equal((await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })).status, 200)
+    const id = manifestOf(root).entries[0].id
+    rmSync(join(root, TRASH_ROOT, CHAPTER))
+    const before = fileTree(root)
+
+    const refused = await writeCall(harness, '/trash/restore', { payload: { id } })
+    assert.equal(refused.status, 409, JSON.stringify(refused.json).slice(0, 200))
+    assert.equal(refused.json.error.code, 'TRASH_COPY_MISSING')
+    assert.equal(refused.json.error.nothingWritten, true)
+
+    assert.equal(fileTree(root), before, 'a missing copy is refused without writing')
+    assert.equal(existsSync(join(root, CHAPTER)), false, 'nothing was written back to the working tree')
+    assert.equal(manifestOf(root).entries.length, 1, 'the entry stays, so it can still be purged')
+    const listed = await read(harness, '/trash')
+    assert.equal(listed.json.value.entries[0].present, false, 'the panel is told the copy is gone')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('restoring a copy edited inside the bin is TRASH_COPY_CHANGED and writes nothing', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    assert.equal((await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })).status, 200)
+    const id = manifestOf(root).entries[0].id
+    const copyPath = join(root, TRASH_ROOT, CHAPTER)
+    // Same length as the deleted text would not help: the check is a hash.
+    writeFileSync(copyPath, '被改过的副本\n', 'utf8')
+    const tampered = readFileSync(copyPath)
+    const before = fileTree(root)
+
+    const refused = await writeCall(harness, '/trash/restore', { payload: { id } })
+    assert.equal(refused.status, 409, JSON.stringify(refused.json).slice(0, 200))
+    assert.equal(refused.json.error.code, 'TRASH_COPY_CHANGED')
+    assert.equal(refused.json.error.nothingWritten, true)
+
+    assert.equal(fileTree(root), before, 'a changed copy is refused without writing')
+    assert.deepEqual(readFileSync(copyPath), tampered, 'the copy is left exactly as the author left it')
+    assert.equal(existsSync(join(root, CHAPTER)), false, 'the edited copy was not handed back as the deleted text')
+    assert.equal(manifestOf(root).entries.length, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a manifest entry pointing into .inkflow/ is TRASH_MANIFEST_INVALID, never restored', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+    // A hand-edited manifest: every field is well-formed, and only the path is
+    // forbidden. Restoring it would drop a file inside the plugin's own state
+    // directory, where `listTrash` never looks again.
+    const evilPath = `${TRASH_ROOT}/evil.md`
+    mkdirSync(join(root, TRASH_ROOT), { recursive: true })
+    const manifest = {
+      schemaVersion: 1,
+      entries: [
+        {
+          id: 't-evil',
+          originalPath: evilPath,
+          deletedAt: '2026-10-24T00:00:00.000Z',
+          bytes: 4,
+          sha256: 'a'.repeat(64),
+          reason: 'chapter_delete',
+        },
+      ],
+    }
+    writeFileSync(join(root, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    const manifestText = readFileSync(join(root, MANIFEST), 'utf8')
+
+    const listed = await read(harness, '/trash')
+    assert.equal(listed.status, 500, 'an unreadable manifest is not a client error: the list answers 500')
+    assert.equal(listed.json.ok, false)
+    assert.equal(listed.json.error.code, 'TRASH_MANIFEST_INVALID')
+
+    assert.equal((await read(harness, '/chapters')).json.ok, true)
+    const before = fileTree(root)
+    const refused = await writeCall(harness, '/trash/restore', { payload: { id: 't-evil' } })
+    assert.equal(refused.json.ok, false)
+    assert.equal(refused.json.error.code, 'TRASH_MANIFEST_INVALID')
+    // A manifest this module cannot read refuses the deletes too, not just the reads.
+    const deleteRefused = await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })
+    assert.equal(deleteRefused.json.error.code, 'TRASH_MANIFEST_INVALID')
+
+    assert.equal(fileTree(root), before, 'neither refusal writes anything')
+    assert.equal(existsSync(join(root, evilPath)), false, 'no file was written into the private state directory')
+    assert.equal(readFileSync(join(root, MANIFEST), 'utf8'), manifestText, 'the manifest is left alone')
+    assert.equal(existsSync(join(root, CHAPTER)), true, 'the chapter is still there')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a manifest with another schemaVersion or a partial entry is TRASH_MANIFEST_INVALID', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+    mkdirSync(join(root, TRASH_ROOT), { recursive: true })
+    const cases = [
+      ['schemaVersion 2', { schemaVersion: 2, entries: [] }],
+      [
+        'an entry without sha256',
+        {
+          schemaVersion: 1,
+          entries: [{ id: 't1', originalPath: CHAPTER, deletedAt: '2026-10-24T00:00:00.000Z', bytes: 3, reason: 'chapter_delete' }],
+        },
+      ],
+      ['an entries field that is not an array', { schemaVersion: 1, entries: 'nope' }],
+    ]
+    for (const [label, value] of cases) {
+      writeFileSync(join(root, MANIFEST), `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+      const listed = await read(harness, '/trash')
+      assert.equal(listed.json.ok, false, label)
+      assert.equal(listed.json.error.code, 'TRASH_MANIFEST_INVALID', label)
+    }
+    // ...and the last shape still refuses a delete with zero writes.
+    assert.equal((await read(harness, '/chapters')).json.ok, true)
+    const before = fileTree(root)
+    const refused = await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })
+    assert.equal(refused.json.error.code, 'TRASH_MANIFEST_INVALID')
+    assert.equal(fileTree(root), before)
+    assert.equal(existsSync(join(root, CHAPTER)), true)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -662,6 +950,7 @@ test('the trash view model words the page without touching the channel at import
   assert.equal(model.purgeStage('t2', 't1'), 'armed')
 
   assert.ok(model.describeTrashError({ code: 'RESTORE_TARGET_EXISTS' }).includes('已存在'))
+  assert.ok(model.describeTrashError({ code: 'TRASH_ENTRY_EXISTS' }).includes('恢复'), 'the same-path refusal says how to free the slot')
   assert.ok(model.describeTrashError({ code: 'CONFIRM_REQUIRED' }).includes('确认'))
   assert.ok(model.describeTrashError({ code: 'SOMETHING_UNKNOWN' }).length > 0, 'an unknown code still says something')
 })

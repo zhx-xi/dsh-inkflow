@@ -138,6 +138,7 @@ const CODE_HINTS: Readonly<Record<string, string>> = {
   TRASH_COPY_MISMATCH: '文件不是合法 UTF-8，无法做出字节一致的副本，所以没有删除它。',
   TRASH_RESTORE_MISMATCH: '恢复出来的字节与删除时不一致，已撤销这次写入。',
   TRASH_MANIFEST_INVALID: '回收站清单读不出来，已拒绝改动以免丢失记录。',
+  TRASH_ENTRY_EXISTS: '回收站里已经有同一路径的副本，没有覆盖它。先恢复或彻底删除那条，再重新删除。',
   CONFIRM_REQUIRED: '彻底删除需要再确认一次。',
   NO_SESSION_CONTEXT: '还没定位到这本书的会话，稍后再试。',
   'forbidden-origin': '这次请求不是本页面发出的，已拒绝。',

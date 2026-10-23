@@ -781,6 +781,9 @@ const CONFLICT_CODES = new Set([
   'TARGET_EXISTS',
   'VOLUME_EXISTS',
   'PROJECT_BUSY',
+  // The recovery bin refused the move because that path already owns a slot in it
+  // (PR #123 review B1): a state conflict, not a server fault.
+  'TRASH_ENTRY_EXISTS',
 ])
 
 const FILE_CHANGED_HINT =

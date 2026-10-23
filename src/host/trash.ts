@@ -30,6 +30,11 @@
  *   6. **The manifest is never clobbered.** A manifest this module cannot read is
  *      `TRASH_MANIFEST_INVALID` for every operation: rebuilding it would silently
  *      forget entries the author may still need.
+ *   7. **One slot per original path.** The copy location is derived from the
+ *      original path, so a second delete of the same path would overwrite the
+ *      first version's bytes while its entry still claims to be restorable. It
+ *      is `TRASH_ENTRY_EXISTS` with zero writes; restoring or purging that entry
+ *      is what frees the slot.
  *
  * Why its own module rather than a few functions in `chapters.ts`: the migration
  * backup (#36) shares the directory but not the format (X-10), and the chapter
@@ -267,8 +272,11 @@ function readEntry(raw: unknown): TrashEntry | undefined {
   if (sha256 === undefined || reason === undefined) return undefined
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return undefined
   // An entry whose path is not a plain project-relative path could not be
-  // restored, and would let a hand-edited manifest point anywhere.
+  // restored, and would let a hand-edited manifest point anywhere. A path inside
+  // `.inkflow/` is refused for a second reason: restoring it would drop a file
+  // into the plugin's own state directory, where `listTrash` never looks again.
   if (relativeInput(originalPath) !== originalPath) return undefined
+  if (isPrivateStatePath(originalPath)) return undefined
   return { id, originalPath, deletedAt, bytes, sha256, reason }
 }
 
@@ -310,16 +318,21 @@ function pruneEmptyBinDirs(root: string, fileRelativePath: string): void {
  *
  *   1. read the bytes and prove the text writer round-trips them (else refuse,
  *      original untouched);
- *   2. write the copy and re-read it (a rejected copy leaves nothing behind);
- *   3. write the manifest entry — *before* the original is removed, so a crash
+ *   2. refuse when the path already owns a slot in the bin (invariant 7);
+ *   3. write the copy and re-read it (a rejected copy leaves nothing behind);
+ *   4. write the manifest entry — *before* the original is removed, so a crash
  *      leaves "copy + entry + original" (duplicated, recoverable) rather than
  *      "copy + original, no entry" (an orphan nobody can find);
- *   4. remove the original; if that fails, unwind the entry and the copy so the
- *      bin never claims a file that is still in the working tree.
+ *   5. append the `.gitignore` line (ADR-0012 #2), then remove the original; if
+ *      that last step fails, unwind the entry and the copy so the bin never
+ *      claims a file that is still in the working tree.
  *
- * `ensurePrivateStateIgnored` runs before the first byte lands: the copy must
- * never appear in `git status`, and the line is appended exactly when the bin
- * starts being used (ADR-0012 #2).
+ * Every refusal up to step 4 therefore writes nothing at all — which is why the
+ * ignore line sits at step 5 rather than in front of the copy: a delete that
+ * failed to make its copy must not have touched `.gitignore` either. The cost is
+ * a window (crash between steps 4 and 5) where the bin exists but is not yet
+ * ignored; the visible result is `git status` listing `.inkflow/`, and the next
+ * delete appends the line.
  */
 export function trashFile(projectRoot: string, input: TrashFileInput): TrashFileResult {
   const root = resolve(projectRoot)
@@ -365,8 +378,21 @@ export function trashFile(projectRoot: string, input: TrashFileInput): TrashFile
   const open = readManifest(root)
   if (!open.ok) return open
 
+  // Invariant 7. `trashPath` is derived from `originalPath`, so a second delete of
+  // the same path would hand `writeTextAtomic` a target that already holds the
+  // first version — silently replacing the only copy of it while its entry kept
+  // reporting `present: true`. The `existsSync` half also covers an orphan copy
+  // whose entry was dropped by hand: the slot is occupied either way.
   const trashPath = privateStateRelative('trash', sourcePath)
-  const ignored = ensurePrivateStateIgnored(root)
+  const occupant = open.entries.find((entry) => entry.originalPath === sourcePath)
+  if (occupant !== undefined || existsSync(absolute(root, trashPath))) {
+    return refuse('TRASH_ENTRY_EXISTS', `${sourcePath} already has an entry in the recovery bin`, {
+      root,
+      path: sourcePath,
+      hint: 'restore or purge the entry the bin holds for this path, then delete again — the bin keeps one copy per path',
+      nothingWritten: true,
+    })
+  }
 
   const copied = writeTextAtomic(root, trashPath, text, { verbatim: true })
   if (!copied.ok) {
@@ -407,9 +433,17 @@ export function trashFile(projectRoot: string, input: TrashFileInput): TrashFile
   }
   const recorded = writeManifest(root, [entry, ...open.entries])
   if (!recorded.ok) {
+    // The copy is unwound, so the refusal really did write nothing — say so, or a
+    // caller cannot tell it from "the original may already be gone".
     removeProjectFile(root, trashPath)
-    return recorded
+    return { ok: false, error: { ...recorded.error, nothingWritten: true } }
   }
+
+  // Invariant: nothing is written for a refusal, `.gitignore` included — that is
+  // why the ignore line is appended only once the copy and its entry are both in
+  // place (ADR-0012 #2: the line exists from the moment the bin is used, and a
+  // delete that refused before that point never used it).
+  const ignored = ensurePrivateStateIgnored(root)
 
   const removed = removeProjectFile(root, sourcePath)
   if (!removed.ok) {
