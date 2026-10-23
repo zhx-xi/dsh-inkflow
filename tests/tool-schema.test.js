@@ -34,8 +34,7 @@ import { apply, domainTools } from '../lib/index.js'
  * this project (AGENTS.md §2 — no `@deepseek-ai/*` imports), so the subset has to
  * be restated here. When the Host widens it, this list is where that lands.
  */
-const SUPPORTED = new Set([
-  // structural
+const CONSTRAINT_KEYWORDS = new Set([
   'type',
   'oneOf',
   'properties',
@@ -44,14 +43,20 @@ const SUPPORTED = new Set([
   'items',
   'enum',
   'const',
-  // annotations (allowed, they carry no validation semantics)
-  'description',
-  'title',
-  'default',
-  'examples',
-  '$comment',
-  'deprecated',
 ])
+
+/**
+ * `ANNOTATION_KEYWORDS`, verbatim from the same function. Deliberately NOT wider
+ * than the Host's set: `$comment` and `deprecated` look harmless, but the Host
+ * refuses them like any other unknown keyword — so a guard that accepted them
+ * would wave through the very failure it exists to catch.
+ */
+const ANNOTATION_KEYWORDS = new Set(['description', 'title', 'default', 'examples'])
+
+const SUPPORTED = new Set([...CONSTRAINT_KEYWORDS, ...ANNOTATION_KEYWORDS])
+
+/** `ONE_OF_SIBLING_KEYWORDS`: these may not sit beside `oneOf`. */
+const ONE_OF_SIBLINGS = ['properties', 'required', 'additionalProperties', 'items', 'enum', 'const']
 
 /** Every `{ keyword: value }` object inside a schema, keyed by its JSON path. */
 function schemaNodes(schema, path = 'schema', out = []) {
@@ -83,13 +88,35 @@ function violations(schema, path = 'schema', out = []) {
     for (const keyword of Object.keys(node)) {
       if (!SUPPORTED.has(keyword)) out.push(`${nodePath}: "${keyword}" is not a supported keyword`)
     }
-    const required = node.required
-    if (Array.isArray(required)) {
-      const declared = node.properties !== null && typeof node.properties === 'object' ? node.properties : {}
-      for (const name of required) {
-        if (!Object.prototype.hasOwnProperty.call(declared, name)) {
-          out.push(`${nodePath}: required names "${name}" which is not in properties`)
+    if (Object.prototype.hasOwnProperty.call(node, 'required')) {
+      const required = node.required
+      if (!Array.isArray(required) || required.some((name) => typeof name !== 'string')) {
+        out.push(`${nodePath}: required must be an array of strings`)
+      } else {
+        const declared = node.properties !== null && typeof node.properties === 'object' ? node.properties : {}
+        for (const name of required) {
+          if (!Object.prototype.hasOwnProperty.call(declared, name)) {
+            out.push(`${nodePath}: required names "${name}" which is not in properties`)
+          }
         }
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(node, 'additionalProperties') && typeof node.additionalProperties !== 'boolean') {
+      // A schema-valued `additionalProperties` is refused: only `true`/`false`.
+      out.push(`${nodePath}: additionalProperties must be a boolean`)
+    }
+    if (Object.prototype.hasOwnProperty.call(node, 'description') && typeof node.description !== 'string') {
+      out.push(`${nodePath}: description must be a string`)
+    }
+    if (Object.prototype.hasOwnProperty.call(node, 'title') && typeof node.title !== 'string') {
+      out.push(`${nodePath}: title must be a string`)
+    }
+    const hasType = Object.prototype.hasOwnProperty.call(node, 'type')
+    const hasOneOf = Object.prototype.hasOwnProperty.call(node, 'oneOf')
+    if (hasType && hasOneOf) out.push(`${nodePath}: cannot declare both type and oneOf`)
+    if (hasOneOf) {
+      for (const key of ONE_OF_SIBLINGS) {
+        if (Object.prototype.hasOwnProperty.call(node, key)) out.push(`${nodePath}: "${key}" is not supported beside oneOf`)
       }
     }
   }
@@ -146,6 +173,22 @@ test('the guard itself catches the two shapes that killed the plugin', () => {
   ])
   // The accepted form of the same intent: the range lives in the description.
   assert.deepEqual(violations({ type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] }), [])
+  // ... and the near-misses an over-generous guard would wave through:
+  assert.deepEqual(violations({ type: 'string', $comment: 'harmless?' }), ['schema: "$comment" is not a supported keyword'])
+  assert.deepEqual(violations({ type: 'string', deprecated: true }), ['schema: "deprecated" is not a supported keyword'])
+  assert.deepEqual(violations({ type: 'object', additionalProperties: { type: 'string' } }), [
+    'schema: additionalProperties must be a boolean',
+  ])
+  // Both rules fire on this shape, and both are real refusals: the Host reports
+  // the `type`+`oneOf` conflict first and then the sibling keyword.
+  assert.deepEqual(violations({ type: 'array', oneOf: [{ type: 'string' }], items: { type: 'string' } }), [
+    'schema: cannot declare both type and oneOf',
+    'schema: "items" is not supported beside oneOf',
+  ])
+  assert.deepEqual(violations({ oneOf: [{ type: 'string' }], items: { type: 'string' } }), [
+    'schema: "items" is not supported beside oneOf',
+  ])
+  assert.deepEqual(violations({ type: 'string', oneOf: [{ type: 'number' }] }), ['schema: cannot declare both type and oneOf'])
 })
 
 test('every shipped tool schema stays inside the Host-supported subset', () => {
