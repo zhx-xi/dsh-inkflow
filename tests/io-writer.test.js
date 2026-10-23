@@ -505,6 +505,46 @@ test('io: the write lock file itself is not a writable target', () => {
   }
 })
 
+test('io: the private state directory is writable only inside its three subdirectories', () => {
+  const dir = workdir()
+  try {
+    const root = project(dir)
+
+    // ADR-0012 / roadmap X-9: exactly trash/ backup/ audit/, one segment deeper
+    // than a content directory because the file lives inside the subdirectory.
+    for (const sub of ['trash', 'backup', 'audit']) {
+      const resolved = resolveWriteTarget(root, `.inkflow/${sub}/chapters/vol-01/0001-a.md`)
+      assert.equal(resolved.ok, true, `.inkflow/${sub}/ must be writable`)
+      assert.equal(resolved.target.dir, '.inkflow')
+      assert.equal(resolved.target.relative, `.inkflow/${sub}/chapters/vol-01/0001-a.md`)
+      assert.equal(resolved.target.absolute.startsWith(realpathSync.native(root)), true)
+    }
+
+    // The directory itself, its other names, and a bare subdirectory are not targets.
+    for (const relative of [
+      '.inkflow/x.md',
+      '.inkflow/other/x.md',
+      '.inkflow/trash',
+      '.inkflow/trash/',
+      '.inkflow',
+      '.inkflow/../chapters/x.md',
+      '.inkflow/trash/../../inkflow.json',
+    ]) {
+      const resolved = resolveWriteTarget(root, relative)
+      assert.equal(resolved.ok, false, `${relative} must be refused`)
+    }
+    // A path that reaches out of the whitelist by name is PATH_NOT_WRITABLE; one with
+    // a `..` segment is PATH_INVALID before the directory is even considered.
+    assert.equal(resolveWriteTarget(root, '.inkflow/other/x.md').error.code, 'PATH_NOT_WRITABLE')
+    assert.equal(resolveWriteTarget(root, '.inkflow/trash/../../inkflow.json').error.code, 'PATH_INVALID')
+
+    // Resolving still writes nothing: no `.inkflow/` appears on disk.
+    assert.equal(existsSync(join(root, '.inkflow')), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('io: a missing project root is PROJECT_NOT_FOUND, not a write somewhere else', () => {
   const dir = workdir()
   try {

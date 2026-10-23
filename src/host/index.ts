@@ -55,8 +55,10 @@ export type { PresetRegistration } from './preset.js'
  * scraping a fake prompt pipeline. The panel's future briefing preview reuses
  * the same entry point, so this is not a test-only surface.
  */
-export { DEFAULT_BUDGET_TOKENS, DEFAULT_TAIL_CHARS, buildWritingContext, estimateTokens } from './writing-context.js'
+export { DEFAULT_BUDGET_TOKENS, DEFAULT_TAIL_CHARS, EXTRA_SEGMENTS, buildWritingContext, estimateTokens } from './writing-context.js'
 export type {
+  ExtraSegmentInput,
+  ExtraSegmentSpec,
   WritingContextOptions,
   WritingContextResult,
   WritingContextSegment,
@@ -257,7 +259,13 @@ export type {
   WriteResult,
   WriteTarget,
 } from './io.js'
-export { CONTENT_DIRS, INDEX_SCHEMA_VERSION, WRITE_DIRS } from './conventions.js'
+export {
+  CONTENT_DIRS,
+  INDEX_SCHEMA_VERSION,
+  PRIVATE_STATE_IGNORE_LINE,
+  REQUIRED_GITIGNORE_LINES,
+  WRITE_DIRS,
+} from './conventions.js'
 
 /**
  * Volume/chapter catalog (issue #15, ADR-0006 D6): a reviewable, committed
@@ -492,3 +500,21 @@ export { frontmatterLine, splitFrontmatter } from './frontmatter.js'
 export type { FrontmatterPatchOptions, FrontmatterSplit } from './frontmatter.js'
 export { removeEmptyProjectDirectory, removeProjectFile, renameProjectDirectory } from './io.js'
 export type { RemoveResult, RenameResult } from './io.js'
+
+/**
+ * The shared finding shape (#121, roadmap X-14): the vocabulary the audit report
+ * (#33) and the repair pass (#36) both speak, plus the ordering a report needs to
+ * be stable between two runs on unchanged files.
+ */
+export { FINDING_CODES, FINDING_GROUPS, compareFindings, findingCode, locatorKey } from './findings.js'
+export type { Finding, FindingCodeSpec, FindingGroup, FindingLocator, FindingSeverity } from './findings.js'
+
+/** Private state directory (`.inkflow/`) helpers — ADR-0012, roadmap X-9. */
+export {
+  PRIVATE_STATE_DIR,
+  PRIVATE_STATE_SUBDIRS,
+  ensurePrivateStateIgnored,
+  isPrivateStatePath,
+  privateStateDirRelative,
+  privateStateRelative,
+} from './private-state.js'

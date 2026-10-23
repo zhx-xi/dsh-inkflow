@@ -88,6 +88,27 @@ export const WRITE_DIRS = [
 export type WriteDir = (typeof WRITE_DIRS)[number]
 
 /**
+ * The plugin's private state directory (ADR-0012): a dot-prefixed directory at the
+ * book root that holds the recovery bin, migration backups and audit exports.
+ *
+ * Three properties it must keep, and why each is stated here rather than discovered:
+ *
+ *   * **Not a content directory** — it is deliberately absent from `CONTENT_DIRS` /
+ *     `REQUIRED_DIRS`, so the gate never requires it and no domain scans it.
+ *   * **Not in the index** — `walk()` in `indexer.ts` skips every dot entry, so
+ *     nothing under here can drift into `files` / `entities` / the freshness
+ *     baseline; that is a property of the walker, not a special case added later.
+ *   * **Not in git** — `REQUIRED_GITIGNORE_LINES` carries `.inkflow/`, otherwise a
+ *     deleted chapter would reappear as an untracked file under `trash/`.
+ *
+ * Writing is allowed only inside the subdirectories below, never in the directory
+ * itself and never elsewhere under it.
+ */
+export const PRIVATE_STATE_DIR = '.inkflow'
+export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit'] as const
+export type PrivateStateSubdir = (typeof PRIVATE_STATE_SUBDIRS)[number]
+
+/**
  * The plugin-level shared library's four subdirectories (ADR-0007 C1), one per
  * `kind`. They live under `dataDir/shared` — outside every book — so the book hub
  * can browse them without touching a project (ADR-0010 D5).
@@ -143,6 +164,16 @@ export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const
 
 /** Lines a project's .gitignore must contain (derived data never goes to git). */
 export const REQUIRED_GITIGNORE_LINES = ['index/*.db', 'index/*.db-wal', 'index/*.db-shm']
+
+/**
+ * The ignore line for the private state directory (ADR-0012).
+ *
+ * Deliberately **not** part of `REQUIRED_GITIGNORE_LINES`: the gate must not nag a book
+ * that never uses the recovery bin about a line for a directory it does not have. The
+ * writers that first create `.inkflow/` (#35 trash, #36 backup) append this line
+ * through `ensurePrivateStateIgnored()` — append-only, like the wizard.
+ */
+export const PRIVATE_STATE_IGNORE_LINE = `${PRIVATE_STATE_DIR}/`
 
 // NOTE (#101): a `KNOWN_FRONTMATTER` list used to live here with no reader. The
 // field dictionary is spec truth ([data-model.md](../../.agents/specs/data-model.md) §3)
