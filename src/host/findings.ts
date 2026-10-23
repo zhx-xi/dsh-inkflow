@@ -98,6 +98,15 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'RELATION_SELF_LOOP', group: 'structure', fixable: false, meaning: '关系自环' },
   { code: 'RELATION_DUPLICATE', group: 'structure', fixable: true, meaning: '同 (source,target,kind) 的关系重复' },
   { code: 'RELATION_FIELD_DEPRECATED', group: 'structure', fixable: true, meaning: '关系文件用了已废弃字段（如 direction）' },
+  // Emitted by a domain's scan/validate as well as by a write plan (a hand-written file
+  // raises them), so they belong in the report's vocabulary — #33 surfaced that
+  // `findings.test.js` had filed them as "bad request" codes because they are *also*
+  // argument rejections. None is auto-fixable: each needs the author's judgement.
+  { code: 'CHARACTER_NAME_REQUIRED', group: 'structure', fixable: false, meaning: '角色卡缺 name（文件名只是位置）' },
+  { code: 'CHARACTER_FIRST_APPEARANCE_INVALID', group: 'structure', fixable: false, meaning: 'firstAppearance 不是正整数章号' },
+  { code: 'OUTLINE_KIND_UNKNOWN', group: 'structure', fixable: false, meaning: '大纲节点缺 kind 或值非法' },
+  { code: 'KEYWORD_INVALID', group: 'structure', fixable: false, meaning: '世界书 keywords 不是字符串列表' },
+  { code: 'PARTICIPANT_INVALID', group: 'structure', fixable: false, meaning: '时间线 participants 含非法元素' },
   { code: 'FRONTMATTER_ISSUE', group: 'structure', fixable: true, meaning: 'frontmatter 不可解析或字段类型不合法' },
   { code: 'ENTITIES_DRIFT', group: 'structure', fixable: true, meaning: 'entities 投影与域表不同源' },
   { code: 'ID_PATH_DIVERGED', group: 'structure', fixable: false, meaning: '实体 id 与文件路径不一致（改过名的正常状态）' },
