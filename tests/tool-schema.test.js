@@ -12,9 +12,13 @@
  *   JsonSchemaError: unsupported JSON schema:
  *     schema.required names "ok" which is not in properties
  *
- * So the guard is a whitelist walk over every schema the plugin ships, plus the
- * `required`-must-be-declared rule. `DESCRIPTION`-style annotations are allowed;
- * numeric bounds are not — write the range into `description` instead.
+ * So the guard mirrors every rule `assertSupportedJsonSchema` applies, not just the
+ * keyword whitelist: the `required`/`additionalProperties` shapes, `type`-vs-`oneOf`
+ * exclusivity, the keywords that may not sit beside `oneOf`, annotation types, and
+ * the keyword-to-`type` compatibility table (a `properties` without an object type,
+ * a one-branch `oneOf`, an `enum` whose values do not match its `type` are all
+ * refused). Numeric bounds are not in the subset — write the range into
+ * `description` instead.
  *
  * Runs against the built artifact, like every other contract test.
  */
@@ -57,6 +61,29 @@ const SUPPORTED = new Set([...CONSTRAINT_KEYWORDS, ...ANNOTATION_KEYWORDS])
 
 /** `ONE_OF_SIBLING_KEYWORDS`: these may not sit beside `oneOf`. */
 const ONE_OF_SIBLINGS = ['properties', 'required', 'additionalProperties', 'items', 'enum', 'const']
+
+/** The keywords whose constraint needs a `type` (or a `oneOf`) to attach to. */
+const TYPED_KEYWORDS = [...ONE_OF_SIBLINGS]
+
+const SCHEMA_TYPES = ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']
+
+/** Whether a scalar fits one declared schema type (the Host's own `scalarMatches`). */
+function scalarMatches(type, value) {
+  switch (type) {
+    case 'string':
+      return typeof value === 'string'
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value)
+    case 'integer':
+      return typeof value === 'number' && Number.isInteger(value)
+    case 'boolean':
+      return typeof value === 'boolean'
+    case 'null':
+      return value === null
+    default:
+      return false
+  }
+}
 
 /** Every `{ keyword: value }` object inside a schema, keyed by its JSON path. */
 function schemaNodes(schema, path = 'schema', out = []) {
@@ -114,10 +141,48 @@ function violations(schema, path = 'schema', out = []) {
     const hasType = Object.prototype.hasOwnProperty.call(node, 'type')
     const hasOneOf = Object.prototype.hasOwnProperty.call(node, 'oneOf')
     if (hasType && hasOneOf) out.push(`${nodePath}: cannot declare both type and oneOf`)
+    // A constraint keyword needs somewhere to attach: without `type` or `oneOf` the
+    // Host refuses the schema outright.
+    const typed = TYPED_KEYWORDS.filter((key) => Object.prototype.hasOwnProperty.call(node, key))
+    if (!hasType && !hasOneOf && typed.length > 0) {
+      out.push(`${nodePath}: ${typed.map((key) => '"' + key + '"').join(', ')} requires type or oneOf`)
+    }
     if (hasOneOf) {
+      if (!Array.isArray(node.oneOf) || node.oneOf.length < 2) {
+        out.push(`${nodePath}: oneOf must be an array of at least two schemas`)
+      }
       for (const key of ONE_OF_SIBLINGS) {
         if (Object.prototype.hasOwnProperty.call(node, key)) out.push(`${nodePath}: "${key}" is not supported beside oneOf`)
       }
+    }
+    // Keyword-to-type compatibility, and `enum`/`const` values that fit the type.
+    const type = hasType ? node.type : undefined
+    if (hasType && !SCHEMA_TYPES.includes(type)) out.push(`${nodePath}: type must be one of ${SCHEMA_TYPES.join('/')}`)
+    for (const pair of [
+      ['properties', 'object'],
+      ['required', 'object'],
+      ['additionalProperties', 'object'],
+      ['items', 'array'],
+    ]) {
+      const keyword = pair[0]
+      const expected = pair[1]
+      if (hasType && typed.includes(keyword) && type !== expected) {
+        out.push(`${nodePath}: "${keyword}" requires type "${expected}"`)
+      }
+    }
+    if (hasType && Object.prototype.hasOwnProperty.call(node, 'enum')) {
+      const values = node.enum
+      if (!Array.isArray(values) || values.length === 0) out.push(`${nodePath}: enum must be a non-empty array`)
+      else {
+        for (const value of values) {
+          if (!scalarMatches(type, value)) {
+            out.push(`${nodePath}: enum value ${JSON.stringify(value)} does not match type "${String(type)}"`)
+          }
+        }
+      }
+    }
+    if (hasType && Object.prototype.hasOwnProperty.call(node, 'const')) {
+      if (!scalarMatches(type, node.const)) out.push(`${nodePath}: const does not match type "${String(type)}"`)
     }
   }
   return out
@@ -183,17 +248,24 @@ test('the guard itself catches the two shapes that killed the plugin', () => {
   // the `type`+`oneOf` conflict first and then the sibling keyword.
   assert.deepEqual(violations({ type: 'array', oneOf: [{ type: 'string' }], items: { type: 'string' } }), [
     'schema: cannot declare both type and oneOf',
+    'schema: oneOf must be an array of at least two schemas',
     'schema: "items" is not supported beside oneOf',
   ])
-  assert.deepEqual(violations({ oneOf: [{ type: 'string' }], items: { type: 'string' } }), [
-    'schema: "items" is not supported beside oneOf',
+  const oneBranch = violations({ oneOf: [{ type: 'string' }] })
+  assert.deepEqual(oneBranch, ['schema: oneOf must be an array of at least two schemas'])
+  // Two branches is the accepted form.
+  assert.deepEqual(violations({ oneOf: [{ type: 'string' }, { type: 'number' }] }), [])
+  assert.deepEqual(violations({ type: 'string', oneOf: [{ type: 'number' }] }), [
+    'schema: cannot declare both type and oneOf',
+    'schema: oneOf must be an array of at least two schemas',
   ])
-  assert.deepEqual(violations({ type: 'string', oneOf: [{ type: 'number' }] }), ['schema: cannot declare both type and oneOf'])
 })
 
 test('every shipped tool schema stays inside the Host-supported subset', () => {
   const tools = registeredTools()
-  assert.ok(tools.size >= 21, `expected the full tool surface, got ${tools.size}`)
+  // Exact, not `>=`: dropping a domain tool would otherwise stay green, and the
+  // baseline below only names the 12 built-ins.
+  assert.equal(tools.size, 23, `expected the full tool surface, got ${tools.size}`)
 
   const failures = []
   for (const [name, tool] of tools) {
@@ -214,7 +286,7 @@ test('the domain tools the registry contributes are covered by the same guard', 
   // `domainTools()` is what `apply()` registers beyond the built-ins; asserting the
   // count keeps this file honest when a new domain lands.
   const domain = domainTools({ ctx: {}, dataDir: tmpdir(), version: 'test' })
-  assert.ok(domain.length >= 9, `expected the nine domain tools, got ${domain.length}`)
+  assert.equal(domain.length, 11, `expected the eleven domain tools, got ${domain.length}`)
   const failures = []
   for (const tool of domain) {
     if (tool.parameters === undefined) failures.push(`${tool.name}: no parameters schema`)

@@ -17,6 +17,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -60,11 +61,12 @@ function surfaceHash(value) {
 }
 
 /**
- * Why a mismatch names three parts instead of one hash (#114): "two 8-char hex
- * strings differ" says nothing about *what* moved, so updating the baseline used to
- * mean re-running the registration harness by hand. `scripts/surface-hash.mjs` is
- * that harness, kept in the repo; this message points at it and shows which of the
- * three components changed, so the edit is a copy-paste or a targeted diff.
+ * Why a mismatch also prints three part hashes (#114): "two 8-char hex strings
+ * differ" says nothing about *what* moved. The baseline stores one merged hash, so
+ * this can only report the CURRENT per-part hashes — compare them with the recorded
+ * commit (`scripts/surface-hash.mjs --tool <name>` against `git show <rev>`) to see
+ * which of description/parameters/output moved. The message says exactly that
+ * instead of pretending to know.
  */
 function surfaceReport(tool) {
   const parts = {
@@ -135,7 +137,8 @@ test('the built-in tool surface survives the domain seam unchanged', () => {
     assert.equal(
       report.hash,
       hash,
-      `${name} changed its model-facing surface (now ${report.hash}, recorded ${hash}; parts ${report.detail}).\n` +
+      `${name} changed its model-facing surface (now ${report.hash}, recorded ${hash}).\n` +
+        `  Current parts: ${report.detail} — diff one of them against the recorded commit.\n` +
         `  If the change is intended: node scripts/surface-hash.mjs prints the paste-ready rows.\n` +
         `  To see what moved: node scripts/surface-hash.mjs --tool ${name} (full schema JSON), then diff against git history.`,
     )
@@ -147,13 +150,17 @@ test('scripts/surface-hash.mjs stays in sync with the recorded baseline', () => 
   // The helper is what the failure message tells people to run, so a drifted helper
   // would send them to a wrong number. It derives from the same build, so this is a
   // contract on the script's own output shape, not a second copy of the baseline.
-  const script = new URL('../scripts/surface-hash.mjs', import.meta.url)
-  const output = execFileSync(process.execPath, [script.pathname.replace(/^\/([A-Za-z]:)/u, '$1'), '--json'], {
-    encoding: 'utf8',
-  })
+  // `fileURLToPath`, not `pathname`: a checkout under a directory with a space or a
+  // Chinese name would come back percent-encoded and the child process would ENOENT.
+  const script = fileURLToPath(new URL('../scripts/surface-hash.mjs', import.meta.url))
+  const output = execFileSync(process.execPath, [script, '--json'], { encoding: 'utf8' })
   const rows = JSON.parse(output)
+  const builtIn = rows.filter((entry) => !entry.domain)
+  // The count matters: a script that mislabelled every tool as `domain` would print
+  // nothing comparable, and the loop below would pass without checking a thing.
+  assert.equal(builtIn.length, BUILT_IN_TOOLS.length, 'surface-hash.mjs must report every built-in tool')
   const recorded = new Map(BUILT_IN_TOOLS)
-  for (const row of rows.filter((entry) => !entry.domain)) {
+  for (const row of builtIn) {
     assert.equal(row.hash, recorded.get(row.name), `surface-hash.mjs disagrees about ${row.name}`)
   }
 })
