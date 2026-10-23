@@ -295,15 +295,17 @@ catalog 是**派生结构投影**（[ADR-0006](../adrs/0006-workspace-contract-v
 ---
 id: fs-01
 title: 断剑
-resolved: false          # 是否已回收
+status: planted           # planted / advanced / resolved / overdue（状态机见 data-model §3.2.1）
+resolved: false          # 读兼容字段：是否已回收（与 status 矛盾即报 I-21）
 resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
+dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看它（§3.2.2）
 ---
 伏笔正文（埋设位置、回收条件、读者提示强度，自由格式）
 ```
 
 - `resolved: true` 而缺 `resolvedChapter` → 重建期校验报 `FORESHADOW_RESOLVED_WITHOUT_CHAPTER`，**不阻断索引**（data-model §5 I-09）。
 - 章 id 取自章 frontmatter 的 `id`（缺省为章的相对路径），本文件不复制章标题或章号。
-- 字段字典（`status` 状态机、`threads`、`characters`）见 [data-model.md §3.2](data-model.md)。
+- 字段字典（`status` / `plantedAt` / `advancedAt` / `resolved` / `resolvedChapter` / `dueBy` / `linkedEntities` / `notes`，以及 `status` 状态机与超期口径）见 [data-model.md §3.2](data-model.md)。**字段名照那份写**：data-model 里不存在的键（如 `threads` / `characters`）会被解析器静默忽略，写了不报错也不生效。
 
 ### 3.10 卷章 CRUD（工具、级联与错误码）
 

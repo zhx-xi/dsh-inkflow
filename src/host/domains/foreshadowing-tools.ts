@@ -47,6 +47,7 @@ import {
   isPortableSlug,
   optionalBoolean,
   optionalString,
+  readIdList,
   slugify,
   text,
   withProject,
@@ -54,22 +55,6 @@ import {
 import type { Json } from './tool-support.js'
 import { applyCandidate, rowsBucket } from './types.js'
 import type { DomainFileParse, DomainToolDeps, DomainWriteView } from './types.js'
-
-/** Tool argument → id list: an array, or one comma/、separated string. */
-function readIdList(value: unknown): string[] {
-  const split = (raw: string): string[] =>
-    raw
-      .split(/[,，、]/u)
-      .map((item) => item.trim())
-      .filter((item) => item !== '')
-  if (typeof value === 'string') return split(value)
-  if (Array.isArray(value)) {
-    return value
-      .filter((item): item is string => typeof item === 'string')
-      .flatMap((item) => split(item))
-  }
-  return []
-}
 
 function readStatus(value: unknown): ForeshadowStatus | 'invalid' | undefined {
   if (value === undefined) return undefined
@@ -169,7 +154,8 @@ function foreshadowListTool(deps: DomainToolDeps): ToolDefinition {
           `${v['indexRebuilt'] === true ? ' (index rebuilt)' : ''}`
         const where = chapter['id'] === undefined ? 'no chapter yet' : `as of chapter ${String(chapter['id'])}`
         const listed = Array.isArray(v['items']) ? (v['items'] as Json[]) : []
-        return text([`${head} — ${where}:`, ...(listed.length === 0 ? ['  (空)'] : renderItems(listed))])
+        const cut = v['truncated'] === true ? ['  (list truncated: the counts above cover every entry)'] : []
+        return text([`${head} — ${where}:`, ...(listed.length === 0 ? ['  (空)'] : [...renderItems(listed), ...cut])])
       },
     },
     execute: async (args, exec) =>
@@ -215,6 +201,7 @@ function foreshadowListTool(deps: DomainToolDeps): ToolDefinition {
                 },
           counts: read.view.counts,
           items: items.map(itemJson),
+          truncated: read.view.truncated,
           indexRebuilt: ensured.rebuilt,
           indexState: ensured.state,
         }
@@ -374,17 +361,40 @@ function foreshadowUpsertTool(deps: DomainToolDeps): ToolDefinition {
             error: {
               code: 'FORESHADOW_TRANSITION_INVALID',
               message: `${path} is "${existing.status}" and cannot become "${target}"`,
-              hint: 'resolved is terminal; overdue may advance or resolve, but nothing may step back to planted',
+              // The confusing case is a file that says `overdue` while the board computes
+              // something else (§3.2.2: the computed state wins). The author then sees
+              // "planted" on screen and cannot write "planted" back, which looks like a
+              // contradiction unless the refusal says why and how to get out.
+              hint:
+                existing.status === 'overdue'
+                  ? 'the file says "overdue" but the board shows the state computed from the calendar, and that computed value wins; writing "planted" is still a step back from the declared mark — write "advanced" / "resolved", or edit the file by hand'
+                  : 'resolved is terminal; overdue may advance or resolve, but nothing may step back to planted',
             },
           }
         }
 
-        const advancedAt = a['advancedAt'] === undefined ? [...(existing?.advancedAt ?? [])] : readIdList(a['advancedAt'])
+        // Id lists go into frontmatter list lines, and the renderer throws on a line
+        // break — refuse it here, where the model can read the code (§ tool-support).
+        const advancedRead = a['advancedAt'] === undefined ? undefined : readIdList(a['advancedAt'])
+        const linkedRead = a['linkedEntities'] === undefined ? undefined : readIdList(a['linkedEntities'])
+        if (advancedRead?.multiline !== undefined || linkedRead?.multiline !== undefined) {
+          return {
+            ok: false,
+            root,
+            path,
+            error: {
+              code: 'FORESHADOW_FIELD_INVALID',
+              message: 'every advancedAt / linkedEntities item must be a single line',
+              hint: 'nothing was written; split the ids into separate array items',
+            },
+          }
+        }
+
+        const advancedAt = advancedRead === undefined ? [...(existing?.advancedAt ?? [])] : advancedRead.ids
         const resolvedChapter = optionalString(a['resolvedChapter']) ?? existing?.resolvedChapter
         const dueBy = optionalString(a['dueBy']) ?? existing?.dueBy
         const plantedAt = optionalString(a['plantedAt']) ?? existing?.plantedAt
-        const linkedEntities =
-          a['linkedEntities'] === undefined ? [...(existing?.linkedEntities ?? [])] : readIdList(a['linkedEntities'])
+        const linkedEntities = linkedRead === undefined ? [...(existing?.linkedEntities ?? [])] : linkedRead.ids
 
         if (target === 'advanced' && advancedAt.length === 0) {
           return {

@@ -553,6 +553,8 @@ export type { ChapterSeq, FactConflict, FactRow, ParsedFacts } from './domains/f
 export { CHAPTER_INDEX_LIMIT, chapterIndex, readFactsRows, seqOfChapters } from './domains/facts-query.js'
 export type { ChapterIndex } from './domains/facts-query.js'
 export { MAX_SEGMENT_FACTS, factsSegment } from './domains/facts-prompt.js'
+
+/**
  * The foreshadow state machine and its computed lateness (issue #31, data-model
  * §3.2). Exported so a test can assert the **matrix** itself rather than inferring
  * it from which writes happen to be refused.
@@ -566,4 +568,9 @@ export {
   volumeOrderOf,
 } from './domains/foreshadowing-plan.js'
 export type { ChapterPosition, ForeshadowStatus, ForeshadowUrgency } from './domains/foreshadowing-plan.js'
-export { chapterPositions, readForeshadowView } from './domains/foreshadowing-query.js'
+export {
+  chapterPositions,
+  chapterPositionsFromFiles,
+  readForeshadowView,
+  volumeOrdersOf,
+} from './domains/foreshadowing-query.js'

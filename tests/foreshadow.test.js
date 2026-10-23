@@ -35,6 +35,8 @@ import {
   apply,
   buildIndex,
   buildWritingContext,
+  chapterPositions,
+  chapterPositionsFromFiles,
   domainTools,
   entityCounts,
   foreshadowTransitionAllowed,
@@ -139,6 +141,48 @@ function book(root) {
 
   writeMarkdown(root, 'characters/清音.md', ['id: c-qingyin', 'name: 清音'], '主角。')
   writeMarkdown(root, 'world/门派/白鹤门.md', ['id: w-baihe', 'title: 白鹤门'], '山中剑派。')
+}
+
+/**
+ * A two-volume book: chapters 1-3 in `vol-01`, chapter 1 in `vol-02`, and an empty
+ * `vol-03` so one foreshadow can be due *ahead* of the chapter being written.
+ *
+ * This is the shape `ORDER BY seq DESC` got wrong: `seq` is volume-local (a new chapter
+ * takes its volume's max seq + 1), so the longest volume's last chapter — vol-01/3 —
+ * came back as "the chapter being written" while the author was in vol-02. Nothing here
+ * needs nine volumes; two is enough to make the two questions differ.
+ */
+function twoVolumes(root) {
+  scaffold(root)
+  for (const seq of [1, 2, 3]) {
+    writeMarkdown(
+      root,
+      `chapters/vol-01/000${String(seq)}-第${String(seq)}章.md`,
+      [`id: ch-${String(seq)}`, `title: 第${String(seq)}章`, 'volume: vol-01', `seq: ${String(seq)}`, 'status: draft'],
+      `第${String(seq)}章正文。\n`,
+    )
+  }
+  writeMarkdown(
+    root,
+    'chapters/vol-02/0001-卷二开端.md',
+    ['id: ch-20', 'title: 卷二开端', 'volume: vol-02', 'seq: 1', 'status: draft'],
+    '卷二正文。\n',
+  )
+  mkdirSync(join(root, 'chapters', 'vol-03'), { recursive: true })
+  writeFileSync(join(root, 'chapters', 'vol-03', '.gitkeep'), '', 'utf8')
+
+  // Due in vol-01, which the book has left: late.
+  writeMarkdown(root, 'foreshadowing/甲卷末.md', [
+    'id: fs-behind',
+    'title: 甲卷末',
+    'status: planted',
+    'plantedAt: ch-1',
+    'dueBy: ch-2',
+  ])
+  // Due in the very chapter being written: this chapter's job.
+  writeMarkdown(root, 'foreshadowing/乙开场.md', ['id: fs-now', 'title: 乙开场', 'status: planted', 'dueBy: ch-20'])
+  // Due in a later volume: not a reminder yet.
+  writeMarkdown(root, 'foreshadowing/丙后卷.md', ['id: fs-ahead', 'title: 丙后卷', 'status: planted', 'dueBy: vol-03'])
 }
 
 function readDb(root, run) {
@@ -311,6 +355,42 @@ test('foreshadow: I-09 still fires — a paid-off setup must name the chapter th
 // 2. `overdue` is computed (§3.2.2), never stored
 // ---------------------------------------------------------------------------
 
+test('foreshadow: the current chapter is the last (volume, seq), not the last seq', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    twoVolumes(root)
+    await buildIndex(root)
+
+    // vol-01 has the largest `seq` in the book, vol-02 has the later *position*: the
+    // answer is the position, because `seq` restarts in every volume.
+    const context = buildWritingContext(root, { budgetTokens: 20_000 })
+    const chapter = context.segments.find((segment) => segment.name === 'chapter')
+    assert.ok(chapter, 'the chapter segment is always present')
+    assert.equal(
+      chapter.text,
+      ['### 当前章', '标题：卷二开端｜卷：vol-02｜seq：1｜状态：draft'].join('\n'),
+      'the chapter being written is vol-02/1, not vol-01/3',
+    )
+
+    // Only the comparison changed: inside vol-01 the last chapter is still seq 3, so
+    // "the previous chapter" still comes from the same volume.
+    const tail = context.segments.find((segment) => segment.name === 'tail')
+    assert.ok(tail, 'the previous chapter is part of the block')
+    assert.match(tail.text, /^### 上一章结尾（第 3 章 · 最后 [0-9]+ 字）/, 'volume-local order is untouched')
+
+    // And the number wins over the string: `book()` has vol-01 x3 plus vol-10 x1, and
+    // "vol-10" sorts *before* "vol-02" as text.
+    const wide = join(dir, 'wide')
+    book(wide)
+    await buildIndex(wide)
+    const wideChapter = buildWritingContext(wide, { budgetTokens: 20_000 }).segments.find((s) => s.name === 'chapter')
+    assert.match(wideChapter.text, /标题：终章｜卷：vol-10｜seq：1/, 'vol-10 is the last volume by number')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('foreshadow: the overdue list follows the chapter it is asked about', async () => {
   const dir = workdir()
   try {
@@ -345,6 +425,99 @@ test('foreshadow: the overdue list follows the chapter it is asked about', async
   }
 })
 
+test('foreshadow: an index that exists but is out of date cannot hide a deadline', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    book(root)
+    await buildIndex(root)
+
+    // The author adds a chapter and a foreshadow in their editor; nothing rebuilds the
+    // derived index. `dueBy` names a chapter the index has never seen, so a position
+    // table read from the index answers "unknown deadline" — and the segment then simply
+    // does not appear, which reads as "nothing is due" in a book that has a late setup.
+    writeMarkdown(root, 'chapters/vol-02/0001-开端.md', ['id: ch-20', 'title: 开端', 'volume: vol-02', 'seq: 1'])
+    writeMarkdown(root, 'foreshadowing/卷二到期.md', [
+      'id: fs-stale',
+      'title: 卷二到期',
+      'status: planted',
+      'dueBy: ch-20',
+    ])
+
+    const stale = buildWritingContext(root, { budgetTokens: 20_000 })
+    const staleSegment = stale.segments.find((entry) => entry.name === 'foreshadow')
+    assert.ok(staleSegment, 'the reminder must not depend on the derived index being current')
+    assert.ok(
+      staleSegment.text.includes('[超期] 卷二到期'),
+      'vol-02 sits before vol-10, so the deadline is behind us',
+    )
+
+    // A rebuilt index answers the same: the reminder takes its positions from the files,
+    // and the extra chapter does not move the current chapter (vol-10 is still last).
+    await buildIndex(root)
+    const fresh = buildWritingContext(root, { budgetTokens: 20_000 })
+    const freshSegment = fresh.segments.find((entry) => entry.name === 'foreshadow')
+    assert.equal(freshSegment.text, staleSegment.text, 'index present or not, the reminder says the same thing')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('foreshadow: the index and the file walk agree about where a chapter sits', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    book(root)
+    // A hand-written chapter with no `seq` and no leading number in its file name: the
+    // index used to drop it (`WHERE seq IS NOT NULL`) while the walk placed it at 1, so
+    // the same book had two different position tables.
+    writeMarkdown(root, 'chapters/vol-01/附录.md', ['id: ch-appendix', 'title: 附录', 'volume: vol-01'])
+    writeMarkdown(root, 'foreshadowing/附录到期.md', ['id: fs-appendix', 'title: 附录到期', 'status: planted', 'dueBy: ch-appendix'])
+    await buildIndex(root)
+
+    const fromIndex = chapterPositions(root)
+    assert.ok(fromIndex.has('ch-appendix'), 'the index path keeps a chapter without a seq')
+    assert.equal(fromIndex.get('ch-appendix').seq, 1, 'and places it first in its volume')
+    const fromFiles = chapterPositionsFromFiles(root)
+    assert.deepEqual([...fromFiles.keys()].sort(), [...fromIndex.keys()].sort(), 'both sources name the same chapters')
+    for (const key of fromFiles.keys()) {
+      assert.deepEqual(fromFiles.get(key), fromIndex.get(key), `${key} sits in the same place`)
+    }
+
+    // And the deadline resolves as a chapter, not to "unknown".
+    const result = await list({ projectRoot: root, chapter: 'ch-2' })
+    const entry = result.items.find((item) => item.id === 'fs-appendix')
+    assert.equal(entry.dueKind, 'chapter')
+    assert.equal(entry.overdue, true, 'vol-01 chapter 1 is behind vol-01 chapter 2')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('foreshadow: over the row cap the counts still cover the whole book', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    book(root)
+    // 3 from `book()` plus 498 = 501, one past the list cap. The counts used to be taken
+    // from the capped list, so this book reported `total: 500`.
+    for (let index = 1; index <= 498; index += 1) {
+      writeMarkdown(root, `foreshadowing/批量${String(index)}.md`, [
+        `id: fs-bulk-${String(index)}`,
+        `title: 批量${String(index)}`,
+        'status: planted',
+      ])
+    }
+    await buildIndex(root)
+    const result = await list({ projectRoot: root })
+    assert.equal(result.counts.total, 501, 'the total counts every row, not the capped list')
+    assert.equal(result.items.length, 500, 'the list itself stays capped')
+    assert.equal(result.truncated, true, 'and it says the list is partial')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('foreshadow: a volume deadline compares numbers, not strings', async () => {
   const dir = workdir()
   try {
@@ -373,11 +546,19 @@ test('foreshadow: a volume deadline compares numbers, not strings', async () => 
 
     // An unresolvable deadline is not a late one, and it says so instead of guessing.
     writeMarkdown(root, 'foreshadowing/悬空到期.md', ['id: fs-dangling', 'title: 悬空到期', 'status: planted', 'dueBy: ch-999'])
+    // The same for a volume that no `chapters/vol-*` directory carries: "the book has
+    // moved past volume 99" is vacuously true, so a typo'd volume id would mark every
+    // such setup late forever (§3.2.2 requires the id to hit the catalog).
+    writeMarkdown(root, 'foreshadowing/错卷.md', ['id: fs-void', 'title: 错卷', 'status: planted', 'dueBy: vol-99'])
     await buildIndex(root)
     const dangling = await list({ projectRoot: root, chapter: 'ch-10' })
     const orphan = dangling.items.find((item) => item.id === 'fs-dangling')
     assert.equal(orphan.dueKind, 'unknown')
     assert.equal(orphan.overdue, false)
+    const voidVolume = dangling.items.find((item) => item.id === 'fs-void')
+    assert.equal(voidVolume.dueKind, 'unknown', 'vol-99 is not a volume of this book')
+    assert.equal(voidVolume.overdue, false)
+    assert.equal(voidVolume.dueNow, false)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -417,6 +598,23 @@ test('foreshadow: the computed state wins over a `status: overdue` written in th
     const late = await list({ projectRoot: root, chapter: 'ch-10' })
     const nowLate = late.items.find((item) => item.id === 'fs-claim')
     assert.equal(nowLate.status, 'overdue')
+
+    // The board says `planted` (computed) while the file says `overdue` — so writing
+    // `planted` back is refused as a step back from the declared mark. That is right, but
+    // it looks like a contradiction unless the hint says the computed value wins and
+    // names a way out.
+    const rewrite = await callTool('inkflow_foreshadow_upsert', {
+      projectRoot: root,
+      id: 'fs-claim',
+      title: '自封超期',
+      status: 'planted',
+      confirm: true,
+    })
+    assert.equal(rewrite.ok, false)
+    assert.equal(rewrite.error.code, 'FORESHADOW_TRANSITION_INVALID')
+    assert.match(rewrite.error.hint, /overdue/, 'the hint names the declared mark')
+    assert.match(rewrite.error.hint, /computed/, 'and says the computed state is what the board shows')
+    assert.match(rewrite.error.hint, /advanced/, 'and how to change it instead')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -523,6 +721,29 @@ test('foreshadow: a missing title and a bad status are refused before anything i
     })
     assert.equal(multiline.error.code, 'FORESHADOW_FIELD_INVALID')
 
+    // An id list goes into a frontmatter list line, and the renderer **throws** on a
+    // line break: before the shared reader, these two calls crashed the tool instead of
+    // answering with a code the model can act on.
+    const multilineAdvanced = await callTool('inkflow_foreshadow_upsert', {
+      projectRoot: root,
+      title: '多行推进',
+      status: 'advanced',
+      advancedAt: ['ch-1\nch-2'],
+      confirm: true,
+    })
+    assert.equal(multilineAdvanced.ok, false)
+    assert.equal(multilineAdvanced.error.code, 'FORESHADOW_FIELD_INVALID')
+    assert.equal(multilineAdvanced.error.code, 'FORESHADOW_FIELD_INVALID', 'a refusal, never a thrown TypeError')
+
+    const multilineLinked = await callTool('inkflow_foreshadow_upsert', {
+      projectRoot: root,
+      title: '多行关联',
+      linkedEntities: ['c-qingyin\nw-baihe'],
+      confirm: true,
+    })
+    assert.equal(multilineLinked.ok, false)
+    assert.equal(multilineLinked.error.code, 'FORESHADOW_FIELD_INVALID')
+
     assert.equal(hashFiles(root), before, 'a refused call writes nothing at all')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -603,7 +824,7 @@ test('foreshadow: the writing context lists what this chapter should pay off', a
   const dir = workdir()
   try {
     const root = join(dir, 'book')
-    book(root)
+    twoVolumes(root)
     await buildIndex(root)
     assert.equal(
       EXTRA_SEGMENTS.some((spec) => spec.name === 'foreshadow'),
@@ -614,22 +835,40 @@ test('foreshadow: the writing context lists what this chapter should pay off', a
     assert.equal(spec.label, '伏笔提示')
     assert.equal(spec.capRatio, 0.1)
 
-    // The writing context's current chapter is the highest `seq` (§3.2.2 note): ch-3.
-    const context = buildWritingContext(root)
+    // The whole block, pinned. It was a set of `match()` calls before, and that is how
+    // the wrong current chapter survived review: "断剑 appears" stays true whether the
+    // chapter is vol-02/1 or vol-01/3, while the `[超期]` / `[本期]` labels — the thing
+    // the model acts on — flip between the two answers. A generous budget keeps the
+    // segment's own 10% cap out of the way; the cap has its own test.
+    const context = buildWritingContext(root, { budgetTokens: 20_000 })
     const segment = context.segments.find((entry) => entry.name === 'foreshadow')
     assert.ok(segment, `expected a foreshadow segment in ${context.segments.map((entry) => entry.name).join(',')}`)
-    assert.match(segment.text, /建议回收/)
-    assert.match(segment.text, /断剑/, 'the late entry is listed')
-    assert.match(segment.text, /旧信/, 'the entry due in this chapter is listed')
-    assert.equal(/玉佩/.test(segment.text), false, 'an entry still ahead is not a reminder')
+    assert.equal(
+      segment.text,
+      [
+        '### 伏笔提示',
+        '本章建议回收 2 条（vol-02 第 1 章）：',
+        '- [超期] 甲卷末 — 应在 ch-2 回收，已经越过（foreshadowing/甲卷末.md）',
+        '- [本期] 乙开场 — 本章到期（foreshadowing/乙开场.md）',
+      ].join('\n'),
+      'an entry due in a later volume is not a reminder, and the two labels are the answer',
+    )
     // Order on the wire: after the world book, and the block is a real heading.
     assert.ok(context.text.includes('### 伏笔提示'))
 
     // Nothing to remind about → no segment at all, not an empty heading.
-    writeFileSync(join(root, 'foreshadowing', '断剑.md'), '---\nid: fs-overdue\ntitle: 断剑\nstatus: resolved\nresolvedChapter: ch-1\n---\n\n收了。\n', 'utf8')
-    writeFileSync(join(root, 'foreshadowing', '旧信.md'), '---\nid: fs-duenow\ntitle: 旧信\nstatus: resolved\nresolvedChapter: ch-3\nadvancedAt: [ch-2]\n---\n\n也收了。\n', 'utf8')
+    writeFileSync(
+      join(root, 'foreshadowing', '甲卷末.md'),
+      '---\nid: fs-behind\ntitle: 甲卷末\nstatus: resolved\nresolvedChapter: ch-2\n---\n\n收了。\n',
+      'utf8',
+    )
+    writeFileSync(
+      join(root, 'foreshadowing', '乙开场.md'),
+      '---\nid: fs-now\ntitle: 乙开场\nstatus: resolved\nresolvedChapter: ch-20\n---\n\n也收了。\n',
+      'utf8',
+    )
     await buildIndex(root)
-    const quiet = buildWritingContext(root)
+    const quiet = buildWritingContext(root, { budgetTokens: 20_000 })
     assert.equal(quiet.segments.some((entry) => entry.name === 'foreshadow'), false)
   } finally {
     rmSync(dir, { recursive: true, force: true })

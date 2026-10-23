@@ -19,8 +19,8 @@
  * writes, and nothing caches a computed state.
  */
 
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { INDEX_SCHEMA_VERSION } from '../conventions.js'
@@ -37,7 +37,7 @@ import {
 } from './foreshadowing-plan.js'
 import type { ChapterPosition, ForeshadowStatus } from './foreshadowing-plan.js'
 import type { ExtraSegmentInput, ExtraSegmentSpec } from '../writing-context.js'
-import { splitTerms } from './scan-helpers.js'
+import { splitTerms, volumeDirOf } from './scan-helpers.js'
 
 /** A plain JSON payload, the channel's envelope half. */
 type JsonRecord = Record<string, unknown>
@@ -80,6 +80,8 @@ export interface ForeshadowView {
   readonly currentChapter: ChapterPosition | undefined
   readonly items: readonly ForeshadowItem[]
   readonly counts: ForeshadowCounts
+  /** `true` when the book has more setups than `items` carries (`MAX_LIMIT`). */
+  readonly truncated: boolean
 }
 
 export type ForeshadowViewResult =
@@ -147,6 +149,14 @@ export function listForeshadowings(root: string): ForeshadowRow[] | undefined {
  * The index answers when it can (one query); a book with no index falls back to
  * reading the chapter frontmatter, which is what a fresh project looks like. The
  * fallback is the only reason this module reads files at all.
+ *
+ * **A stale index is not a rare state**, which is why the writing-context reminder
+ * calls {@link chapterPositionsFromFiles} instead: an author who edits chapters in
+ * their editor (or switches branches) leaves rows behind, and a position table that
+ * is missing the chapter a `dueBy` names answers "unknown deadline" — the reminder
+ * then silently says nothing at all. The two sources have to give the same answer, so
+ * neither may filter chapters out (`WHERE seq IS NOT NULL` dropped every chapter
+ * without a `seq`, while the walk placed it at 1).
  */
 export function chapterPositions(root: string): Map<string, ChapterPosition> {
   const fromIndex = chapterPositionsFromIndex(root)
@@ -158,7 +168,7 @@ function chapterPositionsFromIndex(root: string): Map<string, ChapterPosition> |
   if (db === undefined) return undefined
   try {
     const rows = db
-      .prepare('SELECT id, path, seq, title, volume FROM chapters WHERE seq IS NOT NULL ORDER BY path')
+      .prepare('SELECT id, path, seq, title, volume FROM chapters ORDER BY path')
       .all() as unknown as Array<Record<string, unknown>>
     const positions = new Map<string, ChapterPosition>()
     for (const row of rows) {
@@ -167,6 +177,8 @@ function chapterPositionsFromIndex(root: string): Map<string, ChapterPosition> |
         path: String(row['path']),
         title: String(row['title'] ?? ''),
         ...(typeof row['volume'] === 'string' ? { volume: row['volume'] } : {}),
+        // A chapter with neither `seq` nor a leading number in its file name is
+        // position 1 — the same default the walk below applies.
         seq: typeof row['seq'] === 'number' ? row['seq'] : 1,
       })
       positions.set(position.id, position)
@@ -180,7 +192,14 @@ function chapterPositionsFromIndex(root: string): Map<string, ChapterPosition> |
   }
 }
 
-function chapterPositionsFromFiles(root: string): Map<string, ChapterPosition> {
+/**
+ * The same table, read from the chapter files.
+ *
+ * Used by the writing-context reminder, which runs in a prompt provider: it cannot
+ * rebuild (that is async and belongs to the tools) and it must not depend on the
+ * index being current. Only the frontmatter is needed — `volume`, `seq`, `id`.
+ */
+export function chapterPositionsFromFiles(root: string): Map<string, ChapterPosition> {
   const positions = new Map<string, ChapterPosition>()
   let files: ReturnType<typeof walkProjectFiles>
   try {
@@ -198,11 +217,11 @@ function chapterPositionsFromFiles(root: string): Map<string, ChapterPosition> {
     }
     const leading = /^(\d+)/.exec(file.path.split('/').pop() ?? '')?.[1]
     const seq = intField(data, 'seq') ?? (leading === undefined ? 1 : Number(leading))
-    const volume = stringField(data, 'volume')
+    const volume = stringField(data, 'volume') ?? volumeDirOf(file.path)
     const position = positionOf({
       id: stringField(data, 'id') ?? file.path,
       path: file.path,
-      title: stringField(data, 'title') ?? '',
+      title: stringField(data, 'title') ?? basename(file.path).replace(/\.md$/iu, ''),
       ...(volume === undefined ? {} : { volume }),
       seq,
     })
@@ -238,8 +257,13 @@ export function latestChapter(positions: ReadonlyMap<string, ChapterPosition>): 
   return latest
 }
 
-function toItem(row: ForeshadowRow, current: ChapterPosition | undefined, positions: ReadonlyMap<string, ChapterPosition>): ForeshadowItem {
-  const urgency = foreshadowUrgency(row, current, positions)
+function toItem(
+  row: ForeshadowRow,
+  current: ChapterPosition | undefined,
+  positions: ReadonlyMap<string, ChapterPosition>,
+  volumes: ReadonlySet<number>,
+): ForeshadowItem {
+  const urgency = foreshadowUrgency(row, current, positions, volumes)
   return {
     id: row.id,
     title: row.title,
@@ -268,8 +292,35 @@ function countOf(items: readonly ForeshadowItem[]): ForeshadowCounts {
 }
 
 /**
+ * The volume numbers this book actually has, from `chapters/vol-*` directories.
+ *
+ * Volume **ids** are `vol-NN` (conventions §3.2), so the directory scan is the same
+ * source `catalog.ts` uses; what a `dueBy` needs is only "does this volume exist".
+ */
+export function volumeOrdersOf(root: string): Set<number> {
+  const orders = new Set<number>()
+  let entries
+  try {
+    entries = readdirSync(join(root, 'chapters'), { withFileTypes: true })
+  } catch {
+    return orders
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+    const match = /^vol-(\d+)/i.exec(entry.name)
+    if (match?.[1] === undefined) continue
+    orders.add(Number(match[1]))
+  }
+  return orders
+}
+
+/**
  * The tool's and the board's one answer: every foreshadow with its computed state, as
  * of `options.chapter` (a chapter id or path) or of the furthest chapter.
+ *
+ * The counts are taken over **every** row, and only then is the list capped: counting
+ * the capped list reported `total: 500` for a book with 527 setups, which reads as
+ * "the book has 500" and hides the cut. `truncated` says the list is partial.
  */
 export function readForeshadowView(root: string, options: { chapter?: string } = {}): ForeshadowViewResult {
   const rows = listForeshadowings(root)
@@ -289,8 +340,17 @@ export function readForeshadowView(root: string, options: { chapter?: string } =
     }
     current = found
   }
-  const items = rows.slice(0, MAX_LIMIT).map((row) => toItem(row, current, positions))
-  return { ok: true, view: { currentChapter: current, items, counts: countOf(items) } }
+  const volumes = volumeOrdersOf(root)
+  const all = rows.map((row) => toItem(row, current, positions, volumes))
+  return {
+    ok: true,
+    view: {
+      currentChapter: current,
+      items: all.slice(0, MAX_LIMIT),
+      counts: countOf(all),
+      truncated: all.length > MAX_LIMIT,
+    },
+  }
 }
 
 /**
@@ -300,6 +360,12 @@ export function readForeshadowView(root: string, options: { chapter?: string } =
  * reminder is exactly what a session needs *before* its first write. Overdue entries
  * come first — they are the ones a reader has already been waiting on — then the ones
  * due in this very chapter.
+ *
+ * Both halves come from the files on purpose. A `dueBy` that names a chapter the
+ * index has not seen yet resolves to "unknown deadline", which is *silent*: the whole
+ * segment disappears, and the author reads "nothing is due" from a book that has an
+ * overdue setup. The prompt path cannot rebuild the index (that is async and belongs
+ * to the tools), so it must not consult it either.
  */
 export function foreshadowReminders(
   root: string,
@@ -308,10 +374,9 @@ export function foreshadowReminders(
 ): ForeshadowItem[] {
   if (current === undefined) return []
   const rows = readForeshadowRowsFromFiles(root)
-  const positions = chapterPositions(root)
-  // The walked view is authoritative for the reminder; the index may legitimately not
-  // exist yet, so `positions` here is only used to resolve `dueBy`.
-  const items = rows.map((row) => toItem(row, current, positions))
+  const positions = chapterPositionsFromFiles(root)
+  const volumes = volumeOrdersOf(root)
+  const items = rows.map((row) => toItem(row, current, positions, volumes))
   const due = items.filter((item) => item.status !== 'resolved' && (item.overdue || item.dueNow))
   due.sort((left, right) => Number(right.overdue) - Number(left.overdue) || left.file.localeCompare(right.file))
   return due.slice(0, limit)
@@ -497,7 +562,14 @@ function positionOfCurrent(input: ExtraSegmentInput, known: ReadonlyMap<string, 
 }
 
 function describeReminders(items: ReturnType<typeof foreshadowReminders>, position: ChapterPosition): string {
-  const lines = [`本章建议回收 ${String(items.length)} 条（第 ${String(position.seq)} 章）：`]
+  // The position is `(volume, seq)` and `seq` is volume-local, so naming only the seq
+  // said "第 1 章" while the author was writing volume 9's first chapter. The volume is
+  // part of the sentence; a loose chapter keeps the short form.
+  const where =
+    position.volume === undefined || position.volume === ''
+      ? `第 ${String(position.seq)} 章`
+      : `${position.volume} 第 ${String(position.seq)} 章`
+  const lines = [`本章建议回收 ${String(items.length)} 条（${where}）：`]
   for (const item of items) {
     if (item.overdue) {
       lines.push(`- [超期] ${item.title} — 应在 ${item.dueBy ?? '?'} 回收，已经越过（${item.file}）`)
@@ -521,7 +593,9 @@ export const foreshadowSegment: ExtraSegmentSpec = {
   label: '伏笔提示',
   capRatio: 0.1,
   build(input: ExtraSegmentInput): string | undefined {
-    const known = chapterPositions(input.root)
+    // File positions, not the index (§3.2.2): the reminder runs before the first write
+    // of a session, where the index may be missing *or* behind the files on disk.
+    const known = chapterPositionsFromFiles(input.root)
     const position = positionOfCurrent(input, known)
     if (position === undefined) return undefined
     const items = foreshadowReminders(input.root, position, 5)

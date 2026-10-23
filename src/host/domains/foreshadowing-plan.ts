@@ -308,10 +308,26 @@ type DueResolution =
   | { readonly kind: 'volume'; readonly order: number }
   | { readonly kind: 'unknown' }
 
-function resolveDue(dueBy: string | undefined, positions: ReadonlyMap<string, ChapterPosition>): DueResolution | undefined {
+/**
+ * Which volume (if any) a `dueBy` names.
+ *
+ * A `vol-99` that no volume carries is **not** a deadline: "the book has moved past
+ * volume 99" would be vacuously true, so treating it as one marks every setup with a
+ * typo'd volume as late. §3.2.2 condition 2 requires the id to hit the catalog. The
+ * set holds the catalog's *numbers* rather than its ids so `vol-2` and `vol-02` (the
+ * stable id pads to two digits) name the same volume.
+ */
+function resolveDue(
+  dueBy: string | undefined,
+  positions: ReadonlyMap<string, ChapterPosition>,
+  volumes: ReadonlySet<number>,
+): DueResolution | undefined {
   const raw = (dueBy ?? '').trim()
   if (raw === '') return undefined
-  if (/^vol[-_]?\d+/i.test(raw)) return { kind: 'volume', order: volumeOrderOf(raw) }
+  if (/^vol[-_]?\d+/i.test(raw)) {
+    const order = volumeOrderOf(raw)
+    return volumes.has(order) ? { kind: 'volume', order } : { kind: 'unknown' }
+  }
   // A chapter id or a project-relative path: both are accepted, because a hand-written
   // `dueBy` may name the file the author sees in their editor.
   const position = positions.get(raw)
@@ -323,14 +339,18 @@ function resolveDue(dueBy: string | undefined, positions: ReadonlyMap<string, Ch
  *
  * Strictly later counts as late: the chapter a setup is due in is "due now", which
  * is the moment to pay it off, not the moment it failed.
+ *
+ * `volumes` carries the catalog's volume numbers (`volumeOrdersOf()`); a volume
+ * deadline it does not contain is `unknown`, never "late".
  */
 export function foreshadowUrgency(
   row: ForeshadowRow,
   current: ChapterPosition | undefined,
   positions: ReadonlyMap<string, ChapterPosition>,
+  volumes: ReadonlySet<number>,
 ): ForeshadowUrgency {
   const base = baseStatusOf(row)
-  const due = resolveDue(row.dueBy, positions)
+  const due = resolveDue(row.dueBy, positions, volumes)
   const dueKind = due?.kind
   const settled: ForeshadowUrgency = {
     status: base,
