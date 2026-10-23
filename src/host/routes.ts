@@ -690,11 +690,35 @@ export function createHttpHandler(deps: HttpDeps) {
     // Only GET is a read in this channel, so any other declared verb is a write.
     const isWrite = method !== 'GET'
     if (isWrite) {
-      // `Origin` must be PRESENT and loopback: a same-origin `fetch` from the
-      // panel always sets it, and a cross-site page cannot forge it.
+      // `Origin`, when it arrives, has already been checked for loipback above.
+      //
+      // An ABSENT `Origin` used to be a 403 `origin-required`. It is not, for two
+      // measured reasons (issue #115): a real panel save answered exactly
+      // `forbidden-origin / origin-required` with every other guard satisfied, so
+      // the header simply does not reach a Host write from that shell; and "no
+      // Origin" is what a non-browser client looks like, not what a web page looks
+      // like (a browser always sets it on a POST).
+      //
+      // What still keeps a cross-site page out, in this order: the peer and the
+      // Host must both be loopback; a cross-origin JSON POST cannot skip its CORS
+      // preflight, and this channel answers none; any other content type is a 415
+      // below; and the request must name a session the Host resolves to a real book.
+      // `Sec-Fetch-Site` is the second net for the one case a browser omits Origin:
+      // a page that reached us cross-site still declares itself.
       if (origin === '') {
-        sendJson(res, 403, failure('forbidden-origin', { reason: 'origin-required', hint: 'a write request must carry a loopback Origin' }))
-        return
+        const site = headerValue(req, 'sec-fetch-site').toLowerCase()
+        if (site !== '' && site !== 'same-origin' && site !== 'none') {
+          sendJson(
+            res,
+            403,
+            failure('forbidden-origin', {
+              reason: 'cross-site-fetch',
+              site,
+              hint: 'a write must come from the page this Host serves',
+            }),
+          )
+          return
+        }
       }
       if (!isJsonContentType(headerValue(req, 'content-type'))) {
         sendJson(

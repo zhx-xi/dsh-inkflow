@@ -19,7 +19,7 @@
  * through `./internal.js` (ADR-0008 D4 — a session id, never a directory).
  */
 
-import { describeTooLarge } from './error-text.js'
+import { describeOriginRefusal, describeTooLarge } from './error-text.js'
 import type { InternalError, InternalResult } from './internal.js'
 
 /** The four gate states. Anything else means "we have not learnt it yet". */
@@ -200,6 +200,8 @@ export function describeRouteError(error: InternalError | undefined): string {
   // than the channel's ceiling names the ceiling and says nothing was written.
   const tooLarge = describeTooLarge(error)
   if (tooLarge !== null) return tooLarge
+  const refusedOrigin = describeOriginRefusal(error)
+  if (refusedOrigin !== null) return refusedOrigin
   return ERROR_HINTS[error.code] ?? error.message ?? error.code
 }
 
