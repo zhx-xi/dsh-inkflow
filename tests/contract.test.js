@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the twelve built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the fourteen built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -227,7 +227,10 @@ test('registers the twelve built-ins, the tools of every registered domain, and 
       'inkflow_outline_tree',
       'inkflow_outline_upsert',
       'inkflow_project_init',
+      // #36: the maintenance pair (repair / migrate), built-ins in tools.ts.
+      'inkflow_project_migrate',
       'inkflow_project_plan',
+      'inkflow_project_repair',
       'inkflow_project_status',
       'inkflow_relation_list',
       'inkflow_relation_upsert',

@@ -265,7 +265,7 @@ test('every shipped tool schema stays inside the Host-supported subset', () => {
   const tools = registeredTools()
   // Exact, not `>=`: dropping a domain tool would otherwise stay green, and the
   // baseline below only names the 12 built-ins.
-  assert.equal(tools.size, 28, `expected the full tool surface, got ${tools.size}`)
+  assert.equal(tools.size, 30, `expected the full tool surface, got ${tools.size}`)
 
   const failures = []
   for (const [name, tool] of tools) {
