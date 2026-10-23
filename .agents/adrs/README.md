@@ -20,6 +20,9 @@
 | [0009](0009-ovk-semantic-search.md) | 语义检索复用 OpenViking（peer 从工作区读 / 按章重建 / 召回不等于定位） | 已采纳 | 2026-10-21 |
 | [0010](0010-book-hub-entry.md) | 书库入口（root 侧栏）+ 书单来自 DSH 工作区注册表，无会话通道只做状态/初始化/共享库只读 | 已采纳；**收窄 [0008](0008-panel-data-channel.md) D1**（创作工作台仍只留 `conversation.view`） | 2026-10-21 |
 | [0011](0011-ci-merge-gate.md) | 合并前 CI 门禁由分支保护强制，配置期望值由仓库内脚本可验证 | 已采纳 | 2026-10-22 |
+| [0012](0012-plugin-private-state-dir.md) | 插件私有状态目录 `<book>/.inkflow/`（回收站/迁移备份/审计导出）+ 写白名单扩展 | 已采纳 | 2026-10-24 |
+| [0013](0013-facts-ledger-line-format.md) | 事实账本用正文列表项 + 竖线分隔键值（一文件多事实的编码） | 已采纳 | 2026-10-24 |
+| [0014](0014-entity-id-pinning.md) | 实体改名用「id 钉住」，不级联重写引用 | 已采纳 | 2026-10-24 |
 
 ### 1.2 决策速览（一行一条）
 
@@ -36,6 +39,9 @@
 | [0009](0009-ovk-semantic-search.md) | **语义检索复用 OpenViking**：peer 从工作区配置只读、按章同路径覆盖重建、召回不等于定位、缺 OVK 降级 FTS5（含 2 字 `LIKE` 兜底） | 零依赖下自研向量库不现实；`forget` 是永久物理删除，不能映射「删章」；结果只到文件级 |
 | [0010](0010-book-hub-entry.md) | **书库入口（root `sidebar.panellist`）+ 书单 = DSH 工作区注册表**（不自建 `books.json`，一本书 = 一个 workspace）；新增无会话通道 `/inkflow/internal/hub/*`，能力白名单只有列书状态 / 初始化 plan、apply / 共享库只读，**禁止任何作品正文读写**；新开书 = pickDirectory → plan → apply(confirm) → 注册工作区 → 引导开新会话（不能程序化建会话） | 没有会话就看不到面板，新开书路径太长；注册表已是"一书一工作区"的宿主表达；root 槽位无 `sessionId`，正文读写仍必须由会话推出路径 |
 | [0011](0011-ci-merge-gate.md) | **合并前 CI 门禁 = 分支保护（`strict` + `enforce_admins` + 禁 force push + 评审线程必须解决）+ 仓库内期望值（`EXPECTED`）与 `check`/`apply` 脚本**；检测在本地 `check` 链，应急出口 = 临时 DELETE 后立刻 apply 并留痕 | 纪律没有机制承载时坏一次就重来一次（`#7`）；管理员捷径正是事故路径；public 仓库的 `GITHUB_TOKEN` 拿不到保护配置，只能本地验 |
+| [0012](0012-plugin-private-state-dir.md) | **插件私有状态目录 `<book>/.inkflow/{trash,backup,audit}/`**：不是内容目录、不参与门禁、不进索引与 git（`REQUIRED_GITIGNORE_LINES` 追加 `.inkflow/`），写只经 `resolveWriteTarget` 批过的三条子路径；`trash/` 永不自动清理，超阈值只提示 | `index/` 缺失会被静默重建（ADR-0006 D2）且只忽略 `*.db` → 回收站放进去等于「重建索引即丢数据、还会被提交进 git」；`$DSH_HOME` 方案依赖未裁决的 `projectId`（Q12） |
+| [0013](0013-facts-ledger-line-format.md) | **事实账本一条事实一个正文列表项**：`- attribute: … │ value: … │ since: … │ chapterId: … │ source: …`，frontmatter 只放 `subject`；值里的 `│` 写 `\|`；未知键保留 | 读取器不支持嵌套映射（同时间线 `worldTime` 的因），Markdown 表格与中文竖线打架、对齐行污染 diff，一条一文件又与 §3.5 的文件粒度冲突 |
+| [0014](0014-entity-id-pinning.md) | **实体改名 = 移动文件 + 把旧 id 写进新文件 frontmatter**，五处引用（关系端点/时间线参与/账本主体/伏笔关联/提及键）一个都不重写；影响清单只告知；新增 info 级 `ID_PATH_DIVERGED` | 级联重写是 N 个文件的非事务动作，中途失败留半改状态，正好违反「取消时零写入」；而显式 `id` 本来就是 §3.1 推荐的合法写法，钉住只需一次写 |
 
 ## 2. 编号与登记规则
 

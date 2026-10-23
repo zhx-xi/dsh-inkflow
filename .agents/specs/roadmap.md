@@ -100,6 +100,34 @@
 - 1 人日 = 1 个工作日（约 8 h，含 AI 辅助）；1 月按 21 个工作日折算。
 - 旧 123–175（逐项）/ 125–185（规格）**作废**。
 
+### 2.2 0.3.0 批次（B0–B2）【推断】
+
+> 0.3.0 取 W3 的 M9 / M10 与 M1 的迁移部分：伏笔、账本、审计、影响面、回收站、修复与迁移六单。与 0.2.0 同构——批次内并行、批次之间有硬前置；会互相踩的接缝在 B0 先改造成「按表装配」，跨单契约在 B0 定死。
+
+| 批次 | issue | 主题 | 估工 | 硬前置 | 主写域 |
+|---|---|---|---|---|---|
+| B0 | #121 | 契约层与接缝预备：roadmap/ADR/`.inkflow`、面板页注册表、写作上下文段注册表、写白名单、findings 形状 | 2 | — | `.agents/**`；`client/{panel-model,index}.tsx`；`host/writing-context.ts`；`host/io.ts`；`host/findings.ts` |
+| B1 | #31 #32 #34 #35 | 伏笔状态机 / 事实账本 / 影响面与改名级联 / 回收站 | 9–12 | B0 | `domains/{foreshadowing,facts}.ts`；`host/{impact,trash}.ts`；各域 tools；`client/*` |
+| B2 | #33 #36 | 体检报告 / 一键修复与 6→9 迁移 | 4–6 | B1（#33 ← #31 #32；#36 ← #35 备份口径 + X-14） | `host/{audit,repair,migrate}.ts`；`client/*` |
+
+**为什么 B0 必须先做「接缝预备」**：#31 #32 #35 #33 各自都要加一个面板页，而页当时是 `src/client/index.tsx` 里的一段三元表达式；#31 #32 都要加一个写作上下文档，而段在 `buildWritingContext` 里写死顺序、预算是一个全局常量；#35 #36 都要在项目里落一份可恢复副本，而写白名单只到九个内容目录 + `index/`。不先把这三处变成「按表装配」，四单并行就退化成同一个函数的排队——与 §2.1 里 `indexer.ts` 当时的情形同理。
+
+**跨单契约（B0 定死，B1/B2 不得改口径）**
+
+| # | 契约 | 说明 |
+|---|---|---|
+| X-9 | **`.inkflow/` 是唯一的插件私有状态目录**（[ADR-0012](../adrs/0012-plugin-private-state-dir.md)） | 落点 `<book>/.inkflow/{trash,backup,audit}/`；不是内容目录、不参与门禁必需项、不产实体、不进索引扫描（`walk()` 跳过点开头项）；写只能经 `resolveWriteTarget` 批过的三个子路径，`..` 与符号链接逃逸仍拒；`.gitignore` 的 `.inkflow/` 行由**首次使用方** append-only 追加，**不放进** `REQUIRED_GITIGNORE_LINES`（可选目录不该给门禁制造永久修复动作） |
+| X-10 | **回收站与迁移备份是两个模块、同一个落点** | `trash/` 面向「用户删了想找回」，有清单与人工清理（#35 定）；`backup/` 面向「一次批量变更的回滚包」，一次性、机器读（#36 定）。两者都只写 `.inkflow/`，都不参与索引，不互相调用、不共享清单格式 |
+| X-11 | **`INDEX_SCHEMA_VERSION` 与工具计数按「落地即 +1」解冲突** | 新增表/列的单一律自己处 +1，**不预占号、不预留空号**；同批两单撞同一行时以「当前 main 的值 +1」为解，属机械冲突。`tests/tool-schema.test.js` 的两个精确计数（已注册 / 域工具）同理：每单按自己落地后的真实值改，rebase 时重数一遍；不允许改成「≥N」，也不允许改成从注册表推导（那会让「工具静默漏注册」重新失去守卫） |
+| X-12 | **面板页 = `PANEL_TABS` 一行 + 页组件一处登记，禁止改渲染分支** | 页按 id 在 `client/index.tsx` 的页表里登记（B0 注册表化）；单只追加自己那一行/一个文件，不改他人行、不重排。`PANEL_TABS` 里他人占位行的 `available`/`note` 不得改动 |
+| X-13 | **写作上下文档按注册表装配，新段只声明不排序** | 段顺序由 B0 的常量表定死：`project → chapter → tail → world → facts → foreshadow`；预算按段上限分配（`facts` ≤ 15% 总量、`foreshadow` ≤ 10% 总量【推断】），超预算时按 `world → facts → foreshadow → tail` 依次裁剪，`project`/`chapter` 不裁。新段只提供 builder 与自己的上限，不写装配顺序、不改 `DEFAULT_BUDGET_TOKENS` |
+| X-14 | **「发现」与「修复」共用一套形状**（`src/host/findings.ts`） | `{ code, severity: 'blocking'│'warning'│'info', kind, locator{ entity? │ path? │ chapterId? }, detail, hint, fixable }`；`code` 目录集中在该文件，新增 code 必须同一提交写进 [data-model](data-model.md) §5；#33 只产出 findings，#36 只消费 findings（且必须重跑检测证明修完），两者都不许私造第二套问题类型 |
+| X-15 | **改名 = id 钉住，不改引用**（[ADR-0014](../adrs/0014-entity-id-pinning.md)） | 改名只写一次：把**旧 id** 写进新文件 frontmatter 的 `id`；引用方（relations 端点、timeline `participants`、facts `subject`、foreshadow `linkedEntities`、`entity_mentions.entity_key`）一个都不动。#34 的影响清单是「告知」，**不是**批量重写清单 |
+
+**关键路径**：B0（2）→ #32（3–4）→ #33（2–3）≈ **7–9 人日**；B1 四单并行、B2 两单并行，#35（1–2）与 #34（2–3）不占关键路径。
+
+**逐项和**：2 + 3 + 3–4 + 2–3 + 2–3 + 1–2 + 2–3 = **15–20 人日**；批内并行后的日历长度【推断】≈ **11–14 人日**（含收口、GUI 实测与文档）。此值只作 0.3.0 里程碑内口径，不回填 §2.1 的承诺总量 122–162。
+
 ## 3. 里程碑
 
 | 里程碑 | 触发条件 | 可演示能力 | 主要波次 |
