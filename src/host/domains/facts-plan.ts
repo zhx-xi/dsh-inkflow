@@ -29,7 +29,9 @@
  *      `since` must not accuse a correct fact). `inkflow_facts_list` reports the ids it
  *      could not resolve, so the gap is visible instead of silent;
  *   2. `FACT_CONFLICT` is reported **per pair**, not per fact: three mutually overlapping
- *      values are three contradictions, and collapsing them would hide two of them.
+ *      values are three contradictions, and collapsing them would hide two of them;
+ *   3. an **empty** interval (`until` at or before `since`) is not a span at all — it never
+ *      holds — so it is left out of the pairing instead of being compared as if it did.
  */
 
 import { basename, extname } from 'node:path'
@@ -108,9 +110,16 @@ function bodyFirstLine(text: string): number {
  *
  * `subject` falls back to the file name when the frontmatter omits it: the file name *is*
  * the subject by convention (`facts/<subject>.md`), and a ledger that refuses to load
- * because one metadata line was forgotten would lose every fact in it. The missing
- * `subject` key itself is not reported — there is no invariant for "required
- * frontmatter", and inventing a second vocabulary for it is what X-14 forbids.
+ * because one metadata line was forgotten would lose every fact in it.
+ *
+ * The fallback is **not silent** (rework of PR #124): it is reported as a
+ * `FRONTMATTER_ISSUE` warning (non-blocking, I-10 — frontmatter the format requires and the
+ * file does not carry). Silent was wrong in a way that shows up later: the facts of that
+ * ledger are indexed under a name nobody chose (`facts/qingyin.md` → subject `qingyin`), so
+ * `inkflow_facts_append` with `subject: char-qingyin` does not find them and creates a
+ * second file for the same subject. A warning at every rebuild is the cheapest place to
+ * make that cost visible; nothing is refused, because a book that already lacks the key
+ * must keep working.
  */
 export function parseFactsFile(path: string, text: string): ParsedFacts {
   const fallbackSubject = basename(path).replace(/\.md$/u, '')
@@ -122,7 +131,19 @@ export function parseFactsFile(path: string, text: string): ParsedFacts {
 
   const parsed = parseMarkdown(text)
   const issues: ValidationIssue[] = parsed.issues.map((issue) => ({ code: 'FRONTMATTER_ISSUE', path, detail: issue }))
-  const subject = (stringField(parsed.data, 'subject') ?? '').trim() || fallbackSubject
+  const declaredSubject = (stringField(parsed.data, 'subject') ?? '').trim()
+  const subject = declaredSubject || fallbackSubject
+  if (declaredSubject === '') {
+    // I-10 (warning, never a refusal): the file must say which entity it is about, and the
+    // fallback is the file name — which decides the *subject of every row in the file* and
+    // therefore which ledger `inkflow_facts_append` looks for. Reported so the author can
+    // correct the name instead of discovering it as a second ledger.
+    issues.push({
+      code: 'FRONTMATTER_ISSUE',
+      path,
+      detail: `subject 缺失：按文件名「${fallbackSubject}」登记这些事实；补一行 \`subject: <主体 id>\` 可消除这条提示`,
+    })
+  }
   const title = (stringField(parsed.data, 'title') ?? '').trim() || undefined
 
   const rows: FactRow[] = []
@@ -163,12 +184,26 @@ function toRow(path: string, line: number, subject: string, fact: FactLine): Fac
   }
 }
 
-/** The ledger's projection row (X-1: this domain adds rows, never columns). */
+/**
+ * The ledger's projection row (X-1: this domain adds rows, never columns).
+ *
+ * **The id is the file path, not the subject.** A ledger's subject is a *reference* (it
+ * names a character / item / place that has its own file), so using it as this entity's id
+ * made the two rows collide: `characters/qingyin.md` with `id: char-qingyin` plus
+ * `facts/char-qingyin.md` with `subject: char-qingyin` reported `DUPLICATE_ID` on every
+ * rebuild, and the mention scan then counted every 清音 in the prose twice — once for the
+ * character and once for its ledger, whose `title` is the character's name.
+ *
+ * A ledger entry has no name of its own: its "name" *is* the subject, which the subject
+ * entity already publishes. So the ledger is addressed by its file (the default every other
+ * kind falls back to), the subject stays a field of the *rows*, and `domains/mentions.ts`
+ * leaves `kind === 'facts'` out of the automaton (data-model §4.1 / §5 I-04).
+ */
 export function factsEntity(parsed: ParsedFacts, path: string): DomainEntityRef {
   const title = parsed.title ?? parsed.subject
   return {
     kind: 'facts',
-    id: parsed.subject,
+    id: path,
     path,
     title,
     nameKey: nameKey(title),
@@ -187,8 +222,8 @@ export function factsFileParse(path: string, text: string): DomainFileParse {
   return {
     path,
     rows: parsed.rows.length === 0 ? [] : [rowsBucket(FACTS_TABLE, parsed.rows)],
-    // One subject is one entity (data-model §3.5: 一主体一文件一实体), even when the file
-    // currently holds no fact line — an empty ledger is still a known subject.
+    // One ledger file is one entity (id = the path), even when the file currently holds no
+    // fact line — an empty ledger is still a known ledger for its subject.
     entity: factsEntity(parsed, path),
     issues: parsed.issues,
   }
@@ -302,10 +337,16 @@ export function factsConflicts(rows: readonly FactRow[], seqOf: ChapterSeq): Fac
     if (bucket.length < 2) continue
     const placed = bucket
       .map((row) => ({ row, since: sinceBound(row, seqOf), until: untilBound(row, seqOf) }))
+      // An **empty** interval (`until` at or before `since`) never holds, so it cannot
+      // contradict anything: without this filter `[ch-5, ch-5)` or a reversed `[ch-9, ch-2)`
+      // looks like a real span to the overlap test and accuses a fact that is never in
+      // effect. `factInEffect` already answers `false` for both.
+      .filter((bound) => bound.until.seq > bound.since.seq)
       .sort((left, right) => {
         if (left.since.seq !== right.since.seq) return left.since.seq < right.since.seq ? -1 : 1
         return compareRows(left.row, right.row)
       })
+    if (placed.length < 2) continue
 
     for (let index = 0; index < placed.length; index += 1) {
       const left = placed[index]

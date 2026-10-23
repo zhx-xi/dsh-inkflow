@@ -24,7 +24,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -165,6 +165,13 @@ test('facts: round-trip holds for the escape, the unknown key and the empty unti
   const emptyUntil = roundTrip('- attribute: 生死 | value: 存 | since: ch-0001 | until: | chapterId: ch-0001')
   assert.equal(emptyUntil.fact.until, undefined)
   assert.ok(!emptyUntil.rendered.includes('until:'), 'an empty until is dropped, and reads back the same way')
+
+  // 4) An unknown key with an **empty** value is data, not padding (rework of PR #124):
+  //    `备注:` has to survive a render, or anything that rewrites a ledger line silently
+  //    eats a field the author wrote. `roundTrip` asserts the structural equality.
+  const emptyUnknown = roundTrip('- attribute: 境界 | value: 金丹 | since: ch-0004 | 备注:')
+  assert.equal(emptyUnknown.fact.extra['备注'], '', 'the key is kept with an empty value')
+  assert.ok(emptyUnknown.rendered.endsWith('备注: '), 'it is rendered back as `备注: `')
 })
 
 test('facts: a line that is not a fact is refused without echoing the author’s text', () => {
@@ -210,7 +217,7 @@ test('facts: one ledger file yields rows with 1-based file line anchors, and a b
   assert.equal(parsed.rows[0].id, 'facts/char-qingyin.md#L6')
 })
 
-test('facts: a ledger without a `subject` falls back to the file name instead of losing its facts', () => {
+test('facts: a ledger without a `subject` falls back to the file name and says so', () => {
   const parsed = parseFactsFile(
     'facts/青锋剑.md',
     '---\ntitle: 青锋剑\n---\n\n- attribute: 持有者 | value: 清音 | since: ch-0012\n',
@@ -218,6 +225,17 @@ test('facts: a ledger without a `subject` falls back to the file name instead of
   assert.equal(parsed.subject, '青锋剑')
   assert.equal(parsed.rows.length, 1)
   assert.equal(parsed.rows[0].subject, '青锋剑')
+  // The fallback is not silent (rework of PR #124): the subject decides which ledger
+  // `inkflow_facts_append` looks for, so a forgotten key must be visible — as a warning
+  // that blocks nothing (I-10), because a book written before the key existed still works.
+  assert.deepEqual(
+    parsed.issues.map((issue) => [issue.code, issue.path]),
+    [['FRONTMATTER_ISSUE', 'facts/青锋剑.md']],
+  )
+  assert.match(parsed.issues[0].detail, /青锋剑/u, 'the detail names the fallback subject')
+  assert.equal(parsed.issues[0].detail.includes('subject: '), true, 'and tells the author what to add')
+  // Declaring the key is all it takes to be quiet again.
+  assert.deepEqual(parseFactsFile('facts/青锋剑.md', '---\nsubject: item-1\ntitle: 青锋剑\n---\n\n').issues, [])
 })
 
 // ---------------------------------------------------------------------------
@@ -638,7 +656,7 @@ test('facts: the interval rule is symmetric — extending the older fact is refu
 // 6. The domain projection
 // ---------------------------------------------------------------------------
 
-test('facts: the domain publishes one entity per subject, so the ledger is reachable by search', async () => {
+test('facts: the domain publishes one entity per ledger file, addressed by its path', async () => {
   const dir = workdir()
   const root = join(dir, 'book')
   try {
@@ -650,14 +668,16 @@ test('facts: the domain publishes one entity per subject, so the ledger is reach
 
     const db = new DatabaseSync(join(root, 'index', 'inkflow.db'), { readOnly: true })
     try {
-      const rows = db.prepare("SELECT id, title FROM entities WHERE kind = 'facts' ORDER BY id").all()
+      const rows = db.prepare("SELECT id, path, title FROM entities WHERE kind = 'facts' ORDER BY id").all()
       assert.deepEqual(
-        rows.map((row) => [row.id, row.title]),
+        rows.map((row) => [row.id, row.path, row.title]),
+        // The id is the file path, not the subject (data-model §4.1): the subject names
+        // another entity, so using it here would collide with that entity (I-04).
         [
-          ['char-a', '甲'],
-          ['char-b', 'char-b'],
+          ['facts/char-a.md', 'facts/char-a.md', '甲'],
+          ['facts/char-b.md', 'facts/char-b.md', 'char-b'],
         ],
-        'one subject is one entity, not one per fact line',
+        'one ledger file is one entity, not one per fact line, and its id is the path',
       )
     } finally {
       db.close()
@@ -684,4 +704,306 @@ test('facts: factsSnapshot and factsConflicts are pure functions of the rows and
   )
   assert.deepEqual(factsSnapshot(rows, () => undefined, 5), [], 'an unplaceable boundary excludes the fact')
   assert.deepEqual(factsConflicts(rows, seqOf), [], 'adjacent intervals are not a conflict')
+})
+
+// ---------------------------------------------------------------------------
+// 7. Rework of PR #124 — the blocking items, each as a regression that fails on the
+//    behaviour the independent review measured
+// ---------------------------------------------------------------------------
+
+/** A book long enough that a 500-row chapter page stops before its end. */
+function longBook(root) {
+  scaffold(root, '五百二十章书')
+  writeChapters(root, 520)
+  // Line layout: 1 `---`, 2 subject, 3 `---`, 4 blank, then the facts from line 5.
+  writeLedger(root, 'char-a', 'char-a', [
+    { attribute: '境界', value: '筑基', since: 'ch-1', until: 'ch-518', source: 'text', extra: {} },
+    { attribute: '境界', value: '金丹', since: 'ch-510', source: 'text', extra: {} },
+    { attribute: '持有物', value: '旧剑', since: 'ch-1', until: 'ch-520', extra: {} },
+    { attribute: '持有物', value: '新剑', since: 'ch-520', extra: {} },
+    // `ch-100` < `ch-99` as text but 100 > 99 as a chapter: the id-vs-order probe.
+    { attribute: '寿元', value: '三百岁', since: 'ch-100', extra: {} },
+  ])
+}
+
+test('facts B1: a 520-chapter book answers with one chapter order, so tools and rebuild agree', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    longBook(root)
+    await buildIndex(root)
+
+    const conflicts = factIssues(root).filter((issue) => issue.code === 'FACT_CONFLICT')
+    assert.deepEqual(
+      conflicts.map((issue) => issue.path),
+      ['facts/char-a.md#L6'],
+      'the rebuild judges the whole book (the planted 境界 overlap)',
+    )
+
+    // The tool side must give the same answer. Before the fix it read at most 500 chapters
+    // through `listChapters`, so `ch-510` / `ch-518` / `ch-520` resolved to nothing: the
+    // overlap could not be judged (conflicts === []) and three real ids were reported as
+    // typos.
+    const listed = await callTool('inkflow_facts_list', { projectRoot: root })
+    assert.deepEqual(
+      listed.conflicts.map((conflict) => conflict.anchor),
+      ['facts/char-a.md#L6'],
+      'facts_list reports exactly the conflicts the rebuild reported',
+    )
+    assert.deepEqual(listed.unresolvedChapters, [], 'chapters past 500 are chapters, not typos')
+
+    // A real last chapter must be reachable, and the default must land on it.
+    const last = await callTool('inkflow_facts_snapshot', { projectRoot: root, chapterId: 'ch-520' })
+    assert.equal(last.ok, true, `ch-520 must resolve: ${JSON.stringify(last.error ?? null)}`)
+    assert.deepEqual(
+      last.facts.map((fact) => fact.value).sort(compareText),
+      ['三百岁', '新剑', '金丹'].sort(compareText),
+      'the facts in effect at the last chapter are all there',
+    )
+
+    const current = await callTool('inkflow_facts_snapshot', { projectRoot: root })
+    assert.equal(current.chapterId, 'ch-520', 'no chapterId means the last chapter, not chapter 500')
+    assert.equal(current.facts.length, 3, 'and it answers with facts instead of an empty list')
+
+    // Chapter order, not id text: `ch-100` sorts *before* `ch-99` as a string.
+    const beforeHundred = await callTool('inkflow_facts_snapshot', { projectRoot: root, chapterId: 'ch-99' })
+    assert.equal(
+      beforeHundred.facts.some((fact) => fact.value === '三百岁'),
+      false,
+      'a fact starting at ch-100 must not appear at ch-99 even though "ch-100" < "ch-99" as text',
+    )
+
+    // And the writing context keeps its segment: the review measured it disappearing
+    // entirely (with `trimmed: []`, so nothing said why).
+    const context = buildWritingContext(root)
+    const segment = context.segments.find((entry) => entry.name === 'facts')
+    assert.ok(segment !== undefined, 'the ledger still reaches the prompt of a long book')
+    assert.ok(segment.text.includes('金丹'), 'with the value in effect at the last chapter')
+    assert.ok(segment.text.includes('截至第 520 章'), 'and the chapter it is as of')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('facts B2: the segment packs whole lines, counts what it rendered, and gives up when nothing fits', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, '十四条书')
+    writeChapters(root, 3)
+    const lines = []
+    for (let index = 1; index <= 14; index += 1) {
+      const pad = String(index).padStart(2, '0')
+      lines.push({ attribute: `属性${pad}`, value: `取值${pad}的值内容`, since: 'ch-1', extra: {} })
+    }
+    writeLedger(root, 'char-a', 'char-a', lines)
+    await buildIndex(root)
+
+    // The cap is 15% of the default 1200-token budget: 180 characters.
+    const context = buildWritingContext(root)
+    const segment = context.segments.find((entry) => entry.name === 'facts')
+    assert.ok(segment !== undefined, 'the segment is produced')
+    assert.ok(segment.text.length <= 180, `within its cap, got ${String(segment.text.length)}`)
+    assert.equal(segment.text.includes('…（截断）'), false, 'a cut segment is never a half line')
+
+    const rendered = segment.text.split('\n')
+    const header = rendered[0]
+    const body = rendered.slice(1)
+    const shown = Number(/展开前 (\d+) 条/u.exec(header)?.[1])
+    assert.ok(Number.isInteger(shown) && shown > 0, `the header announces how many it rendered: ${header}`)
+    assert.ok(shown < 14, 'and it really is fewer than the fourteen in effect, so the count is meaningful')
+    // The two assertions the review asked for: the header count is the line count, and every
+    // line is whole (a value is never sliced, which is what "从值中间剪断" was).
+    assert.equal(body.length, shown, `header says ${String(shown)}, body has ${String(body.length)} lines`)
+    for (const line of body) {
+      assert.match(line, /^- char-a · 属性\d{2}：取值\d{2}的值内容（自 ch-1）$/u, `whole line: ${line}`)
+    }
+
+    // Under a 120-token budget the cap is 18 characters — less than `header + 1 line`. The
+    // review measured a segment that degenerated to `### 账本事实（截至第 …` and, because the
+    // block was then short enough, never reached the trim ladder.
+    const tight = buildWritingContext(root, { budgetTokens: 120 })
+    assert.equal(
+      tight.segments.some((entry) => entry.name === 'facts'),
+      false,
+      'nothing usable fits, so no segment is produced',
+    )
+    assert.equal(tight.text.includes('### 账本事实'), false, 'and no truncated heading is left behind')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('facts B3: a ledger reusing its subject id collides with nobody and is not scanned for mentions', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, '撞号书')
+    writeFile(
+      root,
+      'chapters/vol-01/0001-初见.md',
+      '---\nid: ch-1\ntitle: 初见\nseq: 1\n---\n\n清音推门进来，青锋剑在鞘。清音没有说话。\n',
+    )
+    // The canonical shape the review measured: the character owns the id, the ledger's
+    // `subject` references it, and the ledger's title is the character's display name.
+    writeFile(root, 'characters/qingyin.md', '---\nid: char-qingyin\nname: 清音\n---\n\n清音，剑修。\n')
+    writeLedger(root, 'char-qingyin', 'char-qingyin', [{ attribute: '境界', value: '筑基', since: 'ch-1', extra: {} }], [
+      'title: 清音',
+    ])
+    await buildIndex(root)
+
+    assert.deepEqual(
+      indexIssues(root).filter((issue) => issue.code === 'DUPLICATE_ID'),
+      [],
+      'reusing the subject as a reference is not a duplicate id (I-04)',
+    )
+
+    const db = new DatabaseSync(join(root, 'index', 'inkflow.db'), { readOnly: true })
+    try {
+      assert.deepEqual(
+        db
+          .prepare('SELECT kind, id FROM entities ORDER BY kind')
+          .all()
+          .map((row) => [row.kind, row.id]),
+        [
+          ['chapters', 'ch-1'],
+          ['characters', 'char-qingyin'],
+          // The ledger entity is addressed by its file, so its subject can stay a reference.
+          ['facts', 'facts/char-qingyin.md'],
+        ],
+      )
+      const mentions = db
+        .prepare('SELECT entity_key, offset, source FROM entity_mentions ORDER BY entity_key, offset')
+        .all()
+        .map((row) => [row.entity_key, row.offset, row.source])
+      // Exactly the two occurrences of 清音 in the prose, under the character only. The
+      // offsets are code-unit positions in the stored body, which keeps the blank line
+      // that follows the frontmatter (hence 1 and 14, not 0 and 13).
+      assert.deepEqual(mentions, [
+        ['characters:char-qingyin', 1, 'name'],
+        ['characters:char-qingyin', 14, 'name'],
+      ])
+      assert.equal(
+        mentions.some((row) => String(row[0]).startsWith('facts:')),
+        false,
+        'no mention row points at a ledger',
+      )
+    } finally {
+      db.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('facts follow-up: an empty or reversed interval is never in effect, so it contradicts nothing', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, '空区间书')
+    writeChapters(root, 8)
+    // Lines 5-6: `[ch-5, ch-5)` — empty. Lines 7-8: `[ch-6, ch-2)` — written backwards.
+    // The naive overlap test treats both as real spans and then accuses a fact that never
+    // holds (a `until` typed before its `since` is a typo, not a contradiction).
+    // Lines 9-10: a genuine overlap, which must still be reported.
+    writeFile(
+      root,
+      'facts/char-a.md',
+      [
+        '---',
+        'subject: char-a',
+        '---',
+        '',
+        '- attribute: 境界 | value: 筑基 | since: ch-5 | until: ch-5',
+        '- attribute: 境界 | value: 金丹 | since: ch-1',
+        '- attribute: 持有物 | value: 旧剑 | since: ch-6 | until: ch-2',
+        '- attribute: 持有物 | value: 新剑 | since: ch-1 | until: ch-7',
+        '- attribute: 生死 | value: 存 | since: ch-1 | until: ch-3',
+        '- attribute: 生死 | value: 亡 | since: ch-2',
+        '',
+      ].join('\n'),
+    )
+    await buildIndex(root)
+
+    const conflicts = factIssues(root).filter((issue) => issue.code === 'FACT_CONFLICT')
+    assert.deepEqual(
+      conflicts.map((issue) => issue.path),
+      ['facts/char-a.md#L10'],
+      'only the real contradiction is reported',
+    )
+
+    const listed = await callTool('inkflow_facts_list', { projectRoot: root })
+    assert.deepEqual(
+      listed.conflicts.map((conflict) => conflict.anchor),
+      ['facts/char-a.md#L10'],
+    )
+    // And an empty span is not a value "in effect" anywhere either.
+    const snapshot = await callTool('inkflow_facts_snapshot', { projectRoot: root, chapterId: 'ch-5' })
+    assert.equal(snapshot.facts.some((fact) => fact.attribute === '境界' && fact.value === '筑基'), false)
+    assert.equal(snapshot.facts.some((fact) => fact.attribute === '持有物' && fact.value === '旧剑'), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('facts follow-up: an existing ledger with no fact line stays the one file for its subject', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, '无事实行书')
+    writeChapters(root, 4)
+    // The file name is the subject's *slug*, not the subject: only the frontmatter says which
+    // subject this ledger belongs to, and the ledger holds no parseable fact line yet.
+    writeFile(root, 'facts/qingyin.md', '---\nsubject: char-qingyin\n---\n\n作者先写下的一句话，还没有事实行。\n')
+    await buildIndex(root)
+
+    const appended = await callTool('inkflow_facts_append', {
+      projectRoot: root,
+      subject: 'char-qingyin',
+      attribute: '境界',
+      value: '练气',
+      since: 'ch-1',
+    })
+    assert.equal(appended.ok, true, `append must land: ${JSON.stringify(appended.error ?? null)}`)
+    assert.equal(appended.file, 'facts/qingyin.md', 'it appends to the existing ledger, not a second file')
+    assert.equal(existsSync(join(root, 'facts', 'char-qingyin.md')), false, 'no second ledger for one subject')
+
+    const text = readFileSync(join(root, 'facts', 'qingyin.md'), 'utf8')
+    assert.ok(text.includes('作者先写下的一句话'), 'the author’s prose is still there')
+    assert.ok(text.includes('- attribute: 境界 | value: 练气 | since: ch-1 | source: manual'))
+    const snapshot = await callTool('inkflow_facts_snapshot', { projectRoot: root, chapterId: 'ch-2' })
+    assert.deepEqual(snapshot.facts.map((fact) => fact.value), ['练气'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('facts follow-up: appending keeps the author’s BOM and CRLF instead of restyling the file', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, 'CRLF书')
+    writeChapters(root, 4)
+    const original =
+      '\uFEFF---\r\nsubject: char-a\r\n---\r\n\r\n- attribute: 境界 | value: 筑基 | since: ch-1 | until: ch-3\r\n'
+    writeFile(root, 'facts/char-a.md', original)
+    await buildIndex(root)
+
+    const appended = await callTool('inkflow_facts_append', {
+      projectRoot: root,
+      subject: 'char-a',
+      attribute: '境界',
+      value: '金丹',
+      since: 'ch-3',
+    })
+    assert.equal(appended.ok, true, `append must land: ${JSON.stringify(appended.error ?? null)}`)
+    const text = readFileSync(join(root, 'facts', 'char-a.md'), 'utf8')
+    assert.ok(text.startsWith(original), 'every existing byte — BOM and CRLF included — is kept')
+    // The appended line follows the file's own ending: a "one line append" must not show up
+    // as a diff of every line (rework of PR #124).
+    assert.equal(text.slice(original.length), '- attribute: 境界 | value: 金丹 | since: ch-3 | source: manual\r\n')
+    assert.equal(text.replace(/\r\n/gu, '').includes('\n'), false, 'no LF was introduced into a CRLF file')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

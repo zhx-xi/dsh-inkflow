@@ -202,6 +202,14 @@ function pushInto(map: Map<string, string[]>, key: string, value: string): void 
  *
  * An alias that only repeats the entity's own name (I-03 allows it) is not a
  * second way to be mentioned — one `name` row already covers it.
+ *
+ * **`kind === 'facts'` is skipped on purpose** (rework of PR #124, data-model §5 I-04). A
+ * ledger entry has no name of its own: its `title` is the *subject's* display name, so
+ * keeping it in the automaton counted every 清音 in the manuscript twice — once for
+ * `characters:char-qingyin`, once for `facts:facts/char-qingyin.md` — and an impact report
+ * or a rename would then revisit the same prose for a row that does not name anything
+ * itself. The subject entity already covers that text; the ledger is reached through
+ * `entities` and the ledger tools, which is what actually reads it.
  */
 function indexEntities(entities: readonly DomainEntityRef[]): EntityScanIndex {
   const patterns: MentionPattern[] = []
@@ -210,6 +218,9 @@ function indexEntities(entities: readonly DomainEntityRef[]): EntityScanIndex {
   const byId = new Map<string, string[]>()
 
   for (const entity of entities) {
+    // A fact row's "name" is its subject's name: scanning it would double-count the very
+    // occurrences the subject entity already reports.
+    if (entity.kind === 'facts') continue
     const key = entityKey(entity)
     pushInto(byId, entity.id, key)
     pushInto(byId, key, key)
@@ -267,11 +278,13 @@ function compareRows(left: MentionRow, right: MentionRow): number {
  * Pure: no filesystem, no database, no clock — which is what lets the DoD figure
  * be measured directly in a test rather than inferred from a timed rebuild.
  *
- * Entities include every kind (X-1): an outline node's title can legitimately be
- * named in prose too, and "does the manuscript still reference this" is a
- * question worth one uniform answer. The cost of including them is nothing — a
- * pattern added to the same automaton — and narrowing the set later is a filter
- * on `entities`, not a change here.
+ * Entities include nearly every kind (X-1): an outline node's title can legitimately be
+ * named in prose too, and "does the manuscript still reference this" is a question worth one
+ * uniform answer. The cost of including them is nothing — a pattern added to the same
+ * automaton — and narrowing the set later is a filter on `entities`, not a change here.
+ * `facts` is the one exception, and it is not a narrowing of convenience: a ledger's `title`
+ * is its subject's display name, so scanning it would report the same occurrence under two
+ * entity keys (see `indexEntities`).
  */
 export function scanMentions(
   chapters: readonly MentionChapter[],

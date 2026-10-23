@@ -7,8 +7,9 @@
  *
  * Before this module `facts/` was one of the two content directories with no owner: the
  * index only ran the generic frontmatter pass over it, so a ledger produced no entity, no
- * row and no cross-chapter answer. It now publishes one entity per subject (一主体一实体)
- * and the rows the snapshot is built from.
+ * row and no cross-chapter answer. It now publishes one entity per ledger **file** (id = the
+ * file path; the subject is a reference to another entity, data-model §4.1) and the rows the
+ * snapshot is built from.
  *
  * The format and the rules live in `facts-line.ts` (parse/render pair) and `facts-plan.ts`
  * (file parse, interval judgement, snapshot) so the write path applies the identical set to

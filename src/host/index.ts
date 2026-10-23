@@ -550,6 +550,6 @@ export {
   unresolvedChapterIds,
 } from './domains/facts-plan.js'
 export type { ChapterSeq, FactConflict, FactRow, ParsedFacts } from './domains/facts-plan.js'
-export { CHAPTER_INDEX_LIMIT, chapterIndex, readFactsRows, seqOfChapters } from './domains/facts-query.js'
+export { chapterIndex, readFactsRows, seqOfChapters } from './domains/facts-query.js'
 export type { ChapterIndex } from './domains/facts-query.js'
 export { MAX_SEGMENT_FACTS, factsSegment } from './domains/facts-prompt.js'

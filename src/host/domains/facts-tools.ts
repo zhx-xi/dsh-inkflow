@@ -59,7 +59,7 @@ import {
 } from './tool-support.js'
 import type { Json } from './tool-support.js'
 import { applyCandidate } from './types.js'
-import type { DomainToolDeps, DomainWriteView } from './types.js'
+import type { DomainEntityRef, DomainToolDeps, DomainWriteView } from './types.js'
 
 /**
  * The caller-supplied write baseline (issue #5) — same shape `tools.ts` exposes on the
@@ -132,6 +132,44 @@ function readProjectText(root: string, relativePath: string): string | undefined
   } catch {
     return undefined
   }
+}
+
+/**
+ * The ledger that already speaks for `subject`, if the book has one.
+ *
+ * Two sources, in this order, because each knows something the other does not:
+ *
+ *   1. the fact **rows** — the direct answer whenever the file holds at least one parseable
+ *      line (`row.subject` is the parsed frontmatter subject, so a ledger whose file name
+ *      differs from its subject is found too);
+ *   2. the **projection** — `facts/<slug>.md` publishes one entity even when the file has no
+ *      fact line at all (an empty or prose-only ledger is still a known ledger). Using the
+ *      rows alone made `inkflow_facts_append` create a *second* file for a subject whose
+ *      ledger simply held no parseable line yet (rework of PR #124): the slug was derived
+ *      from the subject, found nothing at that path, and wrote a new page next to the
+ *      author's.
+ *
+ * A candidate file's subject can only be read from the file — the entity id is the path
+ * (data-model §4.1) and the projection carries no subject column — so this re-reads the
+ * book's ledgers. That cost is paid once per append, on small files, and only until the
+ * first match; the alternative (a subject column) would be a second truth about the
+ * ledger's identity.
+ */
+function ledgerPathFor(
+  root: string,
+  scanned: { readonly entities: readonly DomainEntityRef[] },
+  rows: readonly FactRow[],
+  subject: string,
+): string | undefined {
+  const known = rows.find((row) => row.subject === subject)
+  if (known !== undefined) return known.path
+  for (const entity of scanned.entities) {
+    if (entity.kind !== 'facts') continue
+    const text = readProjectText(root, entity.path)
+    if (text === undefined) continue
+    if (parseFactsFile(entity.path, text).subject === subject) return entity.path
+  }
+  return undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +291,7 @@ function factsAppendTool(deps: DomainToolDeps): ToolDefinition {
 
         const scanned = scanProject(root)
         const rows = rowsOf<FactRow>(scanned, FACTS_TABLE)
-        const existingLedger = rows.find((row) => row.subject === subject)
+        const existingLedgerPath = ledgerPathFor(root, scanned, rows, subject)
         const requestedSlug = optionalString(a['file'])
         const slug = requestedSlug !== undefined ? slugify(requestedSlug.replace(/\.md$/u, '')) : undefined
         if (requestedSlug !== undefined && (slug === undefined || !isPortableSlug(slug))) {
@@ -263,7 +301,7 @@ function factsAppendTool(deps: DomainToolDeps): ToolDefinition {
             error: { code: 'SLUG_INVALID', message: `"${requestedSlug}" is not a portable file name` },
           }
         }
-        const path = slug === undefined ? (existingLedger?.path ?? `facts/${slugify(subject)}.md`) : `facts/${slug}.md`
+        const path = slug === undefined ? (existingLedgerPath ?? `facts/${slugify(subject)}.md`) : `facts/${slug}.md`
         if (!isPortableSlug(path.slice('facts/'.length).replace(/\.md$/u, ''))) {
           return {
             ok: false,
@@ -343,13 +381,19 @@ function factsAppendTool(deps: DomainToolDeps): ToolDefinition {
           }
         }
 
+        // The author's own endings are kept: a one-line append must not restyle the whole
+        // ledger. Writing the joined text through `normalizeText` (BOM stripped, CRLF → LF)
+        // rewrote every line of a file the author had saved on Windows — the tool said "never
+        // rewrites the rest of the file" and did exactly that (rework of PR #124). The
+        // appended line follows the file's ending, so a CRLF ledger stays CRLF throughout.
+        const eol = existingText !== undefined && existingText.includes('\r\n') ? '\r\n' : '\n'
         const head =
           blank || existingText === undefined
             ? `---\n${frontmatterLine('subject', subject)}\n---\n\n`
             : existingText.endsWith('\n')
               ? existingText
-              : `${existingText}\n`
-        const content = `${head}${line}\n`
+              : `${existingText}${eol}`
+        const content = `${head}${line}${eol}`
 
         // X-4, in order: parse the candidate, fold it into the post-write view, judge it
         // with the same rules a rebuild runs, and only then write.
@@ -412,7 +456,9 @@ function factsAppendTool(deps: DomainToolDeps): ToolDefinition {
           }
         }
 
-        const written = writeTextAtomic(root, path, content)
+        // `verbatim`: the content above is already the exact bytes the file must end up with
+        // (the author's BOM/CRLF included), so the writer must not normalise it a second time.
+        const written = writeTextAtomic(root, path, content, { verbatim: true })
         if (!written.ok) return { ok: false, root, path, error: written.error }
 
         let indexRebuilt = false

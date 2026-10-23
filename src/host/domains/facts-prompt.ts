@@ -19,6 +19,23 @@
  *
  * Degradation: no chapter, no index, no order, no facts → `undefined`, which renders no
  * segment at all (an empty heading would cost budget and say nothing).
+ *
+ * ## Why the body is packed line by line (rework of PR #124)
+ *
+ * A count cap and a character cap are not interchangeable, and the first version applied
+ * both as if they were: it took twelve facts, joined them, and let the seam clip the result
+ * to 15% of the budget. At the default 1200-token budget that is 180 characters — four
+ * lines — so the header announced "展开前 12 条" over a block of four, the fifth line was cut
+ * in the middle of a value, and at a 120-token budget the whole segment degenerated to
+ * `### 账本事实（截至第 …` and never reached the trim ladder (the block was already within
+ * budget). Both answers are worse than no segment: a model reading a half line takes it as
+ * a value.
+ *
+ * So the body is now assembled from **whole lines only**, in the one stable order the
+ * snapshot promises, until `capChars` (`ExtraSegmentInput`) is reached; the header counts
+ * what was actually rendered rather than how many facts exist; and if `header + 1 line`
+ * does not fit, the segment is not produced at all (an empty heading says nothing a model
+ * can use, and the remaining budget is better spent on the tail).
  */
 
 import type { ExtraSegmentSpec } from '../writing-context.js'
@@ -26,11 +43,12 @@ import { factsSnapshot } from './facts-plan.js'
 import { chapterIndex, readFactsRows, seqOfChapters } from './facts-query.js'
 
 /**
- * How many facts the segment carries.
+ * How many facts the segment carries, at most.
  *
- * Twelve is the point where the segment still fits its 15% share of the default budget: one
- * line per fact, and a book whose ledger is longer than this is describing a chapter that the
- * model should query with `inkflow_facts_snapshot` instead of being handed everything.
+ * Twelve is a readability bound, not the budget (the budget is `capChars`): a list longer
+ * than this is describing a chapter the model should ask `inkflow_facts_snapshot` about
+ * instead of being handed everything. The header reports the number **rendered**, so the two
+ * caps can never disagree in the text.
  */
 export const MAX_SEGMENT_FACTS = 12
 
@@ -39,7 +57,7 @@ export const factsSegment: ExtraSegmentSpec = {
   label: '账本事实',
   // Roadmap X-13: `facts` may occupy at most 15% of the block's token budget.
   capRatio: 0.15,
-  build({ root, current }): string | undefined {
+  build({ root, current, capChars }): string | undefined {
     if (current === undefined) return undefined
 
     const chapters = chapterIndex(root)
@@ -57,15 +75,28 @@ export const factsSegment: ExtraSegmentSpec = {
     const facts = factsSnapshot(rows, seqOfChapters(chapters), atSeq)
     if (facts.length === 0) return undefined
 
-    const shown = facts.slice(0, MAX_SEGMENT_FACTS)
-    const header =
-      facts.length > shown.length
-        ? `### 账本事实（截至第 ${String(atSeq)} 章 · 共 ${String(facts.length)} 条，展开前 ${String(shown.length)} 条）`
-        : `### 账本事实（截至第 ${String(atSeq)} 章 · ${String(facts.length)} 条）`
-    const lines = shown.map((fact) => {
+    const total = facts.length
+    const lines = facts.slice(0, Math.min(total, MAX_SEGMENT_FACTS)).map((fact) => {
       const since = fact.since === undefined ? '' : `（自 ${fact.since}）`
       return `- ${fact.subject} · ${fact.attribute}：${fact.value}${since}`
     })
-    return [header, ...lines].join('\n')
+
+    // Two header forms: the truncated one carries the count it rendered, and is therefore
+    // longer, so it is used as soon as one line has to be left out.
+    const header = (shown: number): string =>
+      shown < total
+        ? `### 账本事实（截至第 ${String(atSeq)} 章 · 共 ${String(total)} 条，展开前 ${String(shown)} 条）`
+        : `### 账本事实（截至第 ${String(atSeq)} 章 · ${String(total)} 条）`
+
+    let best: string | undefined
+    for (let shown = 1; shown <= lines.length; shown += 1) {
+      const candidate = [header(shown), ...lines.slice(0, shown)].join('\n')
+      if (candidate.length > capChars) break
+      best = candidate
+    }
+    // `header + 1 line` does not fit: say nothing rather than emit a heading that promises
+    // content it does not have (and that the budget ladder cannot trim, because the block is
+    // already short).
+    return best
   },
 }

@@ -21,7 +21,6 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from '../conventions.js'
-import { listChapters } from '../indexer.js'
 import { DEFAULT_FACT_SOURCE } from './facts-line.js'
 import { FACTS_TABLE } from './facts-plan.js'
 import type { ChapterSeq, FactRow } from './facts-plan.js'
@@ -44,26 +43,51 @@ export interface ChapterIndex {
 }
 
 /**
- * `listChapters` caps at 500 rows (its own contract). A book longer than that has its tail
- * chapters unresolvable here, which makes a fact naming one *not judged* rather than
- * wrongly judged — the same visible gap `unresolvedChapterIds` reports.
+ * Chapter id → position for the **whole** book, read straight out of `chapters`.
+ *
+ * Why not `listChapters()` (which the first version of this module used): that
+ * function caps at 500 rows by contract, because it answers a *page* for a person.
+ * Chapter **order** is not a page — the rebuild judges every fact of the book against
+ * `entities.orderIndex`, which covers all chapters. A 500-row read therefore made the
+ * two sides disagree about the same book: past chapter 500 a fact's `since` resolved
+ * to nothing here, so `inkflow_facts_list` reported zero conflicts where the rebuild
+ * reported `FACT_CONFLICT`, the snapshot silently answered with the wrong last chapter
+ * (and `CHAPTER_NOT_FOUND` for a real one: `ch-520`), and the writing context injected
+ * no facts at all. One query, no LIMIT, no cap: this is the single chapter order both
+ * sides use.
+ *
+ * `undefined` only when the index is absent or was built by another schema — the same
+ * "cannot judge" answer `readFactsRows` gives, never an empty book.
  */
-export const CHAPTER_INDEX_LIMIT = 500
-
 export function chapterIndex(root: string): ChapterIndex | undefined {
-  const chapters = listChapters(root, CHAPTER_INDEX_LIMIT)
-  if (chapters === undefined) return undefined
-  const byId = new Map<string, number>()
-  const byPath = new Map<string, { readonly id: string; readonly seq?: number }>()
-  let maxSeq: number | undefined
-  for (const chapter of chapters) {
-    if (chapter.seq !== null) {
-      byId.set(chapter.id, chapter.seq)
-      maxSeq = maxSeq === undefined ? chapter.seq : Math.max(maxSeq, chapter.seq)
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    // `seq IS NULL` last and `path` as the tie-break: the two chapters of an unpaged book
+    // still come out in one deterministic order, so "the current chapter" and the
+    // snapshot's ordering never depend on row insertion order.
+    const rows = db
+      .prepare('SELECT id, seq, path FROM chapters ORDER BY seq IS NULL, seq, path')
+      .all() as unknown as Array<Record<string, unknown>>
+    const byId = new Map<string, number>()
+    const byPath = new Map<string, { readonly id: string; readonly seq?: number }>()
+    let maxSeq: number | undefined
+    for (const row of rows) {
+      const id = String(row['id'])
+      const path = String(row['path'])
+      const seq = typeof row['seq'] === 'number' ? row['seq'] : undefined
+      if (seq !== undefined) {
+        byId.set(id, seq)
+        maxSeq = maxSeq === undefined ? seq : Math.max(maxSeq, seq)
+      }
+      byPath.set(path, seq === undefined ? { id } : { id, seq })
     }
-    byPath.set(chapter.path, { id: chapter.id, ...(chapter.seq === null ? {} : { seq: chapter.seq }) })
+    return { byId, byPath, ...(maxSeq === undefined ? {} : { maxSeq }), placed: byId.size }
+  } catch {
+    return undefined
+  } finally {
+    db.close()
   }
-  return { byId, byPath, ...(maxSeq === undefined ? {} : { maxSeq }), placed: byId.size }
 }
 
 export function seqOfChapters(chapters: ChapterIndex): ChapterSeq {

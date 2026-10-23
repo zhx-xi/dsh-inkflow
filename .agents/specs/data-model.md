@@ -161,7 +161,8 @@
 | `conflictsWith` | string[] | — | **仅索引列**，不写文件：由校验算出的冲突事实行锚 |
 
 - 一主体一文件、一文件多事实；跨章校验的输入是同一 `subject + attribute` 的多个 `since` 区段。
-- 值里要含字面 `|` 时写 `\|`；未知键**保留不报错**（与 frontmatter 未知字段同策略）。
+- `subject` 是**引用字段**（指向被描述的主体 id），不是本文件的实体 id：本文件的实体 id 是路径（§4.1）。缺 `subject` 时按文件名回退，并在重建时以 `FRONTMATTER_ISSUE`（warning，不阻断）提示——否则这些事实会登记到一个没人选的 subject 名下。
+- 值里要含字面 `|` 时写 `\|`；未知键**保留不报错**（与 frontmatter 未知字段同策略），包括**空值**未知键（`备注:`）——它必须能被原样渲染回去，否则「解析→渲染→再解析」会丢掉作者写的字段。
 - 不可解析的行报 `FACT_LINE_MALFORMED` 并带行锚 `path#L<n>`，不阻断整文件。
 - 为什么不用 frontmatter 块数组或 Markdown 表格：见 ADR-0013 的备选表（嵌套映射读回成一个字符串；表格与中文竖线冲突且 diff 不可读）。
 
@@ -216,6 +217,8 @@
 **表归谁建（X-2）**：`chapters`/`chapters_fts`、`characters`、`world_entries`、`outline_nodes` 由各自的域模块提供 DDL 与写入（[`src/host/domains/`](../../src/host/domains/)）；`meta`、`files`、`library_files`、`validation_issues`、`entities`、`entities_fts` 由索引构建与接缝层提供。没有一张表在两处创建。
 
 **`entities` 主键是复合的 `(kind, id)`，不是单列 `id`**：不同内容目录是不同表、各有自己的主键，所以两个 kind 可以合法地共用一个 id —— 这种冲突由 I-04 报 `DUPLICATE_ID`，**两行都保留**（`(kind, id)` 足以表示）。单列主键会把这种既有合法状态判成不可表示。
+
+**`entities` 的 `id` 取自何处**（按 kind）：章/角色/世界观/大纲/关系/时间线取文件 frontmatter 的 `id`（未写时按各域约定从文件名派生）；**`facts` 取文件路径** `facts/<subject>.md`。理由见 §5 I-04：账本条目没有自己的名字，`title` 就是主体的显示名，把 `subject` 当 `id` 会与主体实体撞号并让同一处正文进两条 `entity_mentions`。`subject` 因此是 §3.5 的**引用字段**，不参与 `entities` 主键。
 
 **`files` 是新鲜度的对拍基线**（`checkIndexFreshness`，契约见 [conventions.md §4.0](conventions.md)）：
 
@@ -274,9 +277,11 @@
 | I-20 | 实体 `id` 与文件路径可以不一致（改名时旧 id 被钉住，[ADR-0014](../adrs/0014-entity-id-pinning.md)）；唯一性仍按 `(kind, id)` 判 | 放行；体检列为提示 | `ID_PATH_DIVERGED`（info，不阻断） |
 | I-21 | 伏笔状态机只允许 `planted → advanced → resolved`，以及任一未终态 → `overdue`；`resolved` 是终态 | 拒 | `FORESHADOW_TRANSITION_INVALID`（#31） |
 | I-22 | 账本每行必须可解析为一条事实：`attribute` + `value` 必填，段形如 `键: 值` 且以 `\|` 分隔，值内含字面 `\|` 时写 `\|`；未知键保留不报错 | 不阻断，报行锚 `path#L<n>`（1-based） | `FACT_LINE_MALFORMED` |
-| I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同（`since` 含、`until` 不含；缺省 `until` = 至今成立）。区间按**章序**（`chapters.seq`）比较，不按 id 字典序；章序解析不出的边界不参与判定 | 拒 | `FACT_CONFLICT` |
+| I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同（`since` 含、`until` 不含；缺省 `until` = 至今成立）。区间按**章序**（`chapters.seq`）比较，不按 id 字典序；章序解析不出的边界不参与判定。**空区间不算区间**：`until <= since`（含 `until == since` 的 `[c,c)` 与写反的 `until < since`）永不成立，既不进快照也不参与冲突配对——把它当跨段比对会诬告一条永不在生效的事实 | 拒 | `FACT_CONFLICT` |
 
 > I-21 的编号在本里程碑内预留给 #31（避免与 I-22 / I-23 撞号）；I-22 / I-23 由账本域 [`domains/facts.ts`](../../src/host/domains/facts.ts) 产出；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
+
+> **I-04 与账本主体**：`facts/<subject>.md` 的 `subject` **有意复用**所描述主体的 id（`characters/qingyin.md` 的 `id: char-qingyin` + `facts/char-qingyin.md` 的 `subject: char-qingyin` 是标准写法），**不算违规**：账本实体不作为 id 发布——它在 `entities` 里的 id 是**文件路径**（§4.1），`subject` 只是引用字段；`entity_mentions` 也**不扫 `facts`**（账本条目没有自己的名字，`title` 就是主体名，扫了会在同一处正文双计）。
 
 **仅重建期诊断**（不是不变量，写入侧放行）：`RELATION_FIELD_DEPRECATED`——关系文件里出现已废弃字段（如 `direction`），重建时提示、写入时按新字段名归一，不阻断。
 

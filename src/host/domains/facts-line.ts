@@ -187,6 +187,13 @@ function optionalKey(key: FactKnownKey, known: ReadonlyMap<string, string>): Rec
  * reproducibility criterion depends on. A missing optional key is omitted rather than
  * written empty: `until:` with nothing after it reads back as "no until", the same
  * meaning, but keeping it out makes the diff of an edit a single line.
+ *
+ * Unknown keys are a different case (rework of PR #124): their **empty value is data**.
+ * `- attribute: 境界 | value: 金丹 | 备注:` parses to `extra['备注'] === ''`, and dropping
+ * that on render broke the pair's only promise — `parse(render(parse(x)))` came back without
+ * the key the file has, so anything that rewrites a ledger line silently ate a field the
+ * author (or a newer version) wrote. The value is rendered as-is (`备注: `), which parses
+ * back to the same empty string.
  */
 export function renderFactLine(fact: FactLine): string {
   const segments: string[] = [
@@ -205,9 +212,10 @@ export function renderFactLine(fact: FactLine): string {
     segments.push(`${key}: ${escapePipe(trimmed)}`)
   }
   for (const [key, value] of Object.entries(fact.extra)) {
-    const trimmed = trimmedOrUndefined(value)
-    if (trimmed === undefined) continue
-    segments.push(`${escapePipe(key)}: ${escapePipe(trimmed)}`)
+    // A blank key can never come from `parseFactLine` (it refuses one), so this only guards a
+    // hand-built object — and rendering it would produce a line that cannot parse back.
+    if (key.trim() === '') continue
+    segments.push(`${escapePipe(key)}: ${escapePipe(value)}`)
   }
   return `- ${segments.join(' | ')}`
 }
