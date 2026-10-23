@@ -38,6 +38,7 @@ import type { InternalResult } from './internal.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import { EditorPane } from './editor.js'
+import { ForeshadowView } from './foreshadow.js'
 import type { VolumeOption } from './editor.js'
 import { LibraryView } from './library.js'
 import { HubIcon, HubView } from './hub.js'
@@ -397,6 +398,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // editor and the problem panel. It talks to its own three routes, so this tab
     // costs the chapter tree nothing.
     library: () => <LibraryView sessionId={sessionId} />,
+    // Issue #31: the read-only foreshadow board (超期 / 未回收 / 按角色).
+    foreshadowing: () => <ForeshadowView sessionId={sessionId} />,
   }
 
   /**

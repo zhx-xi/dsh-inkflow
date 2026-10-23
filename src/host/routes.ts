@@ -69,6 +69,7 @@ import {
   SESSION_ID_PARAM,
   buildChapter,
   buildChapters,
+  buildForeshadowBoard,
   buildLibrary,
   buildLibraryItem,
   buildLibraryIssues,
@@ -243,6 +244,16 @@ const ROUTES: readonly InternalRoute[] = [
     pattern: /^\/library\/issues$/,
     methods: ['GET'],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildLibraryIssues(target, version)) }),
+  },
+  {
+    // The foreshadow board (issue #31, data-model §3.2): read-only, three groupings
+    // of the same entries (open / late / by linked entity). Lateness is computed by
+    // the Host against the latest chapter — the panel never re-derives it, so there
+    // is exactly one definition of "超期" in the product.
+    name: 'foreshadow',
+    pattern: /^\/foreshadow$/,
+    methods: ['GET'],
+    handle: async ({ target, version }) => ({ status: 200, body: ok(await buildForeshadowBoard(target, version)) }),
   },
 ]
 

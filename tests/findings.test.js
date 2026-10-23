@@ -26,17 +26,20 @@ const repoRoot = join(here, '..')
 /**
  * Catalogue entries that **no host code emits today**, each for a stated reason:
  *
- *   * `FORESHADOW_TRANSITION_INVALID` — invariant I-21, reserved for #31;
  *   * `ENTITIES_DRIFT` — invariant I-15, which #23 made *unrepresentable* instead of
  *     checked (rows and projection are written from one scan in one transaction), so
  *     nothing can emit it. The name stays in the vocabulary so #33's report and any
  *     future checker can use it without re-adding the code.
  *
+ * Codes that left this list with their own domain: `FORESHADOW_TRANSITION_INVALID`
+ * (#31, emitted from two nets — the write path's transition check and the rebuild's
+ * self-contradiction check) and `FACT_LINE_MALFORMED` / `FACT_CONFLICT` (#32). The last
+ * assertion below re-proves that each of them is reachable.
+ *
  * A code listed here but absent from the catalogue is an error, not an exemption.
  */
 const RESERVED_CODES = new Set([
   'ENTITIES_DRIFT',
-  'FORESHADOW_TRANSITION_INVALID',
   // I-20, emitted by the impact/rename work (#34): nothing diverges until a rename
   // pins an id, and renames do not exist yet.
   'ID_PATH_DIVERGED',
@@ -69,6 +72,10 @@ const WRITE_SIDE_CODES = new Set([
   'FACT_SOURCE_INVALID',
   'FACT_SUBJECT_MISMATCH',
   'FACT_VALUE_INVALID',
+  // #31: the foreshadow write path's argument rejections and its confirm gate.
+  'FORESHADOW_FIELD_INVALID',
+  'FORESHADOW_STATUS_INVALID',
+  'FORESHADOW_UPSERT_REQUIRES_CONFIRMATION',
   'KEYWORD_INVALID',
   'ORDER_INVALID',
   'OUTLINE_KIND_UNKNOWN',

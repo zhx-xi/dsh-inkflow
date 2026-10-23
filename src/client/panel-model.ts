@@ -589,15 +589,16 @@ export interface PanelTab {
 /**
  * The tabs the workbench shows.
  *
- * Two pages exist in this build: 章节 (the chapter tree + editor, issue #19) and
- * 设定库 (issue #30 — the eight-kind tree, read-only detail and the problem
- * panel). 大纲 / 伏笔 stay DISABLED with their release note: a button that opens
- * nothing is worse than a disabled one that says when it arrives.
+ * Three pages exist in this build: 章节 (the chapter tree + editor, issue #19),
+ * 设定库 (issue #30 — the eight-kind tree, read-only detail and the problem panel)
+ * and 伏笔 (issue #31 — the read-only board: late / open / by linked entity).
+ * 大纲 stays DISABLED with its release note: a button that opens nothing is worse
+ * than a disabled one that says when it arrives.
  */
 export const PANEL_TABS: PanelTab[] = [
   { id: 'chapters', label: '章节', available: true },
   { id: 'library', label: '设定库', available: true },
   { id: 'outline', label: '大纲', available: false, note: '0.2.0 起' },
-  { id: 'foreshadowing', label: '伏笔', available: false, note: '0.2.0 起' },
+  { id: 'foreshadowing', label: '伏笔', available: true },
 ]
 

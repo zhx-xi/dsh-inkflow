@@ -152,6 +152,10 @@ export const FILE_SCHEMA_VERSION = 1
  * 1-based `line` so a finding can point at it and with `since` / `until` so "which facts
  * hold at chapter N" is a range query instead of a re-parse. `facts/` stops being a
  * frontmatter-only directory: it publishes one entity per subject.
+ * v8 (#31): the `foreshadowings` table — one row per `foreshadowing/<slug>.md` with the
+ * state machine's field and its deadline inputs, so `foreshadowing/` stops being a
+ * frontmatter-only directory. `overdue` is NOT a column: it is computed per read from
+ * the chapter being asked about (data-model §3.2.2), and a stored mark would go stale.
  *
  * **Bump this for every column/table a domain adds, even when the file mtime does
  * not move** (AGENTS.md §8 trap 5): a stale `user_version` makes `ensureIndex()` call
@@ -161,7 +165,7 @@ export const FILE_SCHEMA_VERSION = 1
  * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file is
  * discarded.
  */
-export const INDEX_SCHEMA_VERSION = 7
+export const INDEX_SCHEMA_VERSION = 8
 
 export const CHAPTER_STATUSES = ['draft', 'revised', 'final'] as const
 export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const
