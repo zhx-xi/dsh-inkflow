@@ -154,10 +154,10 @@ const HINTS: Readonly<Record<string, string>> = {
   VOLUME_DIR_MISMATCH: '把卷目录名改成 <volumeId>-<slug>，并同步卷大纲与 volumeId',
   CHAPTER_FILE_MISSING: 'catalog 指向的章文件不在了：从回收站恢复，或删掉这条 catalog 项',
   CHAPTER_NOT_MARKDOWN: '把该文件改成 .md，或移出 chapters/（catalog 的 index.json 除外）',
-  // Codes the domains also emit from a *scan* (so a hand-written file can raise them) but
-  // which `findings.test.js` files under `WRITE_SIDE_CODES`, where they are argument
-  // rejections. See SCAN_ONLY_CODES: the report prints them (dropping a real problem would
-  // be worse than printing a code the catalogue has not adopted yet) with a hint of their own.
+  // Codes a domain emits from **both** a scan and a write plan: a hand-written file raises
+  // them, and a bad tool argument reuses the same code. They are in `FINDING_CODES`
+  // (group structure, `fixable: false`) since #33 surfaced the classification gap, so the
+  // report has a real hint for each instead of printing a bare code.
   CHARACTER_NAME_REQUIRED: '给角色卡补 name（文件名只是位置，不能当名字用）',
   CHARACTER_FIRST_APPEARANCE_INVALID: '把 firstAppearance 改成正整数章号，或删掉这个字段',
   OUTLINE_KIND_UNKNOWN: '给这份大纲补 kind: overall / volume / chapter',
@@ -165,28 +165,6 @@ const HINTS: Readonly<Record<string, string>> = {
   PARTICIPANT_INVALID: '时间线事件的 participants 只能写角色 id，逗号或空值会被拒',
 }
 
-/**
- * Codes that reach the report **without** being in `FINDING_CODES`.
- *
- * One existing gap, surfaced rather than papered over: these are emitted by a domain's
- * `scan()`/`validate()` (so a hand-written file really does raise them) while
- * `tests/findings.test.js` classifies them under `WRITE_SIDE_CODES` — the list of "bad
- * request" codes — because they are *also* used as tool-argument rejections. The catalogue
- * therefore cannot represent them, and `findingCode()` returns `undefined` for each.
- *
- * The audit prints them anyway: a book with a name-less character card is not clean, and a
- * report that silently dropped the finding would be worse than one printing a code the
- * catalogue has not adopted. Filed as a defect for the Lead (issue #33's report, not its
- * fix): moving them into `FINDING_CODES` is a decision about the write/tool vocabulary that
- * belongs to whoever owns `character.ts` / `outline-model.ts` / `world-plan.ts`.
- */
-export const SCAN_ONLY_CODES: readonly string[] = [
-  'CHARACTER_FIRST_APPEARANCE_INVALID',
-  'CHARACTER_NAME_REQUIRED',
-  'KEYWORD_INVALID',
-  'OUTLINE_KIND_UNKNOWN',
-  'PARTICIPANT_INVALID',
-]
 
 /** Report severity for a code. An unknown code is a warning: never silently informational. */
 export function severityOf(code: string): FindingSeverity {

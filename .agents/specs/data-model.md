@@ -338,6 +338,8 @@
 
 **仅重建期诊断**（不是不变量，写入侧放行）：`RELATION_FIELD_DEPRECATED`——关系文件里出现已废弃字段（如 `direction`），重建时提示、写入时按新字段名归一，不阻断。
 
+**既是校验码、又是写侧拒绝码**（手写文件能触发，所以进 `FINDING_CODES` 与体检报告；工具参数不合法时也复用同一个码）：`CHARACTER_NAME_REQUIRED`、`CHARACTER_FIRST_APPEARANCE_INVALID`、`OUTLINE_KIND_UNKNOWN`、`KEYWORD_INVALID`、`PARTICIPANT_INVALID`。它们都 `fixable: false`——修法要作者判断（补什么名字、写哪个章号），不该由一键修复猜。
+
 **仅体检期诊断**（不是不变量，写入侧与重建侧都不报，只出现在一致性体检报告里）：
 
 | code | 含义 | 判据与产出 |

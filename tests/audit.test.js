@@ -31,7 +31,6 @@ import { join, resolve } from 'node:path'
 
 import {
   FINDING_CODES,
-  SCAN_ONLY_CODES,
   apply,
   auditProject,
   auditReportName,
@@ -295,19 +294,15 @@ test('audit: every locator renders a usable address and every code has panel wor
   }
 })
 
-test('audit: every catalogue code carries a hint, and no code is both a finding and scan-only', () => {
+test('audit: every catalogue code carries a hint of its own', () => {
+  // The five codes a domain emits from both a scan and a write plan used to sit outside the
+  // catalogue (they reached the report through SCAN_ONLY_CODES). They are in FINDING_CODES
+  // now, so this loop covers them — and the "no code is both" clause it used to assert is
+  // gone with the table, because being both is exactly what they are.
   for (const entry of FINDING_CODES) {
     const hint = hintOf(entry.code)
     assert.ok(hint.trim() !== '', `${entry.code} has no hint`)
     assert.notEqual(hint, entry.code, `${entry.code} falls back to its own name`)
-  }
-  for (const code of SCAN_ONLY_CODES) {
-    assert.equal(
-      FINDING_CODES.some((entry) => entry.code === code),
-      false,
-      `${code} cannot be both a catalogue finding and scan-only`,
-    )
-    assert.notEqual(hintOf(code), code, `${code} needs a hint of its own`)
   }
 })
 

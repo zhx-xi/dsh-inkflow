@@ -623,7 +623,6 @@ export {
  */
 export {
   AUDIT_LIST_LIMIT,
-  SCAN_ONLY_CODES,
   auditProject,
   auditReportName,
   exportAuditReport,
