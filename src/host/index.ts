@@ -219,6 +219,13 @@ export { walkProjectFiles } from './indexer.js'
 export type { WalkedFile } from './indexer.js'
 
 /**
+ * The internal channel's request-body ceiling (#115). Exported so the tests state
+ * the number once: a save carries a whole chapter, and the old 64 KiB ceiling
+ * refused a ~20k-character chapter outright.
+ */
+export { MAX_INTERNAL_BODY_BYTES } from './internal.js'
+
+/**
  * Write-time compare-and-swap (issue #5): a writer may state the baseline it
  * expects, and a mismatch is the structured `FILE_CHANGED` error with zero
  * writes. Exported so a caller can hand a test (or the panel) the same

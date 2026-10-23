@@ -21,6 +21,7 @@
  * No IO, no React, no `@deepseek-ai/*` import (ADR-0008 D4/V7).
  */
 
+import { describeTooLarge } from './error-text.js'
 import type { InternalError, InternalResult } from './internal.js'
 
 /** The one kind whose rows are grouped by `category` — 地点 is a bucket, not a kind. */
@@ -648,6 +649,10 @@ export function describeLibraryError(error: InternalError | undefined): string {
 /** Message for a failed save: a 409 says the file moved, everything else is the Host's own text. */
 export function describeSaveError(error: InternalError | undefined): string {
   if (error === undefined) return '保存没有返回内容'
+  // Same reason as the chapter editor (issue 115): a refusal that carries a size
+  // must say the size, or the author only sees "保存失败" and no next step.
+  const tooLarge = describeTooLarge(error)
+  if (tooLarge !== null) return tooLarge
   if (error.code === 'FILE_CHANGED') {
     return '文件已被改动：磁盘上的内容已经不是这次加载的版本，所以这次没有写入任何字节。'
   }

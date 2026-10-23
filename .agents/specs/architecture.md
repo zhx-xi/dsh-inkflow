@@ -80,7 +80,7 @@
 3. socket 对端地址非空时必须 loopback → 否则 403 `forbidden-remote`。
 4. 方法**逐路由声明**（`ROUTES[].methods`）：读路由只有 GET，写路由是 POST/DELETE；未声明的动词 405 + `Allow` 头。
 5. 路径参数一律拒绝：`root`/`path`/`cwd`/`workspace`/`projectRoot` 出现在 query 或 body → 400 `ROOT_PARAM_NOT_ALLOWED`（`reason: 'unexpected-path-param'`），判定在路由匹配与任何文件 IO 之前。
-6. 请求体 ≤64 KiB（超限 413）且必须是 JSON 对象；未知路径 404。
+6. 请求体 ≤1 MiB（`MAX_INTERNAL_BODY_BYTES`，超限 413）。2026-10 由 64 KiB 提高：一次保存把整章正文当作**一个 JSON 字符串**提交，而 64 KiB 数的是序列化字节——一章 2 万汉字序列化后约 70 KB，长章因此根本存不进去（issue #115）。此外必须是 JSON 对象；未知路径 404。
 7. 响应 `Cache-Control: no-store` + `X-Content-Type-Options: nosniff`，信封 `{ok:true,value}` / `{ok:false,error:{code}}`，**不发任何 CORS 头**。
 8. **写路由**（`/chapters` POST、`/chapters/:id` POST/DELETE、`/chapters/:id/move` POST）：只 POST/DELETE + `Content-Type: application/json`（否则 415）+ **必须带 loopback `Origin`**（否则 403 `reason: 'origin-required'`）+ body 字段白名单（只接受 `sessionId` 与该路由声明的字段）+ `expected` 走 §5.5 CAS（不符 → 409 `FILE_CHANGED`，零写入）。业务只复用 `chapters.ts` 的六个操作，通道不自写文件。
 

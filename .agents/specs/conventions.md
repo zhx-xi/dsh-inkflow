@@ -545,14 +545,14 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 405 | `method-not-allowed` | 动词不在该路由声明的 `methods` 内（响带 `Allow`） |
 | 409 | `FILE_CHANGED` | **写路由**的 `expected` 与磁盘不符（§5.5）：附 `expected`/`current`/`changed[]`，**零写入**、缓存不重建 |
 | 409 | `CHAPTER_EXISTS` / `CHAPTER_AMBIGUOUS` / `SEQ_CONFLICT` / `TARGET_EXISTS` / `VOLUME_EXISTS` / `PROJECT_BUSY` | 写路由的目标已存在、id 歧义、序冲突、另一会话持写锁 |
-| 413 | `payload-too-large` | 请求体 > 64 KiB（`MAX_INTERNAL_BODY_BYTES`） |
+| 413 | `payload-too-large` | 请求体 > 1 MiB（`MAX_INTERNAL_BODY_BYTES`） |
 | 415 | `unsupported-media-type` | **写路由**的 `Content-Type` 不是 `application/json`（写路由一律带 JSON body，DELETE 也发 `{}`） |
 | 200 | `NO_SESSION_CONTEXT` | 缺 `sessionId`，或会话解析不到工作区：`ok:false` + `actions[]`，**零写盘** |
 | 200 | `NOT_AN_INKFLOW_PROJECT` / `PROJECT_NEEDS_REPAIR` / `PROJECT_NEEDS_NEWER_PLUGIN` | 解析到目录但四态门禁非 `usable`：附 `state`/`checks`/`missing`/`actions`/`readOnly`，**零写盘** |
 
 **会话来源**：Client 只传 `sessionId`（query `sessionId` 或 header `x-inkflow-session`）；Host 依次用 ①`workspaceRegistry.list()` 中 `sessionIds` 含该会话的 `Workspace.path` ②`workingDirectory.get(sessions.get(id))` ③`Session.header.cwd`；都失败 → `NO_SESSION_CONTEXT`。会话 id 的 `session-` 前缀两种写法都接受（宿主的 `workspace.json` 用 `session-<uuid>`，会话日志头用裸 `<uuid>`）。解析出的目录再 `findProjectRoot` 向上找书（与工具同一套语义）。
 
-**加固**（继承 [ADR-0004](../adrs/0004-loopback-http.md)）：`Host` 必须 loopback；`Origin` 存在时必须 loopback；socket 对端地址非空时必须 loopback；不发 CORS 头；`Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；请求体 ≤64 KiB 且必须是 JSON 对象。
+**加固**（继承 [ADR-0004](../adrs/0004-loopback-http.md)）：`Host` 必须 loopback；`Origin` 存在时必须 loopback；socket 对端地址非空时必须 loopback；不发 CORS 头；`Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；请求体 ≤1 MiB 且必须是 JSON 对象。
 
 **只读纪律（读路由）**：通道**不修复项目结构**、不写 `state.json`、不写任何真相文件。门禁以 `inspectProject(root, { recreateIndexDir: false })` 判定（关掉 `index/` 的自动放宽），卷章树走 `readCatalog` 的 `.md` 投影，索引只以 `readOnly` 打开（检索函数本身不建库），章节文件只读且必须落在 `chapters/` 内。
 
@@ -565,7 +565,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 1 | 方法只 POST/DELETE（读路由只有 GET） | 405 + `Allow` |
 | 2 | `Origin` **必须存在**且 loopback（读路由允许缺省） | 403 `forbidden-origin`（`reason: 'origin-required'`） |
 | 3 | `Content-Type: application/json`（DELETE 也发 `{}`） | 415 `unsupported-media-type` |
-| 4 | body 只接受 `sessionId` + 该路由声明的字段；体积 ≤64 KiB | 400 `UNEXPECTED_BODY_FIELD` / 413 `payload-too-large` |
+| 4 | body 只接受 `sessionId` + 该路由声明的字段；体积 ≤1 MiB | 400 `UNEXPECTED_BODY_FIELD` / 413 `payload-too-large` |
 
 - **业务实现只复用** [`chapters.ts`](../../src/host/chapters.ts) 的六个操作（`createVolume`/`renameVolume`/`createChapter`/`writeChapter`/`moveChapter`/`deleteChapter`），通道不自写文件、不改它们的语义；章级写路由只有四个。设定库条目不属于章域（没有卷/序/改名语义），它的唯一写实现是 [`library-write.ts`](../../src/host/library-write.ts)：`patchFrontmatter` 做行级改写、`io.ts` 做原子替换与写锁，通道本身不碰文件。
 - **CAS（§5.5）**：`expected` 原样透传；不符 → `409 FILE_CHANGED` + `expected`/`current`/`changed[]`，**零写入**（文件、catalog、索引都不动）。读路由 `/chapters/:id` 与 `/library/item` 回传的 `fingerprint` 就是下一次写的基线；写成功也回传新 `fingerprint`。设定库的写路由**要求**基线（缺 → `400 EXPECTED_REQUIRED`），它没有"不带 expected 覆盖写"这条路。
@@ -603,7 +603,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 1. `Host` loopback → 403 `forbidden-host`；`Origin` 存在时必须 loopback → 403 `forbidden-origin`；对端地址非空时必须 loopback → 403 `forbidden-remote`。
 2. 路径参数禁令（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`，**判定在路由匹配与任何文件 IO 之前**。`candidate` 不在禁令名单里，且只被 `plan` 接受：它是本通道唯一能携带路径的字段，名字固定为 `candidate`（不叫 `path`/`root`）。
 3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET；`/hub/plan`、`/hub/apply` 只有 POST）。
-4. 写路由（`plan`/`apply`）额外要求 **`Origin` 与 `Host` 同源（含端口）**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `forbidden-origin`（`reason: 'origin-required'` 或 `'origin-mismatch'`）；`Content-Type: application/json` → 415；体积 ≤64 KiB → 413；body 字段白名单（`plan` 只接受 `candidate`/`outsideRegistry`/`title`，`apply` 只接受 `planToken`/`confirm`/`title`）→ 400 `UNEXPECTED_BODY_FIELD`。
+4. 写路由（`plan`/`apply`）额外要求 **`Origin` 与 `Host` 同源（含端口）**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `forbidden-origin`（`reason: 'origin-required'` 或 `'origin-mismatch'`）；`Content-Type: application/json` → 415；体积 ≤1 MiB → 413；body 字段白名单（`plan` 只接受 `candidate`/`outsideRegistry`/`title`，`apply` 只接受 `planToken`/`confirm`/`title`）→ 400 `UNEXPECTED_BODY_FIELD`。
 5. 不解析会话：缺 `sessionId` **不是**错误，`NO_SESSION_CONTEXT` 在 hub 上**不适用**。
 
 **向导两条写路由的契约（plan → apply）**

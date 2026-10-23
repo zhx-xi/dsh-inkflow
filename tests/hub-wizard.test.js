@@ -22,7 +22,7 @@
  *   4. REGISTRATION IS HONEST — `workspaceRegistry.create` is called by the Host
  *      in the same request; a missing or throwing registry answers
  *      `registered: false` with a hint, never a fake success.
- *   5. GUARDS — same-origin `Origin` (not merely loopback), JSON body, 64 KiB
+ *   5. GUARDS — same-origin `Origin` (not merely loopback), JSON body, 1 MiB
  *      cap, per-route verbs (`GET /hub/plan` is 405), and the path-parameter ban
  *      (`root`/`path`/`cwd`/`workspace`/`projectRoot` in query or body) before
  *      any filesystem access (ADR-0010 D6 #4–#8).
@@ -41,7 +41,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, parse, resolve } from 'node:path'
 import { realpathSync } from 'node:fs'
 
-import { HUB_PLAN_TOKEN_TTL_MS, apply, createHubPlanTokenStore, hubApply, hubPlan } from '../lib/index.js'
+import { HUB_PLAN_TOKEN_TTL_MS, MAX_INTERNAL_BODY_BYTES, apply, createHubPlanTokenStore, hubApply, hubPlan } from '../lib/index.js'
 import { hashTree } from './hash-tree.mjs'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
@@ -469,7 +469,7 @@ test('the hub write guards refuse path parameters, a cross-origin page, a plain 
   assert.equal(plain.json.error.code, 'unsupported-media-type')
 
   const huge = await refused(base, () =>
-    post(harness, '/plan', { candidate: fresh, outsideRegistry: true, pad: 'x'.repeat(70 * 1024) }),
+    post(harness, '/plan', { candidate: fresh, outsideRegistry: true, pad: 'x'.repeat(MAX_INTERNAL_BODY_BYTES + 1024) }),
   )
   assert.equal(huge.status, 413)
   assert.equal(huge.json.error.code, 'payload-too-large')

@@ -177,7 +177,7 @@ root 槽位无 `sessionId`（E5），因此需要一条**不依赖会话**的通
 | 4 | 方法逐路由声明（`books`/`shared` 只 GET；`plan`/`apply` 只 POST） | 405 + `Allow` |
 | 5 | 路径参数名禁令：`root`/`path`/`cwd`/`workspace`/`projectRoot` 出现在 query 或 body | 400 `ROOT_PARAM_NOT_ALLOWED`（`reason: 'unexpected-path-param'`），判定在路由匹配与任何文件 IO 之前 |
 | 6 | 写路由（`plan`/`apply`）**`Origin` 必须与 `Host` 同源**（不只是"loopback"） | 403 `forbidden-origin`（`reason: 'origin-required'`） |
-| 7 | 请求体 ≤64 KiB 且必须是 JSON 对象；`apply` 必须 `confirm: true` | 413 / 400 `invalid-body` / 400 `INIT_REQUIRES_CONFIRMATION` |
+| 7 | 请求体 ≤64 KiB（**2026-10 修订为 1 MiB**：一次保存把整章正文当一个 JSON 字符串提交，64 KiB 数的是序列化字节，2 万汉字约 70 KB，长章因此存不进去；见 issue #115 与 architecture.md §4.2） 且必须是 JSON 对象；`apply` 必须 `confirm: true` | 413 / 400 `invalid-body` / 400 `INIT_REQUIRES_CONFIRMATION` |
 | 8 | 响应 `Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；信封 `{ok,value}` / `{ok:false,error}`；**不发 CORS 头** | — |
 
 第 6 条是本 ADR 相对 0008 D3 的**收紧**：0008 的写路由路径由 Host 从会话推出，所以"loopback Origin"够用；hub 的 plan 接受一个用户选中的目录，因此要求 `Origin` 与 `Host` 完全同源（含端口），挡掉"本机另一个端口的页面"。

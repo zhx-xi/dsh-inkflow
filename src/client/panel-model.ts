@@ -19,6 +19,7 @@
  * through `./internal.js` (ADR-0008 D4 — a session id, never a directory).
  */
 
+import { describeTooLarge } from './error-text.js'
 import type { InternalError, InternalResult } from './internal.js'
 
 /** The four gate states. Anything else means "we have not learnt it yet". */
@@ -185,11 +186,20 @@ export const ERROR_HINTS: Record<string, string> = {
   'invalid-field': '请求里有一个字段不合法',
   UNEXPECTED_BODY_FIELD: '请求里出现了面板不认识字段（面板内部错误）',
   PROJECT_BUSY: '另一个会话正在写这本书，稍后重试',
+  // Only `chapters.ts` raises this (the write route resolves a chapter by id and
+  // demands uniqueness), so it belongs to the chapter mapper — putting it in the
+  // library mapper made it dead code and left the chapter editor showing the Host's
+  // English sentence (caught in review of PR #118).
+  CHAPTER_AMBIGUOUS: '这个 id 被两章共用，写路径无法确定改哪一章：请给其中一章换一个 id 后再保存。',
 }
 
 /** Message for a failed call: the hint table first, then the Host's own words. */
 export function describeRouteError(error: InternalError | undefined): string {
   if (error === undefined) return '面板通道没有返回内容'
+  // The one refusal whose text has to carry numbers (issue 115): a save larger
+  // than the channel's ceiling names the ceiling and says nothing was written.
+  const tooLarge = describeTooLarge(error)
+  if (tooLarge !== null) return tooLarge
   return ERROR_HINTS[error.code] ?? error.message ?? error.code
 }
 

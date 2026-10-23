@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { apply } from '../lib/index.js'
+import { MAX_INTERNAL_BODY_BYTES, apply } from '../lib/index.js'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -111,6 +111,7 @@ function fakeRequest({
   body,
   contentLength,
   contentType = JSON_TYPE,
+  chunkSize,
 } = {}) {
   const headers = { host }
   if (origin !== undefined) headers.origin = origin
@@ -120,6 +121,16 @@ function fakeRequest({
   headers['content-length'] = String(contentLength ?? buffer.length)
   if (contentType !== null && buffer.length > 0) headers['content-type'] = contentType
   request[Symbol.asyncIterator] = async function* iterate() {
+    // `chunkSize` exists for the multibyte case: a real socket hands over whatever
+    // TCP delivered, so a Chinese character can straddle two chunks. Yielding one
+    // buffer here (the default) would hide exactly that bug.
+    if (Buffer.isBuffer(chunkSize) || typeof chunkSize === 'number') {
+      const size = typeof chunkSize === 'number' ? chunkSize : 1
+      for (let offset = 0; offset < buffer.length; offset += size) {
+        yield buffer.subarray(offset, Math.min(offset + size, buffer.length))
+      }
+      return
+    }
     if (buffer.length > 0) yield buffer
   }
   return request
@@ -599,6 +610,68 @@ test('write route: a non-usable book refuses writes with the gate checklist and 
   }
 })
 
+test('write route: a character split across two chunks is not damaged', async () => {
+  // Review of issue 115's first attempt found this: `readBody` decoded each chunk
+  // on its own, so a multibyte character straddling a chunk boundary became two
+  // U+FFFD -- written to the file, with a 200 OK. A real socket splits wherever TCP
+  // wants, so the double must be able to split too.
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    const body = '第一章 灯下改稿\n\n他在灯下改了这一章，字字都要落准。\n'
+    // One byte per chunk: every Chinese character is cut in the middle.
+    const saved = await writeCall(harness, '/chapters/ch-1', { payload: { body }, chunkSize: 1 })
+    assert.equal(saved.status, 200, JSON.stringify(saved.json).slice(0, 200))
+    assert.equal(saved.json.ok, true)
+
+    const written = readChapter(root)
+    assert.equal(written.includes('\uFFFD'), false, 'no replacement character may reach the file')
+    assert.ok(written.includes(body.trim()), `the submitted prose must survive byte for byte:\n${written.slice(-200)}`)
+
+    // The same guarantee across a 3-byte split (characters of different lengths).
+    const again = await writeCall(harness, '/chapters/ch-1', { payload: { body: `${body}😀 emoji
+` }, chunkSize: 3 })
+    assert.equal(again.status, 200)
+    assert.equal(readChapter(root).includes('\uFFFD'), false, 'a 3-byte character split in three is still intact')
+    assert.ok(readChapter(root).includes('😀 emoji'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('write route: a long chapter saves (the ceiling counts bytes, not characters)', async () => {
+  // issue 115: the ceiling used to be 64 KiB of *serialised* JSON. A chapter of
+  // 20,000 Chinese characters serialises to ~70 KB, so the panel answered
+  // `413 payload-too-large` and the author could not save a long chapter at all.
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    // 30,000 Chinese characters ≈ 90 KB of UTF-8, ≈ 90 KB more once JSON-escaped
+    // per line: well past the old ceiling, comfortably inside the new one.
+    const longBody = Array.from({ length: 300 }, () => '他在灯下改了这一章的三百字。'.repeat(10)).join(String.fromCharCode(10))
+    const saved = await writeCall(harness, '/chapters/ch-1', { payload: { body: longBody } })
+    assert.equal(saved.status, 200, JSON.stringify(saved.json).slice(0, 200))
+    assert.equal(saved.json.ok, true, 'a long chapter is a normal save, not a refusal')
+    assert.ok(readChapter(root).includes('他在灯下改了这一章的三百字。'))
+
+    // The ceiling still exists: above it the refusal names the number.
+    const refused = await writeCall(harness, '/chapters/ch-1', {
+      payload: { body: 'x'.repeat(MAX_INTERNAL_BODY_BYTES) },
+    })
+    assert.equal(refused.status, 413)
+    assert.equal(refused.json.error.code, 'payload-too-large')
+    assert.equal(refused.json.error.limitBytes, MAX_INTERNAL_BODY_BYTES)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('write route: an oversized body is a 413 and an undeclared verb is a 405', async () => {
   const dir = workdir()
   try {
@@ -607,7 +680,7 @@ test('write route: an oversized body is a 413 and an undeclared verb is a 405', 
     const harness = createHarness({ workspace: root })
     const before = hashTree(root)
 
-    const huge = await writeCall(harness, '/chapters/ch-1', { payload: { body: 'x'.repeat(64 * 1024 + 10) } })
+    const huge = await writeCall(harness, '/chapters/ch-1', { payload: { body: 'x'.repeat(MAX_INTERNAL_BODY_BYTES + 10) } })
     assert.equal(huge.status, 413)
     assert.equal(huge.json.error.code, 'payload-too-large')
 
