@@ -21,7 +21,7 @@
  * No IO, no React, no `@deepseek-ai/*` import (ADR-0008 D4/V7).
  */
 
-import { describeTooLarge } from './error-text.js'
+import { describeOriginRefusal, describeTooLarge } from './error-text.js'
 import type { InternalError, InternalResult } from './internal.js'
 
 /** The one kind whose rows are grouped by `category` — 地点 is a bucket, not a kind. */
@@ -653,6 +653,9 @@ export function describeSaveError(error: InternalError | undefined): string {
   // must say the size, or the author only sees "保存失败" and no next step.
   const tooLarge = describeTooLarge(error)
   if (tooLarge !== null) return tooLarge
+  // The card the author saw (issue #115): a bare `forbidden-origin` with no hint.
+  const refusedOrigin = describeOriginRefusal(error)
+  if (refusedOrigin !== null) return refusedOrigin
   if (error.code === 'FILE_CHANGED') {
     return '文件已被改动：磁盘上的内容已经不是这次加载的版本，所以这次没有写入任何字节。'
   }

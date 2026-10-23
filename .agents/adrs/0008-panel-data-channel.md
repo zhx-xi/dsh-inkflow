@@ -45,6 +45,9 @@
 
 ### D3 路由加固：继承 ADR-0004，方法逐路由声明
 
+> **2026-10 修订（#115）**：D3 里「写路由必须带 `Origin`」放宽为「`Origin` 存在时必须 loopback；缺省时看 `Sec-Fetch-Site`，缺省/`same-origin`/`none` 放行」。触发场景是实测：一次真实的面板保存以「其它守卫全部满足、只缺 `Origin`」的形态打到 Host，被 403 `origin-required`，作者看到的是「保存没反应」。判定依据未变（跨站页面发不出无预检的 JSON POST，且对端/Host 必须 loopback、session 必须解析到真书），并新增 `Sec-Fetch-Site` 作为缺 `Origin` 时的第二道网。
+
+
 **继承不变**：`Host` 必须匹配 loopback（否则 403 `forbidden-host`）；`Origin` 存在时必须匹配 loopback origin（否则 403 `forbidden-origin`）；不发任何 CORS 头；响应 `Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；未知路径 404；密钥永不下发浏览器；本机其他进程**不在**威胁模型内。
 
 **收窄 / 调整**（相对 ADR-0004 决策 3、4）：

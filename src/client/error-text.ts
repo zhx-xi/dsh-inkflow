@@ -43,3 +43,22 @@ export function describeTooLarge(error: SizedRefusal | undefined): string | null
   const ceiling = limit === null ? '面板通道装不下' : `面板通道上限 ${formatByteSize(limit)}`
   return `这一条太长了，${ceiling}：把它拆短（分章或分段）后重试。原文没有改动。`
 }
+
+/**
+ * The write guard's refusal, in words an author can act on (issue #115).
+ *
+ * `forbidden-origin` used to reach the panel as a bare English code — this is the
+ * card the author actually saw. The Host's refusal carries `reason` (`origin-required`
+ * or `origin-mismatch`) and, for a mismatch, the offending `origin`; both are printed
+ * because they are the whole diagnosis: "the request arrived with no Origin" is a
+ * different bug from "the request arrived with a foreign one".
+ */
+export function describeOriginRefusal(error: SizedRefusal | undefined): string | null {
+  if (error === undefined || error.code !== 'forbidden-origin') return null
+  const reason = typeof error.reason === 'string' && error.reason !== '' ? error.reason : '未标明原因'
+  const origin = typeof error.origin === 'string' && error.origin !== '' ? `；Host 收到的 Origin: ${error.origin}` : '（Host 没收到 Origin 头）'
+  return (
+    `这次保存被 Host 的写守卫拒绝了（forbidden-origin / ${reason}${origin}）：` +
+    '面板写请求必须带一个 loopback Origin。原文没有改动，也没有写入任何字节。'
+  )
+}

@@ -540,7 +540,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 400 | `FRONTMATTER_INVALID` / `FRONTMATTER_VALUE_INVALID` / `EMPTY_UPDATE` | 设定库写路由：`frontmatter` 不是对象或键名非法；值是无法写进 frontmatter 的嵌套结构/多行文本；`frontmatter` 与 `body` 都没给 |
 | 400 | `invalid-field` / `EXPECTED_INVALID` / `UNEXPECTED_BODY_FIELD` | 写路由：声明字段的类型不符（附 `field`）、`expected` 不是对象、body 出现路由未声明的字段（写路由只接受 `sessionId` + 该路由声明的字段） |
 | 403 | `forbidden-host` / `forbidden-origin` / `forbidden-remote` | `Host` 非 loopback；`Origin` 存在但非 loopback；socket 对端地址非 loopback |
-| 403 | `forbidden-origin`（`reason: 'origin-required'`） | **写路由**缺 `Origin`：同源校验只对会产生写入的请求强制 |
+| 403 | `forbidden-origin`（`reason: 'cross-site-fetch'`） | **写路由**缺 `Origin` 且 `Sec-Fetch-Site` 声明为跨站：缺 `Origin` 本身不再拒绝（浏览器 POST 必带 `Origin`，缺省说明调用方不是网页；见 note） |
 | 404 | `not-found` / `chapter-not-found` | 未知路径（含全部 `/inkflow/api/*`）；章节 id 不存在或不在 `chapters/` 内 |
 | 405 | `method-not-allowed` | 动词不在该路由声明的 `methods` 内（响带 `Allow`） |
 | 409 | `FILE_CHANGED` | **写路由**的 `expected` 与磁盘不符（§5.5）：附 `expected`/`current`/`changed[]`，**零写入**、缓存不重建 |
@@ -551,6 +551,8 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | 200 | `NOT_AN_INKFLOW_PROJECT` / `PROJECT_NEEDS_REPAIR` / `PROJECT_NEEDS_NEWER_PLUGIN` | 解析到目录但四态门禁非 `usable`：附 `state`/`checks`/`missing`/`actions`/`readOnly`，**零写盘** |
 
 **会话来源**：Client 只传 `sessionId`（query `sessionId` 或 header `x-inkflow-session`）；Host 依次用 ①`workspaceRegistry.list()` 中 `sessionIds` 含该会话的 `Workspace.path` ②`workingDirectory.get(sessions.get(id))` ③`Session.header.cwd`；都失败 → `NO_SESSION_CONTEXT`。会话 id 的 `session-` 前缀两种写法都接受（宿主的 `workspace.json` 用 `session-<uuid>`，会话日志头用裸 `<uuid>`）。解析出的目录再 `findProjectRoot` 向上找书（与工具同一套语义）。
+
+**写路由的 `Origin` 口径（2026-10，ADR-0008 D3 修订）**：`Origin` 存在时必须 loopback；**缺省不再直接拒绝**。依据是实测：一次真实的面板保存带着「其它守卫全部满足」却缺 `Origin` 的请求打到 Host，被回`forbidden-origin / origin-required`，作者看到的是「保存按钮没反应」。安全边界没有变薄：跨站页面无法在没有 CORS 预检的情况下发出 `application/json` 的 POST（本通道不应答预检），其它 Content-Type 一律 415，对端与 `Host` 都必须 loopback，请求还必须指名一个 Host 能解析到真书的 session；另外补了 `Sec-Fetch-Site` 这道网——浏览器万一不发 `Origin`，跨站页面仍会自报 `cross-site`。
 
 **加固**（继承 [ADR-0004](../adrs/0004-loopback-http.md)）：`Host` 必须 loopback；`Origin` 存在时必须 loopback；socket 对端地址非空时必须 loopback；不发 CORS 头；`Cache-Control: no-store` + `X-Content-Type-Options: nosniff`；请求体 ≤1 MiB 且必须是 JSON 对象。
 
@@ -563,7 +565,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | # | 守卫 | 拒绝 |
 |---|---|---|
 | 1 | 方法只 POST/DELETE（读路由只有 GET） | 405 + `Allow` |
-| 2 | `Origin` **必须存在**且 loopback（读路由允许缺省） | 403 `forbidden-origin`（`reason: 'origin-required'`） |
+| 2 | `Origin` 存在时必须 loopback；**缺省时**看 `Sec-Fetch-Site`：缺省/`same-origin`/`none` 放行，其它值拒绝（读路由不校验） | 403 `forbidden-origin`（`reason: 'cross-site-fetch'`） |
 | 3 | `Content-Type: application/json`（DELETE 也发 `{}`） | 415 `unsupported-media-type` |
 | 4 | body 只接受 `sessionId` + 该路由声明的字段；体积 ≤1 MiB | 400 `UNEXPECTED_BODY_FIELD` / 413 `payload-too-large` |
 

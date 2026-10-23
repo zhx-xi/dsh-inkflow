@@ -112,9 +112,11 @@ function fakeRequest({
   contentLength,
   contentType = JSON_TYPE,
   chunkSize,
+  secFetchSite,
 } = {}) {
   const headers = { host }
   if (origin !== undefined) headers.origin = origin
+  if (secFetchSite !== undefined) headers['sec-fetch-site'] = secFetchSite
   const request = { url, method, headers, socket: { remoteAddress } }
   if (body === undefined && contentLength === undefined) return request
   const buffer = body === undefined ? Buffer.alloc(0) : Buffer.from(body, 'utf8')
@@ -279,7 +281,7 @@ test('write routes: no Content-Type is a 415 and writes nothing', async () => {
   }
 })
 
-test('write routes: a missing or cross-site Origin is a 403 and writes nothing', async () => {
+test('write routes: a cross-site write is refused, an origin-less one is not (issue 115)', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -287,11 +289,25 @@ test('write routes: a missing or cross-site Origin is a 403 and writes nothing',
     const harness = createHarness({ workspace: root })
     const before = hashTree(root)
 
-    // ADR-0008 D3: the same-origin check is mandatory exactly for writes.
-    const missing = await writeCall(harness, '/chapters/ch-1', { origin: undefined, payload: { body: '跨站正文' } })
-    assert.equal(missing.status, 403)
-    assert.equal(missing.json.error.code, 'forbidden-origin')
-    assert.equal(missing.json.error.reason, 'origin-required')
+    // Measured in #115: a real panel save arrived with NO Origin header and every
+    // other guard satisfied, and the Host answered `forbidden-origin /
+    // origin-required` -- which the author saw as a dead Save button. A browser
+    // always sets Origin on a POST, so an absent header means "not a web page".
+    const originless = await writeCall(harness, '/chapters/ch-1', { origin: undefined, payload: { body: '本地脚本正文' } })
+    assert.equal(originless.status, 200, JSON.stringify(originless.json).slice(0, 160))
+    assert.equal(originless.json.ok, true)
+    assert.ok(readChapter(root).includes('本地脚本正文'))
+
+    // ... but a page that reached us cross-site still declares itself, and that is
+    // refused even without an Origin header.
+    const crossSiteFetch = await writeCall(harness, '/chapters/ch-1', {
+      origin: undefined,
+      secFetchSite: 'cross-site',
+      payload: { body: '跨站正文' },
+    })
+    assert.equal(crossSiteFetch.status, 403)
+    assert.equal(crossSiteFetch.json.error.code, 'forbidden-origin')
+    assert.equal(crossSiteFetch.json.error.reason, 'cross-site-fetch')
 
     const crossSite = await writeCall(harness, '/chapters/ch-1', { origin: 'https://evil.example.com', payload: { body: '跨站正文' } })
     assert.equal(crossSite.status, 403)
@@ -301,8 +317,8 @@ test('write routes: a missing or cross-site Origin is a 403 and writes nothing',
     const read = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/chapters/ch-1?sessionId=session-1` }))
     assert.equal(read.status, 200)
 
-    assert.equal(readChapter(root).includes('跨站正文'), false)
-    assert.equal(hashTree(root), before)
+    assert.equal(readChapter(root).includes('跨站正文'), false, 'the refused writes wrote nothing')
+    assert.notEqual(hashTree(root), before, 'only the origin-less write reached the file')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
