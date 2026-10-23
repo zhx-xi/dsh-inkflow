@@ -188,7 +188,7 @@ const listSurface: Omit<ToolDefinition, 'execute'> = {
         type: 'string',
         description: 'Entity id whose edges to list (a character, world, outline, chapter or relation id).',
       },
-      limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Maximum edges to return. Default 100.' },
+      limit: { type: 'integer', description: 'Maximum edges to return (1–500). Default 100.' },
     },
     required: ['entity'],
     additionalProperties: false,
