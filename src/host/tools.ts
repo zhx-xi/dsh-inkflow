@@ -103,7 +103,7 @@ const EXPECTED_PARAM = {
   type: 'object',
   properties: {
     sha256: { type: 'string', description: 'Lowercase hex sha256 of the file bytes you last read.' },
-    size: { type: 'integer', minimum: 0, description: 'Byte length of the file you last read.' },
+    size: { type: 'integer', description: 'Byte length of the file you last read (0 or higher).' },
     mtimeMs: { type: 'number', description: 'Modification time in ms (only compared when sha256/size are absent).' },
     absent: { type: 'boolean', description: 'True when the file must not exist yet (project init).' },
   },
@@ -388,7 +388,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
       type: 'object',
       properties: {
         projectRoot: PROJECT_ROOT_PARAM,
-        limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Maximum chapters. Default 100.' },
+        limit: { type: 'integer', description: 'Maximum chapters (1–500). Default 100.' },
       },
       additionalProperties: false,
     },
@@ -811,8 +811,8 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
         slug: { type: 'string', description: 'File slug; omit to derive it from the title.' },
         seq: {
           type: 'integer',
-          minimum: 1,
-          description: 'Chapter number. Defaults to one more than the highest seq in that volume (or among loose chapters).',
+          description:
+            'Chapter number (positive integer). Defaults to one more than the highest seq in that volume (or among loose chapters).',
         },
       },
       required: ['title'],
@@ -995,9 +995,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
         },
         limit: {
           type: 'integer',
-          minimum: 1,
-          maximum: MAX_SEARCH_LIMIT,
-          description: `Maximum hits to return. Default ${DEFAULT_SEARCH_LIMIT}.`,
+          description: `Maximum hits to return (1–${MAX_SEARCH_LIMIT}). Default ${DEFAULT_SEARCH_LIMIT}.`,
         },
       },
       required: ['query'],

@@ -16,6 +16,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,16 +33,16 @@ import { CONTENT_DIRS, DOMAIN_MODULES, apply, applyCandidate, buildTools, domain
 const BUILT_IN_TOOLS = [
   ['inkflow_project_status', 'cc6903de'],
   ['inkflow_index_rebuild', '51a5555a'],
-  ['inkflow_chapter_list', '7fa48ea8'],
-  ['inkflow_chapter_search', 'fe398cf5'],
+  ['inkflow_chapter_list', '4a6eecc1'],
+  ['inkflow_chapter_search', 'd10a9b63'],
   ['inkflow_project_plan', '52c0ddec'],
-  ['inkflow_project_init', 'ec98d360'],
+  ['inkflow_project_init', '4226bc54'],
   ['inkflow_volume_create', 'a805a3ed'],
   ['inkflow_volume_rename', 'dd03c04a'],
-  ['inkflow_chapter_create', 'dd6f9879'],
-  ['inkflow_chapter_write', '6fc33ed0'],
-  ['inkflow_chapter_move', 'd3a1d8f1'],
-  ['inkflow_chapter_delete', 'a0cfc616'],
+  ['inkflow_chapter_create', '0df12472'],
+  ['inkflow_chapter_write', '4e531ce4'],
+  ['inkflow_chapter_move', '8fb67189'],
+  ['inkflow_chapter_delete', '4b371a9a'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */
@@ -54,9 +55,25 @@ function stableStringify(value) {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
 }
 
-function surfaceHash(tool) {
-  const surface = { description: tool.description, parameters: tool.parameters, output: tool.output }
-  return createHash('sha256').update(stableStringify(surface)).digest('hex').slice(0, 8)
+function surfaceHash(value) {
+  return createHash('sha256').update(stableStringify(value)).digest('hex').slice(0, 8)
+}
+
+/**
+ * Why a mismatch names three parts instead of one hash (#114): "two 8-char hex
+ * strings differ" says nothing about *what* moved, so updating the baseline used to
+ * mean re-running the registration harness by hand. `scripts/surface-hash.mjs` is
+ * that harness, kept in the repo; this message points at it and shows which of the
+ * three components changed, so the edit is a copy-paste or a targeted diff.
+ */
+function surfaceReport(tool) {
+  const parts = {
+    description: surfaceHash(tool.description),
+    parameters: surfaceHash(tool.parameters),
+    output: surfaceHash(tool.output),
+  }
+  const detail = `description=${parts.description} parameters=${parts.parameters} output=${parts.output}`
+  return { hash: surfaceHash({ description: tool.description, parameters: tool.parameters, output: tool.output }), detail }
 }
 
 function createHarness(workspace) {
@@ -114,8 +131,30 @@ test('the built-in tool surface survives the domain seam unchanged', () => {
   for (const [name, hash] of BUILT_IN_TOOLS) {
     const tool = tools.get(name)
     assert.ok(tool, `${name} must still be registered`)
-    assert.equal(surfaceHash(tool), hash, `${name} changed its model-facing surface`)
+    const report = surfaceReport(tool)
+    assert.equal(
+      report.hash,
+      hash,
+      `${name} changed its model-facing surface (now ${report.hash}, recorded ${hash}; parts ${report.detail}).\n` +
+        `  If the change is intended: node scripts/surface-hash.mjs prints the paste-ready rows.\n` +
+        `  To see what moved: node scripts/surface-hash.mjs --tool ${name} (full schema JSON), then diff against git history.`,
+    )
     assert.ok(tool.output?.schema, `${name} keeps its output schema`)
+  }
+})
+
+test('scripts/surface-hash.mjs stays in sync with the recorded baseline', () => {
+  // The helper is what the failure message tells people to run, so a drifted helper
+  // would send them to a wrong number. It derives from the same build, so this is a
+  // contract on the script's own output shape, not a second copy of the baseline.
+  const script = new URL('../scripts/surface-hash.mjs', import.meta.url)
+  const output = execFileSync(process.execPath, [script.pathname.replace(/^\/([A-Za-z]:)/u, '$1'), '--json'], {
+    encoding: 'utf8',
+  })
+  const rows = JSON.parse(output)
+  const recorded = new Map(BUILT_IN_TOOLS)
+  for (const row of rows.filter((entry) => !entry.domain)) {
+    assert.equal(row.hash, recorded.get(row.name), `surface-hash.mjs disagrees about ${row.name}`)
   }
 })
 

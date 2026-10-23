@@ -49,7 +49,12 @@ export const PROJECT_ROOT_PARAM = {
     'Absolute path of the InkFlow project root. Omit to resolve from the session working directory (walks up to the nearest project).',
 } as const
 
-export const OUTPUT_SCHEMA: JsonSchemaNode = { type: 'object', required: ['ok'], additionalProperties: true }
+export const OUTPUT_SCHEMA: JsonSchemaNode = {
+  type: 'object',
+  properties: { ok: { type: 'boolean' } },
+  required: ['ok'],
+  additionalProperties: true,
+}
 
 /** Characters a slug may never carry: path separators, control bytes, Windows-reserved shapes. */
 const UNSAFE_SEGMENT = /[<>:"|?*\\/\u0000-\u001f]/u

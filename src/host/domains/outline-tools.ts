@@ -434,7 +434,7 @@ const EXPECTED_PARAM = {
   type: 'object',
   properties: {
     sha256: { type: 'string', description: 'Lowercase hex sha256 of the file bytes you last read.' },
-    size: { type: 'integer', minimum: 0, description: 'Byte length of the file you last read.' },
+    size: { type: 'integer', description: 'Byte length of the file you last read (0 or higher).' },
     mtimeMs: { type: 'number', description: 'Modification time in ms (only compared when sha256/size are absent).' },
     absent: { type: 'boolean', description: 'True when the file must not exist yet.' },
   },
