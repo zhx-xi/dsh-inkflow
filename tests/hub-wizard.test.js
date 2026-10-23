@@ -22,7 +22,7 @@
  *   4. REGISTRATION IS HONEST — `workspaceRegistry.create` is called by the Host
  *      in the same request; a missing or throwing registry answers
  *      `registered: false` with a hint, never a fake success.
- *   5. GUARDS — same-origin `Origin` (not merely loopback), JSON body, 64 KiB
+ *   5. GUARDS — same-origin `Origin` (not merely loopback), JSON body, 1 MiB
  *      cap, per-route verbs (`GET /hub/plan` is 405), and the path-parameter ban
  *      (`root`/`path`/`cwd`/`workspace`/`projectRoot` in query or body) before
  *      any filesystem access (ADR-0010 D6 #4–#8).

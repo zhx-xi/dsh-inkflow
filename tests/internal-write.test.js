@@ -111,6 +111,7 @@ function fakeRequest({
   body,
   contentLength,
   contentType = JSON_TYPE,
+  chunkSize,
 } = {}) {
   const headers = { host }
   if (origin !== undefined) headers.origin = origin
@@ -120,6 +121,16 @@ function fakeRequest({
   headers['content-length'] = String(contentLength ?? buffer.length)
   if (contentType !== null && buffer.length > 0) headers['content-type'] = contentType
   request[Symbol.asyncIterator] = async function* iterate() {
+    // `chunkSize` exists for the multibyte case: a real socket hands over whatever
+    // TCP delivered, so a Chinese character can straddle two chunks. Yielding one
+    // buffer here (the default) would hide exactly that bug.
+    if (Buffer.isBuffer(chunkSize) || typeof chunkSize === 'number') {
+      const size = typeof chunkSize === 'number' ? chunkSize : 1
+      for (let offset = 0; offset < buffer.length; offset += size) {
+        yield buffer.subarray(offset, Math.min(offset + size, buffer.length))
+      }
+      return
+    }
     if (buffer.length > 0) yield buffer
   }
   return request
@@ -594,6 +605,38 @@ test('write route: a non-usable book refuses writes with the gate checklist and 
     }
 
     assert.equal(hashTree(root), before, 'the write routes never repair a book')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('write route: a character split across two chunks is not damaged', async () => {
+  // Review of issue 115's first attempt found this: `readBody` decoded each chunk
+  // on its own, so a multibyte character straddling a chunk boundary became two
+  // U+FFFD -- written to the file, with a 200 OK. A real socket splits wherever TCP
+  // wants, so the double must be able to split too.
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    const body = '第一章 灯下改稿\n\n他在灯下改了这一章，字字都要落准。\n'
+    // One byte per chunk: every Chinese character is cut in the middle.
+    const saved = await writeCall(harness, '/chapters/ch-1', { payload: { body }, chunkSize: 1 })
+    assert.equal(saved.status, 200, JSON.stringify(saved.json).slice(0, 200))
+    assert.equal(saved.json.ok, true)
+
+    const written = readChapter(root)
+    assert.equal(written.includes('\uFFFD'), false, 'no replacement character may reach the file')
+    assert.ok(written.includes(body.trim()), `the submitted prose must survive byte for byte:\n${written.slice(-200)}`)
+
+    // The same guarantee across a 3-byte split (characters of different lengths).
+    const again = await writeCall(harness, '/chapters/ch-1', { payload: { body: `${body}😀 emoji
+` }, chunkSize: 3 })
+    assert.equal(again.status, 200)
+    assert.equal(readChapter(root).includes('\uFFFD'), false, 'a 3-byte character split in three is still intact')
+    assert.ok(readChapter(root).includes('😀 emoji'))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
