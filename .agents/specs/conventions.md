@@ -3,6 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 + 派生索引）、[ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 四态门禁 / catalog / 向导）、[ADR-0007](../adrs/0007-plugin-shared-library.md)（共享库字段与 `.gitignore`）、[ADR-0008](../adrs/0008-panel-data-channel.md)（面板通道）。
 > **依赖**：[data-model.md](data-model.md)（字段字典与不变量）、[architecture.md](architecture.md)（模块边界）。
 > **相关 ADR**：0004（loopback 加固，继承）、0006（目录与门禁，修改 0005 条款）、0007、0008。
+> **references/**：本文件受 800 行上限约束（S6），超出部分下沉到这个目录：[references/impact-and-rename.md](references/impact-and-rename.md)（§5.6 细则）、[references/trash-semantics.md](references/trash-semantics.md)（§3.11.1 细则）。
 > **状态**：活跃。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。契约已定而尚未落地的部分见 §9。
 
 ## 1. 什么算一个 InkFlow 项目
@@ -271,32 +272,7 @@ index/.write.lock
 
 #### 3.11.1 回收站语义（#35）
 
-删除是**可撤销**的：`inkflow_chapter_delete`（以及面板的删除）先把文件移进 `trash/`，再更新 catalog 与索引。三条判据同时成立才算「已删」。
-
-**清单**（`.inkflow/trash/index.json`，`schemaVersion: 1`）：一条 `entries[]`，新的在前。
-
-| 字段 | 类型 | 语义 |
-|---|---|---|
-| `id` | uuid string | 条目的唯一地址；恢复与彻底删除只认它，**不认路径**（路由/工具都不接受路径参数） |
-| `originalPath` | string | 原项目相对路径，也是恢复的落点（正斜杠，不含 `..`） |
-| `deletedAt` | ISO 8601 string | 删除时刻（UTC），仅用于展示与排序 |
-| `bytes` | int | 被删字节数 |
-| `sha256` | hex string | 被删字节的哈希；恢复时逐字节比对 |
-| `reason` | string | 谁删的（当前唯一取值 `chapter_delete`）；解析不了的 `reason` 原样展示，不吞 |
-
-**清单读不出来时一切停摆**：不是 JSON、`schemaVersion` 不是 1、`entries` 不是数组、某条缺字段，或某条的 `originalPath` 不是普通项目相对路径（含指向 `.inkflow/` 自身——恢复它会把文件落回插件自己的状态目录，`listTrash` 再也看不见）→ 一律 `TRASH_MANIFEST_INVALID`：**列表回答 500，且所有删除被拒**。重建清单等于静默丢掉作者可能还需要的那份记录，所以不做自动修复；唯一的出路是作者把 `index.json` 移走（或手工修好），下一次删除会写一份新清单。
-
-**副本与原件的关系**：副本经 `io.ts` 的文本写入器以 `verbatim` 模式落盘，落盘后**回读比对哈希**，只有一致才允许删除原件。因文本写入器只处理 UTF-8，源文件若不是合法 UTF-8（回读写回必然不同字节），删除被拒（`TRASH_COPY_MISMATCH`），原件保持不动——「删不掉的副本，就不许删原件」。**一个原路径只占一个槽位**：副本位置由 `originalPath` 派生，同一路径第二次被删时拿不到第二个槽位，它被拒（`TRASH_ENTRY_EXISTS`，**零写入**，`hint` 指向「先恢复或彻底删除回收站里那条」）而不是静默覆盖上一版的字节——否则旧条目会继续显示可恢复，恢复时却撞上 `TRASH_COPY_CHANGED`，那一版的字节在整本书里就没有了。释放槽位只有两条路：**恢复**该条目（文件回到原路径）或**彻底删除**它，此后同一路径可以再删一次。
-
-**恢复的三条冲突规则**（恢复成功 = 原路径字节与清单 `sha256` 一致，BOM/CRLF 原样保留不做行尾归一 + 副本删除 + 条目移除；恢复**只写原路径这一个文件**，catalog 在下次读取时按 `.md` 重新派生、派生索引按需重建，与删除当场重建 catalog 并提交索引**不对称，这是有意的**：删除必须立刻让那一章从章树、检索与 `entities` 里消失，恢复允许投影按需追上来）：
-
-| 情形 | 结果 | 写入 |
-|---|---|---|
-| 原路径已被占用（作者重建/改名的文件已在该路径） | 拒（`RESTORE_TARGET_EXISTS`） | **零写入**；副本留在回收站，由作者决定是移走新文件还是彻底删除旧副本 |
-| 副本已被手工清理 | 拒（`TRASH_COPY_MISSING`） | 零写入；该条目仍可彻底删除 |
-| 副本哈希与清单不符（在回收站里被改过） | 拒（`TRASH_COPY_CHANGED`） | 零写入——恢复出来必须是**被删的那份字节**，不是看起来像的另一份 |
-
-**彻底删除**需要二次确认：路由与工具层要求 `confirm: true`（缺失或 `false` → `CONFIRM_REQUIRED` 且零写入），面板要求点两次（第一次只把该行置为待确认，第二次才发请求）。删副本 + 删清单条目；副本已不存在不算失败（这是清理孤儿条目的唯一途径）。**不参与索引与检索**：`trash/` 点开头，`walk()` 天然跳过，因此不产 `files` / `entities` 行、不进 `chapters_fts`、不参与新鲜度对拍——删除后的章**同时**从章树、元数据检索、正文全文索引与 `entities` 中消失，而副本仍在回收站里。
+副本落点、清单形状、恢复的冲突规则、彻底删除的二次确认、同路径二次删除的拒绝、以及「清单读不出来时列表 500 且所有删除被拒」见 [references/trash-semantics.md](references/trash-semantics.md)。
 
 ### 3.8 卷章 catalog（`chapters/index.json`）
 
@@ -510,20 +486,7 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 ### 5.6 改名与影响面
 
-改设定前先看影响面，改名**只写一次**（[ADR-0014](../adrs/0014-entity-id-pinning.md)，roadmap X-15）：
-
-| 项 | 契约 |
-|---|---|
-| 影响清单 | `GET /inkflow/internal/impact?kind=&id=`（`id` 省略时按 `title` 模糊匹配，多命中回候选）列五处：①提及它的章（`entity_mentions`，带章标题与出现次数）②以它为端点的关系 ③时间线里它参与或作为地点的事件 ④账本里以它为主体的条目 ⑤伏笔 `linkedEntities` 关联项，外加总计数。**只读、零写盘**：不 `ensureIndex`、不写 `state.json`、不碰真相文件 |
-| 改名的文件效应 | 在同一目录内换文件名 + 把**旧 id** 写进新文件 frontmatter 的 `id`；引用方（关系 `source`/`target`、时间线 `participants`/`place`、账本 `subject`、伏笔 `linkedEntities`、`entity_mentions.entity_key`）**一个都不改**。**只改显示名不动文件名、也不写 `id`**——钉 id 的判据是「目标路径 ≠ 当前路径」，否则文件会声称自己改过名（ADR-0014 §4） |
-| 索引效应 | 重建后 `entities` 行的 `id` 不变、`path` 更新；`entity_mentions` 命中条数不变。id 与路径不一致是合法状态（I-20 `ID_PATH_DIVERGED`，info、不阻断） |
-| 预览与拒绝同一套码 | `GET /impact?slug=&newTitle=` 回 `rename.blockers[]`，**空＝可执行**；非空时给的码与写路由 400/409 的码逐字相同：`KIND_NOT_RENAMEABLE` / `SLUG_INVALID` / `TITLE_INVALID` / `RENAME_NO_CHANGE` / `TARGET_EXISTS`。`SLUG_INVALID` 的判据＝①不以点开头（点开头条目两个扫描器都跳过，写进去就只剩 git 能救）②不含路径分隔符/控制字节 ③过 `io.ts` 的段校验（`con`/`nul`/`COM1` 等保留名、末尾点或空格、单段 >255）。`TITLE_INVALID` ＝显示名含换行（frontmatter 一个名字只占一行） |
-| 拒绝 | 目标已存在 → `409 TARGET_EXISTS`（**计划时**与**锁内**各查一次：外部编辑器不持锁，预览之后可能有文件落到目标名上）；基线不符 → `409 FILE_CHANGED`（两者都零写入）；`facts` 不参与改名（文件名即主体，主体改名等账本口径定案，见 #32）。io 层兜底仍可能返回 `400 PATH_INVALID`/`PATH_TOO_LONG`/`PATH_RESERVED`（预览已用同一规则拦下，属双保险）、`409 PROJECT_BUSY`；新文件写成后旧文件删不掉 → `500` + `rolledBack`（新文件已撤回，旧文件仍在原处） |
-| 取消零写入 | 只生成清单、不执行（关掉对话框）→ 项目树全量 hash 与 `sha256` 不变 |
-| 重复改名 | 沿用文件里已有的 `id`，不再生成新的；只有「改名」写 `id`，新建实体不钉 |
-| 参数同名不同键 | 预览用 `newTitle`（GET query），执行用 `title`（POST body）——前者是「打算起的名字」，后者与设定库编辑器的字段名对齐；两者都是**显示名**，文件名只由 `slug` 决定 |
-
-**验证**：`node --test tests/impact.test.js tests/identity.test.js`。
+改设定前先看影响面，改名**只写一次**（[ADR-0014](../adrs/0014-entity-id-pinning.md)，roadmap X-15）。完整契约（影响清单的五处来源、改名的文件效应、预览与拒绝同一套码、取消零写入）见 [references/impact-and-rename.md](references/impact-and-rename.md)。
 
 ## 6. 门禁与向导返回约定
 
