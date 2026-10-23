@@ -53,6 +53,7 @@ import {
   writeTextAtomic,
 } from './io.js'
 import type { IoFailure } from './io.js'
+import { trashFile, undoTrashFile } from './trash.js'
 
 // ---------------------------------------------------------------------------
 // Contract types
@@ -226,6 +227,18 @@ export interface ChapterDeleteOk extends CommitInfo {
   ok: true
   root: string
   deleted: { chapterId: string; file: string; title: string; seq?: number; volumeId: string | null }
+  /** The recovery-bin entry this delete created (#35). */
+  trashed: { id: string; trashPath: string; bytes: number }
+}
+
+/**
+ * What the delete cascade reports from inside the project write lock: the
+ * chapter it removed and the recovery-bin entry that now holds the text. Split
+ * out because the bin's copy is made inside the same lock as the file removal.
+ */
+interface DeletedChapterReport {
+  deleted: ChapterDeleteOk['deleted']
+  trashed: ChapterDeleteOk['trashed']
 }
 
 export type VolumeCreateResult = VolumeCreateOk | ChapterOpFailure
@@ -375,7 +388,7 @@ function fromIo(io: IoFailure, extra: { root?: string; message?: string; hint?: 
   })
 }
 
-function rollbackStep(steps: RollbackStep[], action: string, result: { ok: boolean; error?: IoFailure }): void {
+function rollbackStep(steps: RollbackStep[], action: string, result: { ok: boolean; error?: { message?: string } }): void {
   steps.push(result.ok ? { action, ok: true } : { action, ok: false, message: result.error?.message ?? 'failed' })
 }
 
@@ -1280,7 +1293,7 @@ export async function moveChapter(projectRoot: string, input: ChapterMoveInput):
 export async function deleteChapter(projectRoot: string, input: ChapterDeleteInput): Promise<ChapterDeleteResult> {
   const root = resolve(projectRoot)
 
-  const locked = withProjectWriteLock(root, (lock): Locked<ChapterDeleteOk['deleted']> => {
+  const locked = withProjectWriteLock(root, (lock): Locked<DeletedChapterReport> => {
     const root = lock.root
     const resolved = resolveChapter(root, input)
     if (!resolved.ok) return resolved
@@ -1301,15 +1314,36 @@ export async function deleteChapter(projectRoot: string, input: ChapterDeleteInp
     const catalogs = takeCatalogSnapshot(root)
     const drifted = driftedSinceRead(root, ref.file, baseline)
     if (drifted !== undefined) return drifted
-    const removed = removeProjectFile(root, ref.file)
-    if (!removed.ok) {
-      return fromIo(removed.error, { message: `the chapter could not be deleted: ${removed.error.message}` })
+    // A delete is reversible on purpose (#35, roadmap X-9): the file is moved
+    // into the recovery bin (`.inkflow/trash/<same relative path>`) with a
+    // verified byte-identical copy before the working tree loses it. Everything
+    // below still behaves as before — the catalog is the projection and the
+    // index a cache — so the bin adds a copy, not a second truth.
+    const trashed = trashFile(root, { path: ref.file, reason: 'chapter_delete' })
+    if (!trashed.ok) {
+      // Reported with the bin's own code: a copy that cannot be made (or a
+      // manifest that cannot be read) refuses the delete, so the only way this
+      // fails is with the chapter still in place.
+      return {
+        ok: false,
+        error: {
+          code: trashed.error.code,
+          message: `the chapter was not deleted: ${trashed.error.message}`,
+          root,
+          path: ref.file,
+          ...(trashed.error.hint === undefined ? {} : { hint: trashed.error.hint }),
+          ...(trashed.error.nothingWritten === undefined ? {} : { nothingWritten: trashed.error.nothingWritten }),
+          ...(trashed.error.rolledBack === undefined ? {} : { rolledBack: trashed.error.rolledBack }),
+        },
+      }
     }
 
     const rebuilt = rebuildCatalog(root)
     if (!rebuilt.ok) {
       const steps: RollbackStep[] = []
       rollbackStep(steps, `restore ${ref.file}`, writeTextAtomic(root, ref.file, text, { verbatim: true }))
+      // The bin must not keep an entry for a file that is back in the tree.
+      rollbackStep(steps, `drop the recovery-bin entry for ${ref.file}`, undoTrashFile(root, trashed.entry.id))
       steps.push(...restoreCatalogSnapshot(root, catalogs))
       return afterCatalogFailure(root, rebuilt.error, steps)
     }
@@ -1317,11 +1351,14 @@ export async function deleteChapter(projectRoot: string, input: ChapterDeleteInp
     return {
       ok: true,
       value: {
-        chapterId: ref.chapterId,
-        file: ref.file,
-        title: stringField(data, 'title') ?? ref.title,
-        ...(ref.seq === undefined ? {} : { seq: ref.seq }),
-        volumeId: ref.volumeId,
+        deleted: {
+          chapterId: ref.chapterId,
+          file: ref.file,
+          title: stringField(data, 'title') ?? ref.title,
+          ...(ref.seq === undefined ? {} : { seq: ref.seq }),
+          volumeId: ref.volumeId,
+        },
+        trashed: { id: trashed.entry.id, trashPath: trashed.trashPath, bytes: trashed.entry.bytes },
       },
     }
   })
@@ -1331,7 +1368,8 @@ export async function deleteChapter(projectRoot: string, input: ChapterDeleteInp
   return {
     ok: true,
     root,
-    deleted: locked.value.value,
+    deleted: locked.value.value.deleted,
+    trashed: locked.value.value.trashed,
     catalogRebuilt: true,
     ...(await commitIndex(root)),
   }

@@ -40,6 +40,7 @@ import { useScrollBox } from './layout.js'
 import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
 import { LibraryView } from './library.js'
+import { TrashView } from './trash.js'
 import { HubIcon, HubView } from './hub.js'
 import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
 import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
@@ -397,6 +398,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // editor and the problem panel. It talks to its own three routes, so this tab
     // costs the chapter tree nothing.
     library: () => <LibraryView sessionId={sessionId} />,
+    // Issue #35: the recovery bin — what a delete moved into `.inkflow/trash/`,
+    // with restore (one click) and purge (two). One route pair of its own.
+    trash: () => <TrashView sessionId={sessionId} />,
   }
 
   /**

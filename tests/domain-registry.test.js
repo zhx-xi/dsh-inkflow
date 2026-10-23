@@ -43,7 +43,7 @@ const BUILT_IN_TOOLS = [
   ['inkflow_chapter_create', '0df12472'],
   ['inkflow_chapter_write', '4e531ce4'],
   ['inkflow_chapter_move', '8fb67189'],
-  ['inkflow_chapter_delete', '4b371a9a'],
+  ['inkflow_chapter_delete', 'a2b2198a'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

@@ -940,8 +940,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
   const chapterDelete: ToolDefinition = {
     name: 'inkflow_chapter_delete',
     description:
-      "Delete one chapter file addressed by `chapterId` or `file`. The text is recoverable only from the project's git " +
-      'history. Confirm with the user before calling.',
+      'Delete one chapter file addressed by `chapterId` or `file`. The file is first moved into the project recovery bin ' +
+      '(`.inkflow/trash/<same relative path>`, manifest `.inkflow/trash/index.json`) and only then dropped from the tree, ' +
+      'so the text stays restorable (panel tab 回收站, or the restore/purge routes) until that entry is purged. ' +
+      'Confirm with the user before calling.',
     parameters: {
       type: 'object',
       properties: {
@@ -958,9 +960,12 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
         const v = asRecord(value)
         if (v['ok'] !== true) return renderChapterFailure('Chapter delete', v)
         const deleted = asRecord(v['deleted'])
+        const trashed = asRecord(v['trashed'])
         return text([
           `Deleted "${String(deleted['title'])}" — ${String(deleted['file'])} (id ${String(deleted['chapterId'])}).`,
-          'The file is gone from the working tree; the text is recoverable from git only.',
+          trashed['trashPath'] === undefined
+            ? 'The file is gone from the working tree; the text is recoverable from git only.'
+            : `Moved into the recovery bin: ${String(trashed['trashPath'])} (entry ${String(trashed['id'])}) — restorable until purged.`,
           commitLine(v),
         ])
       },

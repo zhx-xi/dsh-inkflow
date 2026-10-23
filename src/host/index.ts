@@ -520,6 +520,25 @@ export {
 } from './private-state.js'
 
 /**
+ * The recovery bin (#35, roadmap X-9/X-10): move one file into `.inkflow/trash/`,
+ * list what is there, put an entry back byte-identically, or purge one entry —
+ * the last only with `confirm: true`.
+ */
+export { listTrash, purgeTrash, restoreTrash, trashFile, undoTrashFile } from './trash.js'
+export type {
+  PurgeInput,
+  PurgeResult,
+  RestoreInput,
+  RestoreResult,
+  TrashEntry,
+  TrashEntryView,
+  TrashError,
+  TrashFileInput,
+  TrashFileResult,
+  TrashListResult,
+} from './trash.js'
+
+/**
  * The fact ledger (#32): the line format as a parse/render **pair** (ADR-0013), the
  * interval judgement (I-23) and the "which facts hold at chapter N" query. Pure, so the
  * round-trip and the conflict rule are test-driven directly instead of through a tool.
