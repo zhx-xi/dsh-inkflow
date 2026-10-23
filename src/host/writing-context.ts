@@ -25,6 +25,7 @@
 import { basename } from 'node:path'
 
 import { factsSegment } from './domains/facts-prompt.js'
+import { foreshadowSegment } from './domains/foreshadowing-query.js'
 import type { ProjectState } from './project.js'
 import { inspectProject } from './project.js'
 import type { ChapterHead, ChapterPair, OutlinedChapter, ProjectStats, TailSlice, WorldSelection } from './writing-sources.js'
@@ -137,8 +138,13 @@ export interface ExtraSegmentInput {
  * Segments registered by domains. The array's order **is** the segment order (roadmap
  * X-13: `… → world → facts → foreshadow`), so a contributor inserts at the position the
  * contract names instead of reordering anything else.
+ *
+ * A contributor appends its ONE entry here — the renderer, the budget and the trim
+ * ladder stay untouched. With the registry empty the produced text is byte-identical to
+ * the pre-seam version, which is the property `tests/writing-context-segments.test.js`
+ * pins (it is now exercised with facts and foreshadow registered, X-13 order).
  */
-export const EXTRA_SEGMENTS: readonly ExtraSegmentSpec[] = [factsSegment]
+export const EXTRA_SEGMENTS: readonly ExtraSegmentSpec[] = [factsSegment, foreshadowSegment]
 
 export interface WritingContextSegment {
   name: WritingContextSegmentName

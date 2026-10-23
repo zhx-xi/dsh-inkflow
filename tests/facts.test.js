@@ -469,11 +469,10 @@ test('facts segment: the fifth segment carries the facts in effect at the curren
     assert.equal(segment.text.includes('已失去的旧剑'), false, 'a fact that stopped holding is not injected')
     assert.equal(segment.text.includes('筑基'), false, 'the superseded value is not injected')
     assert.ok(context.text.includes(segment.text), 'the segment reaches the rendered block')
-    assert.deepEqual(
-      EXTRA_SEGMENTS.map((spec) => [spec.name, spec.capRatio]),
-      [['facts', 0.15]],
-      'this issue registers exactly one segment, with the X-13 cap',
-    )
+    // The registry is now shared with #31's foreshadow segment (X-13 puts facts first),
+    // so this pins **its own** entry rather than "the whole array is mine".
+    assert.equal(EXTRA_SEGMENTS[0]?.name, 'facts', 'facts is the first extra segment (X-13)')
+    assert.equal(EXTRA_SEGMENTS[0]?.capRatio, 0.15, 'and it carries the X-13 cap')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

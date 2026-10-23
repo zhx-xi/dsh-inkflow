@@ -39,6 +39,36 @@ export function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
 }
 
+/**
+ * A list argument read into ids: an array, or one comma/、separated string.
+ *
+ * `multiline` names the first item that carries a line break. That is not cosmetic:
+ * the value goes into a frontmatter list line, and `frontmatterListItem()` **throws**
+ * on a newline — so without this reader an id like `"ch-1\nch-2"` crashes the tool
+ * instead of being refused with a code the model can read. Two domains feed ids into
+ * lists (`advancedAt` / `linkedEntities`, `participants`), which is why the reader is
+ * here rather than copied into each tool file.
+ */
+export interface IdListRead {
+  readonly ids: string[]
+  /** The first id that would break a single frontmatter line, if any. */
+  readonly multiline?: string
+}
+
+export function readIdList(value: unknown): IdListRead {
+  const ids: string[] = []
+  const push = (raw: string): void => {
+    for (const item of raw.split(/[,，、]/u)) {
+      const trimmed = item.trim()
+      if (trimmed !== '') ids.push(trimmed)
+    }
+  }
+  if (typeof value === 'string') push(value)
+  else if (Array.isArray(value)) for (const item of value) if (typeof item === 'string') push(item)
+  const multiline = ids.find((id) => /[\r\n]/u.test(id))
+  return multiline === undefined ? { ids } : { ids, multiline }
+}
+
 export function optionalBoolean(value: unknown): boolean {
   return value === true
 }
