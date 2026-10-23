@@ -34,6 +34,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ClientContext, ConversationViewProps, WorkspaceView } from './context.js'
 import { fetchInternal, setActiveSessionId, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
+import { useScrollBox } from './layout.js'
 import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
 import { LibraryView } from './library.js'
@@ -95,20 +97,23 @@ const tabRowStyle = {
   background: 'var(--dsw-alias-bg-layer-1)',
 } as const
 
+// The two-column body. Its HEIGHT comes from `SCROLL_BOX_STYLE` (spread at the use
+// site, together with the measured variable), never from `flex: 1`: a zero flex
+// basis overrides an explicit height, so `flex: 1` here silently undid the fix
+// (measured: setting a 651px height left the grid at 2428px).
 const bodyStyle = {
   display: 'grid',
   gridTemplateColumns: '260px minmax(0, 1fr)',
-  flex: 1,
   minHeight: 0,
 } as const
 
+// Each column is its own scroll box: the tree can move without the body following.
 const columnStyle = {
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
   padding: 14,
-  minHeight: 0,
-  overflowY: 'auto',
+  ...SCROLL_COLUMN_STYLE,
 } as const
 
 const dividerStyle = { borderLeft: '1px solid var(--dsw-alias-border-l1)' } as const
@@ -280,6 +285,10 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const [newTitle, setNewTitle] = useState('')
   const [newVolume, setNewVolume] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
+  // The chapter body states its own height (issue 116): the slot wrapper above the
+  // panel is content-sized, so a percentage height resolves to the content and both
+  // columns stop scrolling. Measured at runtime, `100%` when it cannot be measured.
+  const scrollBox = useScrollBox()
 
   const workspace = useMemo(() => findSessionWorkspace(workspaceItems, sessionId), [workspaceItems, sessionId])
   const sessionCwd = sessionsById?.[sessionId]?.cwd ?? null
@@ -526,7 +535,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
         // the chapter tree nothing.
         <LibraryView sessionId={sessionId} />
       ) : (
-        <div style={bodyStyle}>
+        <div ref={scrollBox.ref} style={{ ...bodyStyle, ...SCROLL_BOX_STYLE, ...scrollBox.style }}>
           <div style={columnStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <SectionTitle>章节树（卷 → 章）</SectionTitle>
