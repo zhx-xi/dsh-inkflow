@@ -993,6 +993,18 @@ export { LIBRARY_WRITE_BODY_FIELDS } from './library-request.js'
 export { writeLibraryItem } from './library-write.js'
 export type { LibraryWriteRequest } from './library-write.js'
 
+/**
+ * 影响面与改名（#34, conventions §5.6): re-exported only, never implemented here.
+ *
+ * The listing and the rename write live in `impact.ts` / `impact-write.ts` — this
+ * file already carries the session chain and the library projections, and the two
+ * new routes need exactly the same `{sessionId, root}` target as the library ones
+ * and nothing else from it.
+ */
+export { IMPACT_KINDS, buildImpact } from './impact.js'
+export type { ImpactReply, ImpactRequest, ImpactSource } from './impact.js'
+export { RENAME_BODY_FIELDS, renameEntity } from './impact-write.js'
+export type { RenameRequest } from './impact-write.js'
 // The recovery bin (#35): the domain lives in `trash.ts` (imported by
 // `chapters.ts` as well), the three channel replies in `trash-channel.ts`. Both
 // are re-exported here so `routes.ts` keeps ONE entry point for the channel.

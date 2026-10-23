@@ -3,6 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 + 派生索引）、[ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 四态门禁 / catalog / 向导）、[ADR-0007](../adrs/0007-plugin-shared-library.md)（共享库字段与 `.gitignore`）、[ADR-0008](../adrs/0008-panel-data-channel.md)（面板通道）。
 > **依赖**：[data-model.md](data-model.md)（字段字典与不变量）、[architecture.md](architecture.md)（模块边界）。
 > **相关 ADR**：0004（loopback 加固，继承）、0006（目录与门禁，修改 0005 条款）、0007、0008。
+> **references/**：本文件受 800 行上限约束（S6），超出部分下沉到这个目录：[references/impact-and-rename.md](references/impact-and-rename.md)（§5.6 细则）、[references/trash-semantics.md](references/trash-semantics.md)（§3.11.1 细则）。
 > **状态**：活跃。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。契约已定而尚未落地的部分见 §9。
 
 ## 1. 什么算一个 InkFlow 项目
@@ -271,32 +272,7 @@ index/.write.lock
 
 #### 3.11.1 回收站语义（#35）
 
-删除是**可撤销**的：`inkflow_chapter_delete`（以及面板的删除）先把文件移进 `trash/`，再更新 catalog 与索引。三条判据同时成立才算「已删」。
-
-**清单**（`.inkflow/trash/index.json`，`schemaVersion: 1`）：一条 `entries[]`，新的在前。
-
-| 字段 | 类型 | 语义 |
-|---|---|---|
-| `id` | uuid string | 条目的唯一地址；恢复与彻底删除只认它，**不认路径**（路由/工具都不接受路径参数） |
-| `originalPath` | string | 原项目相对路径，也是恢复的落点（正斜杠，不含 `..`） |
-| `deletedAt` | ISO 8601 string | 删除时刻（UTC），仅用于展示与排序 |
-| `bytes` | int | 被删字节数 |
-| `sha256` | hex string | 被删字节的哈希；恢复时逐字节比对 |
-| `reason` | string | 谁删的（当前唯一取值 `chapter_delete`）；解析不了的 `reason` 原样展示，不吞 |
-
-**清单读不出来时一切停摆**：不是 JSON、`schemaVersion` 不是 1、`entries` 不是数组、某条缺字段，或某条的 `originalPath` 不是普通项目相对路径（含指向 `.inkflow/` 自身——恢复它会把文件落回插件自己的状态目录，`listTrash` 再也看不见）→ 一律 `TRASH_MANIFEST_INVALID`：**列表回答 500，且所有删除被拒**。重建清单等于静默丢掉作者可能还需要的那份记录，所以不做自动修复；唯一的出路是作者把 `index.json` 移走（或手工修好），下一次删除会写一份新清单。
-
-**副本与原件的关系**：副本经 `io.ts` 的文本写入器以 `verbatim` 模式落盘，落盘后**回读比对哈希**，只有一致才允许删除原件。因文本写入器只处理 UTF-8，源文件若不是合法 UTF-8（回读写回必然不同字节），删除被拒（`TRASH_COPY_MISMATCH`），原件保持不动——「删不掉的副本，就不许删原件」。**一个原路径只占一个槽位**：副本位置由 `originalPath` 派生，同一路径第二次被删时拿不到第二个槽位，它被拒（`TRASH_ENTRY_EXISTS`，**零写入**，`hint` 指向「先恢复或彻底删除回收站里那条」）而不是静默覆盖上一版的字节——否则旧条目会继续显示可恢复，恢复时却撞上 `TRASH_COPY_CHANGED`，那一版的字节在整本书里就没有了。释放槽位只有两条路：**恢复**该条目（文件回到原路径）或**彻底删除**它，此后同一路径可以再删一次。
-
-**恢复的三条冲突规则**（恢复成功 = 原路径字节与清单 `sha256` 一致，BOM/CRLF 原样保留不做行尾归一 + 副本删除 + 条目移除；恢复**只写原路径这一个文件**，catalog 在下次读取时按 `.md` 重新派生、派生索引按需重建，与删除当场重建 catalog 并提交索引**不对称，这是有意的**：删除必须立刻让那一章从章树、检索与 `entities` 里消失，恢复允许投影按需追上来）：
-
-| 情形 | 结果 | 写入 |
-|---|---|---|
-| 原路径已被占用（作者重建/改名的文件已在该路径） | 拒（`RESTORE_TARGET_EXISTS`） | **零写入**；副本留在回收站，由作者决定是移走新文件还是彻底删除旧副本 |
-| 副本已被手工清理 | 拒（`TRASH_COPY_MISSING`） | 零写入；该条目仍可彻底删除 |
-| 副本哈希与清单不符（在回收站里被改过） | 拒（`TRASH_COPY_CHANGED`） | 零写入——恢复出来必须是**被删的那份字节**，不是看起来像的另一份 |
-
-**彻底删除**需要二次确认：路由与工具层要求 `confirm: true`（缺失或 `false` → `CONFIRM_REQUIRED` 且零写入），面板要求点两次（第一次只把该行置为待确认，第二次才发请求）。删副本 + 删清单条目；副本已不存在不算失败（这是清理孤儿条目的唯一途径）。**不参与索引与检索**：`trash/` 点开头，`walk()` 天然跳过，因此不产 `files` / `entities` 行、不进 `chapters_fts`、不参与新鲜度对拍——删除后的章**同时**从章树、元数据检索、正文全文索引与 `entities` 中消失，而副本仍在回收站里。
+副本落点、清单形状、恢复的冲突规则、彻底删除的二次确认、同路径二次删除的拒绝、以及「清单读不出来时列表 500 且所有删除被拒」见 [references/trash-semantics.md](references/trash-semantics.md)。
 
 ### 3.8 卷章 catalog（`chapters/index.json`）
 
@@ -508,6 +484,10 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 
 **验证**：`node --test tests/file-cas.test.js`（外部改动被拒且目标文件不变、基线正确时正常写入、初始化的两会话竞争）。
 
+### 5.6 改名与影响面
+
+改设定前先看影响面，改名**只写一次**（[ADR-0014](../adrs/0014-entity-id-pinning.md)，roadmap X-15）。完整契约（影响清单的五处来源、改名的文件效应、预览与拒绝同一套码、取消零写入）见 [references/impact-and-rename.md](references/impact-and-rename.md)。
+
 ## 6. 门禁与向导返回约定
 
 非 `usable` 时的拒绝返回（结构化清单，不是异常）：
@@ -579,6 +559,8 @@ resolvedChapter: ch-0001 # resolved: true 时必填：回收所在章 id
 | `/inkflow/internal/library/item` | GET | `sessionId`、`kind`、`id` | 实体投影行 + 该文件的 `frontmatter` / `body` / `bodyChars` / `issues` / `fingerprint`（写路由的 `expected` 基线）；`KIND_REQUIRED`/`KIND_INVALID`(附 `allowed[]`)/`ID_REQUIRED`；索引不可用时 200 + `INDEX_UNAVAILABLE` | `400 KIND_REQUIRED`、`400 KIND_INVALID`、`400 ID_REQUIRED`、`404 library-item-not-found` |
 | `/inkflow/internal/library/issues` | GET | `sessionId` | `issues[]`（`code`/`path`/`detail`）+ `counts`（按 code）+ `truncated` | `SESSION_ID_INVALID` |
 | `/inkflow/internal/library/item` | POST | `sessionId`；`kind`、`id`（实体地址，**不是路径**）、`frontmatter`（键→string/number/boolean/数组；`null` 或 `[]` 删除该键）、`body`（整体替换正文）、`expected`（**必填**基线） | 写后的 `path`/`frontmatter`/`body`/`bodyChars`、`replaced`、`changed[]`（`replacedKeys`/`appendedKeys`/`removedKeys`）、新 `fingerprint`、`indexRebuilt`/`indexState`（失败时 `indexError`/`indexReasons`） | `400 KIND_REQUIRED`/`KIND_INVALID`/`ID_REQUIRED`/`PATH_OUT_OF_SCOPE`/`BODY_INVALID`/`EXPECTED_REQUIRED`/`EXPECTED_INVALID`/`FRONTMATTER_INVALID`/`FRONTMATTER_VALUE_INVALID`/`EMPTY_UPDATE`、`404 library-item-not-found`、`409 FILE_CHANGED`、`200 + indexError`（索引不可用不阻止写） |
+| `/inkflow/internal/impact` | GET | `sessionId`、`kind`；`id` 或 `title`（二选一），可选 `slug` / `newTitle` 出改名预览 | 影响清单（§5.6）：`chapters[]`（`chapterId`/`title`/`seq`/`path`/`mentions`）、`relations[]`、`events[]`、`facts[]`、`foreshadowing[]`、`totals`、`fingerprint`、`indexAvailable`/`indexState`、`rename`（预览计划：`from`/`to`/`slug`/`title`/`pinId`/`targetExists`/`blockers[]`）；只读、零写盘 | `400 KIND_REQUIRED`/`KIND_INVALID`/`SELECTOR_REQUIRED`/`TITLE_AMBIGUOUS`（附 `candidates[]`）、`404 impact-entity-not-found` |
+| `/inkflow/internal/impact/rename` | POST | `sessionId`；`kind`、`id`（实体地址）、`slug`/`title`（至少一个改动）、`expected`（**必填**基线） | 改名结果（§5.6）：`path`（新）/`previousPath`/`id`（不变）/`title`、`pinnedId`（**该条目现在是否已钉住**：真的移动过，或文件原本就带 `id`；只改显示名且原本没有 `id:` 时为 `false`）、`changed[]`（`file`/`id`/`title` 中实际写了的那些）、新 `fingerprint`、`entities` 前后行（`id` 同、`path` 变）、`mentions` 前后条数、`indexRebuilt`/`indexState` | `400 KIND_REQUIRED`/`KIND_INVALID`/`ID_REQUIRED`/`SLUG_INVALID`/`TITLE_INVALID`/`RENAME_NO_CHANGE`/`KIND_NOT_RENAMEABLE`/`EXPECTED_REQUIRED`/`EXPECTED_INVALID`、io 层兜底 `400 PATH_INVALID`/`PATH_TOO_LONG`/`PATH_RESERVED`、`404 impact-entity-not-found`、`409 TARGET_EXISTS`/`FILE_CHANGED`/`PROJECT_BUSY`、`500 IO_FAILED`（附 `rolledBack`） |
 | `/inkflow/internal/chapters/:id` | GET | `sessionId`、`:id`＝章节 `id` 或项目相对路径 | `frontmatter`、`status`、`body`、`bodyChars`、`hasFrontmatter`、`issues`、`volumeId`、`fingerprint`（`size`/`mtimeMs`/`sha256`，写路由的 `expected` 基线） | `404 chapter-not-found`（含越出 `chapters/` 的路径） |
 | `/inkflow/internal/search?q=` | GET | `sessionId`、`q` | `results[]`（章节元数据）、`searchUnavailable: true`、`searchScope: 'chapter-metadata'`、`indexRebuilt`、`indexState`（+ 失败时的 `indexError`/`indexReasons`） | `400 QUERY_REQUIRED` |
 | `/inkflow/internal/chapters` | POST | `sessionId`；`title`（必填）、`volumeId`（`vol-NN` 或 `null`＝散章）、`slug`、`seq` | 新建章 `chapter`（`chapterId`/`file`/`title`/`seq`/`volumeId`/`status`）+ `fingerprint` + `catalogRebuilt`/`indexRebuilt` | `400 TITLE_REQUIRED`/`SEQ_INVALID`/`VOLUME_ID_INVALID`、`404 VOLUME_NOT_FOUND`、`409 CHAPTER_EXISTS`/`SEQ_CONFLICT` |

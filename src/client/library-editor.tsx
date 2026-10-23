@@ -24,12 +24,21 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { fetchInternal, writeInternal } from './internal.js'
 import {
+  buildImpactDigest,
+  describeImpactError,
+  describeRenameError,
+  impactQuery,
+  renamePayload,
+} from './impact-model.js'
+import type { ImpactDigest, ImpactValue } from './impact-model.js'
+import {
   describeLibraryError,
   describeSaveError,
   draftFromItem,
   draftPayload,
   fieldsForKind,
   fingerprintOf,
+  renameTitleField,
   unknownFields,
 } from './library-model.js'
 import type { LibraryDraft, LibraryFieldSpec, LibraryItemValue, LibraryTreeItem } from './library-model.js'
@@ -97,6 +106,205 @@ export interface LibraryItemEditorProps {
   onCancel: () => void
   /** `true` while the draft differs from the file — the parent guards leaving on it. */
   onDirtyChange: (dirty: boolean) => void
+}
+
+/**
+ * 改名 + 影响面 (#34, conventions §5.6, ADR-0014).
+ *
+ * The dialog is inside the editor because that is where the author already stands
+ * when they decide a name is wrong — and it does exactly two things:
+ *
+ *   1. it asks the Host what the change would touch (`GET /impact`), and prints the
+ *      five reference sites with their counts;
+ *   2. after an explicit click it sends **one** write (`POST /impact/rename`).
+ *
+ * Closing the panel sends nothing, which is what makes "取消 = 零写入" true without
+ * a rollback path: the plan is a read. The two decisions worth stating because a
+ * reader will ask:
+ *
+ *   * **The file name and the display name are separate inputs.** Only an explicit
+ *     new file name moves the file; a display-name edit keeps the path (the same
+ *     rule the ordinary save follows — see `library-write.ts`).
+ *   * **A dirty draft blocks the rename.** Both writes target the same bytes, so
+ *     renaming with unsaved edits would silently drop them.
+ */
+function RenameImpactPanel({
+  item,
+  baseline,
+  sessionId,
+  dirty,
+  onRenamed,
+}: {
+  item: LibraryTreeItem
+  baseline: LibraryItemValue
+  sessionId: string
+  dirty: boolean
+  onRenamed: (value: LibraryItemValue) => void
+}) {
+  const titleField = renameTitleField(item.kind)
+  const currentPath = baseline.path ?? item.path
+  const currentTitle = baseline.title ?? item.title
+  const [slug, setSlug] = useState(() => currentPath.split('/').pop()?.replace(/\.md$/u, '') ?? '')
+  const [newTitle, setNewTitle] = useState(() => currentTitle)
+  const [digest, setDigest] = useState<ImpactDigest | null>(null)
+  const [plan, setPlan] = useState<ImpactValue['rename']>(undefined)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  /** The preview the dialog shows: the same route the listing uses, with the plan. */
+  const preview = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const query = `${impactQuery(item.kind, item.id)}&slug=${encodeURIComponent(slug.trim())}${
+      titleField === undefined ? '' : `&newTitle=${encodeURIComponent(newTitle.trim())}`
+    }`
+    const result = await fetchInternal<ImpactValue>(query, { sessionId })
+    setBusy(false)
+    if (!result.ok) {
+      setDigest(null)
+      setPlan(undefined)
+      setError(describeImpactError(result.error))
+      return
+    }
+    const value = result.value ?? {}
+    setDigest(buildImpactDigest(value))
+    setPlan(value.rename)
+  }
+
+  const confirm = async (): Promise<void> => {
+    if (busy) return
+    const body = renamePayload({
+      kind: item.kind,
+      id: item.id,
+      slug: slug.trim(),
+      title: titleField === undefined ? '' : newTitle.trim(),
+      fingerprint: fingerprintOf(baseline),
+    })
+    if (body === null) {
+      setError('没有可写的内容（新文件名/新名称都没变，或这一条没有基线指纹）。')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const result = await writeInternal<Record<string, unknown>>('/impact/rename', body, { sessionId })
+    setBusy(false)
+    if (!result.ok) {
+      setError(describeRenameError(result.error))
+      return
+    }
+    const value = (result.value ?? {}) as Record<string, unknown>
+    const path = typeof value['path'] === 'string' ? value['path'] : currentPath
+    const title = typeof value['title'] === 'string' ? value['title'] : currentTitle
+    const frontmatter: Record<string, unknown> = { ...(baseline.frontmatter ?? {}), id: item.id }
+    if (titleField !== undefined) frontmatter[titleField] = title
+    setNotice(`已改名：${currentPath} → ${path}（id 仍为 ${item.id}，引用一处都没改）`)
+    onRenamed({
+      ...baseline,
+      path,
+      title,
+      frontmatter,
+      fingerprint: (value['fingerprint'] as LibraryItemValue['fingerprint']) ?? baseline.fingerprint,
+      indexError: value['indexError'] as LibraryItemValue['indexError'],
+      indexRebuilt: value['indexRebuilt'] === true,
+      indexState: typeof value['indexState'] === 'string' ? value['indexState'] : baseline.indexState,
+    })
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>改名与影响面</div>
+      <div style={{ ...muted, fontSize: 12, marginBottom: 8 }}>
+        改名只会移动这一个文件，并把旧 id 钉在新文件的 frontmatter 里：关系、时间线、账本、伏笔、提及记录都**不会被改动**。先看清单，再决定。
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <label style={labelStyle}>
+          新文件名（不含 .md）
+          <span style={{ ...mono, fontSize: 11 }}>{currentPath}</span>
+        </label>
+        <input type="text" value={slug} spellCheck={false} style={inputStyle} onChange={(event) => setSlug(event.target.value)} />
+        {titleField === undefined ? null : (
+          <>
+            <label style={labelStyle}>
+              新名称
+              <span style={{ ...mono, fontSize: 11 }}>{titleField}</span>
+            </label>
+            <input type="text" value={newTitle} spellCheck={false} style={inputStyle} onChange={(event) => setNewTitle(event.target.value)} />
+          </>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+        <button type="button" style={buttonStyle} disabled={busy} onClick={() => void preview()}>
+          {busy ? '查询中…' : '查看影响面'}
+        </button>
+        <button type="button" style={primaryButtonStyle} disabled={busy || dirty || plan === undefined} onClick={() => void confirm()}>
+          确认改名
+        </button>
+        <span style={{ ...muted, fontSize: 11 }}>
+          {dirty
+            ? '先保存或放弃当前的字段改动，再改名（两处改动会互相覆盖）。'
+            : plan === undefined
+              ? '先看影响面：确认按钮在清单出来之后才可用。'
+              : `${plan.from} → ${plan.to} · id 钉住 ${plan.pinId}`}
+        </span>
+      </div>
+
+      {plan !== undefined && plan.blockers.length > 0 ? (
+        <div role="alert" style={{ ...muted, fontSize: 12, marginTop: 6, color: 'var(--dsw-alias-state-error-primary)' }}>
+          {plan.blockers.includes('TARGET_EXISTS')
+            ? '同一个目录里已经有这个文件名，改名会被拒绝。'
+            : plan.blockers.includes('KIND_NOT_RENAMEABLE')
+              ? '这一类的文件名就是它的主体，不能改名。'
+              : plan.blockers.includes('SLUG_INVALID')
+                ? '这个文件名不能用：不能以点开头（那样写出来谁也看不见），不能含路径分隔符，也不能用 con / nul / COM1 这类保留名。'
+                : plan.blockers.includes('TITLE_INVALID')
+                  ? '显示名不能换行：frontmatter 里一个名字只占一行。'
+                  : `无法改名：${plan.blockers.join('、')}`}
+        </div>
+      ) : null}
+      {error === null ? null : (
+        <div role="alert" style={{ ...muted, fontSize: 12, marginTop: 6, color: 'var(--dsw-alias-state-error-primary)' }}>
+          {error}
+        </div>
+      )}
+      {notice === null ? null : (
+        <div role="status" style={{ ...muted, ...mono, marginTop: 6 }}>
+          {notice}
+        </div>
+      )}
+
+      {digest === null ? null : (
+        <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+          <div style={{ fontSize: 13 }}>{digest.headline}</div>
+          {digest.notice === null ? null : (
+            <div style={{ ...muted, fontSize: 11, color: digest.available ? undefined : 'var(--dsw-alias-state-error-primary)' }}>
+              {digest.notice}
+            </div>
+          )}
+          {digest.empty ? <div style={{ ...muted, fontSize: 12 }}>这本书目前没有任何地方引用它：改名不会被任何章、关系或账本牵连。</div> : null}
+          {digest.groups.map((group) => (
+            <div key={group.key} style={{ display: 'grid', gap: 2 }}>
+              <div style={{ ...muted, fontSize: 12 }}>
+                {group.label} · {group.total}
+              </div>
+              {group.rows.slice(0, 5).map((row) => (
+                <div key={row} style={{ ...mono, paddingLeft: 10 }}>
+                  {row}
+                </div>
+              ))}
+              {group.rows.length > 5 ? (
+                <div style={{ ...muted, fontSize: 11, paddingLeft: 10 }}>还有 {group.rows.length - 5} 条</div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** One input for one field: a checkbox, a one-item-per-line box, or a single line. */
@@ -290,6 +498,8 @@ export function LibraryItemEditor({ item, detail, sessionId, onSaved, onReloaded
         />
         <div style={{ ...muted, ...mono, marginTop: 4 }}>{[...draft.body.replace(/\s+/gu, '')].length} 字</div>
       </div>
+
+      <RenameImpactPanel item={item} baseline={baseline} sessionId={sessionId} dirty={dirty} onRenamed={onSaved} />
 
       {/* The refusal/notice sits NEXT TO the button that produced it (issue 115):
           the old position was the top of the editor, which on a long entry is

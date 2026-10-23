@@ -520,6 +520,28 @@ export {
 } from './private-state.js'
 
 /**
+ * 设定变更的影响面与改名（#34, conventions §5.6, ADR-0014): the read-only listing
+ * (five reference sites, the plan preview) and the one write that follows it
+ * (move the file, pin the old id, rewrite nothing else).
+ */
+export { IMPACT_KINDS, buildImpact, impactKindOf, planRename, renameRefusal, resolveEntity, scanKindEntities, titleFieldOf } from './impact.js'
+export type {
+  ImpactChapterRow,
+  ImpactEventRow,
+  ImpactFactRow,
+  ImpactForeshadowRow,
+  ImpactRelationRow,
+  ImpactRenamePlan,
+  ImpactReply,
+  ImpactReport,
+  ImpactRequest,
+  ImpactSource,
+  ResolvedEntity,
+} from './impact.js'
+export { renameEntity } from './impact-write.js'
+export type { RenameRequest } from './impact-write.js'
+
+/**
  * The recovery bin (#35, roadmap X-9/X-10): move one file into `.inkflow/trash/`,
  * list what is there, put an entry back byte-identically, or purge one entry —
  * the last only with `confirm: true`.

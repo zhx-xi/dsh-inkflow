@@ -274,7 +274,7 @@
 | I-17 | 时间线 `worldTime` 必须是真实日期 `YYYY[-MM[-DD]]`（月 13、2 月 30 日都不合法） | 拒 | `TIMELINE_TIME_INVALID` |
 | I-18 | 同一叙事槽位（book-wide `narrativeOrder`，跨章也同槽）不得声明两个不同世界时间 | 拒 | `TIMELINE_ORDER_CONFLICT` |
 | I-19 | 叙事槽位递增时世界时间不得倒退（＝倒叙/回忆，正常写法） | 报（不拒） | `TIMELINE_WORLD_TIME_REVERSED` |
-| I-20 | 实体 `id` 与文件路径可以不一致（改名时旧 id 被钉住，[ADR-0014](../adrs/0014-entity-id-pinning.md)）；唯一性仍按 `(kind, id)` 判 | 放行；体检列为提示 | `ID_PATH_DIVERGED`（info，不阻断） |
+| I-20 | 实体 `id` 与文件路径可以不一致（改名时旧 id 被钉住，[ADR-0014](../adrs/0014-entity-id-pinning.md)）；唯一性仍按 `(kind, id)` 判。**报出条件**：`id ≠ path` **且** id 形如旧路径（含 `/` 且以 `.md` 结尾）；**章除外**（id 是 catalog 给的 uuid，永远不等于路径）；**手写短 id 不报**（`id: char-1` 是身份，不是改名留下的痕迹） | 放行；体检列为提示（判据＝上行「报出条件」，提示的呈现归 #33） | `ID_PATH_DIVERGED`（info，不阻断） |
 | I-21 | 伏笔状态机只允许 `planted → advanced → resolved`，以及任一未终态 → `overdue`；`resolved` 是终态 | 拒 | `FORESHADOW_TRANSITION_INVALID`（#31） |
 | I-22 | 账本每行必须可解析为一条事实：`attribute` + `value` 必填，段形如 `键: 值` 且以 `\|` 分隔，值内含字面 `\|` 时写 `\|`；未知键保留不报错 | 不阻断，报行锚 `path#L<n>`（1-based） | `FACT_LINE_MALFORMED` |
 | I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同（`since` 含、`until` 不含；缺省 `until` = 至今成立）。区间按**章序**（`chapters.seq`）比较，不按 id 字典序；章序解析不出的边界不参与判定。**空区间不算区间**：`until <= since`（含 `until == since` 的 `[c,c)` 与写反的 `until < since`）永不成立，既不进快照也不参与冲突配对——把它当跨段比对会诬告一条永不在生效的事实 | 拒 | `FACT_CONFLICT` |

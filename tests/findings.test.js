@@ -37,9 +37,6 @@ const repoRoot = join(here, '..')
 const RESERVED_CODES = new Set([
   'ENTITIES_DRIFT',
   'FORESHADOW_TRANSITION_INVALID',
-  // I-20, emitted by the impact/rename work (#34): nothing diverges until a rename
-  // pins an id, and renames do not exist yet.
-  'ID_PATH_DIVERGED',
 ])
 
 /**
