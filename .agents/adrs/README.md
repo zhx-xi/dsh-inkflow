@@ -23,6 +23,7 @@
 | [0012](0012-plugin-private-state-dir.md) | 插件私有状态目录 `<book>/.inkflow/`（回收站/迁移备份/审计导出）+ 写白名单扩展 | 已采纳 | 2026-10-24 |
 | [0013](0013-facts-ledger-line-format.md) | 事实账本用正文列表项 + 竖线分隔键值（一文件多事实的编码） | 已采纳 | 2026-10-24 |
 | [0014](0014-entity-id-pinning.md) | 实体改名用「id 钉住」，不级联重写引用 | 已采纳 | 2026-10-24 |
+| [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（检测/预览/修复三段 + 可回滚备份包） | 已采纳 | 2026-10-24 |
 
 ### 1.2 决策速览（一行一条）
 
@@ -42,6 +43,7 @@
 | [0012](0012-plugin-private-state-dir.md) | **插件私有状态目录 `<book>/.inkflow/{trash,backup,audit}/`**：不是内容目录、不参与门禁、不进索引与 git（`REQUIRED_GITIGNORE_LINES` 追加 `.inkflow/`），写只经 `resolveWriteTarget` 批过的三条子路径；`trash/` 永不自动清理，超阈值只提示 | `index/` 缺失会被静默重建（ADR-0006 D2）且只忽略 `*.db` → 回收站放进去等于「重建索引即丢数据、还会被提交进 git」；`$DSH_HOME` 方案依赖未裁决的 `projectId`（Q12） |
 | [0013](0013-facts-ledger-line-format.md) | **事实账本一条事实一个正文列表项**：`- attribute: … │ value: … │ since: … │ chapterId: … │ source: …`，frontmatter 只放 `subject`；值里的 `│` 写 `\|`；未知键保留 | 读取器不支持嵌套映射（同时间线 `worldTime` 的因），Markdown 表格与中文竖线打架、对齐行污染 diff，一条一文件又与 §3.5 的文件粒度冲突 |
 | [0014](0014-entity-id-pinning.md) | **实体改名 = 移动文件 + 把旧 id 写进新文件 frontmatter**，五处引用（关系端点/时间线参与/账本主体/伏笔关联/提及键）一个都不重写；影响清单只告知；新增 info 级 `ID_PATH_DIVERGED` | 级联重写是 N 个文件的非事务动作，中途失败留半改状态，正好违反「取消时零写入」；而显式 `id` 本来就是 §3.1 推荐的合法写法，钉住只需一次写 |
+| [0015](0015-repair-and-migration.md) | **修复 = 检测/预览/修复三段**（`detect` 与 `preview` 零写盘，`fix` 需 `confirm`），动作只有四种（补 frontmatter 必填键 / 重挂 `parent:` / 删重复关系 / 重建 catalog 投影），`fixable:false` 一律不做；**6→9 迁移只增目录 + 只改两个元数据文件**（`.gitignore` append-only、`inkflow.json` 只改 `schemaVersion`），内容文件零字节变动；两者都先写 `<book>/.inkflow/backup/<stamp>/`（清单先写 `sealed:false` 再盖章）以便逐字节回滚，报告落 `.inkflow/audit/` | 迁移改的是**已存在**的文件，向导式的内存撤销一崩就没，所以只在「改已存在文件」的路径上落盘撤销；删除重复关系按「索引保留第一条」这一条确定规则而不是猜哪条更「像名字」；非法枚举值不改——修复侧与写侧同一条纪律：拒绝而不是降级 |
 
 ## 2. 编号与登记规则
 

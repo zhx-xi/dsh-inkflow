@@ -744,6 +744,7 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 - **幂等**：同一状态连续 apply 两次，第二次 `created[]` 为空，`skipped[]` 覆盖上一次创建的全部项。
 - **坏 meta 是唯一例外**：`inkflow.json` 存在但不可解析/不可用时，plan 与 apply 的确认轮都返回 `metaRaw`；只有 `confirm: true` 才会重建它（重建需 `title`，否则 `META_TITLE_REQUIRED`）。
 - `needs-newer-plugin` 下 apply 直接拒绝（`PROJECT_NEEDS_NEWER_PLUGIN`），零写入。
+- 内容层的修复（frontmatter/catalog/大纲/关系）与老六目录书的迁移是**另一条链路**：`inkflow_project_repair` / `inkflow_project_migrate`，同样 plan → confirm，落 `.inkflow/{backup,audit}/`，契约见 [ADR-0015](../adrs/0015-repair-and-migration.md)。
 
 ### 6.4 `git init` 边界
 
