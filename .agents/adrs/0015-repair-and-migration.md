@@ -33,14 +33,25 @@
 
 ### D2 「只补不改」的边界（可执行的清单）
 
-允许的动作**只有四种**，其余一律进报告的「未自动修」并给理由：
+允许的动作**只有五种**，其余一律进报告的「未自动修」并给理由：
 
 | 动作 | 做什么 | 为什么算「只补」 |
 |---|---|---|
 | `patch-frontmatter` | 追加缺失的 `subject:`（`facts/`）与 `kind:`（`relations/`） | 这两个值**读取侧早就在用兜底**（文件名 / `character`），写下来只是让文件说出索引已经假定的事 |
+| `derive-foreshadow-status` | 按文件自带的证据字段改写 `status` **一行**（[data-model §3.2.1](../specs/data-model.md) 的状态机） | 状态与证据矛盾时答案唯一：`resolved: true` 或 `resolvedChapter` 非空 → `resolved`；否则 `advancedAt` 非空 → `advanced`；否则 → `planted`。这是把文件自己已经写下的证据翻译成它该有的状态，不是新造事实 |
 | `reparent-outline` | 把卷纲/章纲的 `parent:` 指向合法祖先 | 修的是**指针**，不是标题、不是正文 |
 | `remove-duplicate` | 删掉后出现的重复关系文件 | 同一 `(source,target,kind)` 只留一条；被删的字节**先**进备份包 |
 | `rebuild-catalog` | 重建 `chapters/index.json` 与各卷 catalog | catalog 是 `.md` 的**派生投影**（ADR-0006 D6） |
+
+`derive-foreshadow-status` 是表里唯一会**改写既有值**的动作（前四者都在补缺失或重定向指针），它因此有两条硬边界：
+
+| 情形 | 处置 | 为什么 |
+|---|---|---|
+| `resolved: false` 且有 `resolvedChapter` | **不推导**，进「未自动修」并说明两字段互相矛盾 | 写 `resolved` 治不好 I-21 的第②条（`resolved: false` 仍与它矛盾），写 `planted` 又否认了那一章：任何选择都是猜 |
+| `resolved: true` 但缺 `resolvedChapter` | **不推导**，进「未自动修」并说明要先补章 | 写 `status: resolved` 会消掉 I-21 却立刻报出 `FORESHADOW_RESOLVED_WITHOUT_CHAPTER`（I-09）：拿一条问题换另一条 |
+| `status` 与证据已经一致 | 不产生动作（**零写入**） | 幂等：一本书修过一遍，第二遍不该再有动作 |
+
+它只由 `FORESHADOW_TRANSITION_INVALID` 触发；`FORESHADOW_RESOLVED_WITHOUT_CHAPTER` 不触发它——把 `status` 降级成 `planted` 虽能让 I-09 不再报，但那是**抹掉作者声明的回收**，属于明令不做的那一类。
 
 三条**明令不做**：不改正文、标题、`id`；不把非法枚举值「改正」（`kind: 知识` 要人决定）；`fixable:false` 的码一个都不碰。
 
@@ -89,6 +100,19 @@
 
 代价：一轮动作之间没有互斥，两个会话同时对同一本书跑修复会互相踩（各自的动作仍是原子的，坏的是「两个计划基于同一份旧视图」）。对策是**入口**：两个工具都要求 `confirm: true`，且 `preview` 与 `apply` 不在同一个动作里完成——重跑 `detect` 是免费的，报告里也写明「计划可能已过期，重跑一次再确认」。
 
+### D9 写锁住在 `index/`：报告口径与回滚清理都要认这件事
+
+`io.ts` 的项目写锁文件是 `<book>/index/.write.lock`，取锁时 `mkdirSync(index)`。于是「派生目录 `index/` 由谁创建」有一个与迁移无关的事实：**任何一次走 `io.ts` 的写都会顺手建出 `index/`**——包括迁移自己（备份包清单、每个 `stageFile`、审计报告）。
+
+两个后果，都在 `migrate.ts` 里收口：
+
+| 症状 | 处置 |
+|---|---|
+| `plan` 列 N 步、`apply` 报 N-1 步，缺的是 `create-dir index` | 执行前先快照「计划要建、此刻确实不存在」的目录集合；`create-dir` 到达时目录已存在且**为空**，就认定是本轮自己的副作用：照常计入 `applied` 并写进备份包的 `dirs`（回滚才收得掉）。非空则维持「已就位」的跳过语义——别人填进去的目录不认领 |
+| `rollback` 后空 `index/` 残留 | 回滚后用清单里的 `dirs` 再扫一遍：空的删掉；非空（例如门禁重建的 `index/inkflow.db`）**保留并在报告里写明「派生物保留」**。因为最后那份审计报告本身也要取锁，这次清扫必须放在报告写完之后，作为整轮最后一个动作 |
+
+取舍：不把 `index/` 从计划里删掉（那是「十项目录各带 `.gitkeep`」的约定，删了等于把一次迁移交给门禁去自愈），也不搬 `io.ts` 的锁位置（锁是全局约定，为一个工具的评价口径搬它不划算）。代价是「本轮新建且为空」这条判据要求精确：判据是**执行前的快照**，不是「现在是不是空的」。
+
 ## 备选与取舍
 
 | 方案 | 优点 | 代价 | 为什么没选 |
@@ -119,4 +143,6 @@
 - `tests/tool-schema.test.js`：工具面 26 → 28（两个新工具），域工具仍 14。
 - `tests/domain-registry.test.js` / `tests/contract.test.js`：内建面 12 → 14，名字与 surface hash 同步。
 - `tests/findings.test.js`：**未新增**任何 code（本单不新增不变量，只消费既有目录），双向对拍保持绿。
+- `tests/foreshadow-status-repair.test.js`（见 D2）：三档推导各一条（`planted`+`advancedAt` → `advanced`、`resolvedChapter` → `resolved`、空 `advancedAt` → `planted`）；**逐字节**断言「补丁后的全文 == 原文只换 `status` 那一行」；一致的文件零动作、零写入、不开备份包；两种互相矛盾的证据不推导且带理由存活；推导出来的写受备份包覆盖、回滚后字节一致。
+- `tests/migrate.test.js`（见 D9）：缺 `index/` 的老书 `plan.length == applied.length` **且逐项同序**；回滚后空 `index/` 不再残留；`index/` 里有 `inkflow.db` 时保留并在 `kept` 里说明。
 - `npm run check` 全绿。

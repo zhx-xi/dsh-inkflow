@@ -18,7 +18,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -286,4 +286,77 @@ test('migrate: an unreadable inkflow.json is not migrated — the wizard asks fo
   assert.equal(result.ok, false)
   assert.equal(result.error.code, 'META_INVALID')
   assert.equal(readFileSync(join(root, 'inkflow.json'), 'utf8'), '{ not json')
+})
+
+// ---------------------------------------------------------------------------
+// #138: the derived `index/` directory
+// ---------------------------------------------------------------------------
+
+/**
+ * The legacy layout **without** `index/`.
+ *
+ * This is the shape #138 was reported on. It matters because `index/` is the one
+ * required directory the write path creates by itself: `io.ts` puts the project
+ * write lock at `index/.write.lock`, so the first `stageFile` of any run materialises
+ * the directory. A plan (read-only, no lock) therefore promises `create-dir index`,
+ * while the run reached that step with the directory already in place — and used to
+ * report one step fewer than it had promised.
+ */
+function legacyBookWithoutIndex() {
+  const root = legacyBook()
+  rmSync(join(root, 'index'), { recursive: true, force: true })
+  assert.equal(existsSync(join(root, 'index')), false)
+  return root
+}
+
+test('migrate: plan and apply agree step for step on a book without index/ (#138)', () => {
+  const root = legacyBookWithoutIndex()
+  const planned = planMigration(root)
+  const plannedKeys = planned.actions.map((action) => keyOf(action.op, action.path))
+  assert.ok(plannedKeys.includes('create-dir index'), 'the plan still promises the derived directory')
+  assert.equal(planned.actions.length, 13)
+
+  const result = applyMigration(root, { confirm: true })
+  assert.equal(result.ok, true, result.error?.message)
+  assert.equal(result.applied.length, planned.actions.length, 'the run did as many steps as the plan promised')
+  assert.deepEqual(result.applied, plannedKeys, 'the same steps, in the same order, spelled the same way')
+  assert.deepEqual(result.skipped, [])
+  assert.equal(existsSync(join(root, 'index')), true)
+  assert.equal(readFileSync(join(root, 'index', '.gitkeep'), 'utf8'), '')
+})
+
+test('migrate: a rollback removes the empty index/ directory the run created (#138)', () => {
+  const root = legacyBookWithoutIndex()
+  const before = fileDigests(root)
+  const gitignoreBefore = readFileSync(join(root, '.gitignore'), 'utf8')
+  const result = applyMigration(root, { confirm: true })
+  assert.equal(result.ok, true)
+  assert.equal(existsSync(join(root, 'index')), true)
+
+  const rolled = rollbackMigration(root, { backup: result.backup.dir.split('/').pop() })
+  assert.equal(rolled.ok, true, rolled.error?.message)
+  assert.ok(rolled.dirsRemoved.includes('index'), 'the directory the run created is swept like the other four')
+  assert.equal(existsSync(join(root, 'index')), false, 'no empty index/ residue after a rollback')
+  assert.deepEqual(changedPaths(before, fileDigests(root)), ['.gitignore'])
+  assert.equal(readFileSync(join(root, '.gitignore'), 'utf8'), `${gitignoreBefore}${PRIVATE_STATE_IGNORE_LINE}`)
+})
+
+test('migrate: a rollback keeps index/ that holds the derived database, and says why (#138)', () => {
+  const root = legacyBookWithoutIndex()
+  const result = applyMigration(root, { confirm: true })
+  assert.equal(result.ok, true)
+  // The index is a rebuildable cache, not this run's product: it may appear between
+  // the migration and the rollback (the gate rebuilds it on the next read).
+  writeFileSync(join(root, 'index', 'inkflow.db'), 'derived', 'utf8')
+
+  const rolled = rollbackMigration(root, { backup: result.backup.dir.split('/').pop() })
+  assert.equal(rolled.ok, true, rolled.error?.message)
+  assert.equal(rolled.dirsRemoved.includes('index'), false)
+  assert.equal(existsSync(join(root, 'index')), true, 'a directory holding a cache is never deleted')
+  assert.equal(readFileSync(join(root, 'index', 'inkflow.db'), 'utf8'), 'derived')
+  const kept = rolled.kept.find((entry) => entry.path === 'index')
+  assert.ok(kept !== undefined, 'the report names the directory it left alone')
+  assert.match(kept.reason, /derived|派生物/u)
+  // The marker file this run created is gone again; only the cache is left.
+  assert.equal(existsSync(join(root, 'index', '.gitkeep')), false)
 })

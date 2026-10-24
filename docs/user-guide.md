@@ -166,7 +166,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_project_init` | 执行上面那份清单（建目录 + `.gitkeep` + `inkflow.json` + `.gitignore` + 必要时 `git init`）；**只补缺的，不覆盖已有文件**；必须带确认 | 「就按这个清单建」/「把缺的补齐」 |
 | `inkflow_index_rebuild` | 从文件重建索引并检查一致性 | 「重建一下索引」 |
 | `inkflow_project_audit` | 一致性体检：结构 / 账本 / 伏笔 / 时间线 / catalog 五类一次列全，每条带定位与修法；`export: true` 再导出 Markdown 到 `.inkflow/audit/` | 「体检一下这本书」/「导一份体检报告」 |
-| `inkflow_project_repair` | 三段式修复：`detect` 只列问题、`preview` 只给动作（零写盘）、`fix` 才写（需确认）；只补必填键 / 重挂 parent / 删重复关系 / 重建 catalog | 「看看能自动修哪些」/「把能修的修掉」 |
+| `inkflow_project_repair` | 三段式修复：`detect` 只列问题、`preview` 只给动作（零写盘）、`fix` 才写（需确认）；只补必填键 / 按证据字段推导伏笔 `status` / 重挂 parent / 删重复关系 / 重建 catalog | 「看看能自动修哪些」/「把能修的修掉」 |
 | `inkflow_project_migrate` | 老六目录书升到九目录：`plan` 只读、`apply` 需确认、`rollback` 从 `.inkflow/backup/` 回滚 | 「这本书是老结构，迁一下」/「刚才那次迁移撤回」 |
 
 **卷与章**
@@ -271,7 +271,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 - **体检**（`inkflow_project_audit` / 体检页签）：结构不变量、事实账本冲突、伏笔超期、时间线矛盾、catalog 偏差五类一次列全，每条带定位（`kind:id` / `chapter:<id>` / `path#L<n>`）与一句修法。同一份没改过的书跑两次，报告正文**逐字相同**（可以进 git 对比）。
 - **导出**：报告可以写成 Markdown 落到 `<书>/.inkflow/audit/`——它是派生物，删了随时能重算，所以不进 git。
-- **一键修复**（`inkflow_project_repair`）是三段式：`detect` 只列问题、`preview` 只给动作（**零写盘**）、`fix` 才写（要确认）。它**只补不改**：补 frontmatter 必填键、重挂错误的 `parent`、删重复关系、重建 catalog 投影；**修不掉的一律不进自动修复**（比如悬空引用、坏账本行），报告里会说明为什么。修完会**重跑同一套检查**证明问题消失。
+- **一键修复**（`inkflow_project_repair`）是三段式：`detect` 只列问题、`preview` 只给动作（**零写盘**）、`fix` 才写（要确认）。它**只补不改**：补 frontmatter 必填键、按证据字段推导伏笔的 `status`（与 `resolved` / `resolvedChapter` / `advancedAt` 矛盾时按确定规则改那**一行**，两字段互相矛盾时留给作者）、重挂错误的 `parent`、删重复关系、重建 catalog 投影；**修不掉的一律不进自动修复**（比如悬空引用、坏账本行），报告里会说明为什么。修完会**重跑同一套检查**证明问题消失。
 
 ### 5.9 老书升级：六目录 → 九目录
 

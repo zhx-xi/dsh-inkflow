@@ -16,7 +16,10 @@
  *   1. **Dry run and execution are the same list.** `planMigration()` produces the
  *      actions; `applyMigration()` re-plans and reports, per step, whether it
  *      actually changed something. The two lists are compared as *sets* in the
- *      tests, so a step that silently does nothing cannot hide behind a count.
+ *      tests, so a step that silently does nothing cannot hide behind a count. The
+ *      one directory a run creates **by itself** — `index/`, where `io.ts` keeps the
+ *      project write lock — is adopted instead of being reported as drift
+ *      (ADR-0015 D9).
  *   2. **Snapshot before the first write.** `<book>/.inkflow/backup/<stamp>/`
  *      holds copies of every file the run will modify and a manifest with the
  *      digest each one had and the digest it got (`backup.ts`). The manifest is
@@ -34,13 +37,14 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs'
 import { relative as relativePath, resolve } from 'node:path'
 
 import {
   digestRelative,
   newBackupBody,
   openBackup,
+  readBackup,
   rollbackBackup,
   sealBackup,
   stageFile,
@@ -315,6 +319,19 @@ export function applyMigration(projectRoot: string, input: MigrationApplyInput =
   }
 
   const now = input.now ?? new Date()
+
+  // #138: `index/` is the one required directory a run creates *by itself*. `io.ts` keeps the
+  // project write lock at `index/.write.lock`, so the first write of the run — the package's own
+  // manifest — materialises `index/` before the `create-dir index` step is reached, and that step
+  // then honestly reported "already in place". That is how a 13-step plan turned into "Applied 12
+  // step(s)". This snapshot is taken before anything is written, so a step can tell the run's own
+  // side effect apart from plan drift.
+  const absentAtStart = new Set(
+    plan.actions
+      .filter((action) => action.op === 'create-dir' && !existsSync(resolve(root, action.path)))
+      .map((action) => action.path),
+  )
+
   const opened = openBackup(root, 'migrate', now)
   if (!opened.ok) {
     return {
@@ -350,7 +367,7 @@ export function applyMigration(projectRoot: string, input: MigrationApplyInput =
 
   for (const action of plan.actions) {
     try {
-      const changed = runStep(root, handle, action, body)
+      const changed = runStep(root, handle, action, body, absentAtStart)
       if (changed) {
         applied.push(`${action.op} ${action.path}`.trim())
         body.steps.push(`${action.op} ${action.path}`.trim())
@@ -441,8 +458,17 @@ function stamp(at: Date): string {
 /**
  * Run one step and record what it changed. Returns `false` when the step found its
  * work already in place (plan drift never overwrites anything).
+ *
+ * `absentAtStart` is the set of `create-dir` targets the run measured as missing
+ * *before* it touched anything — see the comment at the call site (#138).
  */
-function runStep(root: string, handle: BackupHandle, action: MigrationAction, body: BackupBody): boolean {
+function runStep(
+  root: string,
+  handle: BackupHandle,
+  action: MigrationAction,
+  body: BackupBody,
+  absentAtStart: ReadonlySet<string>,
+): boolean {
   switch (action.op) {
     case 'git-init': {
       const result = gitInit(root)
@@ -453,7 +479,15 @@ function runStep(root: string, handle: BackupHandle, action: MigrationAction, bo
     }
     case 'create-dir': {
       const target = resolve(root, action.path)
-      if (existsSync(target)) return false
+      if (existsSync(target)) {
+        // The plan said this directory was missing, so a directory that is here now and
+        // empty is the run's own side effect (the write lock's `index/`). Counting nothing
+        // would make the plan and the applied list disagree; counting a directory somebody
+        // else filled would claim work this run did not do — so only an empty one is taken.
+        if (!absentAtStart.has(action.path) || !isEmptyDir(target)) return false
+        body.dirs.push(action.path)
+        return true
+      }
       mkdirSync(target, { recursive: true })
       body.dirs.push(action.path)
       return true
@@ -511,6 +545,19 @@ function runStep(root: string, handle: BackupHandle, action: MigrationAction, bo
  * The verification lives in `backup.ts` (a file changed after the run is a
  * conflict, not an overwrite); this wrapper adds the audit trail, because "we
  * rolled it back" is exactly the claim that needs a timestamped record.
+ *
+ * It also finishes the directory half of the undo (#138): `backup.ts` removes the
+ * directories the package recorded as created **when they are empty**, and says
+ * nothing about the ones it had to leave. Two things follow, and both are handled
+ * here rather than there:
+ *
+ *   1. a directory that now holds something (the gate rebuilt `index/inkflow.db` after
+ *      the migration) is *kept*, and the report has to name it — a silent "kept" reads
+ *      like a leftover;
+ *   2. every write in this function takes the project write lock, whose file lives in
+ *      `index/` — so the report write recreates the very directory the rollback just
+ *      removed. The sweep therefore runs a second time, **after** the report, as the
+ *      last thing that happens.
  */
 export function rollbackMigration(
   projectRoot: string,
@@ -536,6 +583,11 @@ export function rollbackMigration(
     }
   }
 
+  const createdDirs = createdDirsOf(root, result.dir)
+  const swept = sweepCreatedDirs(root, createdDirs)
+  const dirsRemoved = [...result.dirsRemoved, ...swept.removed.filter((dir) => !result.dirsRemoved.includes(dir))]
+  const kept = [...result.kept, ...swept.kept]
+
   const report = writeAuditReport(
     root,
     `migrate-${stamp(now)}.md`,
@@ -548,9 +600,12 @@ export function rollbackMigration(
       backup: { dir: result.dir, manifestPath: `${result.dir}/manifest.json` },
       notices: [],
       before: inspectProject(root, { recreateIndexDir: false }).state,
-      rolledBack: result,
+      rolledBack: { ...result, dirsRemoved, kept },
     }),
   )
+
+  // Last, so nothing below re-creates what was swept (see the module comment).
+  sweepCreatedDirs(root, createdDirs)
 
   return {
     ok: true,
@@ -558,9 +613,58 @@ export function rollbackMigration(
     backup: result.dir,
     restored: result.restored,
     removed: result.removed,
-    dirsRemoved: result.dirsRemoved,
-    kept: result.kept,
+    dirsRemoved,
+    kept,
     report: { path: report.path, written: report.ok, ...(report.error === undefined ? {} : { error: report.error }) },
+  }
+}
+
+/** The directories one package recorded as created (nothing for a repair package). */
+function createdDirsOf(root: string, dir: string): string[] {
+  const name = dir.split('/').pop() ?? ''
+  const read = readBackup(root, name)
+  return read.ok ? read.manifest.dirs : []
+}
+
+/** Why a directory this run created is left on disk: it stopped being empty. */
+const DERIVED_DIR_KEPT_REASON =
+  'this run created it, but it now holds derived files (`index/inkflow.db` and friends): the index is ' +
+  'a rebuildable cache, not this run\'s product, so the directory stays'
+
+/**
+ * Remove the directories a package created that are empty again, and report the ones
+ * that are not. Deepest first, like `backup.ts`, and never recursive: a directory with
+ * anything in it is somebody's work and is left alone.
+ */
+function sweepCreatedDirs(
+  root: string,
+  dirs: readonly string[],
+): { removed: string[]; kept: Array<{ path: string; reason: string }> } {
+  const removed: string[] = []
+  const kept: Array<{ path: string; reason: string }> = []
+  for (const dir of [...dirs].reverse()) {
+    const target = resolve(root, dir)
+    if (!existsSync(target)) continue
+    if (!isEmptyDir(target)) {
+      kept.push({ path: dir, reason: DERIVED_DIR_KEPT_REASON })
+      continue
+    }
+    try {
+      rmdirSync(target)
+      removed.push(dir)
+    } catch {
+      // A directory that cannot be removed is cosmetic; the files are what matters.
+    }
+  }
+  return { removed, kept }
+}
+
+/** `false` for a missing path, a file, or an unreadable directory. */
+function isEmptyDir(path: string): boolean {
+  try {
+    return readdirSync(path).length === 0
+  } catch {
+    return false
   }
 }
 
