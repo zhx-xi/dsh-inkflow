@@ -161,9 +161,33 @@ export function describeSearchPage(page: SearchPage, query: string, allKinds: bo
   return `「${query}」命中 ${page.total} 条（${scope}${backend}${range}${more}）。`
 }
 
+/** The backend's own name, for the mode indicator (#41: `ovk` when semantic recall answered). */
+export function searchBackendLabel(page: SearchPage): string {
+  return page.backend === 'ovk' ? '语义检索' : '关键词检索'
+}
+
+/**
+ * Why the semantic backend is not answering, in the author's terms (#41, ADR-0020 E5).
+ *
+ * The Host's `degradedReason` is a FIXED vocabulary of six values (plus the free-text reason
+ * `internal.ts` uses when the index itself is the problem), so each one can name the one
+ * action that fixes it instead of printing a code. An unknown value passes through: a code
+ * the panel does not know is still more useful than silence.
+ */
+const DEGRADED_TEXTS: Record<string, string> = {
+  disabled: '语义检索未启用（设置 → 语义检索）',
+  'no-endpoint': '语义检索没有填端点（设置 → 语义检索端点）',
+  'no-peer': '这本书没有 .openviking 里的 peer.id',
+  unreachable: '语义检索端点没有响应',
+  unauthorized: '语义检索端点拒绝了凭据',
+  timeout: '语义检索端点超时',
+}
+
 /** The degraded-answer note, or `null` when the Host answered normally. */
 export function describeSearchDegradation(page: SearchPage): string | null {
-  return page.degradedReason === null ? null : `降级结果：${page.degradedReason}`
+  if (page.degradedReason === null) return null
+  const known = DEGRADED_TEXTS[page.degradedReason]
+  return known === undefined ? `关键词结果：${page.degradedReason}` : `语义检索不可用：${known}，已用关键词结果。`
 }
 
 /** How many pages a total needs — kept for callers that add a pager later. */

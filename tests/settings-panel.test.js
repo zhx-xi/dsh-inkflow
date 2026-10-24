@@ -57,6 +57,13 @@ test('formFromSettings keeps unset fields empty rather than inventing text', asy
   assert.equal(draft.excludeDirs, 'drafts')
   assert.equal(draft.backupKeep, '5')
   assert.equal(draft.semanticSearch, false)
+  // #41: the endpoint is a plain value, the key never comes back (ADR-0020 E6) — so the box
+  // starts empty even when a key IS stored, and empty means "keep it".
+  assert.equal(draft.semanticEndpoint, '')
+  assert.equal(draft.semanticApiKey, '')
+  const withEndpoint = model.formFromSettings({ ...SETTINGS, semanticEndpoint: 'http://127.0.0.1:1933', semanticApiKeySet: true })
+  assert.equal(withEndpoint.semanticEndpoint, 'http://127.0.0.1:1933')
+  assert.equal(withEndpoint.semanticApiKey, '', 'a stored key is never echoed into the form')
 })
 
 test('patchFromForm sends numbers as numbers, splits the directory list, and clears unset text with null', async () => {
@@ -64,6 +71,8 @@ test('patchFromForm sends numbers as numbers, splits the directory list, and cle
   const patch = model.patchFromForm({
     sharedRoot: '  ',
     semanticSearch: true,
+    semanticEndpoint: ' http://127.0.0.1:1933 ',
+    semanticApiKey: ' secret ',
     autosaveIntervalMs: '3000',
     authorName: '作者',
     excludeDirs: 'drafts, 临时，scratch\n',
@@ -72,6 +81,8 @@ test('patchFromForm sends numbers as numbers, splits the directory list, and cle
   assert.equal(patch.autosaveIntervalMs, 3000)
   assert.equal(patch.backupKeep, 9)
   assert.equal(patch.semanticSearch, true)
+  assert.equal(patch.semanticEndpoint, 'http://127.0.0.1:1933')
+  assert.equal(patch.semanticApiKey, 'secret')
   assert.equal(patch.sharedRoot, null, 'an emptied optional field clears it')
   assert.equal(patch.authorName, '作者')
   assert.deepEqual(patch.excludeDirs, ['drafts', '临时', 'scratch'])
@@ -82,6 +93,8 @@ test('an empty number box leaves the setting alone (it is not zero)', async () =
   const patch = model.patchFromForm({
     sharedRoot: '',
     semanticSearch: false,
+    semanticEndpoint: '',
+    semanticApiKey: '',
     autosaveIntervalMs: '',
     authorName: '',
     excludeDirs: '',
@@ -89,6 +102,11 @@ test('an empty number box leaves the setting alone (it is not zero)', async () =
   })
   assert.equal(Object.prototype.hasOwnProperty.call(patch, 'autosaveIntervalMs'), false)
   assert.equal(Object.prototype.hasOwnProperty.call(patch, 'backupKeep'), false)
+  // An empty endpoint CLEARS it (that is an intent: "no semantic backend"), while an empty
+  // key box means "keep the stored key" — the two empty boxes mean different things because
+  // only one of them can be prefilled.
+  assert.equal(patch.semanticEndpoint, null)
+  assert.equal(Object.prototype.hasOwnProperty.call(patch, 'semanticApiKey'), false)
   // A number that is not a number is dropped for the same reason: the Host would clamp
   // a wrong value, and clamping a typo is worse than keeping the old value.
   const typo = model.patchFromForm({ ...model.formFromSettings(SETTINGS), backupKeep: '5x' })

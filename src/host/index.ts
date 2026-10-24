@@ -903,6 +903,95 @@ export type {
   ImportPlanTarget,
 } from './import-write.js'
 
+// Semantic retrieval (#41, ADR-0009 / ADR-0020). Four layers: transport + block shape, the
+// ledger this machine keeps, the per-book job, and the one composition into X-16's search
+// entry. Exported by module so a caller cannot mistake the job for the backend or the ledger
+// for the truth.
+export {
+  OVK_BLOCK_CHARS,
+  OVK_BLOCK_OVERLAP,
+  OVK_CONFIG_MAX_BYTES,
+  OVK_CONFIG_VERSION,
+  OVK_DEGRADED_REASONS,
+  OVK_FIRST_BUILD_BYTES,
+  OVK_FIRST_BUILD_CHAPTERS,
+  OVK_HEALTH_PATH,
+  OVK_SEARCH_PATH,
+  OVK_TIMEOUT_MS,
+  OVK_WRITE_PATH,
+  PEER_ID_PATTERN,
+  blockContentOf,
+  blockTagsOf,
+  blockUriOf,
+  chunkBody,
+  connectionOf,
+  contentHashOf,
+  hitsOf,
+  ovkFind,
+  ovkForget,
+  ovkHealth,
+  ovkRequest,
+  ovkWriteBlock,
+  parseBlockUri,
+  projectSubtreeUri,
+  resolveOvkPeer,
+  tombstoneContentOf,
+} from './ovk.js'
+export type {
+  BlockMetadata,
+  ConnectionResult,
+  OvkBlock,
+  OvkConnection,
+  OvkDegradedReason,
+  OvkFailure,
+  OvkFailureReason,
+  OvkHit,
+  OvkResult,
+  ParsedBlockUri,
+  PeerProblem,
+  PeerResolution,
+} from './ovk.js'
+export {
+  SEMANTIC_DIR,
+  SEMANTIC_SCHEMA_VERSION,
+  blockCountOf,
+  chapterSources,
+  ledgerPath,
+  planRebuild,
+  projectIdFor,
+  readLedger,
+  semanticSlugOf,
+  tombstonedUrisOf,
+  writeLedger,
+} from './ovk-ledger.js'
+export type {
+  BlockRecord,
+  ChapterRecord,
+  ChapterSource,
+  LedgerRead,
+  RebuildPlan,
+  RebuildSummary,
+  SemanticLedger,
+} from './ovk-ledger.js'
+export {
+  REBUILD_DEBOUNCE_MS,
+  REBUILD_RETRIES,
+  enqueueRebuild,
+  planOnly,
+  queueSnapshotOf,
+  readChapterBody,
+  resetQueue,
+  runRebuild,
+} from './ovk-queue.js'
+export type { QueueSnapshot, RebuildOutcome, SemanticRuntime } from './ovk-queue.js'
+export { diagnoseSemantic, searchWithSemantic } from './ovk-search.js'
+export type { SemanticAvailability, SemanticDeps, SemanticSearchOutcome } from './ovk-search.js'
+export { estimateRebuild, purgeApply, purgePlanOf, rebuildNow, runtimeOf, semanticStatusOf } from './ovk-status.js'
+export type { PurgeOutcome, RebuildEstimate, SemanticStatus } from './ovk-status.js'
+export { semanticTools } from './ovk-tools.js'
+export { buildHubSemantic, purgeHubSemantic, rebuildHubSemantic } from './ovk-hub.js'
+export { maskSettingsSecrets } from './diagnostics.js'
+
 // ---------------------------------------------------------------------------
 // issue #38 — the extraction queue (X-20, ADR-0017). Exported for the tests and for
 // nothing else: no other module inside `src/host` may import the candidate store or the

@@ -120,10 +120,19 @@ test('search model: labels, target routing, summary and degraded note', async ()
   assert.equal(nothing.includes('全部类型'), true)
 
   assert.equal(model.describeSearchDegradation(page), null)
+  // An unknown reason is printed as-is: a code the panel does not translate is still more
+  // useful than silence (#41 keeps the vocabulary fixed, the free-text path is the index's).
   assert.equal(
     model.describeSearchDegradation({ ...page, degradedReason: 'index unavailable' }),
-    '降级结果：index unavailable',
+    '关键词结果：index unavailable',
   )
+  // The six fixed semantic reasons each become one actionable sentence (ADR-0020 E5).
+  assert.equal(
+    model.describeSearchDegradation({ ...page, degradedReason: 'no-peer' }),
+    '语义检索不可用：这本书没有 .openviking 里的 peer.id，已用关键词结果。',
+  )
+  assert.equal(model.searchBackendLabel({ ...page, backend: 'ovk' }), '语义检索')
+  assert.equal(model.searchBackendLabel(page), '关键词检索')
   assert.equal(model.hasNextPage({ ...page, total: 1, truncated: false }), false, 'one page holds everything here')
   assert.equal(model.hasNextPage({ ...page, total: 500 }), true)
 })

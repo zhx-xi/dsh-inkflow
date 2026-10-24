@@ -33,7 +33,7 @@ import {
 import type { BackupPackage } from './backup-zip.js'
 import { buildDiagnostics, exportDiagnostics, maskPath } from './diagnostics.js'
 import type { ToolSurfaceSource } from './diagnostics.js'
-import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, writeSettings } from './settings.js'
+import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, redactSettings, writeSettings } from './settings.js'
 import type { InkflowSettings } from './settings.js'
 
 type Json = Record<string, unknown>
@@ -91,7 +91,9 @@ function settingsWire(deps: SettingsToolDeps): Json {
   const home = process.env['HOME'] ?? process.env['USERPROFILE'] ?? ''
   return {
     ok: true,
-    settings: read.settings,
+    // The bearer token is a credential: a tool reply may end up in a transcript, so it
+    // carries `semanticApiKeySet` instead of the key (ADR-0020 E6).
+    settings: redactSettings(read.settings),
     source: read.source,
     warn: read.warn ?? null,
     fileSchemaVersion: read.fileSchemaVersion ?? null,
@@ -130,6 +132,9 @@ function describeSettings(settings: InkflowSettings, sharedRoot?: unknown): stri
         : ` → 生效 ${path}（${root?.['source'] === 'setting' ? '设置值' : '缺省 dataDir/shared'}）`
     }`,
     `semanticSearch: ${String(settings.semanticSearch)}`,
+    // The key itself is never printed: "已设置" is the whole answer (ADR-0020 E6).
+    `semanticEndpoint: ${settings.semanticEndpoint ?? '（未设置）'}`,
+    `semanticApiKey: ${settings.semanticApiKey === undefined ? '（未设置）' : '已设置'}`,
     `autosaveIntervalMs: ${String(settings.autosaveIntervalMs)}`,
     `authorName: ${settings.authorName ?? '（未设置）'}`,
     `excludeDirs: ${settings.excludeDirs.length === 0 ? '（空）' : settings.excludeDirs.join(', ')}`,
@@ -197,6 +202,16 @@ export function settingsTools(deps: SettingsToolDeps): ToolDefinition[] {
             'Shared library root (ADR-0007): an ABSOLUTE path. A value that is not absolute, or that climbs with "..", is ignored with a warning and dataDir/shared stays in effect (the stored value is kept either way). Omit to keep, null to reset to dataDir/shared.',
         },
         semanticSearch: { type: 'boolean', description: 'Allow the semantic (OVK) retrieval backend when one is available; it never creates one.' },
+        semanticEndpoint: {
+          type: 'string',
+          description:
+            'OpenViking HTTP endpoint for semantic search (ADR-0020), e.g. http://127.0.0.1:1933. Only http/https; a trailing slash is stripped. Absent = no semantic backend, keyword search only. Omit to keep, null to clear.',
+        },
+        semanticApiKey: {
+          type: 'string',
+          description:
+            'Optional bearer token for that endpoint, sent as Authorization: Bearer. It is never echoed back by any tool, the panel or the diagnostics package (they report only whether it is set). Omit to keep, null to clear.',
+        },
         autosaveIntervalMs: { type: 'integer', description: 'Idle delay before the workbench autosaves, in ms (500–600000; default 1500). Out-of-range values are clamped.' },
         authorName: { type: 'string', description: 'Author name the new-book wizard offers. Omit to keep, null to clear.' },
         excludeDirs: {

@@ -263,12 +263,12 @@ test('the guard itself catches the two shapes that killed the plugin', () => {
 
 test('every shipped tool schema stays inside the Host-supported subset', () => {
   const tools = registeredTools()
-  // Exact, not `>=`: dropping a tool would otherwise stay green, and the baseline below
-  // only names the 31 built-ins (#33 audit, #36 repair/migrate, #37 import, #38 the five
-  // extraction tools, #39 the unified search and the search-replace batch, #40 shared
-  // list/copy/update, #42 settings get/update + diagnostics + backup create/restore).
-  assert.equal(tools.size, 47, `expected the full tool surface, got ${tools.size}`)
-
+  // Exact, not `>=`: dropping a tool would otherwise stay green, and the baseline below only
+  // names the 34 built-ins (#33 audit, #36 repair/migrate, #37 import, #38 the five extraction
+  // tools, #39 the unified search and the search-replace batch, #40 shared list/copy/update,
+  // #41 semantic status / rebuild / purge, #42 settings get/update + diagnostics + backup
+  // create/restore).
+  assert.equal(tools.size, 50, `expected the full tool surface, got ${tools.size}`)
   const failures = []
   for (const [name, tool] of tools) {
     if (tool.parameters === undefined) failures.push(`${name}: no parameters schema`)

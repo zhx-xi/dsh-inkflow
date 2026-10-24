@@ -69,7 +69,9 @@ const BUILT_IN_TOOLS = [
   // backups. Built-ins for the same reason as the pair above: none of them belongs to
   // one content directory, and two of them touch no book at all.
   ['inkflow_settings_get', 'd41c07e7'],
-  ['inkflow_settings_update', '0e71d69d'],
+  // #41 added `semanticEndpoint` / `semanticApiKey` to this schema (ADR-0020 决策), and
+  // #157 wired `sharedRoot`; the recorded hash follows both.
+  ['inkflow_settings_update', 'e7622d6a'],
   ['inkflow_diagnostics_export', '81804879'],
   ['inkflow_backup_create', '375f1aa7'],
   ['inkflow_backup_restore', '830aaf3b'],
@@ -81,6 +83,11 @@ const BUILT_IN_TOOLS = [
   ['inkflow_extract_accept', '0bdd27f8'],
   ['inkflow_extract_reject', '483c26c2'],
   ['inkflow_extract_purge', '4d5d5d6e'],
+  // #41: semantic retrieval — status (read-only), rebuild (writes blocks into OVK) and
+  // purge (the one tool allowed to delete there, ADR-0009 P6).
+  ['inkflow_semantic_status', '019ec003'],
+  ['inkflow_semantic_rebuild', 'b5d3bb95'],
+  ['inkflow_semantic_purge', 'e65e1a31'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

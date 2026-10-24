@@ -259,6 +259,12 @@ test('registers the thirty-one built-ins, the tools of every registered domain, 
       // built-ins — they span every kind and own no content directory.
       'inkflow_search',
       'inkflow_search_replace',
+      // #41: semantic retrieval (OVK). Three built-ins: status is read-only, rebuild writes
+      // blocks into OpenViking, purge is the only tool in the plugin that physically deletes
+      // there (ADR-0009 P6).
+      'inkflow_semantic_purge',
+      'inkflow_semantic_rebuild',
+      'inkflow_semantic_status',
       // #42: settings. Built-ins that touch no book at all — they read and write
       // `$DSH_HOME/inkflow/settings.json` (ADR-0018 D1).
       'inkflow_settings_get',

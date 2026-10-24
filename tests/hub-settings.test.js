@@ -138,7 +138,20 @@ test('GET /hub/settings answers with the defaults and the book choices, and name
     const value = response.json.value
     assert.equal(value.settings.backupKeep, 5)
     assert.equal(value.source, 'default')
-    assert.deepEqual(value.fields, ['sharedRoot', 'semanticSearch', 'autosaveIntervalMs', 'authorName', 'excludeDirs', 'backupKeep'])
+    assert.deepEqual(value.fields, [
+      'sharedRoot',
+      'semanticSearch',
+      'semanticEndpoint',
+      'semanticApiKey',
+      'autosaveIntervalMs',
+      'authorName',
+      'excludeDirs',
+      'backupKeep',
+    ])
+    // The token is a credential (ADR-0020 E6): the page may learn THAT it is set, never the
+    // value, so the wire carries `semanticApiKeySet` and no `semanticApiKey` at all.
+    assert.equal(value.settings.semanticApiKeySet, false)
+    assert.equal(Object.prototype.hasOwnProperty.call(value.settings, 'semanticApiKey'), false)
     assert.deepEqual(
       value.books.map((book) => book.workspaceId),
       ['ws-1', 'ws-2'],
