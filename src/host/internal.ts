@@ -50,6 +50,8 @@ import { ensureIndex } from './index-freshness.js'
 import type { EnsureIndexResult } from './index-freshness.js'
 import type { ProjectProbe, ProjectState } from './project.js'
 import { findProjectRoot, inspectProject, isWithin, projectLabel, realpathLoose } from './project.js'
+import { detectTextStyle } from './text-style.js'
+import type { EolStyle } from './text-style.js'
 
 /** The internal prefix. Not an API: no version segment, no compatibility promise. */
 export const INTERNAL_PREFIX = '/inkflow/internal'
@@ -477,8 +479,10 @@ function readChapterFile(root: string, relativePath: string): string | undefined
   const absolute = realpathLoose(join(root, relativePath))
   if (!isWithin(chaptersDir, absolute)) return undefined
   try {
-    // UTF-8, tolerating a BOM the way every other reader in this project does.
-    return readFileSync(absolute, 'utf8').replace(/^\uFEFF/u, '')
+    // Raw on purpose (ADR-0016): the BOM and the `\r`s are what `detectTextStyle`
+    // reads, and `parseMarkdown` already tolerates both — stripping here would
+    // make a BOM'd chapter report `bom: false`.
+    return readFileSync(absolute, 'utf8')
   } catch {
     return undefined
   }
@@ -502,6 +506,7 @@ export function buildChapter(target: ChannelTarget, version: string, rawId: stri
   const text = readChapterFile(target.root, entry.chapter.file)
   if (text === undefined) return undefined
   const parsed = parseMarkdown(text)
+  const style = detectTextStyle(text)
   return {
     pluginVersion: version,
     sessionId: target.sessionId,
@@ -517,6 +522,11 @@ export function buildChapter(target: ChannelTarget, version: string, rawId: stri
     body: parsed.body,
     bodyChars: countChars(parsed.body),
     issues: parsed.issues,
+    // The file's own format (ADR-0016). `body` above stays LF — the editor must
+    // never see a `\r` — so this is the only way a save can put the file back the
+    // way it found it. Read-only: the write path takes it back as a declaration.
+    eol: style.eol,
+    bom: style.bom,
     // The CAS baseline for the next save (issue #19): the editor reads a chapter,
     // edits it, and writes back against exactly these bytes. Without it the
     // browser could not tell "the file changed under me" from "my own save".
@@ -701,6 +711,27 @@ function optionalSeq(body: JsonRecord): FieldRead<number | undefined> {
 }
 
 /**
+ * The line ending the panel read out of the file (ADR-0016).
+ *
+ * Only the two values a chapter can actually have: anything else is a caller that
+ * invented a style, and the write path must not guess what it meant.
+ */
+function optionalEol(body: JsonRecord): FieldRead<EolStyle | undefined> {
+  const value = body['eol']
+  if (value === undefined || value === null) return { ok: true, value: undefined }
+  if (value !== 'lf' && value !== 'crlf') return { ok: false, reply: badField('eol', '`lf` or `crlf`') }
+  return { ok: true, value }
+}
+
+/** A declared boolean (the `bom` half of the same metadata). */
+function optionalBoolean(body: JsonRecord, key: string): FieldRead<boolean | undefined> {
+  const value = body[key]
+  if (value === undefined || value === null) return { ok: true, value: undefined }
+  if (typeof value !== 'boolean') return { ok: false, reply: badField(key, 'a boolean') }
+  return { ok: true, value }
+}
+
+/**
  * The CAS baseline (§5.5). Absent means "write regardless" — which is exactly
  * what the panel's explicit "仍要保存（覆盖）" sends, so the only way a conflict
  * is ever overwritten is a user pressing that button.
@@ -877,6 +908,10 @@ export async function writeChapterViaChannel(request: WriteRequest): Promise<Wri
   if (!body.ok) return body.reply
   const status = optionalText(request.body, 'status')
   if (!status.ok) return status.reply
+  const eol = optionalEol(request.body)
+  if (!eol.ok) return eol.reply
+  const bom = optionalBoolean(request.body, 'bom')
+  if (!bom.ok) return bom.reply
   const expected = readExpected(request.body)
   if (!expected.ok) return expected.reply
 
@@ -892,12 +927,18 @@ export async function writeChapterViaChannel(request: WriteRequest): Promise<Wri
     title: title.value,
     body: body.value,
     status: status.value,
+    eol: eol.value,
+    bom: bom.value,
     expected: expected.value,
   })
   if (!result.ok) return chapterFailureReply(result)
   return writeValue(request.target, request.version, result.chapter, {
     changed: result.changed,
     ...(result.renamedFrom === undefined ? {} : { renamedFrom: result.renamedFrom }),
+    // Echo the style actually written: a panel that declared something else
+    // learns here what the file now is, instead of guessing on the next save.
+    eol: result.style.eol,
+    bom: result.style.bom,
     catalogRebuilt: result.catalogRebuilt,
     indexRebuilt: result.indexRebuilt,
     ...(result.indexError === undefined ? {} : { indexError: result.indexError }),
