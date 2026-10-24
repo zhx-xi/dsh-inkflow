@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the twenty built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the twenty-one built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -230,6 +230,9 @@ test('registers the twenty built-ins, the tools of every registered domain, and 
       'inkflow_foreshadow_list',
       'inkflow_foreshadow_upsert',
       'inkflow_index_rebuild',
+      // #37: importing an old manuscript, built-in for the same reason as the audit — it
+      // writes chapters *and* a `library/` copy, so no single content directory owns it.
+      'inkflow_library_import',
       // #24: the outline domain's own tools, contributed through `domainTools()`.
       'inkflow_outline_move',
       'inkflow_outline_tree',

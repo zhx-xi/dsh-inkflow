@@ -20,6 +20,7 @@ import type { InternalResult } from './internal.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import { LibraryItemEditor } from './library-editor.js'
+import { LibraryImportDialog } from './library-import.js'
 import {
   LIBRARY_EMPTY,
   aggregateIssues,
@@ -306,6 +307,8 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
   const [editing, setEditing] = useState(false)
   const [draftDirty, setDraftDirty] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  /** The import dialog (#37) is open — it renders inside the 资料 group (X-20). */
+  const [importing, setImporting] = useState(false)
   // Same measured height as the chapters tab (issue 116): the tab row above this
   // grid is the harness chrome, so the grid has to state its own height or the
   // library columns scroll as one page with the panel.
@@ -466,6 +469,21 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
               <span style={{ ...muted, ...mono, marginLeft: 6 }}>{group.total}</span>
               {group.truncated ? <span style={{ ...muted, fontSize: 11 }}> （已达上限，列表不完整）</span> : null}
             </button>
+            {/* X-20: the import entry lives in the 资料 group, not in a tab of its own.
+                Importing an old draft is how material gets into this directory, so the
+                button sits where the result appears. */}
+            {group.kind !== 'library' ? null : (
+              <div style={{ paddingLeft: 14 }}>
+                <button type="button" style={{ ...buttonStyle, fontSize: 11 }} onClick={() => setImporting(true)}>
+                  导入旧稿（TXT / MD）…
+                </button>
+              </div>
+            )}
+            {importing && group.kind === 'library' ? (
+              <div style={{ paddingLeft: 14 }}>
+                <LibraryImportDialog sessionId={sessionId} onClose={() => setImporting(false)} onImported={() => void load()} />
+              </div>
+            ) : null}
             {!expanded.includes(group.kind) ? null : group.total === 0 ? (
               <div style={{ ...muted, paddingLeft: 14, fontSize: 12 }}>这一类还没有条目</div>
             ) : group.kind === 'world' ? (
