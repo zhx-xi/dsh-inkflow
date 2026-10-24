@@ -38,6 +38,7 @@
 | 构建 = esbuild 双半 | Host → `lib/index.js`(ESM)；Client → `lib/client.js`(loader factory) |
 | `lib/` 不入库 | 装之前必须 `pnpm.cmd run build` |
 | Windows 用 `pnpm.cmd` | `pnpm.ps1` 会被执行策略拦；Node ≥ 22.12（宿主 Node 24） |
+| `pnpm-workspace.yaml` 只放 `allowBuilds: esbuild` | pnpm 11 的依赖预检会因 esbuild 的 postinstall 被拒而让 `pnpm run check` 第一行就失败；CI 用 `--ignore-scripts`，不依赖这条 |
 
 ## 3. 目录约定（文件的真相）
 
