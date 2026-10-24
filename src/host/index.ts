@@ -729,6 +729,44 @@ export type {
 export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from './repair-report.js'
 
 /**
+ * The shared library's take-out direction (#40, ADR-0007 C2–C6): copy snapshot,
+ * `origin` provenance, the stale list and the explicit per-entry update.
+ *
+ * Exported for the same reason as every other domain here — the behaviour IS the
+ * contract: "a conflict writes nothing", "a stale copy is only a report" and
+ * "reference is library/-only" are proved by driving these functions directly and
+ * comparing whole-tree hashes, not by reading a route envelope.
+ */
+export {
+  SHARED_COPY_MAX_ROWS,
+  applyOriginBlock,
+  buildSharedCopies,
+  copySharedEntry,
+  ensureProjectId,
+  updateSharedEntry,
+} from './shared-copy.js'
+// The library save path is exported here so a test can prove the one rule that
+// lives in it and nowhere else: a `mode: reference` card refuses every write
+// (ADR-0007 C4 `REFERENCE_READONLY`), whatever the panel or a tool asks for.
+export { writeLibraryItem } from './library-write.js'
+export type {
+  EnsureProjectIdValue,
+  SharedCopiesValue,
+  SharedCopyError,
+  SharedCopyInput,
+  SharedCopyMode,
+  SharedCopyRow,
+  SharedCopyValue,
+  SharedOriginCopy,
+  SharedOriginReference,
+  SharedResult,
+  SharedUpdateInput,
+  SharedUpdateValue,
+} from './shared-copy.js'
+export { scanSharedLibrary } from './hub-shared.js'
+export type { SharedLibraryScan } from './hub-shared.js'
+
+/**
  * The ZIP container (ADR-0018 D3, issue #146): store-only by design, so a backup can
  * be opened by any tool and checked by hand. Exported for the tests and for the
  * settings/backup work that writes the package.

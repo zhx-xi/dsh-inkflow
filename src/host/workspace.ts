@@ -7,6 +7,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative as relativePath, resolve } from 'node:path'
 
@@ -226,6 +227,11 @@ function metaBody(title: string, author?: string): string {
   const meta: ProjectMeta = {
     schemaVersion: FILE_SCHEMA_VERSION,
     title,
+    // ADR-0018 D7 / ADR-0007 C3: the book's identity is minted here, survives the
+    // repository and is what a shared-library copy records as `origin.projectId`.
+    // Optional by contract (older books have none and stay valid — it is not a
+    // gate input), which is why `ensureProjectId` exists for books that predate it.
+    projectId: randomUUID(),
     createdAt: new Date().toISOString(),
   }
   if (author !== undefined && author.trim() !== '') meta.author = author.trim()

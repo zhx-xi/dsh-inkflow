@@ -130,6 +130,34 @@ export type SharedKind = (typeof SHARED_KINDS)[number]
  */
 export const SHARED_INDEX_FILE = 'index.json'
 
+/**
+ * The `mode` values a `library/` card may carry (ADR-0007 C4, data-model §3.3).
+ *
+ * `reference` is the one exception to "a copy is a real file in the book": the
+ * card points at the shared原文 and holds no body, so the book is no longer
+ * self-contained and every write to that card is refused with
+ * `REFERENCE_READONLY` until the user turns it into a copy.
+ */
+export const SHARED_COPY_MODE = 'copy'
+export const SHARED_REFERENCE_MODE = 'reference'
+export type SharedEntryMode = typeof SHARED_COPY_MODE | typeof SHARED_REFERENCE_MODE
+
+/**
+ * The frontmatter key that records where a copy came from (ADR-0007 C3).
+ *
+ * An **object** with `{projectId, entryId, contentHash}`, written as an indented
+ * block — which is why `frontmatter.ts` reads nested mappings: without that the
+ * block would be reported as unparsed lines and every copy would show up as a
+ * `FRONTMATTER_ISSUE` in the audit.
+ */
+export const SHARED_ORIGIN_KEY = 'origin'
+
+/** `<entryId>` shape the shared library issues (ADR-0007 C1). */
+export const SHARED_ENTRY_ID_PREFIX = 'sh-'
+
+/** `<seriesId>` shape `series/<slug>.json` carries (ADR-0007 C5). */
+export const SHARED_SERIES_ID_PREFIX = 'se-'
+
 /** Version of the on-disk file contract (inside inkflow.json). */
 export const FILE_SCHEMA_VERSION = 1
 

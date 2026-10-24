@@ -26,9 +26,11 @@
 | [0015](0015-repair-and-migration.md) | **修复三段式（detect/preview/fix）+ 6→9 迁移**：动作只有五种、只补不改；迁移前开备份包（`.inkflow/backup/`），失败不自动回滚而由包撤销，回滚逐文件核对改后摘要 | 改已存在的文件无法用内存撤销；只补不改是「不给作者改内容」的硬边界 |
 | [0017](0017-extraction-by-session-model.md) | **插件不调 LLM**：提取候选由会话里的模型经工具提交，落 `.inkflow/candidates/`，只有 `accept(confirm)` 才写真相 | 零依赖 + 不做第二个消费者（ADR-0008）→ 插件内没有可信的模型调用面；候选制才保得住「静默入库 = 0」 |
 | [0018](0018-settings-backup-diagnostics.md) | **设置写 `$DSH_HOME/inkflow/settings.json`**（不写书）、**备份 = store-only ZIP**（自写 CRC32，保留 5 份）、**诊断包白名单**（不含正文/密钥） | 设置写书会进 git；自研 deflate 出错时坏的是唯一备份；诊断包是要发出去的 |
+| [0019](0019-one-level-nested-frontmatter.md) | frontmatter 支持一层嵌套映射（只为 `origin` 这类对象字段） | 已采纳 | 2026-10-24 |
 | [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（三段式 + 可回滚备份包） | 已采纳 | 2026-10-24 |
 | [0017](0017-extraction-by-session-model.md) | 提取由「会话里的模型」产出，插件只做队列与落地 | 已采纳 | 2026-10-24 |
 | [0018](0018-settings-backup-diagnostics.md) | 全局设置 + store-only ZIP 备份 + 白名单诊断包 | 已采纳 | 2026-10-24 |
+| [0019](0019-one-level-nested-frontmatter.md) | **读取器支持一层嵌套映射**（`origin` 需要对象字段）：只有缩进的 `key: value` 挂到待决键、值仍只到标量/内联数组/块列表、列表与映射混用报 issue、写侧只做块替换 | 扁平键的点号不在键字符集（读侧报 unparsed）、内联 JSON 让字段不可读；而完整 YAML 违反零依赖 |
 | [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（检测/预览/修复三段 + 可回滚备份包） | 已采纳 | 2026-10-24 |
 | [0016](0016-preserve-file-eol-on-edit.md) | 编辑既有文件时保留该文件的行尾与 BOM（新文件仍归一 LF / 无 BOM） | 已采纳 | 2026-10-24 |
 

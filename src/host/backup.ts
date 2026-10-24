@@ -54,7 +54,9 @@ export const BACKUP_FILES_DIR = 'files'
  *
  * One closed list rather than a union per issue: a kind the writer accepts but a
  * reader refuses is a package nobody can roll back, so writer and reader both take
- * their vocabulary from `BACKUP_KINDS`.
+ * their vocabulary from `BACKUP_KINDS`. `shared` is the shared-library copy/update
+ * batch (#40, ADR-0007 C2/C3): one package per copy or per per-entry update, so
+ * "undo that refresh" does not depend on git.
  */
 export const BACKUP_KINDS = ['repair', 'migrate', 'import', 'replace', 'shared', 'restore'] as const
 

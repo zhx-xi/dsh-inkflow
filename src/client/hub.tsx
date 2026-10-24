@@ -169,7 +169,17 @@ export function HubView() {
     setRevision((current) => current + 1)
   }, [])
 
-  if (view === 'shared') return <SharedLibraryView onClose={() => setView('books')} />
+  // The shared library is a page of its own (#87), and it takes the book list with
+  // it (#40): copying a shared entry INTO a book needs a target, and the only names
+  // the Host accepts are the rows it just returned here (never a hand-typed path).
+  if (view === 'shared') {
+    return (
+      <SharedLibraryView
+        onClose={() => setView('books')}
+        books={state.status === 'ready' ? state.books : []}
+      />
+    )
+  }
 
   /**
    * The wizard's answer, merged into the list in place (issue #86).
