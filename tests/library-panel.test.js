@@ -667,3 +667,73 @@ test('library-model: a refusal that carries a size says the size (issue 115)', a
   // Every other code keeps its own wording: the new branch must not swallow them.
   assert.match(model.describeSaveError({ code: 'FILE_CHANGED' }), /文件已被改动/)
 })
+
+// ---------------------------------------------------------------------------
+// 7. The editor's two writes (issue 134)
+//
+// The bug was a UI state hidden inside JSX: 确认改名 was `disabled={busy || dirty ||
+// plan === undefined}`, so before 查看影响面 answered it sat there greyed out with no
+// explanation, next to the content's 保存 as a second primary button. The decision is
+// now a pure function, so the four states can be asserted directly — and the view is
+// only allowed to consume it.
+// ---------------------------------------------------------------------------
+
+test('library-model: the editor offers one write at a time (issue 134)', async () => {
+  const { editorActions } = await loadLibraryModel()
+
+  // 1. Nothing typed yet and no plan: 保存 is the only button, 确认改名 is not rendered
+  //    at all, and one sentence says what to do first.
+  const fresh = editorActions({ dirty: false, planReady: false })
+  assert.deepEqual(fresh, {
+    contentSave: 'primary',
+    rename: 'hidden',
+    contentNote: null,
+    renameNote: '先点「查看影响面」确认影响，才能改名。',
+  })
+
+  // 2. A dirty draft: the content save stays, the rename block folds into one line.
+  const dirty = editorActions({ dirty: true, planReady: false })
+  assert.equal(dirty.contentSave, 'primary', 'the draft is still savable')
+  assert.equal(dirty.rename, 'blocked', 'the rename is folded away, not merely disabled')
+  assert.match(dirty.renameNote, /先保存或放弃/, 'the line says what unblocks it')
+
+  // 3. Dirty AND a plan already fetched: `dirty` wins — the plan itself refuses to run
+  //    over an unsaved draft (two writes, same bytes), so the click must not be offered.
+  assert.deepEqual(editorActions({ dirty: true, planReady: true }), dirty, 'dirty outranks a fetched plan')
+
+  // 4. A plan and nothing left to save: 确认改名 is the button, 保存 becomes a grey line.
+  const ready = editorActions({ dirty: false, planReady: true })
+  assert.equal(ready.contentSave, 'muted')
+  assert.equal(ready.rename, 'confirm')
+  assert.equal(ready.renameNote, null)
+  assert.match(ready.contentNote, /用不上/, 'the grey line explains the missing 保存 button')
+
+  // The invariant the whole issue is about: never two primary buttons on the same
+  // screen. (The four states above are exhaustive: two booleans, three outcomes.)
+  for (const state of [fresh, dirty, ready]) {
+    assert.equal(state.contentSave === 'primary' && state.rename === 'confirm', false, 'exactly one write is on offer')
+  }
+})
+
+test('the library editor renders only the write the state machine offers (issue 134)', () => {
+  const source = readFileSync(join(ROOT, 'src/client/library-editor.tsx'), 'utf8')
+
+  // The exact bug, as a guard: 确认改名 greyed out on `dirty` / on a missing plan.
+  assert.equal(
+    /disabled=\{[^}\n]*(dirty|plan === undefined)[^}\n]*\}/.test(source),
+    false,
+    '确认改名 must not be a disabled button waiting for state: it is rendered or it is not',
+  )
+  // 确认改名 is rendered by ONE branch, and that branch is the confirm state.
+  assert.equal((source.match(/确认改名/g) ?? []).length, 1, 'one 确认改名 button in the file')
+  const confirmAt = source.indexOf('确认改名')
+  const confirmGuard = source.lastIndexOf("actions.rename === 'confirm'", confirmAt)
+  assert.ok(confirmGuard > 0 && confirmAt - confirmGuard < 400, '确认改名 sits inside the confirm branch')
+  // 保存 is rendered by ONE branch too, on the state machine's word — not on `payload`.
+  assert.equal((source.match(/actions\.contentSave === 'primary'/g) ?? []).length, 1)
+  const saveAt = source.indexOf("saving ? '保存中…' : '保存'")
+  assert.ok(source.lastIndexOf("actions.contentSave === 'primary'", saveAt) > 0, '保存 is inside the primary branch')
+  // The rename block reads the decision, it does not re-derive it from `dirty`.
+  assert.equal(source.includes('dirty={dirty}'), false, 'the rename block takes the state machine, not raw flags')
+  assert.equal((source.match(/actions=\{actions\}/g) ?? []).length, 1)
+})

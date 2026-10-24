@@ -213,6 +213,7 @@
 | P4 | 取「之后的元素」用结构规则，**不认任何 harness 类名或 dom id** | `Dc7zOa_*` 是构建哈希，随 DSH 升级变 |
 | P5 | 高度取 `Math.floor`，不四舍五入 | 886×638 下四舍五入留 1px 溢出＝一条页面滚动条 |
 | P6 | body 加 `grid-template-rows: minmax(0,1fr)` 与 `flex: 0 0 auto` | `flex:1` 即 `flex-basis:0%`，会覆盖显式 `height`；实测只加 height 时 body 仍是 2428px |
+| P7 | 面板**内部**再分「不滚的头 + 一个滚动 box」时（设定库详情，issue 133），内层 box 用同一个 `useScrollBox()`，且它与头必须是**两个兄弟节点**；内层 box 下方**不能**留 padding（呼吸位放进 box 内部） | 内层 box 的可用底边是所在列的 border box，列底边上的 padding 会被算进高度：列高 = 内容 + 该 padding，于是列多出正好等于 padding 的溢出，头又会跟着往上滑走（issue 133 的 14px 残留） |
 
 **实测验收**（同一 GUI，按上述规则把高度手工写进 DOM 后量得）：body 523px 时外层滚动框 `scrollHeight 890 → 762 = clientHeight`（溢出 0）；左列 `clientHeight 523 / scrollHeight 2428` 自滚，滚它 120px 后右列与外层 `scrollTop` 仍为 0、面板顶边不动；`describeFacts` 那行统计在左列滚到底时可见（底边 696 < 列底 710）；900×700（视口 886×638）下可用 288px、外层溢出 0、两列不重叠、无横向溢出。
 
