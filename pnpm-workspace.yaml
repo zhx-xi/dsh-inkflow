@@ -1,2 +1,8 @@
+# pnpm 11 的依赖预检（verify-deps-before-run）会在 `pnpm run …` 之前核对依赖状态：
+# esbuild 的 postinstall 默认被拒（ERR_PNPM_IGNORED_BUILDS），于是本仓的
+# `pnpm run check` 会在第一行就失败——不是代码问题，是安装策略问题。
+# 这里显式允许它，让「拿到仓库 → pnpm install → pnpm run check」不需要任何隐藏的本机文件。
+# CI 仍用 `pnpm install --frozen-lockfile --ignore-scripts`：平台二进制由
+# `@esbuild/<platform>` 包提供，不依赖这条 postinstall。
 allowBuilds:
   esbuild: true

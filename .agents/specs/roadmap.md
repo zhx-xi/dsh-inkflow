@@ -178,46 +178,46 @@
 
 | 项 | 事实 | 证据 |
 |---|---|---|
-| 契约与决策基线 | ADR-0006/0007/0008/0009 已采纳并登记索引 | `.agents/adrs/` |
+| 契约与决策基线 | ADR-0006…0020 已采纳并登记索引（含 0016 保留行尾/BOM、0017 提取由会话模型产出、0018 设置/备份/诊断、0019 frontmatter 一层嵌套、0020 OVK 连接来自设置） | `.agents/adrs/`、[README](../adrs/README.md) |
 | 工作区契约与向导 | 九内容目录 + `index/`、`.gitkeep`、四态门禁、`plan`/`apply`（`confirm: true`）、`git init` 边界、失败回滚 | `src/host/conventions.ts`、`project.ts`、`workspace.ts`；`tests/workspace.test.js` |
-| 写入器与路径安全 | `resolveWriteTarget`、原子替换、单项目写锁、`PROJECT_BUSY`、编码归一 | `src/host/io.ts`；`tests/io-writer.test.js` |
-| 派生索引重建纪律 | 九目录扫描、临时文件 + 写锁重建、不变量校验（`OUTLINE_*` / `CHARACTER_NAME_DUPLICATE` / `DANGLING_PARENT` / `DUPLICATE_ID` / `FRONTMATTER_ISSUE` / `CHAPTER_NOT_MARKDOWN`） | `src/host/indexer.ts`、`index-build.ts` |
-| 派生索引 v2–v4 | 域模块自带表与行写入；跨类 `entities` 投影（主键 `(kind, id)`）+ 一张 `entities_fts`；章正文 `chapters_fts` 仍在；v3 起 `world_entries` 带 `keywords`/`always`/`priority`；`user_version = 4`（v4 起 `characters` 带角色卡列并新增 `character_states`），不匹配即删库重建 | `src/host/indexer.ts`、`src/host/domains/`；`tests/entities.test.js` |
+| 写入器与路径安全 | `resolveWriteTarget`、原子替换、单项目写锁、`PROJECT_BUSY`、编码归一、可选 `expected` 基线 CAS | `src/host/io.ts`、`file-cas.ts`；`tests/io-writer.test.js` |
+| 派生索引 v8（现行） | 域模块自带表与行写入（X-2）；跨类 `entities` 投影（主键 `(kind, id)`）+ `entities_fts`；章正文 `chapters_fts`；逐版追加见 `data-model` §4.1 尾注（v3 世界书三列、v4 角色卡、v5 时间线、v6 提及、v7 账本、v8 伏笔）；不匹配即删库重建，不写 ALTER | `src/host/indexer.ts`、`src/host/domains/`；`tests/index-parity.test.js` |
+| 工具面 50 | 34 内置 + 16 域（`DOMAIN_MODULES` 一行一域）；工具名双向对拍（`src/` 提及 ↔ 注册名、注册名 ↔ 手册点名、手册声明的数字） | `scripts/check-tool-names.mjs`；`tests/tool-schema.test.js`、`domain-registry.test.js` |
+| 面板入口与页签 | 两处入口：书库 = root 的 `sidebar.panellist` + `main`（ADR-0010，另有共享内容页与设置页）；创作工作台 = session 的 `conversation.view`。页签六个可用：章节 / 设定库 / 伏笔 / 回收站 / 体检 / 候选（大纲**不单开页签**——在设定库里编辑）。私有内部通道 `/inkflow/internal/*` + hub `/hub/*`（Origin/Host/方法/字段白名单四道守卫） | `src/client/index.tsx`、`hub*.tsx`、`settings.tsx`；`src/host/internal.ts`、`routes.ts`；`tests/internal-channel.test.js`、`panel-bundle.test.js` |
 | 写作 skills 与 preset | 5 个写作工艺 skill 与 `inkflow-writing` preset，按 `cwd` 门禁 | `src/host/skills.ts`、`preset.ts`、`skills/` |
-| 章正文检索 | `chapters_fts`（trigram）上 ≥3 字 `MATCH`、1–2 字 `LIKE` 兜底、片段只取正文；索引不可用返回 `INDEX_UNAVAILABLE` 且不写盘 | `src/host/search.ts`；`tests/search.test.js` |
-| 工具面 | 已注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete` | `src/host/tools.ts` |
-| 卷章 catalog | `chapters/index.json` 的读写/校验/重建、`volumeId`、改名级联；I-11–I-14 在 catalog 层报告 | `src/host/catalog.ts`、`chapters.ts`；`tests/catalog.test.js` |
-| 面板入口与通道 | 两处入口：书库 = root 的 `sidebar.panellist` + `main`（ADR-0010）；创作工作台 = session 的 `conversation.view`。私有内部通道 `/inkflow/internal/*`（Host/Origin/方法/路径参数闸门） | `src/client/index.tsx`、`editor.tsx`、`hub.tsx`；`src/host/internal.ts`、`routes.ts` |
-| 竞品参考索引 | 4 个 OSS 项目的设计参考 | #60（过程稿在 issue 评论） |
-| 0.3.0 验证回退 | 真书副本验证发现 7 项并按序修复：面板保存保留原行尾与 BOM（ADR-0016）、老账本 frontmatter 单事实只读兼容 + 散文不再误报、改名与保存不同屏、设定库详情头不随内容滚、伏笔看板补「本期到期」、迁移步数与回滚清理对齐、伏笔 status 按证据推导 | #132 #133 #134 #135 #136 #137 #138；`tests/{chapters,internal-write,facts,panel-write,library-panel,foreshadow,migrate,repair}.test.js` |
-| 0.3.0 六单落地 | 伏笔状态机/超期/看板（§3.2.1 的 4×4 矩阵 + 写作提示段）、事实账本（正文行格式 + I-23 区间冲突 + 快照 + 段注入）、体检（五类聚合 + Markdown 导出）、影响面/改名＝id 钉住（ADR-0014）、回收站（逐字节恢复 + 同路径二次删除拒绝）、一键修复与 6→9 迁移（三段式 + 可回滚备份包，ADR-0015） | `src/host/domains/foreshadowing*.ts`、`facts*.ts`、`src/host/{audit,impact,impact-write,trash,repair,migrate,backup}.ts`；`tests/{foreshadow,facts,audit,impact,identity,trash,repair,migrate}.test.js` |
-| 私有状态目录与问题形状 | `<book>/.inkflow/{trash,backup,audit}/`（ADR-0012，写白名单三条子路径、点开头不入索引、`.gitignore` 首次使用时追加）；`findings.ts` 的 code 目录与 `data-model` §5 双向对拍 | `src/host/private-state.ts`、`findings.ts`；`tests/private-state.test.js`、`findings.test.js` |
-| 面板页与写作上下文注册表化 | 页表 `pageRenderers`（X-12）、`EXTRA_SEGMENTS`（X-13，顺序 `… world → facts → foreshadow`）；页签现有 章节/设定库/伏笔/回收站/体检 五个可用 | `src/client/index.tsx`、`src/host/writing-context.ts`；`tests/writing-context-segments.test.js`、`panel-bundle.test.js` |
+| 检索 | 单一入口 `searchEntries`（X-16）：章正文 + 八类设定一招搜；分页 `{offset,limit,total}`（≤100）+ `truncated`；语义后端缺席时 `degradedReason` 降级，**任何失败都不 500** | `src/host/search.ts`、`ovk-search.ts`；`tests/search.test.js`、`search-entities.test.js` |
+| 0.2.0 结构化 | 大纲三层、角色卡/状态、世界树与世界书关键词、关系、时间线双轴、九分类树与通用条目编辑器 | `src/host/domains/`；`tests/{outline,character,world,relation,timeline,entities}.test.js` |
+| 0.3.0 可控 | 伏笔状态机/超期/看板、事实账本（I-23 区间冲突 + 快照 + 段注入）、体检五类聚合 + Markdown 导出、影响面/改名＝id 钉住（ADR-0014）、回收站、一键修复与 6→9 迁移（ADR-0015）；面板页与写作上下文注册表化（X-12/X-13） | `src/host/domains/foreshadowing*.ts`、`facts*.ts`、`src/host/{audit,impact,trash,repair,migrate,backup}.ts`；`tests/{foreshadow,facts,audit,impact,identity,trash,repair,migrate}.test.js` |
+| 0.3.0 验证回退 | 真书副本验证 7 项全部修复：保留原行尾与 BOM（ADR-0016）、老账本只读兼容、改名/保存不同屏、详情头不随内容滚、伏笔补「本期到期」、迁移步数对齐、伏笔 status 按证据推导 | #132–#138、#143 |
+| 0.4.0 六单 | #37 资料登记与 TXT/MD(-DOCX) 导入（GBK 零依赖嗅探）；#39 检索增强 + 跨章替换（预览＝执行，X-17）；#40 插件级共享库（复制快照 / `origin` / stale / 引用只读）；#42 设置页 + 诊断包 + store-only ZIP 备份与恢复（CAS，ADR-0018）；#38 提取管线与候选队列（`.inkflow/candidates/`，唯一入库路径，ADR-0017）；#41 OVK 语义检索（peer 只读、按章重建、六种降级、tombstone 不物理删，ADR-0009/0020） | `src/host/{import,search,replace,shared,settings,diagnostics,backup-zip,extract,ovk}*.ts`；`tests/{import,search,shared,settings,diagnostics,backup-zip,extract,ovk}.test.js` |
+| 0.4.0 收口批 | 文档门禁补 to-web（见 §4.2 说明）；`extract-model.ts` 登记补齐；手册编号去重与工具数改正；工具名对拍守卫；`inkflow_world_upsert` 接进域写入链（X-4 双保险补齐）；章列表上限改为显式**页**上限并回报全量 `total`；`hub-settings-update` 白名单改由 `SETTINGS_FIELDS` 派生（并把 9 处行内 body 白名单搬回读取侧模块）；CI 的 `docs` job 补齐 `check:module-table` / `check-tool-names`；OVK 降级用例的探测预算改由用例决定（消掉 CI flake） | #163 #164 #166 #165 #168；`tests/{body-fields,chapter-list-limit,world,ovk.stub}.test.js` |
+| 竞品参考索引 | 4 个 OSS 项目的设计参考（只学设计与交互） | #60（过程稿在 issue 评论） |
 
 ### 4.2 进行中 / 已实现待验收
 
 | 项 | 事实 |
 |---|---|
+| 0.4.0 遗留单 | #169 世界书 `keywords` 的 YAML 保留字（`true`/`on`/`no`）写进去后被 `keywordsOf` 静默过滤：渲染是纯文本拼接、解析是类型化 YAML，两边理解不一致；修法与取舍见该单 |
+| 文档门禁的可信度 | 0.4.0 期间出现过一次「main 本地 `pnpm run check` 红、CI 绿」：`check:module-table` 从来不在 CI 的 `docs` job 里。已补（#163），此后 `check:docs` 的三道门禁与 CI 同一份清单 |
 | 契约测试扩展（10 项目录 × 四态 × 不变量 × 索引对拍） | 用例仍待补齐，归 M4 #8 |
-| spec 全量重写与 22 条裁决记录 | 本 spec 批次（M0 #11） |
 
 ### 4.3 契约已定、尚未落地
 
 | 项 | 状态 | 归属 |
 |---|---|---|
-| 搜索的正文全文检索 | 【未实现】：`/search` 只匹配章节元数据，标 `searchUnavailable` | M4 #22 |
-| 共享库与 `origin` | 【未实现】 | M17 #40 |
-| OVK 语义检索 | 【未实现】：当前只有 FTS5 | M20 #41 |
-| 提案制 / 简报 / 门禁 / 审稿 / 批量 | 【未实现】 | M19 |
+| 质量门禁 / 9 段简报 / 提案制与版本 diff / 审稿 DAG / 批量写作 | 【未实现】 | M19（0.5.0） |
+| 多纪元换算、KG 关系类型、地图、EPUB/DOCX 导出 | 【未实现】 | 0.5.0 |
+| 旧库（59 万字 / 约 2900 实体）ETL | 【未实现】 | 0.5.0 |
+| 大纲页签 | 【不计划单独开页签】：大纲三类节点在设定库里编辑（`library` 页的 `outline` kind），避免两套入口写同一批文件 | — |
 
 ### 4.4 未验证
 
 | 项 | 状态 |
 |---|---|
-| 新 Host 代码在运行中的 DSH 里生效 | 未验证（需重启加载新 generation） |
-| 向导在真实 DSH 会话里的 plan → apply | 契约测试通过，未在重启后的会话里跑过 |
-| 写作 preset 在真实会话里挂载 | 未验证（缺重启后的名册观测） |
-| 59 万字全量重建耗时 | 未验证（当前样例 7 文件 10 ms） |
+| OVK 真实服务端到端 | 【未验证】：本机没有 OVK 服务（1933/7801 均无监听），写入/召回只在 `node:http` stub 上取证；起服务后按 `ovk.stub.test.js` 的同一脚本可复验 |
+| 面板观感（候选页 / 设置页 / 共享内容页 / 语义检索块） | 【未验证】：数据通道已逐步用真实书与 `curl` 取证（`/hub/settings`、`/hub/semantic`、`/hub/shared`、`/hub/backups`、`/hub/diagnostics` 均 200 且字段齐全），**渲染与布局需要人眼** |
+| 语义首建的真实耗时与费用 | 【未验证】：估算公式已实现（块数/字节/摘要调用次数），未在真实服务上跑过 |
+| 59 万字全量重建耗时 | 【未验证】：当前样例为 31 章 / 314 文件量级 |
 
 ## 5. 验收（DoD）
 
