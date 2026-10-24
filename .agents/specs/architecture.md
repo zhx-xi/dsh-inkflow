@@ -537,7 +537,6 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `search-model.ts` — 检索框：请求路径与「全部类型」开关换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案、点击去向、摘要与降级文案
 - `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
 - `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
-- `extract-model.ts` — 「候选」页签：kind/status/置信度文案与筛选、`readCandidateList` 的折叠（`counts` 与 `locator` 一律取 Host 的，不重算）、字段摘要与证据行文案、`evidenceTarget` 的跳转目标、只对未审行生效的批量选择（`actionableIds`）、半成功批次的两种结果文案（`describeOutcomes`）、拒绝码 → 人话
 
 ### 6.1 一致性体检（#33）的取数与落点
 
