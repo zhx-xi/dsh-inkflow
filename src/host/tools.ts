@@ -455,8 +455,8 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     description:
       'List chapters of the InkFlow project in reading order, read from the derived index, one page at a time. ' +
       '`limit` caps a single page (at most 500 — it is a page cap, not a book size); a longer book is walked with ' +
-      '`offset`. `total` is always the number of chapters in the whole book, and `truncated` says the reply is a ' +
-      'partial view. If the index is missing, ' +
+      '`offset`. `total` is always the number of chapters in the whole book; `truncated` says chapters still follow ' +
+      'this page (pass `offset: offset + returned` to read on). If the index is missing, ' +
       'built by another schema, or no longer matches the files (a chapter edited, added or deleted outside the ' +
       'plugin), it is rebuilt first (it is only a cache).',
     parameters: {
@@ -481,7 +481,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
         if (chapters.length === 0) return text(['No chapters yet (chapters/ is empty).'])
         const total = typeof v['total'] === 'number' ? v['total'] : chapters.length
         const offset = typeof v['offset'] === 'number' ? v['offset'] : 0
-        const page = `${v['truncated'] === true ? `showing chapters ${String(offset + 1)}–${String(offset + chapters.length)} of ${String(total)} (truncated — pass offset ${String(offset + chapters.length)} to page on)` : `${String(total)} chapter(s)${offset === 0 ? '' : ` — showing chapters ${String(offset + 1)}–${String(offset + chapters.length)}`}`}`
+        const page = `${v['truncated'] === true ? `showing chapters ${String(offset + 1)}–${String(offset + chapters.length)} of ${String(total)} (more follow — pass offset ${String(offset + chapters.length)} to read on)` : `${String(total)} chapter(s)${offset === 0 ? '' : ` — showing chapters ${String(offset + 1)}–${String(offset + chapters.length)} (end of list)`}`}`
         return text([
           `${page}${v['indexRebuilt'] === true ? ' (index was rebuilt)' : ''}:`,
           ...chapters.map(
@@ -523,7 +523,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
         total,
         returned: chapters.length,
         offset: page.offset,
-        truncated: chapters.length < total,
+        // "More chapters follow this page", not "this page is not the book": the latter is
+        // already visible from `total` vs `returned`, and it stays true on the LAST page —
+        // which would tell the caller to page on into an empty reply (#161 review).
+        truncated: page.offset + chapters.length < total,
         indexRebuilt: ensured.rebuilt,
         indexState: ensured.state,
         chapters,

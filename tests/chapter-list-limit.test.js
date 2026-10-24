@@ -12,10 +12,12 @@
  *   - `limit` is a **page** cap (`LIST_CHAPTERS_MAX`), not a book size;
  *   - `offset` walks the pages, and the cap/offset are clamped (1..500, >= 0);
  *   - `total` is always the **whole** book, from `countChapters`;
- *   - `truncated` is `returned < total` — "this page is not the whole book". It is `false`
- *     only when the entire book fits in the reply, so the *last* page of a long book is
- *     still `true` (20 of 520 returned): the reply is partial, which is why the wording
- *     says "use offset to page on" rather than "there is more after this";
+ *   - `truncated` is `offset + returned < total` — "chapters still follow this page".
+ *     The last page of a long book is therefore `false` (there is nothing after it), and
+ *     an empty page past the end is `false` too: the flag answers "should I page on?",
+ *     which is the only question a caller can act on. "This page is a slice" is already
+ *     visible from `total` vs `returned`, and a flag that stayed `true` on the last page
+ *     would send the caller into an empty reply;
  *   - `listAllChapters` is the one unbounded read, and `chapterSources` (the semantic
  *     ledger) goes through it so both entries see the same 520.
  *
@@ -186,7 +188,7 @@ test('chapter list tool: total is the whole book, returned/offset/truncated desc
     assert.equal(first.total, BOOK, 'total is the book, not the page')
     assert.equal(first.returned, 100, 'the default page is 100 chapters')
     assert.equal(first.offset, 0)
-    assert.equal(first.truncated, true, '100 of 520 is a partial reply')
+    assert.equal(first.truncated, true, '100 of 520: chapters 101+ still follow')
     assert.equal(first.chapters.length, 100)
 
     const second = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root, offset: 500 })
@@ -194,23 +196,19 @@ test('chapter list tool: total is the whole book, returned/offset/truncated desc
     assert.equal(second.returned, 20)
     assert.equal(second.offset, 500)
     assert.equal(second.chapters[0].seq, 501)
-    assert.equal(
-      second.truncated,
-      true,
-      'the last page of a long book is still a partial reply (20 < 520): the reply names a slice, ' +
-        'so `truncated` says "not the whole book" rather than "there is more after this"',
-    )
+    assert.equal(second.truncated, false, 'nothing follows the last page: the flag answers "page on?" and the answer is no')
 
     // Asking for more than the cap reports the cap it actually served.
     const capped = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root, limit: 5000 })
     assert.equal(capped.returned, LIST_CHAPTERS_MAX, 'a page is capped at 500 chapters')
     assert.equal(capped.total, BOOK)
-    assert.equal(capped.truncated, true)
+    assert.equal(capped.truncated, true, 'chapters 501+ still follow a 500-chapter page')
 
     // Past the end: an empty page that still tells the truth about the book.
     const past = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root, offset: 900 })
     assert.equal(past.ok, true)
     assert.equal(past.returned, 0)
+    assert.equal(past.truncated, false, 'an empty page past the end promises nothing more')
     assert.equal(past.total, BOOK, 'an empty page does not report an empty book')
     assert.deepEqual(past.chapters, [])
   } finally {
@@ -218,7 +216,7 @@ test('chapter list tool: total is the whole book, returned/offset/truncated desc
   }
 })
 
-test('chapter list tool: truncated is false only when the whole book fits in the reply', async () => {
+test('chapter list tool: truncated is "more follow", so the last page of a book is false', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -230,12 +228,12 @@ test('chapter list tool: truncated is false only when the whole book fits in the
     const whole = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root })
     assert.equal(whole.total, 3)
     assert.equal(whole.returned, 3)
-    assert.equal(whole.truncated, false, 'nothing was left out of the reply')
+    assert.equal(whole.truncated, false, 'the whole book fit: nothing follows')
 
     const slice = await callTool(harness, 'inkflow_chapter_list', { projectRoot: root, limit: 2 })
     assert.equal(slice.returned, 2)
     assert.equal(slice.total, 3, 'a page smaller than the book still reports the real total')
-    assert.equal(slice.truncated, true)
+    assert.equal(slice.truncated, true, 'chapter 3 of 3 follows the 2-chapter page')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
