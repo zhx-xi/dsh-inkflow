@@ -93,7 +93,7 @@ const FINGERPRINT = { size: 120, mtimeMs: 1_700_000_000_000, sha256: 'a'.repeat(
  * A model over `panel-model`'s editor contract: `save` is the Host call, so a
  * test can decide between success, a 409 and a hard failure.
  */
-function buildEditor({ save, reload, fields = BASE_FIELDS, fingerprint = FINGERPRINT, autosave = true } = {}) {
+function buildEditor({ save, reload, fields = BASE_FIELDS, fingerprint = FINGERPRINT, autosave = true, style } = {}) {
   const clock = fakeClock()
   const calls = []
   const editor = model.createEditorModel({
@@ -101,6 +101,7 @@ function buildEditor({ save, reload, fields = BASE_FIELDS, fingerprint = FINGERP
     path: 'chapters/vol-01/0001-开篇.md',
     fields: { ...fields },
     fingerprint,
+    style,
     autosave,
     now: clock.now,
     setTimer: clock.setTimer,
@@ -397,4 +398,50 @@ test('a hard failure is reported, not swallowed, and keeps the text', async () =
   assert.equal(state.errorCode, 'PROJECT_BUSY')
   assert.match(state.error ?? '', /lock/)
   assert.equal(state.fields.body, '写不进去的正文')
+})
+
+// ---------------------------------------------------------------------------
+// The file's own format survives an edit (issue 132, ADR-0016)
+// ---------------------------------------------------------------------------
+
+test('a save carries the line ending and BOM the editor read, and adopts the echo', async () => {
+  // The Host normalises every payload, so a CRLF file only stays CRLF if the
+  // editor gives the metadata back. Without this the author's one-character edit
+  // lands as a whole-chapter rewrite.
+  let reply = { ok: true, fingerprint: FINGERPRINT, style: { eol: 'crlf', bom: true } }
+  const { editor, calls } = buildEditor({
+    style: { eol: 'crlf', bom: true },
+    save: async () => reply,
+  })
+
+  editor.setText('他走进白鹤门。风很大。')
+  await editor.save('manual')
+  assert.equal(calls[0].eol, 'crlf')
+  assert.equal(calls[0].bom, true)
+
+  // The Host echoes the style it actually wrote. A declaration that went stale
+  // must not survive the answer, or every later save keeps sending the old one.
+  reply = { ok: true, fingerprint: FINGERPRINT, style: { eol: 'lf', bom: false } }
+  editor.setText('再改一个字。')
+  await editor.save('manual')
+  editor.setText('第三次。')
+  await editor.save('manual')
+  assert.equal(calls[2].eol, 'lf', 'the next save declares the style the Host reported')
+  assert.equal(calls[2].bom, false)
+})
+
+test('a reload takes the file’s current format, not the one it started with', async () => {
+  // The author converted the chapter in their own editor: the model must follow
+  // the disk, otherwise the next save puts the old endings back.
+  const { editor, calls } = buildEditor({
+    style: { eol: 'crlf', bom: false },
+    reload: async () => ({ fields: BASE_FIELDS, fingerprint: FINGERPRINT, style: { eol: 'lf', bom: true } }),
+    save: async () => ({ ok: true, fingerprint: FINGERPRINT }),
+  })
+
+  await editor.discardAndReload()
+  editor.setText('重新载入后改一个字。')
+  await editor.save('manual')
+  assert.equal(calls[0].eol, 'lf')
+  assert.equal(calls[0].bom, true)
 })

@@ -78,18 +78,37 @@ export const SAVE_LABELS: Record<SavePhase, string> = {
 
 export type SaveReason = 'auto' | 'manual' | 'overwrite'
 
+/**
+ * The file's own line ending and BOM, as `GET /chapters/:id` reports it (issue 132).
+ *
+ * The Host hands the editor an LF body and keeps the format in these two fields,
+ * because the browser never sees the raw bytes: sending them back is the only way
+ * a save can avoid turning one edited character into a whole-chapter diff
+ * (ADR-0016). They are not editable — a file's format is not part of its prose.
+ */
+export interface ChapterStyle {
+  eol: 'lf' | 'crlf'
+  bom: boolean
+}
+
+/** What a chapter without any metadata is saved as: the format new files get. */
+export const DEFAULT_STYLE: ChapterStyle = { eol: 'lf', bom: false }
+
 export interface SaveRequest {
   chapterId: string
   title: string
   body: string
   status: ChapterStatus
+  /** The format the editor read; the Host re-serialises the payload in it. */
+  eol: ChapterStyle['eol']
+  bom: boolean
   /** Absent only for an explicit overwrite (the user pressed "仍要保存"). */
   expected?: FileExpectation
   reason: SaveReason
 }
 
 export type SaveOutcome =
-  | { ok: true; fingerprint?: FileFingerprint; fields?: Partial<EditorFields> }
+  | { ok: true; fingerprint?: FileFingerprint; fields?: Partial<EditorFields>; style?: ChapterStyle }
   | { ok: false; conflict: true; current: FileFingerprint | null; changed: string[] }
   | { ok: false; conflict: false; code: string; message?: string }
 
@@ -120,6 +139,8 @@ export interface EditorState {
 export interface ReloadResult {
   fields: EditorFields
   fingerprint?: FileFingerprint | null
+  /** The format of the file as it is on disk now (a human editor may have changed it). */
+  style?: ChapterStyle
 }
 
 export interface EditorModelOptions {
@@ -127,6 +148,8 @@ export interface EditorModelOptions {
   path: string
   fields: EditorFields
   fingerprint?: FileFingerprint | null
+  /** The format the file was read in; omitted means "a new file" (LF, no BOM). */
+  style?: ChapterStyle
   autosave?: boolean
   save: (request: SaveRequest) => Promise<SaveOutcome>
   /** Re-read the chapter from the Host (used by "reload, discard my edits"). */
@@ -180,6 +203,8 @@ export function createEditorModel(options: EditorModelOptions): EditorModel {
   let fields: EditorFields = { ...options.fields }
   let saved: EditorFields = { ...options.fields }
   let fingerprint: FileFingerprint | null = options.fingerprint ?? null
+  // Carried, never rendered: only the save payload and a reload touch it.
+  let style: ChapterStyle = { ...(options.style ?? DEFAULT_STYLE) }
   let phase: SavePhase = 'idle'
   let conflict: ConflictInfo | null = null
   let errorCode: string | null = null
@@ -271,6 +296,8 @@ export function createEditorModel(options: EditorModelOptions): EditorModel {
       title: sent.title,
       body: sent.body,
       status: sent.status,
+      eol: style.eol,
+      bom: style.bom,
       reason,
       ...(reason === 'overwrite' ? {} : { expected: expectationOf(fingerprint) }),
     }
@@ -296,6 +323,9 @@ export function createEditorModel(options: EditorModelOptions): EditorModel {
         saved = { ...sent }
       }
       if (outcome.fingerprint !== undefined) fingerprint = outcome.fingerprint
+      // The Host echoes the style it actually wrote: adopt it, so a declaration
+      // that had gone stale cannot keep poisoning the next save (issue 132).
+      if (outcome.style !== undefined) style = { ...outcome.style }
       conflict = null
       errorCode = null
       errorMessage = null
@@ -338,6 +368,10 @@ export function createEditorModel(options: EditorModelOptions): EditorModel {
     fields = { ...loaded.fields }
     saved = { ...loaded.fields }
     if (loaded.fingerprint !== undefined) fingerprint = loaded.fingerprint ?? null
+    // A reload is a fresh read of the bytes: it is the one moment the format can
+    // legitimately differ from what this model started with (someone converted
+    // the file in another editor), so take it from there (issue 132).
+    if (loaded.style !== undefined) style = { ...loaded.style }
     undoStack = []
     cancelTimer()
     conflict = null

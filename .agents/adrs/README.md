@@ -24,6 +24,7 @@
 | [0013](0013-facts-ledger-line-format.md) | 事实账本用正文列表项 + 竖线分隔键值（一文件多事实的编码） | 已采纳 | 2026-10-24 |
 | [0014](0014-entity-id-pinning.md) | 实体改名用「id 钉住」，不级联重写引用 | 已采纳 | 2026-10-24 |
 | [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（检测/预览/修复三段 + 可回滚备份包） | 已采纳 | 2026-10-24 |
+| [0016](0016-preserve-file-eol-on-edit.md) | 编辑既有文件时保留该文件的行尾与 BOM（新文件仍归一 LF / 无 BOM） | 已采纳 | 2026-10-24 |
 
 ### 1.2 决策速览（一行一条）
 
@@ -44,6 +45,7 @@
 | [0013](0013-facts-ledger-line-format.md) | **事实账本一条事实一个正文列表项**：`- attribute: … │ value: … │ since: … │ chapterId: … │ source: …`，frontmatter 只放 `subject`；值里的 `│` 写 `\|`；未知键保留 | 读取器不支持嵌套映射（同时间线 `worldTime` 的因），Markdown 表格与中文竖线打架、对齐行污染 diff，一条一文件又与 §3.5 的文件粒度冲突 |
 | [0014](0014-entity-id-pinning.md) | **实体改名 = 移动文件 + 把旧 id 写进新文件 frontmatter**，五处引用（关系端点/时间线参与/账本主体/伏笔关联/提及键）一个都不重写；影响清单只告知；新增 info 级 `ID_PATH_DIVERGED` | 级联重写是 N 个文件的非事务动作，中途失败留半改状态，正好违反「取消时零写入」；而显式 `id` 本来就是 §3.1 推荐的合法写法，钉住只需一次写 |
 | [0015](0015-repair-and-migration.md) | **修复 = 检测/预览/修复三段**（`detect` 与 `preview` 零写盘，`fix` 需 `confirm`），动作只有四种（补 frontmatter 必填键 / 重挂 `parent:` / 删重复关系 / 重建 catalog 投影），`fixable:false` 一律不做；**6→9 迁移只增目录 + 只改两个元数据文件**（`.gitignore` append-only、`inkflow.json` 只改 `schemaVersion`），内容文件零字节变动；两者都先写 `<book>/.inkflow/backup/<stamp>/`（清单先写 `sealed:false` 再盖章）以便逐字节回滚，报告落 `.inkflow/audit/` | 迁移改的是**已存在**的文件，向导式的内存撤销一崩就没，所以只在「改已存在文件」的路径上落盘撤销；删除重复关系按「索引保留第一条」这一条确定规则而不是猜哪条更「像名字」；非法枚举值不改——修复侧与写侧同一条纪律：拒绝而不是降级 |
+| [0016](0016-preserve-file-eol-on-edit.md) | **编辑既有文件保留该文件自己的行尾与 BOM**：`GET /chapters/:id` 增只读 `eol`/`bom`（body 仍 LF），写路径在 `normalizeText` **之后**按目标风格重新序列化（面板声明优先、工具回落磁盘、**新建仍 LF 无 BOM**）；混合行尾按首个终止符统一 | 读写两处都归一会把「原风格」丢两次，读者改一个字就得到整章 diff（`git blame` 失效）；拆掉 `normalizeText` 又会让 BOM/混合行尾从任意一处漏进用户仓库；一次性把作者的书转 LF 是另一个必须由作者发起的决定 |
 
 ## 2. 编号与登记规则
 

@@ -1004,3 +1004,54 @@ test('safety: a title with a comment marker or a trailing dot is quoted or refus
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// Line endings and BOM (issue #132, tool path)
+// ---------------------------------------------------------------------------
+
+test('eol: inkflow_chapter_write keeps a CRLF chapter CRLF (issue #132)', async () => {
+  // The tool path has no client to hand metadata back, so the style has to come
+  // from the file itself. Before #132 the write door normalised to LF and the
+  // author's whole chapter showed up in the diff for a one-character edit.
+  const dir = workdir()
+  try {
+    const root = scaffold(dir)
+    const harness = makeHarness(root)
+    const created = await call(harness, 'inkflow_chapter_create', { title: '夜半破庙' })
+    assert.equal(created.ok, true, JSON.stringify(created))
+    const file = join(root, ...created.chapter.file.split('/'))
+
+    // Windows-written manuscript: every terminator is CRLF.
+    const crlfText = readFileSync(file, 'utf8').replace(/\r?\n/g, '\r\n')
+    writeFileSync(file, crlfText, 'utf8')
+    const before = splitDoc(crlfText)
+    assert.equal(/[^\r]\n/.test(crlfText), false, 'fixture must be pure CRLF')
+
+    const body = '他在破庙里醒来。\n门外有人敲门。'
+    const written = await call(harness, 'inkflow_chapter_write', { chapterId: created.chapter.chapterId, body })
+    assert.equal(written.ok, true, JSON.stringify(written))
+
+    const after = splitDoc(readFileSync(file, 'utf8'))
+    assert.equal(after.head, before.head, 'the frontmatter block must stay byte-identical, CRLF included')
+    assert.equal(after.body, body.replace(/\n/g, '\r\n'), "the body must keep the file's CRLF")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('eol: a new chapter is written LF without a BOM (issue #132 regression)', async () => {
+  // A file the plugin creates has no previous style to preserve: the normalised
+  // form (UTF-8, no BOM, LF) stays the default for new files.
+  const dir = workdir()
+  try {
+    const root = scaffold(dir)
+    const harness = makeHarness(root)
+    const created = await call(harness, 'inkflow_chapter_create', { title: '新章' })
+    assert.equal(created.ok, true, JSON.stringify(created))
+    const text = readFileSync(join(root, ...created.chapter.file.split('/')), 'utf8')
+    assert.equal(text.includes('\r'), false)
+    assert.equal(text.startsWith('\uFEFF'), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
