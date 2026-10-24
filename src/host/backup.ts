@@ -47,8 +47,14 @@ export const BACKUP_MANIFEST_FILE = 'manifest.json'
 /** Where the byte copies live inside one backup directory. */
 export const BACKUP_FILES_DIR = 'files'
 
-/** Which batch produced the package — the two keep separate report prefixes too. */
-export type BackupKind = 'repair' | 'migrate'
+/**
+ * Which batch produced the package — each kind keeps its own report prefix too.
+ *
+ * `replace` is #39's search-and-replace batch (roadmap X-17). It lives in the same
+ * union as the others because one rollback reader has to be able to undo any package
+ * the plugin wrote; a reader per kind would mean two undo paths to test.
+ */
+export type BackupKind = 'repair' | 'migrate' | 'replace'
 
 /** What a file is, as far as a restore cares. */
 export interface BackupDigest {
@@ -382,7 +388,7 @@ export function readBackup(root: string, dirInput: string): BackupReadResult {
     )
   }
   const kind = record['kind']
-  if (kind !== 'repair' && kind !== 'migrate') {
+  if (kind !== 'repair' && kind !== 'migrate' && kind !== 'replace') {
     return fail('BACKUP_MANIFEST_INVALID', `${manifestPath} has an unknown kind`, { root, path: manifestPath })
   }
   const strings = (value: unknown): string[] =>

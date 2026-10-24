@@ -264,8 +264,9 @@ test('the guard itself catches the two shapes that killed the plugin', () => {
 test('every shipped tool schema stays inside the Host-supported subset', () => {
   const tools = registeredTools()
   // Exact, not `>=`: dropping a domain tool would otherwise stay green, and the
-  // baseline below only names the 15 built-ins (#33 audit, #36 repair/migrate).
-  assert.equal(tools.size, 31, `expected the full tool surface, got ${tools.size}`)
+  // baseline below only names the 17 built-ins (#33 audit, #36 repair/migrate,
+  // #39 the unified search and the search-replace batch).
+  assert.equal(tools.size, 33, `expected the full tool surface, got ${tools.size}`)
 
   const failures = []
   for (const [name, tool] of tools) {

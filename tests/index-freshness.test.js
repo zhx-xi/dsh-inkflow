@@ -527,8 +527,10 @@ test('read paths: /chapters and /search agree with the files after an external e
     assert.equal(search.value.indexState, 'stale')
     assert.equal(search.value.indexRebuilt, true)
     assert.equal(search.value.total, 1)
-    assert.equal(search.value.results[0].title, '第1章 改过的标题')
-    assert.equal(search.value.results[0].wordCount, 5, 'status and word count come from the rebuilt index')
+    // #39 (X-16): one entry shape for every kind — no chapter-only `results` list.
+    assert.equal(search.value.items[0].title, '第1章 改过的标题')
+    assert.equal(search.value.items[0].kind, 'chapters')
+    assert.equal(search.value.items[0].path, 'chapters/0001-章.md')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

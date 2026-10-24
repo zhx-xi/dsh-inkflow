@@ -67,6 +67,17 @@ import {
   staleWarning,
 } from './panel-model.js'
 import type { BadgeTone, ChapterDetailValue, ChaptersValue, PanelBuild, PanelGate, StatusValue } from './panel-model.js'
+import {
+  SEARCH_HINT,
+  SEARCH_PAGE_LIMIT,
+  describeSearchDegradation,
+  describeSearchPage,
+  readSearchPage,
+  searchHitLabel,
+  searchHitTarget,
+  searchRequestPath,
+} from './search-model.js'
+import type { SearchHit, SearchPage } from './search-model.js'
 
 // ---------------------------------------------------------------------------
 // Theme tokens. Every visible colour comes from the host theme (no literals,
@@ -374,6 +385,69 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const facts = useMemo(() => projectFacts(status), [status])
   const empty = emptyKindOf(gate, tree.total, selected !== null)
 
+  // -------------------------------------------------------------------------
+  // Search (#39, X-16/X-20). One box in the 章节 tab and a 「全部类型」 switch
+  // beside it — no seventh tab: searching the book is a way to read this page.
+  // The switch changes the SCOPE (chapters only vs the whole book), never the
+  // result shape, so the list below renders one kind of row either way.
+  // -------------------------------------------------------------------------
+  const [searchText, setSearchText] = useState('')
+  const [searchAllKinds, setSearchAllKinds] = useState(false)
+  const [searchPage, setSearchPage] = useState<SearchPage | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [searching, setSearching] = useState(false)
+  const searchQuery = searchText.trim()
+  const searchActive = searchQuery !== ''
+
+  useEffect(() => {
+    if (!searchActive) {
+      setSearchPage(null)
+      setSearchError(null)
+      setSearching(false)
+      return
+    }
+    if (gate.usable !== true) return
+    let live = true
+    setSearching(true)
+    // Typing is the input: a short debounce keeps the Host from being asked once
+    // per keystroke, and `live` drops a reply that a newer keystroke has outdated.
+    const timer = setTimeout(() => {
+      void (async () => {
+        const result = await fetchInternal<unknown>(searchRequestPath(searchQuery, searchAllKinds, { limit: SEARCH_PAGE_LIMIT }), {
+          sessionId,
+        })
+        if (!live) return
+        setSearching(false)
+        if (result.ok) {
+          setSearchPage(readSearchPage(result.value))
+          setSearchError(null)
+        } else {
+          setSearchPage(null)
+          setSearchError(describeRouteError(result.error))
+        }
+      })()
+    }, 300)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [searchActive, searchQuery, searchAllKinds, gate.usable, sessionId])
+
+  /**
+   * A click on a hit: chapter prose opens in this page's editor, anything from the
+   * setting library jumps to that tab with the entry selected (the same hand-off the
+   * audit report uses, #33). The search text is left alone so the list survives.
+   */
+  const openSearchHit = useCallback((hit: SearchHit): void => {
+    const target = searchHitTarget(hit)
+    if (target.kind === 'chapter') {
+      setSelected(target.chapterId)
+      return
+    }
+    setLibraryFocus({ kind: target.entityKind, id: target.id, nonce: Date.now() })
+    setTab('library')
+  }, [])
+
   // Volumes for the editor's "which volume" picker and the new-chapter form.
   const volumes: VolumeOption[] = useMemo(
     () => tree.groups.map((group) => ({ volumeId: group.volumeId, title: group.title })),
@@ -608,6 +682,83 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       ) : (
         <div ref={scrollBox.ref} style={{ ...bodyStyle, ...SCROLL_BOX_STYLE, ...scrollBox.style }}>
           <div style={columnStyle}>
+            {/* Search box (#39): the 「全部类型」 switch sits beside it and only widens
+                the scope. Typing replaces the tree below with the hit list — the page
+                stays one page (X-20), which is why there is no new tab. */}
+            <div style={{ display: 'grid', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  aria-label="全库搜索"
+                  value={searchText}
+                  placeholder="搜索正文与设定…"
+                  onChange={(event) => setSearchText(event.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    border: '1px solid var(--dsw-alias-border-l1)',
+                    borderRadius: 6,
+                    background: 'var(--dsw-alias-bg-base)',
+                    color: 'var(--dsw-alias-label-primary)',
+                    padding: '3px 6px',
+                    fontSize: 12,
+                  }}
+                />
+                {searchActive ? (
+                  <button type="button" style={buttonStyle} onClick={() => setSearchText('')}>
+                    清空
+                  </button>
+                ) : null}
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, ...muted, fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  aria-label="搜索全部类型"
+                  checked={searchAllKinds}
+                  onChange={(event) => setSearchAllKinds(event.target.checked)}
+                />
+                全部类型（正文之外的设定条目也一起搜）
+              </label>
+            </div>
+            {searchActive ? (
+              <div style={{ display: 'grid', gap: 4 }}>
+                {searching ? <div style={muted}>搜索中…</div> : null}
+                {searchError === null ? null : (
+                  <div style={{ ...cardStyle, borderColor: 'var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)' }}>
+                    {searchError}
+                  </div>
+                )}
+                {searchPage === null ? null : (
+                  <>
+                    <div style={muted}>{describeSearchPage(searchPage, searchQuery, searchAllKinds)}</div>
+                    {(() => {
+                      const degraded = describeSearchDegradation(searchPage)
+                      return degraded === null ? null : <div style={{ ...muted, fontSize: 12 }}>{degraded}</div>
+                    })()}
+                    {searchPage.items.map((hit) => (
+                      <button
+                        key={`${hit.kind}:${hit.id}`}
+                        type="button"
+                        onClick={() => openSearchHit(hit)}
+                        style={{
+                          ...buttonStyle,
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          paddingLeft: 8,
+                          borderColor: 'transparent',
+                        }}
+                      >
+                        <div>{searchHitLabel(hit)}</div>
+                        {hit.snippet === '' ? null : <div style={{ ...muted, fontSize: 12 }}>{hit.snippet}</div>}
+                        <div style={{ ...muted, ...mono, fontSize: 11 }}>{hit.path}</div>
+                      </button>
+                    ))}
+                    {searchPage.items.length === 0 ? null : <div style={{ ...muted, fontSize: 12 }}>{SEARCH_HINT}</div>}
+                  </>
+                )}
+              </div>
+            ) : (
+              <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <SectionTitle>章节树（卷 → 章）</SectionTitle>
               <button
@@ -741,6 +892,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
               </div>
             )}
             <div style={{ ...muted, marginTop: 'auto', paddingTop: 6 }}>{describeFacts(facts)}</div>
+              </>
+            )}
           </div>
 
           <div style={{ ...columnStyle, ...dividerStyle }}>

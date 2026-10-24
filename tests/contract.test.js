@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the fourteen built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the sixteen built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -237,6 +237,10 @@ test('registers the fourteen built-ins, the tools of every registered domain, an
       'inkflow_project_status',
       'inkflow_relation_list',
       'inkflow_relation_upsert',
+      // #39: the single search entry (X-16) and the search-replace batch (X-17), both
+      // built-ins — they span every kind and own no content directory.
+      'inkflow_search',
+      'inkflow_search_replace',
       'inkflow_timeline_list',
       'inkflow_timeline_upsert',
       'inkflow_volume_create',

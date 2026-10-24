@@ -48,6 +48,7 @@ import { parseMarkdown } from './frontmatter.js'
 import { countChars, indexPaths, readIndexMeta } from './indexer.js'
 import { ensureIndex } from './index-freshness.js'
 import type { EnsureIndexResult } from './index-freshness.js'
+import { searchEntries } from './search.js'
 import type { ProjectProbe, ProjectState } from './project.js'
 import { findProjectRoot, inspectProject, isWithin, projectLabel, realpathLoose } from './project.js'
 import { detectTextStyle } from './text-style.js'
@@ -349,8 +350,13 @@ export function findPathParamInBody(body: JsonRecord): string | undefined {
 // Projections (all read-only)
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a degraded search answers from chapter metadata: the panel's search box must still
+ * work on a book whose index cannot be built (a foreign lock, a read-only checkout), and
+ * the reply has to say so rather than reporting "no match" for a word that is in the book.
+ */
 const SEARCH_REASON =
-  'body full-text search arrives with the index v2 tree (issue #22); matches are limited to chapter ids, paths and titles'
+  'the derived index could not be used, so this answer lists chapter metadata only (id / path / title); body prose and the setting library need a rebuilt index'
 
 function chapterNode(chapter: CatalogChapter): JsonRecord {
   return { id: chapter.chapterId, path: chapter.file, seq: chapter.seq ?? null, title: chapter.title }
@@ -409,7 +415,10 @@ export function buildStatus(target: ChannelTarget, version: string): JsonRecord 
       volumes: catalog.catalog.volumes.length,
       chapters: chapterCount,
     },
-    search: { available: false, scope: 'chapter-metadata', reason: SEARCH_REASON },
+    // #39: the search box exists now and covers every kind (X-16); `scope` names what
+    // `GET /search` answers, and a degraded answer (unusable index) says so per reply in
+    // `degradedReason` — the capability itself no longer depends on the index.
+    search: { available: true, scope: 'all-kinds', backends: ['fts5'] },
     // Issue #88: the panel's "is this build old?" banner. Read at call time, so a
     // rebuild while DSH is running makes the next `/status` answer "stale" and
     // only a restart makes it "fresh" again — refreshing cannot clear it.
@@ -539,9 +548,14 @@ function escapeLike(value: string): string {
 }
 
 /**
- * Search the derived index's `chapters` table. `undefined` means "the index
- * cannot answer" (missing, foreign schema, unreadable) — the caller then falls
- * back to the catalog projection instead of showing an error.
+ * Search the derived index's `chapters` table for a *metadata* match (id, path, title).
+ *
+ * This is the degraded answer, not the main one: `buildSearch` below searches body prose
+ * and every setting kind through `searchEntries` (#39, X-16) and only falls back here when
+ * the index cannot be used at all. It reads the index rather than the catalog when it can,
+ * because `seq`/`status`/`volume` are index columns and the panel shows them.
+ *
+ * `undefined` means "the index cannot answer" (missing, foreign schema, unreadable).
  */
 function searchIndex(root: string, query: string, limit: number): JsonRecord[] | undefined {
   const paths = indexPaths(root)
@@ -557,16 +571,7 @@ function searchIndex(root: string, query: string, limit: number): JsonRecord[] |
         "SELECT id, path, seq, title, volume, status, word_count FROM chapters WHERE id LIKE ? ESCAPE '\\' OR path LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' ORDER BY seq IS NULL, seq, path LIMIT ?",
       )
       .all(pattern, pattern, pattern, limit) as unknown as Array<Record<string, unknown>>
-    return rows.map((row) => ({
-      kind: 'chapter',
-      id: String(row['id']),
-      path: String(row['path']),
-      seq: typeof row['seq'] === 'number' ? row['seq'] : null,
-      title: String(row['title']),
-      volume: typeof row['volume'] === 'string' ? row['volume'] : null,
-      status: typeof row['status'] === 'string' ? row['status'] : null,
-      wordCount: typeof row['word_count'] === 'number' ? row['word_count'] : null,
-    }))
+    return rows.map((row) => metadataHitOf(String(row['id']), String(row['path']), String(row['title'])))
   } catch {
     return undefined
   } finally {
@@ -574,58 +579,96 @@ function searchIndex(root: string, query: string, limit: number): JsonRecord[] |
   }
 }
 
-/** Catalog-backed fallback: metadata only, so `status`/`wordCount` stay null. */
+/** One metadata-only hit in the X-16 entry shape: an empty snippet is the honest answer. */
+function metadataHitOf(id: string, path: string, title: string): JsonRecord {
+  return { kind: 'chapters', id, path, title, snippet: '' }
+}
+
+/** Catalog-backed fallback: the files themselves, so a buildable index is not required. */
 function searchCatalog(root: string, query: string, limit: number): JsonRecord[] {
   const needle = query.toLowerCase()
   const hits: JsonRecord[] = []
   for (const entry of chapterEntries(root)) {
-    const { chapter, volume } = entry
+    const { chapter } = entry
     const matches =
       chapter.chapterId.toLowerCase().includes(needle) ||
       chapter.file.toLowerCase().includes(needle) ||
       chapter.title.toLowerCase().includes(needle)
     if (!matches) continue
-    hits.push({
-      kind: 'chapter',
-      id: chapter.chapterId,
-      path: chapter.file,
-      seq: chapter.seq ?? null,
-      title: chapter.title,
-      volume: volume?.volumeId ?? null,
-      status: null,
-      wordCount: null,
-    })
+    hits.push(metadataHitOf(chapter.chapterId, chapter.file, chapter.title))
     if (hits.length >= limit) break
   }
   return hits
 }
 
+/** What a panel search may ask for: the one query, the kinds, and one page. */
+export interface ChannelSearchInput {
+  query: string
+  kinds?: readonly string[]
+  offset?: number
+  limit?: number
+}
+
 /**
- * `GET /search?q=`: chapter metadata search.
+ * `GET /search?q=`: the single search entry over the whole book (#39, X-16).
  *
- * Issue #5: the index is made fresh first, so the panel cannot show a chapter
- * list built from the files while searching an index from a previous
- * generation. If the rebuild is refused (another process holds the lock, say),
- * the old cache — or the catalog projection — still answers and the response
- * says why in `indexError`.
+ * The envelope is X-16's, unchanged from the tool surface: `items` of
+ * `{kind, id, path, title, snippet}`, `{offset, limit, total}`, `truncated` and
+ * `searchBackend`, so the panel and the model read the same answer.
+ *
+ * Issue #5: the index is made fresh first, so the panel cannot show a chapter list built
+ * from the files while searching an index from a previous generation. If the index is
+ * missing, foreign or unrebuildable (another process holds the lock), the answer degrades
+ * to a metadata scan of the same files and `degradedReason` says exactly that — a panel
+ * read never fails and never answers "no such word" when the cache is the problem.
  */
-export async function buildSearch(target: ChannelTarget, version: string, query: string, limit = 50): Promise<JsonRecord> {
+export async function buildSearch(target: ChannelTarget, version: string, input: ChannelSearchInput): Promise<JsonRecord> {
   const ensured = await ensureIndex(target.root)
-  const bounded = Math.min(Math.max(Math.trunc(limit), 1), 200)
-  const results = searchIndex(target.root, query, bounded) ?? searchCatalog(target.root, query, bounded)
-  return {
+  const base = {
     pluginVersion: version,
     sessionId: target.sessionId,
     root: target.root,
-    query,
-    total: results.length,
-    results,
-    searchUnavailable: true,
-    searchScope: 'chapter-metadata',
-    reason: SEARCH_REASON,
+    query: input.query,
     indexRebuilt: ensured.rebuilt,
     indexState: ensured.state,
     ...indexFailureOf(ensured),
+  }
+  const result = searchEntries(target.root, input.query, {
+    ...(input.kinds === undefined ? {} : { kinds: input.kinds }),
+    ...(input.offset === undefined ? {} : { offset: input.offset }),
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+  })
+  if (result.ok) {
+    return {
+      ...base,
+      searchBackend: result.searchBackend,
+      ...(result.degradedReason === undefined ? {} : { degradedReason: result.degradedReason }),
+      mode: result.mode,
+      offset: result.offset,
+      limit: result.limit,
+      total: result.total,
+      truncated: result.truncated,
+      items: result.items,
+    }
+  }
+
+  // Degraded: metadata only, and it says so. `INDEX_UNAVAILABLE` is the expected case
+  // here (the cache is missing or foreign); a rejected query is caught by the route
+  // before this function, so any other code still answers rather than showing nothing.
+  const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 100)
+  const offset = Math.min(Math.max(Math.trunc(input.offset ?? 0), 0), 5000)
+  const metadata = searchIndex(target.root, input.query, offset + limit) ?? searchCatalog(target.root, input.query, offset + limit)
+  const page = metadata.slice(offset, offset + limit)
+  return {
+    ...base,
+    searchBackend: 'fts5',
+    degradedReason: `${SEARCH_REASON} (${result.code}: ${result.message})`,
+    mode: 'like',
+    offset,
+    limit,
+    total: metadata.length,
+    truncated: metadata.length >= offset + limit && metadata.length > 0,
+    items: page,
   }
 }
 

@@ -488,7 +488,8 @@ test('internal channel: /status projects the session workspace, gate and index s
     assert.equal(value.index.dbExists, false, 'reading the panel must not build the index')
     assert.equal(value.index.schemaMatches, false)
     assert.equal(value.catalog.chapters, 2)
-    assert.equal(value.search.available, false, 'body search arrives with the index v2 tree')
+    assert.equal(value.search.available, true, 'the search box covers every kind since #39 (X-16)')
+    assert.equal(value.search.scope, 'all-kinds')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -616,7 +617,7 @@ test('internal channel: /chapters/:id returns frontmatter and body without writi
 // 12. Search: index LIKE today, honest about missing body search (#22)
 // ---------------------------------------------------------------------------
 
-test('internal channel: /search matches the index chapter table and flags body search', async () => {
+test('internal channel: /search answers X-16 entries over body prose and titles', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -628,20 +629,36 @@ test('internal channel: /search matches the index chapter table and flags body s
     const empty = await internalCall(harness, '/search?q=雨')
     assert.equal(empty.status, 200)
     assert.equal(empty.json.ok, true)
-    assert.equal(empty.json.value.searchUnavailable, true)
-    assert.equal(empty.json.value.searchScope, 'chapter-metadata')
     assert.equal(empty.json.value.indexState, 'missing')
     assert.equal(empty.json.value.indexRebuilt, true)
     assert.equal(existsSync(join(root, 'index', 'inkflow.db')), true, 'the panel read filled the cache')
+    // #39: the panel's search is the one X-16 entry — body prose included, no
+    // placeholder about "body search arrives later".
+    assert.equal(empty.json.value.searchBackend, 'fts5')
+    assert.equal(empty.json.value.degradedReason, undefined)
+    assert.equal(empty.json.value.total, 1, '门外下着雨 — a body match, not a metadata one')
+    assert.deepEqual(empty.json.value.items, [
+      {
+        kind: 'chapters',
+        id: 'ch-2',
+        path: 'chapters/0002-散章.md',
+        title: '散章',
+        snippet: '门外下着雨。',
+        // The stored body starts with the blank line that followed the frontmatter.
+        offset: 5,
+      },
+    ])
 
+    // A title still matches: the chapter branch covers body *and* title, so a
+    // reader typing a chapter name gets that chapter.
     const hit = await internalCall(harness, '/search?q=散章')
     assert.equal(hit.json.value.total, 1)
-    assert.equal(hit.json.value.results[0].id, 'ch-2')
-    assert.equal(hit.json.value.results[0].kind, 'chapter')
+    assert.equal(hit.json.value.items[0].id, 'ch-2')
+    assert.equal(hit.json.value.items[0].kind, 'chapters')
 
     const none = await internalCall(harness, '/search?q=不存在的词')
     assert.equal(none.json.value.total, 0)
-    assert.deepEqual(none.json.value.results, [])
+    assert.deepEqual(none.json.value.items, [])
 
     const missingQuery = await internalCall(harness, '/search')
     assert.equal(missingQuery.status, 400)
