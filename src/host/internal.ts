@@ -941,6 +941,30 @@ function writeValue(target: ChannelTarget, version: string, chapter: ChapterView
   }
 }
 
+// The three chapter write routes' body whitelists (#162). They live here, not in the
+// route table, because THIS is the module that reads those bodies: the field names sit
+// next to the `requiredText`/`optionalSeq`/`readExpected` calls that consume them, so a
+// new field is one edit in one file. `sessionId` is allowed on every write anyway
+// (`routes.ts` always permits it); it is listed to keep each route's declaration a full
+// statement of what may travel.
+
+/** `POST /chapters` body: what a create may carry (`title` is the only required one). */
+export const CHAPTER_CREATE_BODY_FIELDS = ['sessionId', 'title', 'volumeId', 'slug', 'seq'] as const
+
+/** `POST|DELETE /chapters/:id`: the editor's save fields and the CAS baseline. */
+export const CHAPTER_SAVE_BODY_FIELDS = [
+  'sessionId',
+  'title',
+  'body',
+  'status',
+  'eol',
+  'bom',
+  'expected',
+] as const
+
+/** `POST /chapters/:id/move`: the target volume plus the CAS baseline. */
+export const CHAPTER_MOVE_BODY_FIELDS = ['sessionId', 'volumeId', 'expected'] as const
+
 /** `POST /chapters`: create a chapter (title is the only required field). */
 export async function createChapterViaChannel(request: WriteRequest): Promise<WriteReply> {
   const title = requiredText(request.body, 'title')

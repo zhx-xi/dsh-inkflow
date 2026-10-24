@@ -88,6 +88,8 @@
 
 路由清单与错误码见 [conventions.md](conventions.md) §6.2。投影实现在 `src/host/internal.ts`，全部只读真相文件：关掉 `index/` 的自动放宽、卷章树走 `readCatalog` 的 `.md` 投影、索引只以 `readOnly` 打开（检索函数本身不建库）、章节文件只读且必须落在 `chapters/` 内。**唯一允许的写是派生缓存**：`/chapters` 与 `/search` 先经 `ensureIndex` 把索引弄新鲜（issue #5，§7），失败则降级——继续用旧索引或 catalog 投影作答并回 `indexError`。面板**从不修复项目结构**（`needs-repair` / `needs-setup` 下的写入只能由用户确认后的向导触发）；`index/` 缺失时 `/status` 报 `index.dbExists: false`，卷章树仍从文件投影得到。
 
+**body 白名单的归属（#162）**：每条路由的 `body` 是一个 `*_BODY_FIELDS` 常量，**定义在读取该 body 的模块里**（`internal.ts` 的 `CHAPTER_*_BODY_FIELDS`、`hub-settings.ts`、`hub-wizard.ts`、`shared-channel.ts`、`extract-channel.ts` …），`routes.ts` 只 import、不写字面量；设置页的 `HUB_SETTINGS_BODY_FIELDS` 由 `settings.ts` 的 `SETTINGS_FIELDS` **派生**（+ `confirm`），不再手抄。依据是 #162：手抄字段表在 #41 加 `semanticEndpoint`/`semanticApiKey` 时差点漏改，而漏改只表现为设置页保存 `400 UNEXPECTED_BODY_FIELD`——字段在设置层完全合法，所以没有任何别的测试会红。机械守卫：`tests/body-fields.test.js` 扫描 `routes.ts` 禁止行内 `body: [`；`tests/hub-settings.test.js` 断言白名单 = `SETTINGS_FIELDS` + `confirm`，且线上逐个字段都被接受。
+
 **书库通道 `/inkflow/internal/hub/*`：无会话、独立路由组**（[ADR-0010](../adrs/0010-book-hub-entry.md) D3/D6）。左侧栏书库是 root 作用域面板，拿不到会话，所以这条通道**不改动上面的会话路由一行**，而是在同一个 `/inkflow` 前缀下先按段分发（`internalPath` 以 `/hub` 开头即进 hub 分派器）：
 
 | 项 | 会话通道 | 书库通道 |
@@ -535,6 +537,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `search-model.ts` — 检索框：请求路径与「全部类型」开关换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案、点击去向、摘要与降级文案
 - `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
 - `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
+- `extract-model.ts` — 「候选」页签：kind/status/置信度文案与筛选、`readCandidateList` 的折叠（`counts` 与 `locator` 一律取 Host 的，不重算）、字段摘要与证据行文案、`evidenceTarget` 的跳转目标、只对未审行生效的批量选择（`actionableIds`）、半成功批次的两种结果文案（`describeOutcomes`）、拒绝码 → 人话
 
 ### 6.1 一致性体检（#33）的取数与落点
 

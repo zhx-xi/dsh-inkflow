@@ -193,6 +193,19 @@ function bookChoices(ctx: HostContext): Array<{ workspaceId: string | null; book
 // Settings (no book involved: D1)
 // ---------------------------------------------------------------------------
 
+/**
+ * Field names the settings save (`POST /hub/settings/update`) may carry.
+ *
+ * DERIVED from `SETTINGS_FIELDS`, never copied (#162). `writeHubSettings` below reads
+ * exactly the settings field list plus `confirm`, so that list is what has to travel:
+ * adding a setting means editing `settings.ts` and nothing else. The hand-copied array
+ * this replaces was complete only by luck — #41 added `semanticEndpoint` /
+ * `semanticApiKey` and the copy nearly missed them — and a miss is invisible: the field
+ * is legal everywhere else, and only the settings page answers 400
+ * `UNEXPECTED_BODY_FIELD` for it.
+ */
+export const HUB_SETTINGS_BODY_FIELDS = [...SETTINGS_FIELDS, 'confirm'] as const
+
 export function buildHubSettings(deps: HubSettingsDeps): Json {
   const read = readSettings(deps.dataDir)
   // The root the shared page will actually read (#150). The page shows it because the
@@ -296,6 +309,9 @@ export function buildHubDiagnostics(deps: HubSettingsDeps, anchor: unknown): Hub
   }
 }
 
+/** Field names the diagnostics export may carry: the anchor plus the confirmation. */
+export const HUB_DIAGNOSTICS_EXPORT_BODY_FIELDS = ['book', 'confirm'] as const
+
 export function exportHubDiagnostics(deps: HubSettingsDeps, body: Json): HubReply<Json> {
   if (body['confirm'] !== true) {
     return {
@@ -348,6 +364,9 @@ export function buildHubBackups(deps: HubSettingsDeps, anchor: unknown): HubRepl
     },
   }
 }
+
+/** Field names a backup create may carry: the anchor, the retention override, the bin, the confirmation. */
+export const HUB_BACKUP_CREATE_BODY_FIELDS = ['book', 'keep', 'includeTrash', 'confirm'] as const
 
 export function createHubBackup(deps: HubSettingsDeps, body: Json): HubReply<Json> {
   const book = resolveHubBook(deps.ctx, body['book'])
@@ -432,6 +451,9 @@ function planWire(plan: RestorePlan): Json {
     extra: plan.extra,
   }
 }
+
+/** Field names a restore may carry: the anchor, the package, the per-file baseline, the confirmation. */
+export const HUB_BACKUP_RESTORE_BODY_FIELDS = ['book', 'file', 'expected', 'confirm'] as const
 
 export async function restoreHubBackup(deps: HubSettingsDeps, body: Json): Promise<HubReply<Json>> {
   const book = resolveHubBook(deps.ctx, body['book'])

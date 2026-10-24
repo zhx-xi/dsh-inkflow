@@ -812,6 +812,9 @@ export {
   sharedRootOf,
   writeSettings,
 } from './settings.js'
+// Exported for the #162 equivalence test: the route's body whitelist must stay
+// `SETTINGS_FIELDS` + `confirm`, and a test can only compare what it can import.
+export { HUB_SETTINGS_BODY_FIELDS } from './hub-settings.js'
 export type {
   InkflowSettings,
   SettingsError,

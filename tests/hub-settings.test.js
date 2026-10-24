@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { apply } from '../lib/index.js'
+import { HUB_SETTINGS_BODY_FIELDS, SETTINGS_FIELDS, apply } from '../lib/index.js'
 import { hashTree } from './hash-tree.mjs'
 
 const HOST = '127.0.0.1:2149'
@@ -200,6 +200,74 @@ test('a path in the body is refused before any handler runs (the browser names n
     const alsoRefused = await get(h, '/backups?root=E%3A%5Csomewhere')
     assert.equal(alsoRefused.status, 400)
     assert.equal(alsoRefused.json.error.code, 'ROOT_PARAM_NOT_ALLOWED')
+  } finally {
+    h.cleanup()
+  }
+})
+
+/**
+ * #162: the save route's whitelist is DERIVED from `SETTINGS_FIELDS`, never copied.
+ *
+ * The failure this pins is quiet by construction: a hand-copied list that misses one
+ * field still answers 200 for every OTHER field, and only the missing one is a 400
+ * `UNEXPECTED_BODY_FIELD` — on a field the settings layer stores happily. #41 added
+ * `semanticEndpoint`/`semanticApiKey` and the copy survived by luck.
+ */
+test('the settings save whitelist is SETTINGS_FIELDS + confirm, derived not copied (#162)', () => {
+  assert.ok(Array.isArray(SETTINGS_FIELDS), 'SETTINGS_FIELDS must be exported')
+  assert.ok(Array.isArray(HUB_SETTINGS_BODY_FIELDS), 'hub-settings.ts must export HUB_SETTINGS_BODY_FIELDS')
+
+  // No omission: every stored setting can travel. A missing one is the #162 400.
+  for (const field of SETTINGS_FIELDS) {
+    assert.ok(
+      HUB_SETTINGS_BODY_FIELDS.includes(field),
+      `HUB_SETTINGS_BODY_FIELDS must accept the setting \`${field}\` (#162)`,
+    )
+  }
+
+  // No surplus: the route accepts only what `writeHubSettings` reads.
+  const known = new Set([...SETTINGS_FIELDS, 'confirm'])
+  for (const field of HUB_SETTINGS_BODY_FIELDS) {
+    assert.ok(
+      known.has(field),
+      `HUB_SETTINGS_BODY_FIELDS accepts \`${field}\`, which is neither a SETTINGS_FIELDS member nor \`confirm\``,
+    )
+  }
+
+  // Same content, same order, `confirm` last — the constant IS the settings list, extended once.
+  assert.deepEqual([...HUB_SETTINGS_BODY_FIELDS], [...SETTINGS_FIELDS, 'confirm'])
+})
+
+test('every settings field passes the save route body whitelist (#162)', async () => {
+  const h = harness()
+  try {
+    // One legal sample per field, so a field cannot pass merely because it was absent.
+    const sample = {
+      sharedRoot: 'E:/共享库',
+      semanticSearch: true,
+      semanticEndpoint: 'http://127.0.0.1:1933',
+      semanticApiKey: 'test-key',
+      autosaveIntervalMs: 1200,
+      authorName: '作者',
+      excludeDirs: ['scratch'],
+      backupKeep: 3,
+    }
+    assert.deepEqual(Object.keys(sample).sort(), [...SETTINGS_FIELDS].sort(), 'add a sample value for the new setting')
+
+    for (const field of SETTINGS_FIELDS) {
+      // `confirm: false` is the nearest net AFTER the whitelist: reaching it proves the
+      // field was accepted, and nothing is written (the file stays absent).
+      const reply = await post(h, '/settings/update', { [field]: sample[field], confirm: false })
+      assert.notEqual(
+        reply.json.error?.code,
+        'UNEXPECTED_BODY_FIELD',
+        `\`${field}\` is a legal setting but the route refused it (#162): ${JSON.stringify(reply.json)}`,
+      )
+      assert.equal(reply.status, 200)
+      assert.equal(reply.json.error.code, 'CONFIRM_REQUIRED', `${field} should stop at the confirm net`)
+    }
+
+    assert.equal(existsSync(join(h.dataDir, 'settings.json')), false, 'an unconfirmed save writes nothing')
   } finally {
     h.cleanup()
   }
