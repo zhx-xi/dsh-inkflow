@@ -16,7 +16,8 @@
 |---|---|---|---|
 | 真相 | 九个内容目录 + `inkflow.json` | ✅ | 正文、设定、关系、账本 |
 | 结构投影 | `chapters/index.json`、`chapters/<vol>/index.json` | ✅ | 卷章清单（可 `git diff` 审阅，[ADR-0006](../adrs/0006-workspace-contract-v2.md) D6） |
-| 派生缓存 | `index/inkflow.db`、`index/audit/`、`index/extraction/`、`index/proposals/` | ❌ | 检索、校验结果、临时件 |
+| 派生缓存 | `index/inkflow.db`、`index/audit/`、`index/proposals/` | ❌ | 检索、校验结果、临时件 |
+| 工作物（私有状态） | `.inkflow/{trash,backup,audit,candidates}/` | ❌ | 回收站、书内回滚包、体检报告、**待审候选**（[ADR-0012](../adrs/0012-plugin-private-state-dir.md)、[ADR-0017](../adrs/0017-extraction-by-session-model.md) D3） |
 
 **唯一双向约束**：投影和缓存都可以由真相重建；反过来用手改投影/缓存来改数据不成立（会被下一次重建覆盖）。
 
@@ -45,7 +46,7 @@
 | 19 | 场景契约 scene_contract | `outlines/scenes/<chapter>.md` | MD + frontmatter | 【未实现】 |
 | 20 | 提案 / 修订 proposal | `index/proposals/` | JSON | 派生临时件；接受后才写正文并 git commit |
 | 21 | 审计运行 audit_run | `index/audit/<timestamp>.json` | JSON | 派生物，可删 |
-| 22 | 提取暂存 extraction_staging | `index/extraction/<run>.json` | JSON | 派生物；确认后才生成实体文件 |
+| 22 | 提取暂存 extraction_staging | `.inkflow/candidates/<stamp>-<kind>.json` | JSON | **待作者审阅的工作物**，不是派生物：重建索引不该让它消失（[ADR-0017](../adrs/0017-extraction-by-session-model.md) D3）。形状 `{schemaVersion, submittedAt, source:{chapters[]}, proposals[]}`，`candidateId` 形如 `ex-<8 位十六进制>`；只有 `inkflow_extract_accept(confirm)` 才写内容目录 |
 
 系统/检索类（不计入 22 组）：
 

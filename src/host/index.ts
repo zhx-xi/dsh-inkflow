@@ -986,3 +986,27 @@ export type { PurgeOutcome, RebuildEstimate, SemanticStatus } from './ovk-status
 export { semanticTools } from './ovk-tools.js'
 export { buildHubSemantic, purgeHubSemantic, rebuildHubSemantic } from './ovk-hub.js'
 export { maskSettingsSecrets } from './diagnostics.js'
+
+// ---------------------------------------------------------------------------
+// issue #38 — the extraction queue (X-20, ADR-0017). Exported for the tests and for
+// nothing else: no other module inside `src/host` may import the candidate store or the
+// accept path (a guard test in `tests/extract.test.js` scans the import graph), because
+// "one way in" is a property of the code, not of a convention.
+// ---------------------------------------------------------------------------
+
+export { CANDIDATE_SCHEMA_VERSION, EXTRACT_KINDS, CANDIDATE_STATUSES, CONFIDENCES, proposeCandidates, readCandidateStore, purgeCandidates } from './extract.js'
+export type {
+  CandidateBatch,
+  CandidateProposal,
+  CandidateRecord,
+  CandidateStatus,
+  Confidence,
+  ExtractCode,
+  ExtractError,
+  ExtractKind,
+  ProposeResult,
+} from './extract.js'
+export { acceptCandidates, materializeCandidate } from './extract-accept.js'
+export type { AcceptOutcome, AcceptRefusal, AcceptReport } from './extract-accept.js'
+export { acceptViaChannel, buildCandidates, purgeViaChannel, rejectViaChannel } from './extract-channel.js'
+export type { CandidateReply, CandidateSource } from './extract-channel.js'

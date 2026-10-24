@@ -29,6 +29,7 @@ import { domainTools } from './domains/index.js'
 import { sessionCwd } from './session-cwd.js'
 import { repairTools } from './repair-tools.js'
 import { settingsTools } from './settings-tools.js'
+import { extractTools } from './extract-tools.js'
 import { semanticTools } from './ovk-tools.js'
 import { searchWithSemantic } from './ovk-search.js'
 import { DOMAIN_MODULES } from './domains/index.js'
@@ -2078,6 +2079,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // lists what this table registers, and building the table again at export time is
     // the only way to name the real surface without a module cycle.
     ...settingsTools({ ...deps, toolSurface: () => buildTools(deps, modules) }),
+    // The extraction queue (#38, ADR-0017): propose / list / accept / reject / purge.
+    // Built-ins rather than domain tools: a candidate is not an entity and belongs to no
+    // content directory, so no domain module owns this surface.
+    ...extractTools(deps),
     // Semantic retrieval (#41): status / rebuild / purge. One module, because all three
     // read the same availability verdict and the same block ledger, and the purge is the
     // only path in this plugin allowed to call OVK's physical delete (ADR-0009 P6).

@@ -27,13 +27,14 @@
 | [0017](0017-extraction-by-session-model.md) | **插件不调 LLM**：提取候选由会话里的模型经工具提交，落 `.inkflow/candidates/`，只有 `accept(confirm)` 才写真相 | 零依赖 + 不做第二个消费者（ADR-0008）→ 插件内没有可信的模型调用面；候选制才保得住「静默入库 = 0」 |
 | [0018](0018-settings-backup-diagnostics.md) | **设置写 `$DSH_HOME/inkflow/settings.json`**（不写书）、**备份 = store-only ZIP**（自写 CRC32，保留 5 份）、**诊断包白名单**（不含正文/密钥） | 设置写书会进 git；自研 deflate 出错时坏的是唯一备份；诊断包是要发出去的 |
 | [0019](0019-one-level-nested-frontmatter.md) | frontmatter 支持一层嵌套映射（只为 `origin` 这类对象字段） | 已采纳 | 2026-10-24 |
+| [0020](0020-ovk-endpoint-from-settings.md) | 语义后端的连接来自插件设置，不去挖 OVK 的配置文件 | 已采纳 | 2026-10-24 |
 | [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（三段式 + 可回滚备份包） | 已采纳 | 2026-10-24 |
 | [0017](0017-extraction-by-session-model.md) | 提取由「会话里的模型」产出，插件只做队列与落地 | 已采纳 | 2026-10-24 |
 | [0018](0018-settings-backup-diagnostics.md) | 全局设置 + store-only ZIP 备份 + 白名单诊断包 | 已采纳 | 2026-10-24 |
 | [0019](0019-one-level-nested-frontmatter.md) | **读取器支持一层嵌套映射**（`origin` 需要对象字段）：只有缩进的 `key: value` 挂到待决键、值仍只到标量/内联数组/块列表、列表与映射混用报 issue、写侧只做块替换 | 扁平键的点号不在键字符集（读侧报 unparsed）、内联 JSON 让字段不可读；而完整 YAML 违反零依赖 |
+| [0020](0020-ovk-endpoint-from-settings.md) | **语义后端连哪由设置说**：`settings.json` 的 `semanticSearch`(boolean) + `semanticEndpoint` + `semanticApiKey?`（**平铺追加**，不改已有 boolean 的形状）；peer 仍只读工作区配置；缺什么降级什么（六种 `degradedReason`）。**S1**：块写 `viking://resources/inkflow/<projectId>/chapters/<chapterId>/<index>.md`（peer 子树只读）；**S2**：tombstone 账本放 `dataDir/semantic/`（派生索引推不出来） | 读 `ov.conf` 等于把 OVK 的凭据面搬进插件、且它一改字段就静默失效；env 在桌面版被 scrub、且不随书走；嵌套对象会让老读者把开关读成关；peer 子树只读会把「能用」换成「更整齐」 |
 | [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（检测/预览/修复三段 + 可回滚备份包） | 已采纳 | 2026-10-24 |
 | [0016](0016-preserve-file-eol-on-edit.md) | 编辑既有文件时保留该文件的行尾与 BOM（新文件仍归一 LF / 无 BOM） | 已采纳 | 2026-10-24 |
-| [0020](0020-ovk-endpoint-from-settings.md) | OVK 的连接从插件设置来（不读 OVK 机器配置）、块落 `viking://resources/inkflow/<projectId>/`、tombstone 账本放插件私有目录 | 已采纳 | 2026-10-24 |
 
 ### 1.2 决策速览（一行一条）
 

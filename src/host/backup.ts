@@ -110,6 +110,14 @@ export interface BackupHandle {
   dir: string
   /** Project-relative manifest path. */
   manifestPath: string
+  /**
+   * Non-fatal problems that happened while the package was opened (#149).
+   *
+   * Only one value today: `gitignore-not-updated` — the `.gitignore` append failed, so
+   * the package's files will show up as untracked. The batch still runs; the caller
+   * surfaces this instead of pretending the ignore rule is in place.
+   */
+  warnings?: readonly string[]
 }
 
 export interface BackupError {
@@ -179,16 +187,20 @@ export function openBackup(root: string, kind: BackupKind, at: Date = new Date()
     name = `${base}-${String(attempt)}`
   }
   const dir = privateStateRelative('backup', name)
+  // A failed `.gitignore` append is NOT fatal — the copies still have to land, and a
+  // backup that refuses to start because one ignore line is unwritable would be the
+  // wrong trade. It is reported instead (#149): before this, both branches returned
+  // the same object, so the caller could not tell "ignored" from "not ignored" and
+  // the recovery bin's files quietly showed up as untracked in `git status`.
   const ignored = ensurePrivateStateIgnored(root)
-  if (!ignored.ok) {
-    // Not fatal: the copies still have to land. Reported through `hint` so the
-    // caller can tell the user to add the line by hand.
-    return {
-      ok: true,
-      value: { dir, manifestPath: `${dir}/${BACKUP_MANIFEST_FILE}` },
-    }
+  return {
+    ok: true,
+    value: {
+      dir,
+      manifestPath: `${dir}/${BACKUP_MANIFEST_FILE}`,
+      ...(ignored.ok ? {} : { warnings: ['gitignore-not-updated'] as const }),
+    },
   }
-  return { ok: true, value: { dir, manifestPath: `${dir}/${BACKUP_MANIFEST_FILE}` } }
 }
 
 /**
