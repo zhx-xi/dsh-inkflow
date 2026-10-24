@@ -93,12 +93,17 @@ import {
 import { hubApply, hubPlan } from './hub-wizard.js'
 import { sharedRootOf } from './settings.js'
 import {
+  CANDIDATES_ACCEPT_BODY_FIELDS,
+  CANDIDATES_PURGE_BODY_FIELDS,
+  CANDIDATES_REJECT_BODY_FIELDS,
   INTERNAL_PREFIX,
   LIBRARY_WRITE_BODY_FIELDS,
   MAX_INTERNAL_BODY_BYTES,
   RENAME_BODY_FIELDS,
   SESSION_ID_HEADER,
   SESSION_ID_PARAM,
+  acceptViaChannel,
+  buildCandidates,
   buildChapter,
   buildChapters,
   buildForeshadowBoard,
@@ -115,6 +120,8 @@ import {
   isSessionId,
   moveChapterViaChannel,
   noSessionContextBody,
+  purgeViaChannel,
+  rejectViaChannel,
   renameEntity,
   resolveChannelTarget,
   writeChapterViaChannel,
@@ -443,6 +450,50 @@ const ROUTES: readonly InternalRoute[] = [
     methods: ['POST'],
     body: IMPORT_BODY_FIELDS,
     handle: async ({ target, version, body }) => importViaChannel({ source: target, version, body }),
+  },
+  {
+    // The extraction queue (#38, X-20, ADR-0017): what the session model proposed and what
+    // the author has not judged yet. Read-only and it does NOT call `ensureIndex` — the
+    // queue is plain JSON under `.inkflow/candidates/`, so the tab must open on a book
+    // whose index is missing (which is exactly when a candidate is worth accepting).
+    name: 'candidates',
+    pattern: /^\/candidates$/,
+    methods: ['GET'],
+    handle: ({ target, version, query }) =>
+      buildCandidates(target, version, {
+        ...(query.get('kind') === null ? {} : { kind: query.get('kind') ?? '' }),
+        ...(query.get('status') === null ? {} : { status: query.get('status') ?? '' }),
+        ...(query.get('offset') === null ? {} : { offset: query.get('offset') ?? '' }),
+        ...(query.get('limit') === null ? {} : { limit: query.get('limit') ?? '' }),
+      }),
+  },
+  {
+    // Accepting writes entity files, so it carries every write guard plus `confirm: true`
+    // (D5). Candidates are named by id, never by path: the browser still names no
+    // directory (ADR-0008 D4).
+    name: 'candidates-accept',
+    pattern: /^\/candidates\/accept$/,
+    methods: ['POST'],
+    body: CANDIDATES_ACCEPT_BODY_FIELDS,
+    handle: async ({ target, version, body }) => acceptViaChannel(target, version, body),
+  },
+  {
+    // Rejecting writes no content file at all — the answer says so
+    // (`contentFilesWritten: 0`), which is what makes "拒绝等于零写入" checkable from the panel.
+    name: 'candidates-reject',
+    pattern: /^\/candidates\/reject$/,
+    methods: ['POST'],
+    body: CANDIDATES_REJECT_BODY_FIELDS,
+    handle: ({ target, version, body }) => rejectViaChannel(target, version, body),
+  },
+  {
+    // Purging deletes queue entries, so it needs `confirm: true` too; a `proposed`
+    // candidate is refused by the store (`CANDIDATE_NOT_PROCESSED`).
+    name: 'candidates-purge',
+    pattern: /^\/candidates\/purge$/,
+    methods: ['POST'],
+    body: CANDIDATES_PURGE_BODY_FIELDS,
+    handle: ({ target, version, body }) => purgeViaChannel(target, version, body),
   },
 ]
 

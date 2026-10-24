@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the twenty-one built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the thirty-one built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -222,6 +222,13 @@ test('registers the twenty-one built-ins, the tools of every registered domain, 
       // #42: the diagnostics package — a built-in, and the one tool here that writes a
       // file meant to leave the machine (ADR-0018 D5).
       'inkflow_diagnostics_export',
+      // #38: the extraction queue (ADR-0017) — propose / list / accept / reject / purge.
+      // Built-ins because a candidate is not an entity and belongs to no content directory.
+      'inkflow_extract_accept',
+      'inkflow_extract_list',
+      'inkflow_extract_propose',
+      'inkflow_extract_purge',
+      'inkflow_extract_reject',
       // #32: the fact ledger's three tools (append / snapshot / list).
       'inkflow_facts_append',
       'inkflow_facts_list',

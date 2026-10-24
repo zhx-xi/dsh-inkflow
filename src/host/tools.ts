@@ -29,6 +29,7 @@ import { domainTools } from './domains/index.js'
 import { sessionCwd } from './session-cwd.js'
 import { repairTools } from './repair-tools.js'
 import { settingsTools } from './settings-tools.js'
+import { extractTools } from './extract-tools.js'
 import { DOMAIN_MODULES } from './domains/index.js'
 import type { DomainModule } from './domains/types.js'
 import type { FileExpectation } from './file-cas.js'
@@ -2065,6 +2066,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // lists what this table registers, and building the table again at export time is
     // the only way to name the real surface without a module cycle.
     ...settingsTools({ ...deps, toolSurface: () => buildTools(deps, modules) }),
+    // The extraction queue (#38, ADR-0017): propose / list / accept / reject / purge.
+    // Built-ins rather than domain tools: a candidate is not an entity and belongs to no
+    // content directory, so no domain module owns this surface.
+    ...extractTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),
