@@ -290,41 +290,64 @@ function indexSection(root: string): DiagnosticsIndex {
   return section
 }
 
-/** A path as it may leave the machine: the home directory becomes `~`. */
-export function maskPath(path: string, home: string, bookRoot?: string): string {
+/** The roots that are replaced by name, longest first (see `maskString`). */
+export interface MaskRoots {
+  /** The author's home directory → `~`. */
+  home: string
+  /** The plugin data directory → `<plugin>`; keeps the shape of a path inside it. */
+  dataDir?: string
+  /** The book in scope → `<book>`. */
+  bookRoot?: string
+}
+
+function normalizedRoot(root: string | undefined): string | undefined {
+  if (root === undefined) return undefined
+  const slashed = root.replaceAll('\\', '/').replace(/\/+$/, '')
+  return slashed === '' ? undefined : slashed
+}
+
+/**
+ * A path as it may leave the machine.
+ *
+ * The three roots are checked longest-first (a book lives inside the data directory's
+ * sibling space and both live under home, so short-first would hide the informative
+ * part). Anything else that is still absolute keeps only its last segment: a path from
+ * another volume cannot be partially meaningful without naming where it is.
+ */
+export function maskPath(path: string, roots: MaskRoots): string {
   const normalised = path.replaceAll('\\', '/')
-  const homeSlash = home.replaceAll('\\', '/').replace(/\/+$/, '')
-  if (bookRoot !== undefined) {
-    const bookSlash = bookRoot.replaceAll('\\', '/').replace(/\/+$/, '')
-    if (bookSlash !== '' && normalised.toLowerCase().startsWith(bookSlash.toLowerCase())) {
-      const rest = normalised.slice(bookSlash.length).replace(/^\/+/, '')
-      return rest === '' ? '<book>' : `<book>/${rest}`
-    }
+  const candidates: Array<{ root: string; replacement: string }> = []
+  const book = normalizedRoot(roots.bookRoot)
+  if (book !== undefined) candidates.push({ root: book, replacement: '<book>' })
+  const dataDir = normalizedRoot(roots.dataDir)
+  if (dataDir !== undefined) candidates.push({ root: dataDir, replacement: '<plugin>' })
+  const home = normalizedRoot(roots.home)
+  if (home !== undefined) candidates.push({ root: home, replacement: '~' })
+  candidates.sort((left, right) => right.root.length - left.root.length)
+
+  for (const candidate of candidates) {
+    if (!normalised.toLowerCase().startsWith(candidate.root.toLowerCase())) continue
+    const rest = normalised.slice(candidate.root.length).replace(/^\/+/, '')
+    return rest === '' ? candidate.replacement : `${candidate.replacement}/${rest}`
   }
-  if (homeSlash !== '' && normalised.toLowerCase().startsWith(homeSlash.toLowerCase())) {
-    const rest = normalised.slice(homeSlash.length).replace(/^\/+/, '')
-    return rest === '' ? '~' : `~/${rest}`
-  }
-  // Anything else could still be an absolute path from another volume; only the last
-  // segment is safe to keep, and the caller is told the rest was dropped.
   return /^([a-zA-Z]:\/|\/)/.test(normalised) ? `<absolute>/${basename(normalised)}` : normalised
 }
 
 /**
- * Walk the document and mask every string: absolute paths first, then anything that
+ * Walk the document and mask every string: known roots first, then anything that
  * looks like a credential.
  *
  * Done as a post-pass over the finished document rather than field by field, so a
  * field added later cannot skip it — the whitelist decides WHAT is in the package,
  * this pass decides that nothing in it names the machine.
  */
-function maskDocument<T>(value: T, home: string, bookRoot?: string): T {
-  if (typeof value === 'string') return maskString(value, home, bookRoot) as unknown as T
-  if (Array.isArray(value)) return value.map((entry) => maskDocument(entry, home, bookRoot)) as unknown as T
+function maskDocument<T>(value: T, roots: MaskRoots): T {
+  if (typeof value === 'string') return maskString(value, roots) as unknown as T
+  if (Array.isArray(value)) return value.map((entry) => maskDocument(entry, roots)) as unknown as T
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = maskDocument(entry, home, bookRoot)
+      out[key] = maskDocument(entry, roots)
     }
     return out as unknown as T
   }
@@ -334,10 +357,44 @@ function maskDocument<T>(value: T, home: string, bookRoot?: string): T {
 /** A secret shape this package must never carry, even if a future field holds one. */
 const SECRET_SHAPE = /(?:sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]{8,}|(?<=(?:token|secret|password|api[_-]?key)["'\s:=]{1,4})[A-Za-z0-9._-]{16,})/giu
 
-function maskString(text: string, home: string, bookRoot?: string): string {
-  const masked = /^([a-zA-Z]:[\\/]|[\\/])/.test(text) || text.toLowerCase().startsWith(home.replaceAll('\\', '/').toLowerCase())
-    ? maskPath(text, home, bookRoot)
-    : text
+/**
+ * Mask one string.
+ *
+ * SUBSTRING, not prefix: a summary line like `settings: {"sharedRoot":"/home/x/…"}`
+ * *contains* a path rather than being one, and whole-string masking let exactly that
+ * leak on Linux (where the temp directory is not under home, so no prefix matched at
+ * all). Replacing every occurrence of each known root fixes the class of bug instead of
+ * one instance of it, and the longest-root-first order keeps `~/…` from swallowing a
+ * book that lives under home.
+ */
+function maskString(text: string, roots: MaskRoots): string {
+  const candidates: Array<{ root: string; replacement: string }> = []
+  const book = normalizedRoot(roots.bookRoot)
+  if (book !== undefined) candidates.push({ root: book, replacement: '<book>' })
+  const dataDir = normalizedRoot(roots.dataDir)
+  if (dataDir !== undefined) candidates.push({ root: dataDir, replacement: '<plugin>' })
+  const home = normalizedRoot(roots.home)
+  if (home !== undefined) candidates.push({ root: home, replacement: '~' })
+  candidates.sort((left, right) => right.root.length - left.root.length)
+
+  let masked = text
+  for (const candidate of candidates) {
+    // Both separators, because a Windows path may be echoed either way inside a JSON
+    // string. The remainder is normalised to `/`, so one setting reads the same on both
+    // platforms (`~/shared-root`, never `~\shared-root`).
+    for (const variant of new Set([candidate.root, candidate.root.replaceAll('/', '\\')])) {
+      for (;;) {
+        const at = masked.toLowerCase().indexOf(variant.toLowerCase())
+        if (at < 0) break
+        const rest = masked.slice(at + variant.length).replaceAll('\\', '/')
+        masked = `${masked.slice(0, at)}${candidate.replacement}${rest}`
+      }
+    }
+  }
+  // A string that IS an absolute path (and was not one of the known roots) keeps only
+  // its last segment; a string that merely contains one is left alone here, because a
+  // generic regex would eat URL-ish text that is not a local path.
+  if (/^([a-zA-Z]:[\\/]|[\\/])/.test(masked)) masked = maskPath(masked, roots)
   return masked.replace(SECRET_SHAPE, '[redacted]')
 }
 
@@ -382,7 +439,7 @@ export function buildDiagnostics(input: DiagnosticsInput): DiagnosticsDocument {
         ? null
         : {
             slug: basename(bookRoot),
-            indexPath: maskPath(indexPaths(bookRoot).dbFile, home, bookRoot),
+            indexPath: maskPath(indexPaths(bookRoot).dbFile, { home, dataDir: input.dataDir, bookRoot }),
             index: indexSection(bookRoot),
           },
     tools: { count: tools.length, entries: tools },
@@ -395,8 +452,15 @@ export function buildDiagnostics(input: DiagnosticsInput): DiagnosticsDocument {
     summary: [],
   }
 
-  document.summary = summarizeDocument(document)
-  return maskDocument(document, home, bookRoot)
+  // Mask FIRST, then summarize, then mask the summary itself. The order matters and
+  // the reason is a real leak: a summary line embeds `JSON.stringify(settings.values)`,
+  // whose backslashes are escaped (`"C:\\\\Users…"`), so masking afterwards cannot find
+  // the raw root inside it. Summarizing already-masked values keeps the readable half
+  // as safe as the structured half, and the last pass is the safety net for both.
+  const roots: MaskRoots = { home, dataDir: input.dataDir, ...(bookRoot === undefined ? {} : { bookRoot }) }
+  const masked = maskDocument(document, roots)
+  masked.summary = maskDocument(summarizeDocument(masked), roots)
+  return masked
 }
 
 /** The readable half: the same facts as lines, for a human opening the file. */
@@ -476,7 +540,11 @@ export function exportDiagnostics(input: DiagnosticsInput): DiagnosticsResult<Ex
     ok: true,
     value: {
       path,
-      displayPath: maskPath(path, home, input.bookRoot === undefined ? undefined : resolve(input.bookRoot)),
+      displayPath: maskPath(path, {
+        home,
+        dataDir: input.dataDir,
+        ...(input.bookRoot === undefined ? {} : { bookRoot: resolve(input.bookRoot) }),
+      }),
       bytes,
       document,
     },

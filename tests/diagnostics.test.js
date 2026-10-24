@@ -112,27 +112,53 @@ test('the package carries the whole whitelist and nothing that names the machine
     if (homedir() !== '') {
       assert.equal(text.includes(homedir().replaceAll('\\', '/')), false, 'the home directory leaked')
     }
-    assert.match(exported.value.displayPath, /^~|^<absolute>/u)
+    // The display path keeps the package's own shape but names no machine.
+    assert.match(exported.value.displayPath, /diagnostics\/\d{8}-\d{6}\.json$/u)
+    assert.equal(exported.value.displayPath.startsWith('<plugin>/') || exported.value.displayPath.startsWith('~/'), true)
   } finally {
     f.cleanup()
   }
 })
 
-test('settings paths are replaced with ~/… and a relative value stays relative', () => {
+test('settings paths are replaced with ~/…, and the longest known root wins', () => {
   const f = fixture()
   try {
     const home = process.env['HOME'] ?? process.env['USERPROFILE'] ?? homedir()
-    assert.equal(maskPath(join(home, 'books', '我的书'), home), '~/books/我的书')
-    assert.equal(maskPath(join(home, 'books', '我的书'), home, join(home, 'books', '我的书')), '<book>')
-    assert.equal(maskPath(join(home, 'books', '我的书', 'chapters'), home, join(home, 'books', '我的书')), '<book>/chapters')
+    const book = join(home, 'books', '我的书')
+    assert.equal(maskPath(join(home, 'books', '我的书'), { home }), '~/books/我的书')
+    assert.equal(maskPath(book, { home, bookRoot: book }), '<book>')
+    assert.equal(maskPath(join(book, 'chapters'), { home, bookRoot: book }), '<book>/chapters')
+    // A book that also lives under the data directory prefers the book: the shorter
+    // replacement would hide which book a path belongs to.
+    assert.equal(maskPath(join(book, 'chapters'), { home, dataDir: home, bookRoot: book }), '<book>/chapters')
+    // The plugin's own directory is `<plugin>`, so a package path keeps its shape
+    // (that is what the panel shows, and it names no machine).
+    assert.equal(maskPath(join(f.dataDir, 'diagnostics', 'x.json'), { home, dataDir: f.dataDir }), '<plugin>/diagnostics/x.json')
     // A path on another volume keeps one segment and says the rest was dropped.
-    assert.match(maskPath('E:\\elsewhere\\secret-name.txt', home), /^<absolute>\/secret-name\.txt$/u)
+    assert.match(maskPath('E:\\elsewhere\\secret-name.txt', { home }), /^<absolute>\/secret-name\.txt$/u)
     // A relative value is not a path to hide.
-    assert.equal(maskPath('libs', home), 'libs')
+    assert.equal(maskPath('libs', { home }), 'libs')
 
     writeSettings(f.dataDir, { sharedRoot: join(home, 'shared-root') })
     const doc = buildDiagnostics({ dataDir: f.dataDir, version: '1.0.0' })
     assert.equal(doc.settings.values.sharedRoot, '~/shared-root')
+  } finally {
+    f.cleanup()
+  }
+})
+
+test('masking is substring-aware: a path embedded in a sentence is not a leak', () => {
+  const f = fixture()
+  try {
+    // The regression this pins is real: on Linux the temp directory is NOT under home,
+    // so a summary line holding a JSON object with an absolute `sharedRoot` used to
+    // travel verbatim (`settings: {"sharedRoot":"/tmp/…/state"}`), because whole-string
+    // masking only looked at the first character.
+    writeSettings(f.dataDir, { sharedRoot: f.dataDir })
+    const doc = buildDiagnostics({ dataDir: f.dataDir, version: '1.0.0' })
+    const text = JSON.stringify(doc)
+    assert.equal(text.includes(f.dataDir.replaceAll('\\', '/')), false, 'the data directory leaked')
+    assert.ok(doc.summary.some((line) => line.includes('<plugin>')))
   } finally {
     f.cleanup()
   }

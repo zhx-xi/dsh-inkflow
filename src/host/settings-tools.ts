@@ -82,7 +82,7 @@ const CONFIRM_PARAM = {
 /** Masks a host path for a reply that may be pasted into an issue. */
 function displayPath(path: string, deps: SettingsToolDeps): string {
   const home = process.env['HOME'] ?? process.env['USERPROFILE'] ?? ''
-  return maskPath(path, home)
+  return maskPath(path, { home, dataDir: deps.dataDir })
 }
 
 /** The settings as a reply carries them: values plus where they came from. */
@@ -97,7 +97,7 @@ function settingsWire(deps: SettingsToolDeps): Json {
     fileSchemaVersion: read.fileSchemaVersion ?? null,
     fields: [...SETTINGS_FIELDS],
     limits: SETTINGS_LIMITS,
-    dataDir: maskPath(deps.dataDir, home),
+    dataDir: maskPath(deps.dataDir, { home, dataDir: deps.dataDir }),
   }
 }
 
@@ -602,7 +602,7 @@ function diagnosticsPreview(
   })
   const file = `${deps.dataDir}/diagnostics/${stamp}.json`
   return {
-    displayPath: maskPath(file, process.env['HOME'] ?? process.env['USERPROFILE'] ?? ''),
+    displayPath: maskPath(file, { home: process.env['HOME'] ?? process.env['USERPROFILE'] ?? '', dataDir: deps.dataDir }),
     bytes: Buffer.byteLength(`${JSON.stringify(document, null, 2)}\n`, 'utf8'),
     summary: document.summary,
   }

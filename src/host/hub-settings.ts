@@ -201,7 +201,7 @@ export function buildHubSettings(deps: HubSettingsDeps): Json {
     warn: read.warn ?? null,
     fields: [...SETTINGS_FIELDS],
     limits: SETTINGS_LIMITS,
-    dataDir: maskPath(deps.dataDir, homeDir()),
+    dataDir: maskPath(deps.dataDir, { home: homeDir(), dataDir: deps.dataDir }),
     books: bookChoices(deps.ctx),
     // The page states the retention rule it is enforcing, so "why did my old backup
     // disappear" never needs a trip to the docs (D3).
@@ -274,7 +274,7 @@ export function buildHubDiagnostics(deps: HubSettingsDeps, anchor: unknown): Hub
   return {
     ok: true,
     value: {
-      path: maskPath(path, homeDir(), bookRoot),
+      path: maskPath(path, { home: homeDir(), dataDir: deps.dataDir, ...(bookRoot === undefined ? {} : { bookRoot }) }),
       bytes: Buffer.byteLength(`${JSON.stringify(document, null, 2)}\n`, 'utf8'),
       summary: document.summary,
       book: bookRoot === undefined ? null : { slug: bookSlugOf(bookRoot) },
@@ -306,7 +306,7 @@ export function exportHubDiagnostics(deps: HubSettingsDeps, body: Json): HubRepl
   return {
     ok: true,
     value: {
-      path: maskPath(exported.value.path, homeDir(), bookRoot),
+      path: maskPath(exported.value.path, { home: homeDir(), dataDir: deps.dataDir, ...(bookRoot === undefined ? {} : { bookRoot }) }),
       bytes: exported.value.bytes,
       summary: exported.value.document.summary,
       format: exported.value.document.format,
