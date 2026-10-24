@@ -533,7 +533,6 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `foreshadow-model.ts` — 伏笔看板：三个状态（`open`/`late`/按关联实体）各一组文案（`statusLabel`）、`readForeshadowBoard` 的折叠——`late` 只显示 Host 的判定，**不**从 `dueBy` 与章号自行推算
 - `trash-model.ts` — 回收站：`readTrashValue`、`describeEntry`（路径/大小/删除时间/原因）、`restoreBlockedReason`、`purgePrompt`/`purgeStage`（清空的两段确认）、`describeTrashError`
 - `audit-model.ts` — 体检页：分组/严重级/code 文案、`readAuditValue` 与 `auditHeadline`/`auditGroupLine`、`locateLabel` 与 `jumpTargetOf`（能不能跳、跳到哪）、`exportLabel`/`exportNotice`
-- `extract-model.ts` — 候选页：kind/status 筛选、字段摘要、证据文案与跳转目标、置信度与状态文案、逐条两段式采纳（未确认 → 确认）与批量只对未审行生效、半成功批次的两种结果
 - `impact-model.ts` — 改设定的影响清单与改名计划：`buildImpactDigest`（五处影响面折叠）、`impactQuery`、`renamePayload`、`describeImpactError`/`describeRenameError`
 - `search-model.ts` — 检索框：请求路径与「全部类型」开关换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案、点击去向、摘要与降级文案
 - `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
