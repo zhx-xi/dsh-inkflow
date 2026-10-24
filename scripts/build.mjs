@@ -58,8 +58,19 @@ function buildStamp() {
 }
 
 const BUILD = buildStamp()
+
+/**
+ * The plugin version, injected instead of hand-copied.
+ *
+ * It used to be a `const VERSION = '0.0.2'` in `src/host/index.ts` *alongside*
+ * `package.json`'s `version` — two literals that had to be moved together and never were
+ * (the package stayed at 0.0.2 through 0.4.0). Now `package.json` is the single source:
+ * the build bakes it into both halves, and `tests/build-info.test.js` asserts the bundle
+ * reports the same string, so a forgotten bump fails `npm run check` instead of shipping.
+ */
+const VERSION = String(manifest.version)
 /** Both halves carry the stamp: one value, one generation. */
-const BUILD_DEFINE = { __INKFLOW_BUILD__: JSON.stringify(BUILD) }
+const BUILD_DEFINE = { __INKFLOW_BUILD__: JSON.stringify(BUILD), __INKFLOW_VERSION__: JSON.stringify(VERSION) }
 
 /**
  * Browser platform module table. Everything here is provided by the DSH web

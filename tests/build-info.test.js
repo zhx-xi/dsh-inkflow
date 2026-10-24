@@ -34,7 +34,7 @@ import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { STALE_TOLERANCE_MS, decideStale, getLoadedBuild, summarizeBuild } from '../lib/index.js'
+import { PLUGIN_VERSION, STALE_TOLERANCE_MS, decideStale, getLoadedBuild, summarizeBuild } from '../lib/index.js'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const BUNDLE = join(ROOT, 'lib', 'index.js')
@@ -97,6 +97,18 @@ test('the build stamp is baked into the artifact the host actually loads', () =>
   const { build } = getLoadedBuild({ version: '0.0.2' })
   assert.ok(build !== 'unknown', 'esbuild define must inject __INKFLOW_BUILD__ for the host half')
   assert.ok(text.includes(build), `lib/index.js must contain its own stamp (${build})`)
+})
+
+test('the version has ONE source: the bundle reports package.json, not a copy of it', () => {
+  // This is the guard for the drift that lasted three milestones: `src/host/index.ts` had
+  // `const VERSION = '0.0.2'` while package.json went to 0.4.0, so the panel, the
+  // diagnostics package and every install spec named a version nobody had released.
+  // The literal now lives only in package.json and the build injects it; a forgotten bump
+  // therefore fails here instead of shipping.
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.equal(PLUGIN_VERSION, manifest.version, 'package.json and the built bundle must agree')
+  assert.match(PLUGIN_VERSION, /^\d+\.\d+\.\d+$/u, 'a version is X.Y.Z')
+  assert.ok(PLUGIN_VERSION !== '0.0.0-unknown', 'the bundle must be built with __INKFLOW_VERSION__ defined')
 })
 
 // ---------------------------------------------------------------------------
