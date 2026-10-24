@@ -628,6 +628,9 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 | `/inkflow/internal/hub/plan` | POST | `candidate`（**唯一允许的路径字段**，必须绝对路径）、`outsideRegistry?`、`title?` | `path`（canonical）、`anchor`、`state`、`usable`、`checks`、`missing[]`、`actions[]`、`willCreate[]`、`notices[]`、`metaRaw?`、`canApply`、`planToken?`、`alreadyRegistered?`、`blockedReason?`、`message?`、`hint?` | 已落地 |
 | `/inkflow/internal/hub/apply` | POST | `planToken`、`confirm: true`、`title?`（**不接受任何路径**） | `path`、`anchor`、`state`、`created[]`、`updated[]`、`skipped[]`、`gitInit`、`notices[]`、`warnings[]`、`registered`、`workspace`（注册结果或 `null`）、`hint?`、`nextStep` | 已落地 |
 | `/inkflow/internal/hub/shared` | GET | `kind?`（`world`/`library`/`snippets`/`series`）、`q?` | `created`、`indexSource`（`'index'`/`'scan'`）、`kinds[]`、`entries[]`、`countsByKind`、`total`、`truncated` | 已落地（见 §6.2.2） |
+| `/inkflow/internal/hub/shared/copies` | GET | `book`（**已注册工作区的 canonical 路径**） | `projectId`、`seriesId`、`seriesFound`、`selfContained`、`entries[]`（`file`/`kind`/`entryId`/`mode`/`contentHash?`/`currentHash?`/`state`）、`references[]`、`counts{total,current,stale,missing}`、`truncated` | 已落地（见 §6.2.3） |
+| `/inkflow/internal/hub/shared/copy` | POST | `book`、`entryId`、`mode?`（`copy`/`reference`）、`confirm: true` | `entryId`、`kind`、`mode`、`files[]`、`origin?`、`projectId`、`projectIdCreated`、`seriesId?`、`warnings[]` | 已落地（见 §6.2.3） |
+| `/inkflow/internal/hub/shared/update` | POST | `book`、`entryId?`／`file?`（二选一）、`confirm: true` | `updated[]`、`unchanged[]`、`backupDir?`、`origin?` | 已落地（见 §6.2.3） |
 
 **`books[]` 行形状**（每行 = 一个已注册工作区）：
 
@@ -646,9 +649,9 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 **守卫顺序**（fail-closed，与 §6.2 会话路由同一套，另加"无会话"差异）：
 
 1. `Host` loopback → 403 `forbidden-host`；`Origin` 存在时必须 loopback → 403 `forbidden-origin`；对端地址非空时必须 loopback → 403 `forbidden-remote`。
-2. 路径参数禁令（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`，**判定在路由匹配与任何文件 IO 之前**。`candidate` 不在禁令名单里，且只被 `plan` 接受：它是本通道唯一能携带路径的字段，名字固定为 `candidate`（不叫 `path`/`root`）。
-3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET；`/hub/plan`、`/hub/apply` 只有 POST）。
-4. 写路由（`plan`/`apply`）额外要求 **`Origin` 与 `Host` 同源（含端口）**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `forbidden-origin`（`reason: 'origin-required'` 或 `'origin-mismatch'`）；`Content-Type: application/json` → 415；体积 ≤1 MiB → 413；body 字段白名单（`plan` 只接受 `candidate`/`outsideRegistry`/`title`，`apply` 只接受 `planToken`/`confirm`/`title`）→ 400 `UNEXPECTED_BODY_FIELD`。
+2. 路径参数禁令（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`，**判定在路由匹配与任何文件 IO 之前**。`candidate` 不在禁令名单里，且只被 `plan` 接受：它是本通道唯一能携带**未注册**路径的字段，名字固定为 `candidate`（不叫 `path`/`root`）。`book` 是第二个路径形状字段（只被 `/hub/shared/copies`、`/copy`、`/update` 接受），语义更窄：它**必须是注册表里的 canonical 路径**，否则 400 `BOOK_NOT_REGISTERED`（§6.2.3）。
+3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET；`/hub/plan`、`/hub/apply`、`/hub/shared/copy`、`/hub/shared/update` 只有 POST）。
+4. 写路由（`plan`/`apply`/`shared/copy`/`shared/update`）额外要求 **`Origin` 与 `Host` 同源（含端口）**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `forbidden-origin`（`reason: 'origin-required'` 或 `'origin-mismatch'`）；`Content-Type: application/json` → 415；体积 ≤1 MiB → 413；body 字段白名单（`plan` 只接受 `candidate`/`outsideRegistry`/`title`，`apply` 只接受 `planToken`/`confirm`/`title`，`shared/copy` 只接受 `book`/`entryId`/`mode`/`confirm`，`shared/update` 只接受 `book`/`entryId`/`file`/`confirm`）→ 400 `UNEXPECTED_BODY_FIELD`。
 5. 不解析会话：缺 `sessionId` **不是**错误，`NO_SESSION_CONTEXT` 在 hub 上**不适用**。
 
 **向导两条写路由的契约（plan → apply）**
@@ -731,6 +734,20 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 
 **只读纪律**：不写 `shared/index.json`、不建目录、不改条目文件；扫描前后 `shared/` 整树 hash 必须一致（ADR-0010 D6 零写盘断言表）。实现：`src/host/hub-shared.ts`。
 
+#### 6.2.3 共享库的取用方向（复制 / 引用 / 逐条更新）
+
+语义见 [ADR-0007](../adrs/0007-plugin-shared-library.md) C2–C6，实现分两层：`src/host/shared-copy.ts`（域）与 `src/host/shared-channel.ts`（通道信封）。
+
+| 动作 | 路由 | 关键判据 |
+|---|---|---|
+| 副本列表 / stale | `GET /hub/shared/copies?book=…` | `state`：`current`（`contentHash` = 当前 `sha256`）、`stale`（不等）、`missing-source`（条目已删，副本照旧可用）。**只读** |
+| 复制快照 | `POST /hub/shared/copy` | 落位：`world/…`→`world/…`；`library/*.md`→`library/*.md`（连同原文副本）；`snippets/*.md`→`library/snippets/*.md`；`series/*.json`→**不落文件**，只写 `inkflow.json.seriesId` |
+| 逐条更新 | `POST /hub/shared/update` | 只有 `stale` 会写；先 `.inkflow/backup/<stamp>/`（`kind: 'shared'`）再覆盖；`current` 是 no-op（`unchanged[]`，不建包） |
+
+**`book` 的语义**：面板是 root 作用域、没有会话（[ADR-0010](../adrs/0010-book-hub-entry.md) D3），所以目标书必须由调用方指名，而唯一可信的名字来源是 Host 自己的注册表：`book` 必须 realpath 命中 `workspaceRegistry.list()` 里的某一项 → 否则 400 `BOOK_NOT_REGISTERED`（**在任何文件 IO 之前**）。命中之后再过四态门禁：非 `usable` → 409 `BOOK_NOT_USABLE`（带 `state`/`missing`/`actions`）。没有会话的通道因此仍然写不进"用户没打开过的目录"。
+
+**`origin` 三字段**（[data-model](data-model.md) §3.7）：`projectId`（缺失时 `null`）、`entryId`、`contentHash`（复制那一刻的 `sha256`）。引用卡（`mode: reference`，**只允许 `library/`**）改记 `sha256`、不记 `contentHash`：它没有副本内容可比。落盘是 frontmatter 里的**嵌套映射**（`origin:` 下三行），写侧只插入/整体替换这一块。拒绝码：`SHARED_ENTRY_NOT_FOUND` / `SHARED_ENTRY_AMBIGUOUS`（同一 id 两条）/ `SHARED_COPY_CONFLICT`（目标已存在，**零写入**）/ `REFERENCE_NOT_ALLOWED`（对 `world/`、`snippets/`、`series/` 选引用）/ `REFERENCE_READONLY`（写引用卡；由 `library-write.ts` 拒绝，**先于** CAS 必填判定）/ `SHARED_COPY_NOT_FOUND` / `SHARED_SOURCE_MISSING`（源已删）/ `SHARED_SOURCE_NOT_UTF8` / `META_UNREADABLE`（记不了 `seriesId`）/ `CONFIRM_REQUIRED`。**`projectId`**：向导为**新书**生成（ADR-0018 D7）；既有书缺失时由 `ensureProjectId(root)` 补一次（第二次 no-op，已有值永不覆盖），读不出 `inkflow.json` 时**不修文件**、副本记 `null`。字段**不参与门禁**。
+
 ### 6.3 初始化 / 修复向导（plan → apply）
 
 两段式，两个工具：
@@ -773,11 +790,10 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 
 | 契约 | 现状 | 落地归属 |
 |---|---|---|
-| `.gitignore` 的 `index/.lock`、`index/.write.lock`、`.openviking/config.local.json` 三行 | 向导只写前三行 `index/*.db*` | #15 / #40 / #41 |
-| `inkflow.json.projectId` | 向导不生成；字段可缺省 | #40 |
+| `.gitignore` 的 `index/.lock`、`index/.write.lock`、`.openviking/config.local.json` 三行 | 向导只写前三行 `index/*.db*` | #15 / #41 |
 | 索引 v2（九目录全实体 + `entity_mentions` + 全实体 FTS） | 索引 v1 只覆盖章/角色/世界观/大纲/资料路径；章正文检索已可用（§4.1） | #23 |
 | 面板编辑器与提案制修订 | 面板只有章节树与只读正文预览，写入仍走工具 | #45 |
 | 搜索的正文全文检索 | `/search` 只匹配章节元数据，并标 `searchUnavailable: true` | #22 |
-| 插件级共享库（`$DSH_HOME/inkflow/shared/`、复制快照、`origin`） | 未实现 | #40 |
+| 插件级共享库（复制快照 / `origin` / stale 列表） | 已落地：三条 hub 路由 + 三个工具（§6.2.3）；**未做**「引用卡 → 复制快照」的一键转换 | 转换随 #49 |
 | OVK 语义检索（peer 只读、按章重建、降级 FTS5） | 未实现；当前只有 FTS5 | #41 |
 | 旧库 ETL（43 表 → 文件树） | 未实现 | #51 |

@@ -244,6 +244,21 @@
 
 `origin` 是来源证据，不是同步指针；`contentHash` 与共享库当前内容不一致 → 副本标 stale，但**不自动改**。
 
+**落盘形式是嵌套映射**（`origin:` 下三行缩进字段），不是 `origin.projectId: …` 这类扁平键：
+
+```yaml
+origin:
+  projectId: 4b1f…（或 null）
+  entryId: sh-aaaa1111
+  contentHash: 9f2c…（64 位十六进制）
+```
+
+两个理由：一是扁平键的点号不在 frontmatter 键的字符集里（读侧会报 unparsed line）；二是把它写成一个 `origin:` 标量（例如内联 JSON）会让"字段存在"这件事在文件里不可读。读侧因此支持**一层**嵌套映射（值仍只到标量/内联数组/块列表），写侧由 `applyOriginBlock` 只插入或整体替换这一块——**其他字节（键序、注释、行尾）不动**。
+
+**引用卡（`mode: reference`）** 的 `origin` 换成 `sha256`（共享库侧原文哈希）且**没有** `contentHash`：它没有副本内容可比，stale 判定拿 `sha256` 与当前源对比。
+
+**副本与 `chapter`/`world` 等实体一样是普通文件**：索引不为它建表，也不复制 `origin` 进索引；"这本书有哪些副本、哪条落后"由 `buildSharedCopies` 扫文件头得出（`shared-copy.ts`），与 [ADR-0005](../adrs/0005-files-first-with-derived-index.md) 的"文件是真相"一致。
+
 ## 4. 派生索引（`index/inkflow.db`）
 
 ### 4.1 v7（现行，`PRAGMA user_version = 7`）
@@ -373,5 +388,5 @@
 |---|---|---|
 | 索引 v2 剩余部分（`foreshadowings` 表 + 伏笔解析器与状态机校验） | 未落地 | #31 |
 | 故事线 / 场景契约 / 角色分组独立文件 | 未落地 | 对应功能 issue |
-| 共享库与 `origin` 溯源 | 未落地 | #40 |
+| 共享库与 `origin` 溯源 | 已落地（§3.7）：副本 frontmatter 带嵌套 `origin`，`buildSharedCopies` 报 stale；**索引不建表**——副本就是普通文件，谁复制过由文件自己回答 | 副本列表由文件扫描得出（`shared-copy.ts`） |
 | OVK 语义块与 `semantic_blocks` | 未落地 | #41 |
