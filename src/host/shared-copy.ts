@@ -45,7 +45,6 @@ import { dirname, extname, join, resolve } from 'node:path'
 
 import { newBackupBody, openBackup, sealBackup, stageFile } from './backup.js'
 import type { BackupBody, BackupHandle } from './backup.js'
-import { sharedDir } from './config.js'
 import {
   ROOT_META_FILE,
   SHARED_COPY_MODE,
@@ -60,6 +59,7 @@ import { frontmatterLine, frontmatterListItem, parseMarkdown, splitFrontmatter }
 import { scanSharedLibrary } from './hub-shared.js'
 import type { SharedEntry } from './hub-shared.js'
 import { writeTextAtomic, removeProjectFile } from './io.js'
+import { sharedRootOf } from './settings.js'
 
 // ---------------------------------------------------------------------------
 // Wire shapes
@@ -419,7 +419,7 @@ export function copySharedEntry(input: SharedCopyInput): SharedResult<SharedCopy
     })
   }
 
-  const sharedRoot = sharedDir(input.dataDir)
+  const sharedRoot = sharedRootOf(input.dataDir).root
   const library = scanSharedLibrary(sharedRoot)
   if (!library.ok) return fail('SHARED_UNAVAILABLE', library.error.message, { hint: library.error.hint })
 
@@ -701,7 +701,7 @@ function collectCopies(root: string): { copies: CollectedCopy[]; truncated: bool
 export function buildSharedCopies(input: { dataDir: string; root: string }): SharedResult<SharedCopiesValue> {
   const root = resolve(input.root)
   const collected = collectCopies(root)
-  const library = scanSharedLibrary(sharedDir(input.dataDir))
+  const library = scanSharedLibrary(sharedRootOf(input.dataDir).root)
   if (!library.ok) return fail('SHARED_UNAVAILABLE', library.error.message, { hint: library.error.hint })
 
   const byId = new Map<string, SharedEntry>()
@@ -734,7 +734,7 @@ export function buildSharedCopies(input: { dataDir: string; root: string }): Sha
 
   const meta = readMetaRecord(root)
   const seriesId = meta === undefined ? null : (nonEmptyString(meta.record['seriesId']) ?? null)
-  const seriesFound = seriesId === null ? false : seriesExists(sharedDir(input.dataDir), seriesId)
+  const seriesFound = seriesId === null ? false : seriesExists(sharedRootOf(input.dataDir).root, seriesId)
 
   return {
     ok: true,
@@ -829,13 +829,13 @@ export function updateSharedEntry(input: SharedUpdateInput): SharedResult<Shared
     return fail('SHARED_COPY_INVALID', `${row.file} records no entryId, so its source cannot be named`, { path: row.file })
   }
 
-  const library = scanSharedLibrary(sharedDir(input.dataDir))
+  const library = scanSharedLibrary(sharedRootOf(input.dataDir).root)
   if (!library.ok) return fail('SHARED_UNAVAILABLE', library.error.message, { hint: library.error.hint })
   const source = library.entries.find((entry) => entry.entryId === row.entryId)
   if (source === undefined || source.sha256 === undefined) {
     return fail('SHARED_SOURCE_MISSING', `the shared entry ${row.entryId} no longer exists`, { path: row.file })
   }
-  const sourceBytes = readFileSync(join(sharedDir(input.dataDir), ...source.path.split('/')))
+  const sourceBytes = readFileSync(join(sharedRootOf(input.dataDir).root, ...source.path.split('/')))
   const text = sourceBytes.toString('utf8')
   if (sha256Hex(Buffer.from(text, 'utf8')) !== sha256Hex(sourceBytes)) {
     return fail('SHARED_SOURCE_NOT_UTF8', `${source.path} is not valid UTF-8, so the copy cannot be refreshed`, {

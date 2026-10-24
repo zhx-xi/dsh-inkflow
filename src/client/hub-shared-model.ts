@@ -100,6 +100,14 @@ export interface HubSharedValue {
   countsByKind?: Record<string, number>
   total?: number
   truncated?: boolean
+  /**
+   * Why the configured `sharedRoot` is not the directory that answered (#150).
+   *
+   * Absent when the setting is in force (or unset). Mirrored as an optional shape
+   * rather than imported: the two halves are separate bundles, and the Client may
+   * only `import type` from the channel module.
+   */
+  sharedRootWarning?: { code?: string; message?: string }
 }
 
 /** One row of `GET /hub/shared/copies` (#40): a copy in the book and its state. */
@@ -135,6 +143,16 @@ export type SharedState =
       countsByKind: Record<string, number>
       total: number
       truncated: boolean
+      /**
+       * One line when the settings file named a `sharedRoot` the plugin refused
+       * (#150), `null` otherwise.
+       *
+       * The page MUST say this: without it a library read from the default directory
+       * looks exactly like the one the author configured and moved elsewhere, so the
+       * failure presents as "my entries vanished" (#42 shipped the field, nothing read
+       * it, and there was nowhere for that to show).
+       */
+      rootWarning: string | null
     }
   | { status: 'error'; message: string }
 
@@ -209,6 +227,22 @@ function countOf(value: unknown): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0
 }
 
+/**
+ * The one line that explains a `sharedRoot` the plugin refused (#150), or `null`.
+ *
+ * The Host's own message is quoted when it sent one: it already says what the value
+ * was and why it was refused, and re-wording it here would give the author two
+ * different explanations of one fact.
+ */
+export function describeSharedRootWarning(warning: unknown): string | null {
+  const record = typeof warning === 'object' && warning !== null ? (warning as Record<string, unknown>) : undefined
+  if (record === undefined) return null
+  const message = typeof record['message'] === 'string' && record['message'].trim() !== '' ? record['message'].trim() : ''
+  return message === ''
+    ? '设置里的「共享库路径」未生效：插件没有接受这个值，这里显示的是缺省目录（插件数据目录下的 shared/）。'
+    : `设置里的「共享库路径」未生效：${message}`
+}
+
 /** Fold the channel result into one of the two renderable states. */
 export function readSharedLibrary(result: InternalResult<HubSharedValue>): SharedState {
   if (!result.ok || result.value === undefined) {
@@ -226,6 +260,7 @@ export function readSharedLibrary(result: InternalResult<HubSharedValue>): Share
     countsByKind,
     total: typeof value.total === 'number' && Number.isFinite(value.total) ? value.total : entries.length,
     truncated: value.truncated === true,
+    rootWarning: describeSharedRootWarning(value.sharedRootWarning),
   }
 }
 

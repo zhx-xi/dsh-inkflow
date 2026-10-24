@@ -32,7 +32,7 @@ import {
 import type { BackupPackage, RestorePlan } from './backup-zip.js'
 import { buildDiagnostics, exportDiagnostics, maskPath } from './diagnostics.js'
 import { listRegisteredWorkspaces } from './hub.js'
-import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, writeSettings } from './settings.js'
+import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, sharedRootOf, writeSettings } from './settings.js'
 import { buildTools } from './tools.js'
 
 type Json = Record<string, unknown>
@@ -195,6 +195,10 @@ function bookChoices(ctx: HostContext): Array<{ workspaceId: string | null; book
 
 export function buildHubSettings(deps: HubSettingsDeps): Json {
   const read = readSettings(deps.dataDir)
+  // The root the shared page will actually read (#150). The page shows it because the
+  // field beside it is editable: "I set it and nothing happened" needs somewhere to be
+  // answered, and this path is masked like every other path in the payload.
+  const shared = sharedRootOf(deps.dataDir, read.settings)
   return {
     settings: read.settings,
     source: read.source,
@@ -202,6 +206,13 @@ export function buildHubSettings(deps: HubSettingsDeps): Json {
     fields: [...SETTINGS_FIELDS],
     limits: SETTINGS_LIMITS,
     dataDir: maskPath(deps.dataDir, { home: homeDir(), dataDir: deps.dataDir }),
+    sharedRoot: {
+      path: maskPath(shared.root, { home: homeDir(), dataDir: deps.dataDir }),
+      source: shared.source,
+      // `null`, not absent: `warn` above already uses null for "nothing to report", and
+      // one spelling of that on this payload is cheaper than two.
+      warn: shared.warning ?? null,
+    },
     books: bookChoices(deps.ctx),
     // The page states the retention rule it is enforcing, so "why did my old backup
     // disappear" never needs a trip to the docs (D3).

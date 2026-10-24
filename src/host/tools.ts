@@ -39,8 +39,8 @@ import { gateFailure, resolveProject } from './domains/tool-project.js'
 import { rememberProject } from './state.js'
 import { DEFAULT_SEARCH_LIMIT, MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, SEARCH_KINDS, searchChapters, searchEntries } from './search.js'
 import { replaceApply, replacePreview } from './replace.js'
-import { sharedDir } from './config.js'
 import { scanSharedLibrary } from './hub-shared.js'
+import { sharedRootOf } from './settings.js'
 import { buildSharedCopies, copySharedEntry, updateSharedEntry } from './shared-copy.js'
 
 export interface ToolDeps {
@@ -1662,7 +1662,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     },
     execute: async (args, exec) => {
       const a = asRecord(args)
-      const library = scanSharedLibrary(sharedDir(deps.dataDir))
+      const library = scanSharedLibrary(sharedRootOf(deps.dataDir).root)
       if (!library.ok) {
         return { ok: false, error: { code: library.error.code, message: library.error.message, hint: library.error.hint } }
       }
@@ -1694,7 +1694,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
       }
       return {
         ok: true,
-        libraryPath: sharedDir(deps.dataDir),
+        libraryPath: sharedRootOf(deps.dataDir).root,
         kind: kind === '' ? null : kind,
         q: q === '' ? null : q,
         total: matching.length,

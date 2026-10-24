@@ -40,9 +40,14 @@ export function dshHome(): string {
 }
 
 /**
- * The shared library root (ADR-0007 C1): `dataDir/shared`, and the only place
- * that spells it. Callers must pass the resolved `dataDir` — never `$DSH_HOME`
+ * The DEFAULT shared library root (ADR-0007 C1): `dataDir/shared`, and the only
+ * place that spells it. Callers must pass the resolved `dataDir` — never `$DSH_HOME`
  * and never a path from a request (ADR-0010 D5).
+ *
+ * NOT THE ROOT IN FORCE. A reader that is about to open the library asks
+ * `settings.ts`'s `sharedRootOf(dataDir)`, which answers this path only when
+ * `settings.json` configures no usable `sharedRoot` (#150). Keeping the default here
+ * and the decision there means one function spells the directory and one decides it.
  */
 export function sharedDir(dataDir: string): string {
   return join(dataDir, 'shared')

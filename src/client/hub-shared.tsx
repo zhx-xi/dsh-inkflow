@@ -136,6 +136,7 @@ const INITIAL: SharedState = {
   countsByKind: {},
   total: 0,
   truncated: false,
+  rootWarning: null,
 }
 
 const NO_COPIES: SharedCopiesState = { status: 'idle', message: SHARED_TEXTS.pickBook }
@@ -289,6 +290,12 @@ export function SharedLibraryView({
           )}
         </div>
         {state.status === 'ready' ? <div style={muted}>{describeSharedSource(state.indexSource)}</div> : null}
+        {/* A configured-but-refused `sharedRoot` (#150): the list below comes from the
+            default directory, and the author is standing here looking for entries that
+            are somewhere else. Warn tone, no action — the fix is on the settings page. */}
+        {state.status === 'ready' && state.rootWarning !== null ? (
+          <div style={{ ...muted, color: 'var(--dsw-alias-state-warn-primary)' }}>{state.rootWarning}</div>
+        ) : null}
         <div style={muted}>{SHARED_TEXTS.copyHint}</div>
         <div style={muted}>{SHARED_TEXTS.referenceHint}</div>
         <div style={muted}>{SHARED_TEXTS.seriesNote}</div>
