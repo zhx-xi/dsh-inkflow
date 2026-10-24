@@ -418,6 +418,8 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 
 ## 6. 模块边界
 
+这张表是「新读者判断某件事归谁管」的入口，所以它由 [scripts/check-module-table.mjs](../../scripts/check-module-table.mjs)（`npm run check:docs` 的一环）**对拍**：`src/host/` 下每个 `.ts` 必须在这里有一行（行内写全 `src/host/<文件>.ts`，只在别人的行里被提到不算），客户端纯模型整组列在 §6.2。新增模块却漏了登记 → 守卫直接红并打印缺失清单。
+
 | 模块 | 只做 | 不做 |
 |---|---|---|
 | `src/host/index.ts` | 装配、生命周期、日志 | 业务逻辑 |
@@ -478,6 +480,45 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/client/internal.ts` | 面板通道的 Client 半：`sessionId` 注入、`{ok,value}` 解包、`NO_SESSION_CONTEXT` 本地短路；`sessionless: true` 只放行 `/hub/*` | 拼路径参数、文件 IO |
 | `src/client/audit-model.ts` | 体检页的纯视图模型：信封折叠、分组与严重级文案、`定位` 的人话标签（`.` = 整本书）、`jumpTargetOf`（能不能跳、跳到哪）、导出与失败文案 | React、网络、IO |
 | `src/client/audit.tsx` | 体检页：五组计数 + 逐条 finding（code / 严重级 / 地址 / 说明 / 处理建议）+ 导出按钮（标签里写明落点） | 判问题是否成立、判严重级（都来自 Host）、写报告 |
+| `src/host/context.ts` | **宿主表面的手写结构类型**（`ctx.tools`/`webServer`/`slots`/`skills`/`agentPresets`/`systemPrompt` 等、`JsonSchemaNode`、`ToolDefinition`、`ToolRunContext`），按 DSH 0.2.1-rc.2 的实测契约抄录；DSH 升级改形状时重查契约再改这里 | 任何运行时实现、业务规则；不 import `@deepseek-ai/*`（[硬约束 H1](../constitution/hard-constraints.md)） |
+| `src/host/text-style.ts` | 稿件**行尾/BOM 风格**的检测与还原（`detectTextStyle` / `applyTextStyle`）：首个终止符决定风格，新建文件按 LF 无 BOM | 读写文件（字节进出归 `io.ts` 与调用方）、解析 frontmatter |
+| `src/host/path-rules.ts` | 提议文件名/段的**纯规则**（`checkSegment`：Windows 保留名 `CON`/`COM1`…、非法字符、长度上限；`isSingleLine`）；`io.ts` 的写门与 `impact.ts` 的只读预览共用同一份判定，所以预览说能执行就等于写门放行 | 任何 `fs`/项目/写锁；路径解析与拼装 |
+| `src/host/session-cwd.ts` | 会话的有效工作目录：`workingDirectory` 服务可用就用它，缺失/失败降级 `process.cwd()`，供域模块与内置工具用同一套解析 | 项目解析与门禁、写任何状态；不 import 内置工具面（那会成运行时环） |
+| `src/host/build-info.ts` | **构建代次判定**（#88）：`build`（构建期 `__INKFLOW_BUILD__`）与 `diskBuildTime`（本进程加载的 `lib/index.js` mtime）两侧事实、单向容差的 `staleLoadedCode`、`summarizeBuild` 文案 | 构建本身（归 `scripts/build.mjs`）、HMR、缓存 mtime；mtime 只当提示，不据此改任何行为 |
+| `src/host/catalog.ts` | 卷章 catalog 的**结构投影**（ADR-0006 D6）：`readCatalog`（只读：缺失/手改/陈旧只报 `catalogStale` 并在内存里从 `.md` 重投影）、`rebuildCatalog`（写锁内先卷后顶层，半途失败让顶层保持陈旧）、`validateCatalog`（报漂移，不拦不修） | 正文真相（`.md` 是真相）、自动修复、索引 schema；读路径绝不写盘 |
+| `src/host/encoding.ts` | 手写元文件（`inkflow.json`）的**乱码识别**（#89）：按「读成 GBK 才会出现」的窄字集表判定（语料实测 0 误报），`looksLikeGbkMojibake` / `describeEncodingSuspicion` 供门禁与文档提示 | 修复或转换编码、嗅探旧稿导入的编码（那在 `import.ts`）、抛错 |
+| `src/host/library-view.ts` | 设定库的**面板投影**（X-7/X-8）：8 个 kind（`CONTENT_DIRS` 去掉 `chapters`）的树 + 实体条目；读前 `ensureIndex`（可重建缓存的唯一例外）；索引缺席/异版答 `indexAvailable: false` 而不是"这本书没有角色" | 写任何文件、决定是否重建索引；不拥有通道入口（`internal.ts` 只 re-export） |
+| `src/host/library-request.ts` | 设定库保存请求的**取值规则**：`null` 删一个键、`[]` 删一个列表（两者归并成同一套 `remove`）、嵌套 mapping 是 400 而不是静默重写、`expected` 在本路由必填 | 找文件/写文件（归 `library-write.ts`）、HTTP 信封与状态码 |
+| `src/host/library-write.ts` | 设定库保存的**唯一写实现**：id 从文件解析（不依赖索引缓存）、只替换作者编辑过的字段、其余字节原样、经 `io.ts` 原子写 + CAS 基线；标题改动**不**改名（文件名就是无 `id:` 文件的实体 id） | 章的写入规则（标题→改名、卷分配、catalog 重建归 `chapters.ts`）、请求取值规则（`library-request.ts`）、直接拼项目路径 |
+| `src/host/trash.ts` | **回收站域**（#35，X-9/X-10，ADR-0012）：删除前先复制到 `.inkflow/trash/<原相对路径>` 并逐字节复核（复核失败则原件不动）、manifest 记身份/来源/时间/摘要/原因、`restoreTrash` 绝不覆盖、`purgeTrash` 要 `confirm: true`、非 UTF-8 源文件拒绝删除 | 自动清理或按数量轮转（回收站永不自动裁剪）、批量的 `before/after` 日志包（归 `backup.ts`）、通道信封 |
+| `src/host/trash-channel.ts` | 回收站的通道半：`GET /trash`、`POST /trash/restore`、`POST /trash/purge` 的请求规则与 `{ok,value|error}` 信封；条目只按 `id` 寻址、缺 `id` 是 400（不回落成批量动作）、purge 缺 `confirm` 是 `CONFIRM_REQUIRED` | 回收站格式与不变量（归 `trash.ts`）、HTTP 加固（归 `routes.ts`）、接受路径参数 |
+| `src/host/backup.ts` | 批量改动前的**回滚日志包**（#36，X-9/X-10，ADR-0012）：改动前先落 manifest（`sealed:false`）+ 逐文件 `before/after` 摘要与字节副本、`stageFile` 读回复核、`rollback` 覆盖前核对当前摘要（改过的文件报冲突且不覆盖、其余照常写回） | 用户可见的回收站列表（X-10 归 `trash.ts`）、ZIP 备份包（归 `backup-zip.ts`）、决定何时开包（归调用方） |
+| `src/host/migrate.ts` | 六目录旧书 → 九目录 + `index/` 的**加法式迁移**（#36）：不搬家不改名不重写内容，可能变的只有 `inkflow.json`（`schemaVersion`）与 `.gitignore`；`planMigration` 与 `applyMigration` 的清单按**集合**对拍、写前快照、回滚靠日志包 | 自动回滚（向导式内存撤销在这里不成立）、改任何内容文件、改索引内容；`index/` 由 `io.ts` 自己建时视为已采纳 |
+| `src/host/repair.ts` | 修复三段（#36，X-14）：`detectFindings` / `planRepair` 只读（不建 `index/`、不追加 `.gitignore`），`applyRepair` 是唯一写者且要 `confirm: true`；只**重塑**既有检查的发现（`scanProject`/`validateCatalog`）并每条给一个动作，修完重跑同一批检查证明修到了 | 重新实现任何检查、重写正文/标题/id、对 `fixable: false` 的 code 编造数据；批量修复前先进 `backup.ts` 的快照 |
+| `src/host/repair-report.ts` | 维护运行的 **Markdown 报告**渲染（`.inkflow/audit/`，ADR-0012 #6）：计划 / 跳过 / 回滚的排版，两个调用方（`repair.ts`/`migrate.ts`）共用一份 | 任何业务判断（报告只渲染调用方已决定的事）、改正文、决定落点或文件名 |
+| `src/host/repair-tools.ts` | 维护工具面（#36）：`inkflow_project_repair`（detect/preview/fix，`select` 可只修一条）与 `inkflow_project_migrate`（plan/apply/rollback），都三态 + `confirm`；**`needs-repair` 放行**（要修的书正是这种），`needs-setup`/`needs-newer-plugin` 拒绝 | 修复/迁移实现（归 `repair.ts`/`migrate.ts`）、门禁判定本体（镜像 `resolveProject` 只多一次放行） |
+| `src/host/hub-shared.ts` | 共享库的**无会话只读投影**（#87/#40，ADR-0010 D5）：manifest 与目录路径集合一致时用 `indexSource:'index'`，否则内存扫描重算（有界：条目上限 / 时间预算 / 哈希字节上限，超限答 `truncated`）；条目路径必须留在自己的 kind 目录内 | 写回 `shared/index.json`（派生物，写侧不在这里）、解析共享库根（根来自 `settings.ts` 的 `sharedRootOf`）、接受任何路径参数、把设置里的拒绝原因再判一次（随选项传入） |
+| `src/host/hub-settings.ts` | 设置页的 Host 半（#42，ADR-0018）：设置读写两路由（无锚点，不碰书）+ 诊断预览/导出 + 备份三路由；`book` 是注册表 id 或目录名（两个命中即 `BOOK_AMBIGUOUS`，路径不匹配永不降级成名字匹配）；对外路径一律 `maskPath` 脱敏 | 判定备份/恢复语义（归 `backup-zip.ts`）、接受目录路径、轮询、写任何书内文件 |
+| `src/host/settings-tools.ts` | 插件自身状态的工具面（#42）：`inkflow_settings_get`/`_update`（只碰 `settings.json`、**不过门禁**——书坏了也要能看设置）、`inkflow_diagnostics_export`（要 `confirm`，书不可用也能导）、`inkflow_backup_create`/`_restore`（要 `usable` 书，恢复默认先 `dryRun`）；输出里给出 `sharedRoot` 的**生效根**与未生效原因 | 章节/索引工具（归 `tools.ts`）、设置的读语义（归 `settings.ts`）、备份包格式（归 `backup-zip.ts`） |
+
+### 6.2 客户端纯模型（`src/client/*-model.ts`）
+
+**纯视图模型：无 React、无网络、无 IO**——面板的判定都落在这里，好让它们能被单测（渲染、`fetch`、文件系统一律在 `.tsx` 与 Host 侧）。整组列全：
+
+- `panel-model.ts` — 四态徽标与状态文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表 `PANEL_TABS`、预览裁剪
+- `hub-model.ts` — 书库行徽标（含 `timeout`）、`~/…` 相对化、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案
+- `hub-wizard-model.ts` — 向导 plan 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填、降级 A 文案、`mergeHubRow`
+- `hub-shared-model.ts` — 共享内容页：两种信封折叠（库 / 副本）、`copyNeedsUpdate`（只为 `stale` 给按钮）、`copyModes`（引用只给 `library/`）、`copyTargets`（只列 `usable`）、拒绝码 → 人话
+- `library-model.ts` — 设定库：8 个 kind 的树与 `world` 的 category 分组（`buildLibraryTree`/`groupByCategory`）、每类的字段表（`KIND_FIELDS`/`fieldsForKind`）、编辑草稿与未知字段（`draftFromItem`/`unknownFields`）、问题分组与文案（`aggregateIssues`/`describeIssueRow`）
+- `library-import-model.ts` — 导入对话框三步：草案校验、请求体、预览文案、结果文案、拒绝码 → 人话（路径由作者填，Client 无文件 API）
+- `editor-model.ts` — 编辑器的纯状态机：`AUTOSAVE_DELAY_MS`/`UNDO_GROUP_MS`、脏判定与 CAS 保存相（`SAVE_LABELS`）、撤销分组、文件被外部改过时的处理、`CHAPTER_STATUSES`
+- `layout-model.ts` — 面板滚动 box 的纯几何（§4.3.1）：可用底边规则、`Math.floor` 定高、CSS 变量与兜底、两列共享的样式常量
+- `foreshadow-model.ts` — 伏笔看板：三个状态（`open`/`late`/按关联实体）各一组文案（`statusLabel`）、`readForeshadowBoard` 的折叠——`late` 只显示 Host 的判定，**不**从 `dueBy` 与章号自行推算
+- `trash-model.ts` — 回收站：`readTrashValue`、`describeEntry`（路径/大小/删除时间/原因）、`restoreBlockedReason`、`purgePrompt`/`purgeStage`（清空的两段确认）、`describeTrashError`
+- `audit-model.ts` — 体检页：分组/严重级/code 文案、`readAuditValue` 与 `auditHeadline`/`auditGroupLine`、`locateLabel` 与 `jumpTargetOf`（能不能跳、跳到哪）、`exportLabel`/`exportNotice`
+- `impact-model.ts` — 改设定的影响清单与改名计划：`buildImpactDigest`（五处影响面折叠）、`impactQuery`、`renamePayload`、`describeImpactError`/`describeRenameError`
+- `search-model.ts` — 检索框：请求路径与「全部类型」开关换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案、点击去向、摘要与降级文案
+- `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
 
 ### 6.1 一致性体检（#33）的取数与落点
 
