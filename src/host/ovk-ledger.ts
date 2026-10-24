@@ -27,10 +27,8 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 
-import { INDEX_SCHEMA_VERSION } from './conventions.js'
-import { indexPaths } from './indexer.js'
+import { listAllChapters } from './indexer.js'
 import { readMeta } from './project.js'
 import { OVK_BLOCK_CHARS, blockUriOf, chunkBody } from './ovk.js'
 
@@ -286,32 +284,21 @@ export interface ChapterSource {
 /**
  * Every chapter in the derived index, in reading order.
  *
- * `indexer.ts`'s `listChapters` caps at 500 rows (`LIMIT ?`, clamped), and the first-build
- * threshold in ADR-0009 P10 is *200 chapters* — a book that trips the confirm threshold
- * can also be a book this function would silently truncate. So the index is opened here
- * with the same read-only + schema check `search.ts` uses, and no limit.
+ * Unabridged on purpose: the first-build threshold in ADR-0009 P10 is *200 chapters*, and
+ * a book that trips the confirm threshold can also be a book a page-capped read would cut
+ * short — a rebuild that saw 500 of 520 chapters would silently stop writing blocks for
+ * the tail. The unbounded read therefore lives in `indexer.ts` (`listAllChapters`) so the
+ * book's chapter count has exactly one source (issue #161); this function only narrows the
+ * summary to the fields a rebuild walks.
  */
 export function chapterSources(root: string): ChapterSource[] | undefined {
-  const paths = indexPaths(root)
-  if (!existsSync(paths.dbFile)) return undefined
-  let db: DatabaseSync | undefined
-  try {
-    db = new DatabaseSync(paths.dbFile, { readOnly: true })
-    const versionRow = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined
-    if (versionRow?.user_version !== INDEX_SCHEMA_VERSION) return undefined
-    const rows = db.prepare('SELECT id, path, seq, title FROM chapters ORDER BY seq IS NULL, seq, path').all() as unknown as Array<
-      Record<string, unknown>
-    >
-    return rows.map((row) => {
-      const out: ChapterSource = { id: String(row['id']), path: String(row['path']), title: String(row['title']) }
-      if (typeof row['seq'] === 'number' && Number.isFinite(row['seq'])) out.seq = row['seq']
-      return out
-    })
-  } catch {
-    return undefined
-  } finally {
-    db?.close()
-  }
+  const chapters = listAllChapters(root)
+  if (chapters === undefined) return undefined
+  return chapters.map((chapter) => {
+    const out: ChapterSource = { id: chapter.id, path: chapter.path, title: chapter.title }
+    if (chapter.seq !== null) out.seq = chapter.seq
+    return out
+  })
 }
 
 // ---------------------------------------------------------------------------

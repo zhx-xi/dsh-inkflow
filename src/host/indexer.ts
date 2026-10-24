@@ -446,33 +446,135 @@ export interface ChapterSummary {
 }
 
 /**
- * List chapters from the derived index.
- * Returns `undefined` when the index is absent or built by another schema —
- * the caller then tells the user to rebuild instead of showing stale data.
+ * The most chapters one `listChapters` page will serve.
+ *
+ * This is a **page** cap, not a book size: a 520-chapter book has 520 chapters, and
+ * asking for all of them returns 500 plus a `truncated` flag from the caller. It was a
+ * silent clamp before issue #161 — every entry that claimed "all chapters" read at most
+ * 500 rows and nothing said so, which made one book answer different chapter counts
+ * depending on which caller asked.
  */
-export function listChapters(root: string, limit = 100): ChapterSummary[] | undefined {
+export const LIST_CHAPTERS_MAX = 500
+
+/** The default page size, and the one `inkflow_chapter_list` uses when no `limit` is given. */
+export const LIST_CHAPTERS_DEFAULT = 100
+
+const CHAPTER_COLUMNS = 'id, path, seq, title, volume, status, word_count'
+/** Reading order: numbered chapters by `seq`, unnumbered ones after them, then by path. */
+const CHAPTER_ORDER = 'ORDER BY seq IS NULL, seq, path'
+
+/**
+ * A caller's page request, clamped into what the page read actually serves.
+ *
+ * Exported because the tool reports the page it served: a reply that said `offset: -5`
+ * (or `limit: 9000`) while serving `0` / `500` would be a lie about its own numbers.
+ */
+export function clampChapterPage(limit: unknown, offset: unknown): { limit: number; offset: number } {
+  const pageLimit =
+    typeof limit === 'number' && Number.isFinite(limit) ? Math.min(Math.max(Math.floor(limit), 1), LIST_CHAPTERS_MAX) : LIST_CHAPTERS_DEFAULT
+  const pageOffset = typeof offset === 'number' && Number.isFinite(offset) ? Math.max(Math.floor(offset), 0) : 0
+  return { limit: pageLimit, offset: pageOffset }
+}
+
+function mapChapterRow(row: Record<string, unknown>): ChapterSummary {
+  return {
+    id: String(row['id']),
+    path: String(row['path']),
+    seq: typeof row['seq'] === 'number' ? row['seq'] : null,
+    title: String(row['title']),
+    volume: typeof row['volume'] === 'string' ? row['volume'] : null,
+    status: String(row['status']),
+    wordCount: typeof row['word_count'] === 'number' ? row['word_count'] : 0,
+  }
+}
+
+/**
+ * Open the derived index read-only for a chapter read, or `undefined` when it is absent
+ * or was built by another schema.
+ *
+ * One opener for all three chapter readers (`countChapters` / `listChapters` /
+ * `listAllChapters`) so they cannot disagree about which database generation they read,
+ * and so "unavailable" always means the same thing to the caller.
+ */
+function openChapterIndex(root: string): DatabaseSync | undefined {
   const paths = indexPaths(root)
   if (!existsSync(paths.dbFile)) return undefined
-  let db: DatabaseSync | undefined
   try {
-    db = new DatabaseSync(paths.dbFile, { readOnly: true })
+    const db = new DatabaseSync(paths.dbFile, { readOnly: true })
     const versionRow = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined
-    if (versionRow?.user_version !== INDEX_SCHEMA_VERSION) return undefined
-    const rows = db
-      .prepare('SELECT id, path, seq, title, volume, status, word_count FROM chapters ORDER BY seq IS NULL, seq, path LIMIT ?')
-      .all(Math.min(Math.max(limit, 1), 500)) as unknown as Array<Record<string, unknown>>
-    return rows.map((row) => ({
-      id: String(row['id']),
-      path: String(row['path']),
-      seq: typeof row['seq'] === 'number' ? row['seq'] : null,
-      title: String(row['title']),
-      volume: typeof row['volume'] === 'string' ? row['volume'] : null,
-      status: String(row['status']),
-      wordCount: typeof row['word_count'] === 'number' ? row['word_count'] : 0,
-    }))
+    if (versionRow?.user_version !== INDEX_SCHEMA_VERSION) {
+      db.close()
+      return undefined
+    }
+    return db
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * How many chapters this book has, from the derived index.
+ *
+ * The number a caller must report as `total`: `listChapters` returns a *page*, so its
+ * length is not the book (issue #161 — reading it back as "total" made a 520-chapter
+ * book look like a 100-chapter one).
+ *
+ * `undefined` when the index is absent or foreign, like every other index read.
+ */
+export function countChapters(root: string): number | undefined {
+  const db = openChapterIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const row = db.prepare('SELECT COUNT(*) AS n FROM chapters').get() as { n?: number } | undefined
+    return typeof row?.n === 'number' ? row.n : 0
   } catch {
     return undefined
   } finally {
-    db?.close()
+    db.close()
+  }
+}
+
+/**
+ * One page of chapters from the derived index, in reading order.
+ *
+ * `limit` is clamped to `[1, LIST_CHAPTERS_MAX]` and `offset` to `>= 0`; page through a
+ * long book with `offset` (and report `countChapters` as the total — the page length is
+ * not the book). Returns `undefined` when the index is absent or built by another schema —
+ * the caller then tells the user to rebuild instead of showing stale data.
+ */
+export function listChapters(root: string, limit?: number, offset?: number): ChapterSummary[] | undefined {
+  const page = clampChapterPage(limit, offset)
+  const db = openChapterIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const rows = db
+      .prepare(`SELECT ${CHAPTER_COLUMNS} FROM chapters ${CHAPTER_ORDER} LIMIT ? OFFSET ?`)
+      .all(page.limit, page.offset) as unknown as Array<Record<string, unknown>>
+    return rows.map(mapChapterRow)
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Every chapter in the book, in reading order — the one unabridged chapter read.
+ *
+ * For callers that genuinely need the whole book (the semantic ledger's rebuild plan must
+ * name every chapter: its threshold is 200 chapters, and a silent 500-row cap would drop
+ * the rest of a long book out of the rebuild). Everything that shows chapters to a user
+ * keeps paging with `listChapters` instead.
+ */
+export function listAllChapters(root: string): ChapterSummary[] | undefined {
+  const db = openChapterIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const rows = db.prepare(`SELECT ${CHAPTER_COLUMNS} FROM chapters ${CHAPTER_ORDER}`).all() as unknown as Array<Record<string, unknown>>
+    return rows.map(mapChapterRow)
+  } catch {
+    return undefined
+  } finally {
+    db.close()
   }
 }

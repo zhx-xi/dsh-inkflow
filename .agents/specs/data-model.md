@@ -284,6 +284,8 @@ origin:
 | `validation_issues` | seq | code / path / detail | 重建时发现的不变量问题 |
 | `chapters_fts` | (virtual) | chapter_id / title / body，`tokenize='trigram'` | 章正文全文检索（≥3 字命中；1–2 字走 `LIKE` 兜底） |
 
+**列表上限（章）**：`inkflow_chapter_list` 的 `limit` 是**分页**上限（单页 ≤ `LIST_CHAPTERS_MAX` = 500），**不是书的章数**；`offset` 翻页（≥ 0，越界返回空页）。payload 里 `total` 恒为**全量**章数（来自 `countChapters`，不是本页条数），`returned` 是本页条数，`truncated: true` 表示**这一页之后还有章**（`offset + returned < total`）——它回答的是「要不要接着翻」，所以最后一页与越界空页都是 `false`；「这一页是不是全书」由 `total` 与 `returned` 本身就看得出来。**与 §3.2 伏笔那条 `truncated` 语义不同**：伏笔没有分页，那里的 `truncated` 就是「列表被截断了」。三个读函数分工固定：`listChapters(root, limit, offset)` 只服务一页、`countChapters(root)` 只数总数、`listAllChapters(root)` 是全量无上限读。**需要全量的调用方只用 `listAllChapters`**（语义重建的 `chapterSources` 走它：首建阈值 200 章，页上限 500 会把一本 520 章的书截掉 20 章并静默漏写块）。面板（`GET /inkflow/internal/chapters`）与书单（`hub`）的章数来自 catalog 投影（文件），不经该上限。
+
 **`entity_mentions` 由接缝建**（`indexer.ts` 的 `writeIndexDatabase`），不属任何域模块：`mentions` 不在 `CONTENT_DIRS` 里，且它是一次全书扫描的结果（自动机由全部实体建、走全部章节），不是某个目录的行集。
 
 **表归谁建（X-2）**：`chapters`/`chapters_fts`、`characters`、`world_entries`、`outline_nodes` 由各自的域模块提供 DDL 与写入（[`src/host/domains/`](../../src/host/domains/)）；`meta`、`files`、`library_files`、`validation_issues`、`entities`、`entities_fts` 由索引构建与接缝层提供。没有一张表在两处创建。
