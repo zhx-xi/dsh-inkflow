@@ -405,6 +405,32 @@ test('importing the same source twice reuses the library copy instead of twinnin
   assert.equal(chapterFiles(root).length, 4)
 })
 
+test('a same-named file with DIFFERENT text is never overwritten: the copy takes the next free name', async () => {
+  const root = book()
+  // Somebody's own note, already called 旧稿.txt. The import must not eat it.
+  writeFileSync(join(root, 'library', '旧稿.txt'), '我自己写的一份资料，和这本旧稿无关。\n', 'utf8')
+  const source = sourceFile('旧稿.txt', Buffer.from(CHAPTERS_SOURCE, 'utf8'))
+
+  const applied = await applyImport(root, { sourcePath: source, confirm: true })
+  assert.equal(applied.ok, true, JSON.stringify(applied))
+  assert.equal(applied.value.library?.path, 'library/旧稿-2.txt')
+  assert.equal(applied.value.library?.written, true)
+  // Both documents survive.
+  assert.equal(readFileSync(join(root, 'library', '旧稿.txt'), 'utf8'), '我自己写的一份资料，和这本旧稿无关。\n')
+  assert.equal(readFileSync(join(root, 'library', '旧稿-2.txt'), 'utf8'), CHAPTERS_SOURCE)
+  // And the preview said so before anything was written.
+  assert.equal(
+    applied.value.plan.warnings.some((line) => line.includes('不覆盖已有文件')),
+    true,
+    'the rename is reported, not silent',
+  )
+  // A second preview now finds its own copy (`旧稿-2.txt`) and reuses it instead of
+  // walking further down the suffix ladder.
+  const again = planImport(root, { sourcePath: source })
+  assert.equal(again.value.library.path, 'library/旧稿-2.txt')
+  assert.equal(again.value.library.identical, true)
+})
+
 test('keepOriginal: false imports the chapters without registering the file', async () => {
   const root = book()
   const source = sourceFile('旧稿.txt', Buffer.from(CHAPTERS_SOURCE, 'utf8'))

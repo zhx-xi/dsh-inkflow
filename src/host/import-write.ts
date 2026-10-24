@@ -201,6 +201,46 @@ function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+/**
+ * Where the manuscript copy goes, and why that name.
+ *
+ * Three outcomes, and the rule behind them: **never write over a different text.**
+ *   * the name is free → use it (`exists: false`);
+ *   * the name holds the same text → reuse it (`identical: true`), so importing twice does
+ *     not produce a twin;
+ *   * the name holds different text → take `旧稿-2.txt`, `旧稿-3.txt`, … (`renamed: true`).
+ *
+ * The last one is the reason this is a function instead of one line: an author's
+ * `library/灵感.txt` and a manuscript of the same name are two different documents, and
+ * the import has no business deciding which one survives. (Before the batch, the old code
+ * overwrote it — the backup package made that recoverable, but "recoverable" is not the
+ * same as "not destroyed".)
+ */
+function chooseLibraryPath(
+  root: string,
+  base: string,
+  decodedText: string,
+): { path: string; exists: boolean; identical: boolean; renamed: boolean; collidedOut: boolean } {
+  const directory = `${LIBRARY_DIR}/`
+  const stem = base.replace(/\.[^.]*$/u, '')
+  const extension = base.slice(stem.length)
+  let last = `${directory}${base}`
+  for (let attempt = 1; attempt <= 99; attempt += 1) {
+    const candidate = `${directory}${attempt === 1 ? base : `${stem}-${String(attempt)}${extension}`}`
+    last = candidate
+    const absolute = resolve(root, ...candidate.split('/'))
+    if (!existsSync(absolute)) return { path: candidate, exists: false, identical: false, renamed: attempt > 1, collidedOut: false }
+    try {
+      if (readFileSync(absolute, 'utf8') === decodedText) {
+        return { path: candidate, exists: true, identical: true, renamed: attempt > 1, collidedOut: false }
+      }
+    } catch {
+      // An unreadable file is not a candidate for reuse — move on to the next name.
+    }
+  }
+  return { path: last, exists: true, identical: false, renamed: true, collidedOut: true }
+}
+
 /** Everything `plan` and `apply` must agree on, hashed. */
 function planTokenOf(plan: Omit<ImportPlan, 'planToken' | 'catalogStale'>): string {
   return sha256Hex(
@@ -338,23 +378,22 @@ function prepare(root: string, options: ImportPlanOptions): PrepareResult {
     ...(chapter.preface === true ? { preface: true as const } : {}),
   }))
 
+  // The library copy is the source **as decoded** (LF, no BOM): a reader opening
+  // `library/旧稿.txt` sees the manuscript. Computed once here because three things need
+  // it — the collision check below, the plan token's sibling data and `applyImport`.
+  const decodedText = decodeImportBytes(bytes).text
   const keepOriginal = options.keepOriginal !== false
-  const libraryPath = keepOriginal ? `${LIBRARY_DIR}/${libraryFileName(name)}` : null
-  let libraryExists = false
-  let libraryIdentical = false
-  if (libraryPath !== null) {
-    const absolute = resolve(bookRoot, ...libraryPath.split('/'))
-    libraryExists = existsSync(absolute)
-    if (libraryExists) {
-      try {
-        // The copy this route writes is the source **as a whole file**, normalised by
-        // the text writer (LF, no BOM) — not the chapter bodies joined. Comparing
-        // against that same text is what makes a second import reuse the copy.
-        libraryIdentical = readFileSync(absolute, 'utf8') === decodeImportBytes(bytes).text
-      } catch {
-        libraryIdentical = false
-      }
-    }
+  const chosen = keepOriginal ? chooseLibraryPath(bookRoot, libraryFileName(name), decodedText) : null
+  const libraryPath = chosen?.path ?? null
+  const libraryExists = chosen?.exists ?? false
+  const libraryIdentical = chosen?.identical ?? false
+  if (chosen?.renamed === true) {
+    // A same-named file with DIFFERENT text is somebody's material: it is never
+    // overwritten, the new one takes the next free name (`旧稿-2.txt`).
+    analysis.warnings.push(`library/ 里已有同名的另一份文件，本次原件存为 ${String(libraryPath)}（不覆盖已有文件）。`)
+  }
+  if (chosen?.collidedOut === true) {
+    analysis.warnings.push('library/ 里同名副本已排到 99 个，本次会复用最后一个位置：请整理后再导入。')
   }
 
   const withoutToken: Omit<ImportPlan, 'planToken' | 'catalogStale'> = {
@@ -440,9 +479,11 @@ export async function applyImport(root: string, options: ImportApplyOptions): Pr
   const body = newBackupBody()
 
   // (4) Stage what already exists. A file this batch will create has no `before`.
+  //
+  // The library copy is deliberately NOT here: `chooseLibraryPath` only ever targets a
+  // free name or a file that already holds this exact text, so it never overwrites one.
   const preExisting: string[] = [`${CHAPTERS_DIR}/${CATALOG_FILE}`]
   if (plan.target.volumeId !== null) preExisting.push(`${plan.target.dir}/${CATALOG_FILE}`)
-  if (plan.library.path !== null && plan.library.exists) preExisting.push(plan.library.path)
   for (const path of preExisting) {
     if (!existsSync(resolve(bookRoot, ...path.split('/')))) continue
     const staged = stageFile(bookRoot, handle, path)
@@ -570,11 +611,10 @@ export async function applyImport(root: string, options: ImportApplyOptions): Pr
           path: libraryPath,
         })
       }
-      if (plan.library.exists) body.steps.push(`replace ${libraryPath}`)
-      else {
-        body.files.push({ path: libraryPath, change: 'created' })
-        body.steps.push(`create ${libraryPath}`)
-      }
+      // Always a fresh name (see `chooseLibraryPath`): a file holding different text is
+      // never the target, so this branch never overwrites one.
+      body.files.push({ path: libraryPath, change: 'created' })
+      body.steps.push(`create ${libraryPath}`)
       library = {
         path: libraryPath,
         written: true,
