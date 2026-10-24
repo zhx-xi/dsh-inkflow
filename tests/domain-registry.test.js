@@ -40,6 +40,10 @@ const BUILT_IN_TOOLS = [
   ['inkflow_index_rebuild', '51a5555a'],
   ['inkflow_chapter_list', '4a6eecc1'],
   ['inkflow_chapter_search', 'd10a9b63'],
+  // #39: the one search entry (X-16) and the search-replace batch (X-17). Built-ins
+  // because they span every kind and own no content directory.
+  ['inkflow_search', '46e8ca64'],
+  ['inkflow_search_replace', '1c309b8e'],
   ['inkflow_project_audit', '2e5349da'],
   // #37: importing an old manuscript. A built-in rather than a domain tool: it writes
   // chapters *and* a `library/` copy, so no single content directory owns it.

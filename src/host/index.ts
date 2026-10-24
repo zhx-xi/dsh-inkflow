@@ -397,6 +397,46 @@ export type {
   SearchMode,
 } from './search.js'
 
+/**
+ * The single search entry for every kind (issue #39, roadmap X-16) and the
+ * search-and-replace batch (roadmap X-17).
+ *
+ * Exported for the same reason as `searchChapters`: the panel's "全部类型" toggle, the
+ * two tools and the channel routes all read through these two functions, and the
+ * contract tests must drive what users get — not a second copy of the logic.
+ */
+export {
+  MAX_SEARCH_OFFSET,
+  SEARCH_KINDS,
+  searchEntries,
+} from './search.js'
+export type {
+  SearchBackend,
+  SearchEntriesFailure,
+  SearchEntriesOptions,
+  SearchEntriesResult,
+  SearchEntriesSuccess,
+  SearchEntry,
+  SearchKind,
+} from './search.js'
+export { REPLACE_CONTEXT_CHARS, REPLACE_KINDS, replaceApply, replacePreview } from './replace.js'
+export type {
+  ReplaceApplyFailure,
+  ReplaceApplyRequest,
+  ReplaceApplyResult,
+  ReplaceApplySuccess,
+  ReplaceExpectation,
+  ReplaceFailure,
+  ReplaceHit,
+  ReplacePreviewResult,
+  ReplacePreviewSuccess,
+  ReplaceRequest,
+  ReplaceSkipped,
+  ReplaceSkipReason,
+} from './replace.js'
+export { searchEntityHits } from './domains/query.js'
+export type { EntityHit, EntityHitOptions, EntityHitPage } from './domains/query.js'
+
 export function apply(ctx: HostContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig)
   const log = ctx.logger('dsh-inkflow')

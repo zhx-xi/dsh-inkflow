@@ -430,7 +430,10 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/index-build.ts` | 索引重建的原子替换、进程内单飞、`index/.lock` | 解析文件格式 |
 | `src/host/index-freshness.ts` | **新鲜度判定**（`checkIndexFreshness`，纯读：一次 readdir+stat 对拍 `files` 表）与**唯一重建触发点**（`ensureIndex`，四态 → 至多一次 `buildIndex`，失败结构化） | 改索引内容、删除索引文件、写项目文件 |
 | `src/host/file-cas.ts` | 写入的期望基线：`sha256`/`size`/`mtimeMs`/`absent` 的指纹与比对（`FILE_CHANGED` 的数据面） | 决定是否写（由 chapters/workspace 在写锁内调用）、拼接项目路径 |
-| `src/host/search.ts` | 章正文检索（`chapters_fts`）：trigram `MATCH`、1–2 字 `LIKE` 兜底、片段裁剪；**只读**，不建库不修复 | 写盘、门禁判定（由工具层先过门禁） |
+| `src/host/search.ts` | 章正文检索（`chapters_fts`）：trigram `MATCH`、1–2 字 `LIKE` 兜底、片段裁剪；**只读**，不建库不修复。另含 **X-16 的单一检索入口** `searchEntries`：章正文（正文 + 标题）＋九个内容目录的设定条目，固定条目形状 `{kind,id,path,title,snippet,offset?,score?}`、分页 `{offset,limit,total}`（`limit` ≤ 100，超出上限按上限截断并 `truncated: true`）、后端字段 `searchBackend`/`degradedReason`；索引缺失或异版只得到 `INDEX_UNAVAILABLE`，绝不 500 | 写盘、门禁判定（由工具层先过门禁）、决定是否重建（归 `index-freshness.ts`／工具层） |
+| `src/host/snippet.ts` | **片段裁剪的唯一实现**：`locateHit`（首个命中位置）、`makeSnippet`（半径内上下文，空白折叠）、`sliceContext`（已知位置的上下文，供替换预览的「前/后」）。叶模块（无 import）：`search.ts` 与 `domains/query.ts` 都要用它，而前者经 `indexer.ts` 绕回域注册表，不能成为共享路径 | 读文件、决定命中（只渲染调用方给的文本） |
+| `src/host/replace.ts` | **检索替换的唯一实现**（X-17）：预览与执行共用 `planReplace`（同一份计数 + 同一份新文本 → 预览=执行）；逐章保留原行尾/BOM（`text-style.ts` + `io.ts` 唯一写入口）；`expected`（chapterId + count）对不上的章 `PREVIEW_STALE` 跳过并报告；执行前开 `openBackup(root,'replace')` 并封 `sealed:false`，任一步失败即从备份包回滚。章列表读 catalog（文件的投影）而非索引：预览在没有索引时也必须正确 | 决定是否重建索引（工具层写后 `ensureIndex`）、替换设定条目的结构化正文（需按类写入器） |
+| `src/host/search-channel.ts` | 检索与替换的通道半：`GET /search` 的 X-16 信封（读前 `ensureIndex`，索引不可用时降级为元数据扫描并带 `degradedReason`）、`GET /replace`（预览，**零写盘**，回传 `expected`）、`POST /replace/apply`（要 `confirm: true` + `expected`）、失败码到 HTTP 状态的映射 | 检索/替换规则、投影字段的所有权（归 `search.ts`/`replace.ts`）、HTTP 加固（归 `routes.ts`） |
 | `src/host/io.ts` | **唯一写入口**：路径解析、原子写、单项目写锁 | 业务规则、索引 |
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
@@ -439,9 +442,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
-| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete`） | 直接扫目录（走 indexer/project/workspace） |
+| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 16 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `search` / `search_replace` / `project_audit` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete` / `project_repair` / `project_migrate`——其中 `search` 是 #39 的 X-16 单一入口，`search_replace` 是 X-17 的预览/执行两段工具） | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
-| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError` | HTTP 加固、写作品文件、自己决定是否重建 |
+| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError`（`/search` 自 #39 起是 X-16 的单一入口，索引不可用时降级为章元数据扫描并带 `degradedReason`；检索替换的三条路由在 `search-channel.ts`） | HTTP 加固、写作品文件、自己决定是否重建 |
 | `src/host/findings.ts` | **「问题」的唯一形状**（roadmap X-14）：`Finding` / `FindingLocator` / 五个报告分组 / `FINDING_CODES` 目录 / `compareFindings` 的稳定排序 | 任何检查实现、任何 IO（#33 产出、#36 消费） |
 | `src/host/audit.ts` | **一致性体检**（#33，X-14）：五类发现聚合成一份 `Finding[]`（只聚合 / 分组 / 排序 / 给人话 hint，判定一律调域模块）＋ Markdown 报告渲染 ＋ 唯一写动作（`exportAuditReport` → `.inkflow/audit/`） | 判任何不变量（那是 `scanProject` / `validateCatalog` / 域模块的事）、重建索引、在只读路径写盘 |
 | `src/host/audit-channel.ts` | 体检的通道半：`GET /audit` 的投影（分组计数 + 前 N 条 + 定位与地址）与 `POST /audit/export` 的信封、`CONFIRM_REQUIRED` 闸门、失败码到 HTTP 状态的映射 | 体检规则、Markdown 排版、写盘（一律调 `audit.ts` 与 `io.ts`） |
@@ -465,6 +468,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/client/hub-wizard.tsx` | 新开书向导的视图：`pickDirectory` → plan → 确认卡（`willCreate[]` / `notices[]` / 书名 / `outsideRegistry` 二次确认）→ apply → 降级 A 卡片；目录选择器不可用时退化为手输绝对路径 | 拼第二套规则、跳转/建会话、轮询 |
 | `src/client/hub-wizard-model.ts` | 向导的纯视图模型：`plan` 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填判定、降级 A 文案、`mergeHubRow`（就地更新或追加） | React、网络、IO |
 | `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
+| `src/client/search-model.ts` | 检索框的纯视图模型（#39，X-16/X-20）：请求路径与「全部类型」开关的换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案（`章正文 · 标题`）、点击去向（章正文 → 本页编辑器；设定条目 → 设定库）、摘要与降级文案 | React、网络、IO |
 | `src/client/hub-model.ts` | 书库的纯视图模型：徽标（含 `timeout`）、`~/…` 相对化、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案、信封折叠 | React、网络、IO |
 | `src/client/layout-model.ts` | 面板滚动 box 的纯几何（§4.3.1）：可用底边规则、`Math.floor` 定高、CSS 变量与兜底、两列共享的样式常量 | React、DOM、配色 |
 | `src/client/layout.ts` | 高度实测的 DOM 读取与 React 接线：`useScrollBox()`（每次渲染复测 + `ResizeObserver` + `window.resize`），把高度写成 `--inkflow-body-h`；量不到返回空样式走 CSS 兜底 | 业务规则、网络、写文件 |
