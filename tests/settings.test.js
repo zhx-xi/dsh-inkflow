@@ -244,14 +244,42 @@ test('a save touches no book: the whole tree hash of the book is unchanged', () 
   }
 })
 
-test('sharedRoot defaults to dataDir/shared and resolves a relative value there', () => {
+test('an absolute sharedRoot is used, and an unset one is dataDir/shared with no warning', () => {
   const { dataDir, cleanup } = workspace()
   try {
-    assert.equal(sharedRootOf(dataDir), join(dataDir, 'shared'))
-    writeSettings(dataDir, { sharedRoot: 'libs' })
-    assert.equal(sharedRootOf(dataDir), join(dataDir, 'libs'))
+    const fallback = join(dataDir, 'shared')
+
+    const unset = sharedRootOf(dataDir)
+    assert.equal(unset.root, fallback, 'the default is config.ts\'s dataDir/shared (ADR-0007 C1)')
+    assert.equal(unset.source, 'default')
+    assert.equal(unset.warning, undefined, 'an unset field is not a problem to report')
+
+    // Absolute on every platform by construction: the rule is lexical, so a Windows
+    // path written on a Linux CI runner is still "absolute" (and vice versa).
     writeSettings(dataDir, { sharedRoot: 'D:\\novel-shared' })
-    assert.equal(sharedRootOf(dataDir), 'D:\\novel-shared')
+    const configured = sharedRootOf(dataDir)
+    assert.equal(configured.root, 'D:\\novel-shared')
+    assert.equal(configured.source, 'setting')
+    assert.equal(configured.warning, undefined)
+  } finally {
+    cleanup()
+  }
+})
+
+test('a relative or escaping sharedRoot is ignored: the default stays, with one warning', () => {
+  const { dataDir, cleanup } = workspace()
+  try {
+    const fallback = join(dataDir, 'shared')
+    const cases = ['libs', 'libs/nested', '..', '../outside', 'libs/../../outside', 'C:\\libs\\..\\outside']
+
+    for (const configured of cases) {
+      writeSettings(dataDir, { sharedRoot: configured })
+      const resolved = sharedRootOf(dataDir)
+      assert.equal(resolved.root, fallback, `${configured} must not become the shared root`)
+      assert.equal(resolved.source, 'default', `${configured} is not in effect`)
+      assert.equal(resolved.warning?.code, 'SHARED_ROOT_IGNORED', `${configured} must be reported, not thrown`)
+      assert.match(String(resolved.warning?.message), /sharedRoot/, 'the warning names the field')
+    }
   } finally {
     cleanup()
   }

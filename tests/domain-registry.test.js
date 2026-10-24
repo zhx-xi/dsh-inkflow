@@ -69,7 +69,7 @@ const BUILT_IN_TOOLS = [
   // backups. Built-ins for the same reason as the pair above: none of them belongs to
   // one content directory, and two of them touch no book at all.
   ['inkflow_settings_get', 'd41c07e7'],
-  ['inkflow_settings_update', 'c2af9334'],
+  ['inkflow_settings_update', '0e71d69d'],
   ['inkflow_diagnostics_export', '81804879'],
   ['inkflow_backup_create', '375f1aa7'],
   ['inkflow_backup_restore', '830aaf3b'],

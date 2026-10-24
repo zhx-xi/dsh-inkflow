@@ -313,12 +313,15 @@ export type {
 } from './hub.js'
 
 /**
- * Shared library (ADR-0010 D5, issue #87): the **read-only** projection of
- * `dataDir/shared`, and the only hub surface that reads something outside the
- * workspace registry. Exported for the same reason as the hub: the two data
- * sources (the derived manifest vs an in-memory rescan) and the cost limits are
- * only testable by driving `buildHubShared` directly, and `sharedDir` is the one
- * place the `dataDir/shared` path is spelled.
+ * Shared library (ADR-0010 D5, issue #87): the **read-only** projection of the
+ * plugin-level shared directory, and the only hub surface that reads something
+ * outside the workspace registry. Exported for the same reason as the hub: the two
+ * data sources (the derived manifest vs an in-memory rescan) and the cost limits are
+ * only testable by driving `buildHubShared` directly.
+ *
+ * `sharedDir` is exported as the DEFAULT-path helper only; the root in force comes
+ * from `settings.ts`'s `sharedRootOf` (`dataDir/shared` unless `sharedRoot` is
+ * configured — #150).
  */
 export {
   SHARED_HEAD_BYTES,
@@ -806,6 +809,8 @@ export type {
   SettingsResult,
   SettingsWarning,
   SettingsWrite,
+  SharedRootResolution,
+  SharedRootWarning,
 } from './settings.js'
 export {
   BACKUPS_DIR,
