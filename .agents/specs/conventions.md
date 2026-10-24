@@ -252,13 +252,13 @@ index/.write.lock
 
 ### 3.11 插件私有状态目录 `.inkflow/`（[ADR-0012](../adrs/0012-plugin-private-state-dir.md)）
 
-回收站、迁移备份、审计报告三样都既不是正文也不是索引，因此单独一个点开头的目录。**它不是内容目录**：
+回收站、迁移备份、审计报告、提取候选四样都既不是正文也不是索引，因此单独一个点开头的目录。**它不是内容目录**：
 
 | 事实 | 后果 |
 |---|---|
 | 不在 `CONTENT_DIRS` / `REQUIRED_DIRS` 里 | 门禁对它的存在与否**不表态**（存在即允许，缺失不修）；它不产 `entities` 行、不进索引扫描、不参与 catalog |
 | 不进 git（`.gitignore` 加 `.inkflow/`，由**首次使用方** append-only 追加，不在门禁必需行里） | 已删除的正文不会以「新文件」身份重新出现在 `git status` 里；从不删东西的书也不会被永久提示 |
-| 只经白名单写 | `resolveWriteTarget` 额外允许 `.inkflow/trash/`、`.inkflow/backup/`、`.inkflow/audit/` 三条**子路径**；`.inkflow/` 下其它子路径、`..`、绝对路径、符号链接逃出项目根仍拒 |
+| 只经白名单写 | `resolveWriteTarget` 额外允许 `.inkflow/trash/`、`.inkflow/backup/`、`.inkflow/audit/`、`.inkflow/candidates/` 四条**子路径**；`.inkflow/` 下其它子路径、`..`、绝对路径、符号链接逃出项目根仍拒 |
 | 点开头即被 `walk()` 跳过（`src/host/indexer.ts:99`） | 新鲜度对拍与索引扫描天然看不到它，不需要额外排除规则 |
 | 与 `index/` 生命周期无关 | 删掉 `index/` 重建索引，不影响回收站（这正是它不放在 `index/` 下的原因：`index/` 缺失会被静默重建，ADR-0006 D2） |
 
@@ -267,6 +267,7 @@ index/.write.lock
 | `trash/` | 每个被删文件一份**副本**，路径为 `.inkflow/trash/<原相对路径>`（看一眼就知道从哪来）；外加清单 `.inkflow/trash/index.json`（形状见 §3.11.1） | #35 | **永不自动清理**（ADR-0012 #4）：条目只因「恢复」或「彻底删除」离开。超过 500 条或 50 MB【推断】只在面板提示可以清理【未实现：面板当前没有这条提示】，清空是显式动作且需二次确认 |
 | `backup/` | 批量变更（6→9 目录迁移、frontmatter 修复）前的快照包，机器读 | #36 | 保留最近 3 次【推断】；更早的随新包建立时淘汰 |
 | `audit/` | 体检报告导出（Markdown），纯派生物 | #33 | 可随时删除或覆盖，删了只丢报告不丢真相 |
+| `candidates/` | 提取管线提交、**尚未被作者审阅**的候选 JSON，一份提交一个文件（`.inkflow/candidates/<时间戳>-<kind>.json`，形状见 [ADR-0017](../adrs/0017-extraction-by-session-model.md) D3） | #38 | 已处理的候选**保留**可追溯；清理是显式 `purge`，不自动淘汰（ADR-0012 #4）。候选只是工作物：只有 `accept(confirm)` 才写进内容目录 |
 
 细分契约（清单格式、保留阈值、迁移包结构）由 #35 / #36 各自在自己的 spec 段落里定；本节只定「它们住在哪、谁不许碰」。
 

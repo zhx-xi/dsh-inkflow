@@ -48,13 +48,17 @@ export const BACKUP_MANIFEST_FILE = 'manifest.json'
 export const BACKUP_FILES_DIR = 'files'
 
 /**
- * Which batch produced the package — each kind keeps its own report prefix too.
+ * Which batch produced the package — the two maintenance passes (#36) and the four
+ * 0.4.0 producers that reuse this package instead of inventing their own
+ * (roadmap X-17: batch import, id replace, shared-content copy, restore).
  *
- * `replace` is #39's search-and-replace batch (roadmap X-17). It lives in the same
- * union as the others because one rollback reader has to be able to undo any package
- * the plugin wrote; a reader per kind would mean two undo paths to test.
+ * One closed list rather than a union per issue: a kind the writer accepts but a
+ * reader refuses is a package nobody can roll back, so writer and reader both take
+ * their vocabulary from `BACKUP_KINDS`.
  */
-export type BackupKind = 'repair' | 'migrate' | 'replace'
+export const BACKUP_KINDS = ['repair', 'migrate', 'import', 'replace', 'shared', 'restore'] as const
+
+export type BackupKind = (typeof BACKUP_KINDS)[number]
 
 /** What a file is, as far as a restore cares. */
 export interface BackupDigest {
@@ -348,6 +352,11 @@ function readEntry(raw: unknown): BackupFileEntry | undefined {
   }
 }
 
+/** Whether a value read out of a manifest is one of the kinds this build writes. */
+function isBackupKind(value: unknown): value is BackupKind {
+  return typeof value === 'string' && (BACKUP_KINDS as readonly string[]).includes(value)
+}
+
 /** Read one package's manifest; anything unreadable is refused, never rebuilt. */
 export function readBackup(root: string, dirInput: string): BackupReadResult {
   const dir = normalizeBackupDir(dirInput)
@@ -388,7 +397,9 @@ export function readBackup(root: string, dirInput: string): BackupReadResult {
     )
   }
   const kind = record['kind']
-  if (kind !== 'repair' && kind !== 'migrate' && kind !== 'replace') {
+  // A word this build does not know is refused, not coerced to a default: reading a
+  // foreign package as "some other batch" would make its report lie about what it is.
+  if (!isBackupKind(kind)) {
     return fail('BACKUP_MANIFEST_INVALID', `${manifestPath} has an unknown kind`, { root, path: manifestPath })
   }
   const strings = (value: unknown): string[] =>
