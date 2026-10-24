@@ -28,9 +28,12 @@ function workdir() {
   return mkdtempSync(join(tmpdir(), 'inkflow-private-'))
 }
 
-test('private state: the three subdirectories are the whole vocabulary', () => {
+test('private state: the four subdirectories are the whole vocabulary', () => {
   assert.equal(PRIVATE_STATE_DIR, '.inkflow')
-  assert.deepEqual([...PRIVATE_STATE_SUBDIRS], ['trash', 'backup', 'audit'])
+  // Four since X-18: `candidates/` joined trash/ backup/ audit/ for the extract
+  // pipeline's unreviewed work (ADR-0017 D3). A new name here widens the write
+  // whitelist, which is why the list is asserted exactly rather than spot-checked.
+  assert.deepEqual([...PRIVATE_STATE_SUBDIRS], ['trash', 'backup', 'audit', 'candidates'])
   assert.equal(PRIVATE_STATE_IGNORE_LINE, '.inkflow/')
   assert.equal(privateStateDirRelative('trash'), '.inkflow/trash')
   assert.equal(privateStateRelative('trash', 'chapters/vol-01/0001-a.md'), '.inkflow/trash/chapters/vol-01/0001-a.md')
