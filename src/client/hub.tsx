@@ -176,24 +176,18 @@ export function HubView() {
     setRevision((current) => current + 1)
   }, [])
 
-  // The shared library is a page of its own (#87), and it takes the book list with
-  // it (#40): copying a shared entry INTO a book needs a target, and the only names
-  // the Host accepts are the rows it just returned here (never a hand-typed path).
-  if (view === 'shared') {
-    return (
-      <SharedLibraryView
-        onClose={() => setView('books')}
-        books={state.status === 'ready' ? state.books : []}
-      />
-    )
-  }
-  if (view === 'settings') return <SettingsView onClose={() => setView('books')} />
-
   /**
    * The wizard's answer, merged into the list in place (issue #86).
    *
    * No refetch: `apply` already returned everything a row needs, and asking the
    * Host to judge every book again would be exactly the cost ADR-0010 D8 caps.
+   *
+   * WHY THIS HOOK STILL RUNS WHEN ANOTHER PAGE IS SHOWING (#174): the page switch below
+   * returns early, and a hook declared after an early return is a hook that is *missing*
+   * on that render — React throws "Rendered fewer hooks than expected" and the whole
+   * panel goes white. So every hook of this component is declared before the first
+   * possible return, and the switch happens after them. `scripts/check-hooks-order.mjs`
+   * keeps it that way.
    */
   const applied = useCallback((row: HubAppliedRow) => {
     setState((current) => {
@@ -206,6 +200,19 @@ export function HubView() {
       }
     })
   }, [])
+
+  // The shared library is a page of its own (#87), and it takes the book list with
+  // it (#40): copying a shared entry INTO a book needs a target, and the only names
+  // the Host accepts are the rows it just returned here (never a hand-typed path).
+  if (view === 'shared') {
+    return (
+      <SharedLibraryView
+        onClose={() => setView('books')}
+        books={state.status === 'ready' ? state.books : []}
+      />
+    )
+  }
+  if (view === 'settings') return <SettingsView onClose={() => setView('books')} />
 
   return (
     <div style={sheetStyle}>

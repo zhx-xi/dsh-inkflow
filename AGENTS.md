@@ -95,6 +95,7 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 |---|---|---|
 | 1 | `cordis.patch.yml` 漏 `- insert:` | 新增行一律写在 `- insert:` 下（漏了整条静默丢弃） |
 | 2 | 改完 `lib/` 直接测 | HMR 不热替换已加载插件，必须重启 DSH；面板出现 stale build 警告条（或启动日志说磁盘有更新构建）时先重启——刷新面板不会生效 |
+| 2b | 客户端组件里把 `useXxx` 写在早退之后（`if (view === 'settings') return …`） | 切页时 hook 数量变化 → React 抛 "Rendered fewer hooks than expected" → **整页白屏**，界面不给原因。所有 hook 必须声明在第一个可能的 `return` 之前；`scripts/check-hooks-order.mjs`（`pnpm run check:guards` 的一环）用 AST 拦这一类 |
 | 3 | 面板指错书 / 有图标没页面 | 入口按职责分两处：**书库** = root 的 `sidebar.panellist`（图标）+ `main`（主体，按 `key` 注册，缺 key 点击即抛错），**创作工作台** = session 的 `conversation.view`（[ADR-0010](.agents/adrs/0010-book-hub-entry.md)）。root 插槽拿不到工作区，书库的书单只能来自工作区注册表，不能靠"上次打开的书"猜（[ADR-0008](.agents/adrs/0008-panel-data-channel.md) D1 对工作台仍成立） |
 | 4 | Windows 写 BOM | 读 `inkflow.json`/frontmatter 前剥 BOM |
 | 5 | 给索引写 `ALTER TABLE` | 索引是缓存：改 schema 版本号 → 删库重建 |
