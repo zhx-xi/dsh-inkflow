@@ -52,6 +52,11 @@ const BUILT_IN_TOOLS = [
   // they judge the book's *layout*, not one content directory.
   ['inkflow_project_repair', 'e9825bce'],
   ['inkflow_project_migrate', '2a0f5b4b'],
+  // #40: the shared library (list / copy / update). Built-ins, not domain tools:
+  // `dataDir/shared` belongs to no book, so no content directory owns them.
+  ['inkflow_shared_list', 'e4280396'],
+  ['inkflow_shared_copy', 'f2d81abe'],
+  ['inkflow_shared_update', '17ae972a'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

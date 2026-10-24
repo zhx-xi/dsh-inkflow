@@ -47,8 +47,15 @@ export const BACKUP_MANIFEST_FILE = 'manifest.json'
 /** Where the byte copies live inside one backup directory. */
 export const BACKUP_FILES_DIR = 'files'
 
-/** Which batch produced the package — the two keep separate report prefixes too. */
-export type BackupKind = 'repair' | 'migrate'
+/**
+ * Which batch produced the package — the two keep separate report prefixes too.
+ *
+ * `shared` is the shared-library copy/update batch (#40, ADR-0007 C2/C3): one
+ * package per copy or per per-entry update, so "undo that refresh" does not
+ * depend on git. The union is the single place this list lives — a new batch
+ * kind is added HERE, not in each writer.
+ */
+export type BackupKind = 'repair' | 'migrate' | 'shared'
 
 /** What a file is, as far as a restore cares. */
 export interface BackupDigest {
@@ -382,7 +389,7 @@ export function readBackup(root: string, dirInput: string): BackupReadResult {
     )
   }
   const kind = record['kind']
-  if (kind !== 'repair' && kind !== 'migrate') {
+  if (kind !== 'repair' && kind !== 'migrate' && kind !== 'shared') {
     return fail('BACKUP_MANIFEST_INVALID', `${manifestPath} has an unknown kind`, { root, path: manifestPath })
   }
   const strings = (value: unknown): string[] =>
