@@ -216,7 +216,9 @@
 - 一主体一文件、一文件多事实；跨章校验的输入是同一 `subject + attribute` 的多个 `since` 区段。
 - `subject` 是**引用字段**（指向被描述的主体 id），不是本文件的实体 id：本文件的实体 id 是路径（§4.1）。缺 `subject` 时按文件名回退，并在重建时以 `FRONTMATTER_ISSUE`（warning，不阻断）提示——否则这些事实会登记到一个没人选的 subject 名下。
 - 值里要含字面 `|` 时写 `\|`；未知键**保留不报错**（与 frontmatter 未知字段同策略），包括**空值**未知键（`备注:`）——它必须能被原样渲染回去，否则「解析→渲染→再解析」会丢掉作者写的字段。
-- 不可解析的行报 `FACT_LINE_MALFORMED` 并带行锚 `path#L<n>`，不阻断整文件。
+- **哪些 `- ` 列表项算事实行**：看第一个分段的键——是上面六个已知键之一就是事实行（解析失败则报 `FACT_LINE_MALFORMED`）；否则若任意分段含已知键，判「想写事实但写坏了」并报同一条 code；两者都不满足就是**散文，静默忽略**（零 issue）。账本同时是作者的笔记，把散文报成坏行会让体检报告淹没真正写坏的那一行（[ADR-0013](../adrs/0013-facts-ledger-line-format.md) 修订一节）。
+- 不可解析的**事实行**报 `FACT_LINE_MALFORMED` 并带行锚 `path#L<n>`，不阻断整文件。
+- **旧式单事实 frontmatter（只读兼容）**：ADR-0013 之前的字段表把一条事实放在 frontmatter（`subject` / `attribute` / `value` / `since` / `until` / `chapterId` / `source`）。这种文件按**一条**事实读入：`attribute` 与 `value` **同时存在**才产生事实；`subject` 缺省回退文件名；缺 `since` = 书首、缺 `source` = `manual`；行锚取 `attribute:` 所在行；`conflictsWith` 不读。**只读**——没有写入路径产出这种形状，`inkflow_facts_append` 仍只写正文行，老格式的事实不被搬运或改写；同一文件里两种形状并存时两条都进索引，并按同一 `attribute` 正常参与 I-23。**不再新增这种写法**（新建账本只写 `subject`）。
 - 为什么不用 frontmatter 块数组或 Markdown 表格：见 ADR-0013 的备选表（嵌套映射读回成一个字符串；表格与中文竖线冲突且 diff 不可读）。
 
 ### 3.6 资料卡片 `library/<slug>.md`
@@ -328,7 +330,7 @@
 | I-18 | 同一叙事槽位（book-wide `narrativeOrder`，跨章也同槽）不得声明两个不同世界时间 | 拒 | `TIMELINE_ORDER_CONFLICT` |
 | I-19 | 叙事槽位递增时世界时间不得倒退（＝倒叙/回忆，正常写法） | 报（不拒） | `TIMELINE_WORLD_TIME_REVERSED` |
 | I-20 | 实体 `id` 与文件路径可以不一致（改名时旧 id 被钉住，[ADR-0014](../adrs/0014-entity-id-pinning.md)）；唯一性仍按 `(kind, id)` 判。**报出条件**：`id ≠ path` **且** id 形如旧路径（含 `/` 且以 `.md` 结尾）；**章除外**（id 是 catalog 给的 uuid，永远不等于路径）；**手写短 id 不报**（`id: char-1` 是身份，不是改名留下的痕迹） | 放行；体检列为提示（判据＝上行「报出条件」，提示的呈现归 #33） | `ID_PATH_DIVERGED`（info，不阻断） |
-| I-21 | 伏笔状态机按 §3.2.1 的 4×4 矩阵：`planted → advanced → resolved`，任一未终态 → `overdue`；`overdue` 只可继续推进或回收（回退到 `planted` 拒）；`resolved` 是终态。文件的历史字段（`resolved` / `advancedAt`）与 `status` 矛盾同样算非法流转（§3.2.1 的两条网） | 拒 | `FORESHADOW_TRANSITION_INVALID` |
+| I-21 | 伏笔状态机按 §3.2.1 的 4×4 矩阵：`planted → advanced → resolved`，任一未终态 → `overdue`；`overdue` 只可继续推进或回收（回退到 `planted` 拒）；`resolved` 是终态。文件的历史字段（`resolved` / `advancedAt`）与 `status` 矛盾同样算非法流转（§3.2.1 的两条网）。**碰撞时答案唯一**：修复器按「`resolved: true` 或 `resolvedChapter` 非空 → `resolved`；否则 `advancedAt` 非空 → `advanced`；否则 → `planted`」改写 `status` **一行**（[ADR-0015](../adrs/0015-repair-and-migration.md) D2），于是本条对这类文件是**可自动修**的；证据自相矛盾（`resolved: false` 却有 `resolvedChapter`，或 `resolved: true` 缺 `resolvedChapter`）时**不推导**，仍留给作者 | 拒 | `FORESHADOW_TRANSITION_INVALID` |
 | I-22 | 账本每行必须可解析为一条事实：`attribute` + `value` 必填，段形如 `键: 值` 且以 `\|` 分隔，值内含字面 `\|` 时写 `\|`；未知键保留不报错 | 不阻断，报行锚 `path#L<n>`（1-based） | `FACT_LINE_MALFORMED` |
 | I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同（`since` 含、`until` 不含；缺省 `until` = 至今成立）。区间按**章序**（`chapters.seq`）比较，不按 id 字典序；章序解析不出的边界不参与判定。**空区间不算区间**：`until <= since`（含 `until == since` 的 `[c,c)` 与写反的 `until < since`）永不成立，既不进快照也不参与冲突配对——把它当跨段比对会诬告一条永不在生效的事实 | 拒 | `FACT_CONFLICT` |
 

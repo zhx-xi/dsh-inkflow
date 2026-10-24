@@ -111,6 +111,14 @@ export interface ChapterDetailValue {
    * the author's own editor is never overwritten silently.
    */
   fingerprint?: { size?: number; mtimeMs?: number; sha256?: string } | null
+  /**
+   * The file's own format (ADR-0016): the Host reads the raw bytes and reports
+   * them here, `body` stays LF. The editor sends both back on save — without
+   * them the Host can only normalise, which rewrites a CRLF chapter to LF and
+   * turns a one-character edit into a whole-chapter diff (#132).
+   */
+  eol?: 'lf' | 'crlf'
+  bom?: boolean
 }
 
 /**

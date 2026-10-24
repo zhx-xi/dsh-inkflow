@@ -118,7 +118,7 @@ function dirtyBook(root) {
   writeMarkdown(root, 'facts/char-qingyin.md', ['id: facts-qingyin', 'subject: char-qingyin', 'title: 清音的账'], [
     '- attribute: 修为 | value: 筑基后期 | since: ch-1 | until: ch-3',
     '- attribute: 修为 | value: 金丹 | since: ch-2',
-    '- 这一行不是一条事实',
+    '- attrbiute: 修为 | value: 练气',
     '',
   ].join('\n'))
 

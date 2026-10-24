@@ -54,6 +54,8 @@ import {
 } from './io.js'
 import type { IoFailure } from './io.js'
 import { trashFile, undoTrashFile } from './trash.js'
+import { detectTextStyle } from './text-style.js'
+import type { EolStyle, TextStyle } from './text-style.js'
 
 // ---------------------------------------------------------------------------
 // Contract types
@@ -161,6 +163,16 @@ export interface ChapterWriteInput {
   title?: string
   body?: string
   status?: string
+  /**
+   * The file's own line ending and BOM, as the read path reported them (ADR-0016).
+   *
+   * Omitted = "take it from the file": the tool path reads the bytes itself, and a
+   * client that never sees raw bytes (the panel) passes back what `GET
+   * /chapters/:id` told it. A new file is not written through this input at all,
+   * so the default for a fresh chapter stays LF/no-BOM.
+   */
+  eol?: EolStyle
+  bom?: boolean
   /** Baseline the caller last saw (issue #5): a mismatch is `FILE_CHANGED`, zero writes. */
   expected?: FileExpectation
 }
@@ -208,6 +220,8 @@ export interface ChapterWriteOk extends CommitInfo {
   chapter: ChapterView
   changed: string[]
   renamedFrom?: string
+  /** The style the file is written in (ADR-0016) — what the next save must keep. */
+  style: TextStyle
   /** The file as it is now — the baseline for the next CAS write. */
   fingerprint?: FileFingerprint
 }
@@ -1034,6 +1048,12 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
 
     const data = parseMarkdown(text).data
     const currentTitle = stringField(data, 'title') ?? ref.title
+    // The file's own format, detected from the bytes just read. A caller that
+    // cannot see raw bytes (the panel) declares it instead; the declaration wins
+    // because it describes exactly the bytes its CAS baseline was taken from, and
+    // the tool path simply has none (ADR-0016).
+    const fileStyle = detectTextStyle(text)
+    const style: TextStyle = { eol: input.eol ?? fileStyle.eol, bom: input.bom ?? fileStyle.bom }
     const entries: Record<string, string> = {}
     const changed: string[] = []
 
@@ -1068,6 +1088,7 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
           root,
           chapter: viewOf(ref.chapterId, ref.file, data, ref),
           changed: [],
+          style,
           catalogRebuilt: false,
           ...UNTOUCHED_INDEX,
         },
@@ -1104,7 +1125,11 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
     const catalogs = takeCatalogSnapshot(root)
     const drifted = driftedSinceRead(root, ref.file, baseline)
     if (drifted !== undefined) return drifted
-    const written = writeTextAtomic(root, target, next)
+    // `next` mixes both halves on purpose (`applyFields` keeps the raw
+    // frontmatter, `withBody` takes the caller's LF prose); the write door
+    // normalises and then re-serialises the whole document in `style`, so the
+    // file keeps its own format and one edited character stays one changed line.
+    const written = writeTextAtomic(root, target, next, { style })
     if (!written.ok) {
       return fromIo(written.error, { message: `the chapter file could not be written: ${written.error.message}` })
     }
@@ -1138,6 +1163,7 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
         chapter: viewOf(ref.chapterId, target, finalData, ref),
         changed,
         ...(target === ref.file ? {} : { renamedFrom: ref.file }),
+        style,
         catalogRebuilt: true,
         ...(fingerprint === undefined ? {} : { fingerprint }),
         ...UNTOUCHED_INDEX,

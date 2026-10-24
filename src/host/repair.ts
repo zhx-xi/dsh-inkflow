@@ -42,7 +42,7 @@ import type { RelationKind } from './domains/relation-write.js'
 import type { WorldRow } from './domains/world.js'
 import { compareFindings, findingCode, locatorKey } from './findings.js'
 import type { Finding, FindingGroup, FindingLocator, FindingSeverity } from './findings.js'
-import { parseMarkdown, patchFrontmatter, stringField } from './frontmatter.js'
+import { boolField, parseMarkdown, patchFrontmatter, stringArrayField, stringField } from './frontmatter.js'
 import { scanProject } from './indexer.js'
 import type { IndexCounts, ScanResult, ValidationIssue } from './indexer.js'
 import { removeProjectFile, writeTextAtomic } from './io.js'
@@ -150,6 +150,10 @@ function repairHint(code: string): string {
       return 'run the repair pass: the later duplicate file is removed (a copy stays in `.inkflow/backup/`)'
     case 'FRONTMATTER_ISSUE':
       return 'run the repair pass when a required key is missing; an unclosed block or an unparsable line needs a human'
+    case 'FORESHADOW_TRANSITION_INVALID':
+      return 'run the repair pass: `status` is derived from `resolved` / `resolvedChapter` / `advancedAt`; two contradictory evidence shapes are left to you'
+    case 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER':
+      return 'name the chapter that pays the setup off (`resolvedChapter`), or set the status back to `advanced` / `planted`'
     case 'DUPLICATE_ID':
     case 'CHARACTER_NAME_DUPLICATE':
       return 'two entries claim one identity: rename one of them (the repair pass never picks a winner)'
@@ -230,7 +234,12 @@ export function detectFindings(projectRoot: string): DetectResult {
 // Plan
 // ---------------------------------------------------------------------------
 
-export type RepairKind = 'patch-frontmatter' | 'reparent-outline' | 'remove-duplicate' | 'rebuild-catalog'
+export type RepairKind =
+  | 'patch-frontmatter'
+  | 'derive-foreshadow-status'
+  | 'reparent-outline'
+  | 'remove-duplicate'
+  | 'rebuild-catalog'
 
 /** One `key: value` line a patch writes. Rendered verbatim, so the preview cannot lie. */
 export interface RepairPatchEntry {
@@ -340,6 +349,64 @@ function catalogProjections(root: string): string[] {
   const paths = new Set<string>(['chapters/index.json'])
   for (const volume of read.catalog.volumes) paths.add(`chapters/${volume.dir}/index.json`)
   return [...paths].sort()
+}
+
+/**
+ * What a foreshadow's own evidence fields say its `status` must be (#136, data-model §3.2.1).
+ *
+ * `status` is the machine's truth, but a hand-written file can contradict it — `status: planted`
+ * next to `advancedAt: [outline-934]`, `resolved: true` under `status: advanced`. I-21 reports
+ * that, and before #136 the report was a dead end: the author had to hand-edit the file. There is
+ * exactly one reading of the evidence, so the repair pass may write it:
+ *
+ *     `resolved: true` or a `resolvedChapter` → `resolved`
+ *     otherwise `advancedAt` non-empty         → `advanced`
+ *     otherwise                                → `planted`
+ *
+ * Two shapes are deliberately **not** derived, because the fields contradict each other and every
+ * answer would be a guess (ADR-0015 D2):
+ *
+ *   * `resolved: false` **with** a `resolvedChapter` — the two fields disagree about one event, and
+ *     no status clears I-21 (writing `resolved` leaves rule ② unsatisfied, writing `planted` denies
+ *     the chapter);
+ *   * `resolved: true` **without** a `resolvedChapter` — `status: resolved` would clear I-21 and
+ *     immediately raise `FORESHADOW_RESOLVED_WITHOUT_CHAPTER`, i.e. trade one finding for another.
+ *
+ * `overdue` is never a target: it is a computed marker (data-model §3.2.2), not a progress state,
+ * so the derivation only ever writes one of the three states the matrix defines.
+ */
+type StatusDerivation = { ok: true; status: 'planted' | 'advanced' | 'resolved' } | { ok: false; reason: string }
+
+export function deriveForeshadowStatus(data: Record<string, unknown>): StatusDerivation {
+  const resolved = boolField(data, 'resolved')
+  const resolvedChapter = (stringField(data, 'resolvedChapter') ?? '').trim()
+  const advancedAt = stringArrayField(data, 'advancedAt')
+  if (resolved === false && resolvedChapter !== '') {
+    return {
+      ok: false,
+      reason: `\`resolved: false\` contradicts \`resolvedChapter: ${resolvedChapter}\`: the two evidence fields disagree, so the status is the author's call`,
+    }
+  }
+  if (resolved === true || resolvedChapter !== '') {
+    if (resolvedChapter === '') {
+      return {
+        ok: false,
+        reason:
+          '`resolved: true` without `resolvedChapter`: writing `status: resolved` would swap I-21 for ' +
+          'FORESHADOW_RESOLVED_WITHOUT_CHAPTER, so name the chapter that pays it off first',
+      }
+    }
+    return { ok: true, status: 'resolved' }
+  }
+  if (advancedAt.length > 0) return { ok: true, status: 'advanced' }
+  return { ok: true, status: 'planted' }
+}
+
+/** The status a foreshadow file declares today, with the reader's fallback (`resolved`-only files). */
+function declaredStatusOf(data: Record<string, unknown>): string {
+  const declared = (stringField(data, 'status') ?? '').trim()
+  if (declared !== '') return declared
+  return boolField(data, 'resolved') === true ? 'resolved' : 'planted'
 }
 
 /**
@@ -503,6 +570,42 @@ export function planRepair(projectRoot: string, options: PlanOptions = {}): Repa
         add('patch-frontmatter', path, `${additive.key}: ${additive.value}`, finding, [additive])
         break
       }
+      case 'FORESHADOW_TRANSITION_INVALID': {
+        if (path === undefined) {
+          skip(finding, 'the finding has no file to patch')
+          break
+        }
+        let text: string
+        try {
+          text = readFileSync(resolve(detection.root, path), 'utf8')
+        } catch {
+          skip(finding, 'the file is gone or unreadable, so there is no `status` line to rewrite')
+          break
+        }
+        const parsed = parseMarkdown(text)
+        if (!parsed.hasFrontmatter) {
+          skip(finding, 'the file has no frontmatter block, so there is no `status` line to rewrite')
+          break
+        }
+        const derived = deriveForeshadowStatus(parsed.data)
+        if (derived.ok === false) {
+          skip(finding, derived.reason)
+          break
+        }
+        const current = declaredStatusOf(parsed.data)
+        if (current === derived.status) {
+          skip(finding, 'the status already says what the evidence fields say')
+          break
+        }
+        add(
+          'derive-foreshadow-status',
+          path,
+          `status: ${current} → ${derived.status} (derived from resolved / resolvedChapter / advancedAt; no other line changes)`,
+          finding,
+          [{ key: 'status', value: derived.status }],
+        )
+        break
+      }
       default: {
         skip(
           finding,
@@ -555,6 +658,10 @@ export function planRepair(projectRoot: string, options: PlanOptions = {}): Repa
 function orderOf(kind: RepairKind): number {
   switch (kind) {
     case 'patch-frontmatter':
+      return 0
+    // Same shape as `patch-frontmatter` (one frontmatter line, nothing else moves), so it sorts
+    // with it rather than beside the pointer/structure actions.
+    case 'derive-foreshadow-status':
       return 0
     case 'reparent-outline':
       return 1
@@ -744,6 +851,7 @@ function runAction(root: string, handle: BackupHandle, action: RepairAction, pro
   try {
     switch (action.kind) {
       case 'patch-frontmatter':
+      case 'derive-foreshadow-status':
       case 'reparent-outline': {
         const target = resolve(root, action.path)
         if (!existsSync(target)) return failed('PATH_NOT_FOUND', `${action.path} does not exist`)

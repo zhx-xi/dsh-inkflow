@@ -117,7 +117,7 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
 
   // foreshadow — foreshadowing/ (data-model I-09, I-21)
   { code: 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER', group: 'foreshadow', fixable: true, meaning: 'resolved: true 缺 resolvedChapter' },
-  { code: 'FORESHADOW_TRANSITION_INVALID', group: 'foreshadow', fixable: false, meaning: '伏笔状态非法流转' },
+  { code: 'FORESHADOW_TRANSITION_INVALID', group: 'foreshadow', fixable: true, meaning: '伏笔状态非法流转（可由证据字段确定性推导）' },
   // The two **audit-only** codes (#33). They are not invariants: nothing is refused and
   // no rebuild reports them, because "late" is a fact about where the book stands today,
   // not about the file being wrong (data-model §3.2.2). They live in the catalogue anyway

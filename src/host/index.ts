@@ -569,11 +569,12 @@ export {
   DEFAULT_FACT_SOURCE,
   FACT_KEYS,
   FACT_SOURCES,
+  classifyFactLine,
   isFactLine,
   parseFactLine,
   renderFactLine,
 } from './domains/facts-line.js'
-export type { FactKnownKey, FactLine, FactSource, ParsedFactLine } from './domains/facts-line.js'
+export type { FactKnownKey, FactLine, FactLineVerdict, FactSource, ParsedFactLine } from './domains/facts-line.js'
 export {
   FACTS_TABLE,
   chapterIdsUsed,
