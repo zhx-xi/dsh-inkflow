@@ -563,3 +563,89 @@ test('an unusable data directory answers SHARED_UNAVAILABLE instead of an empty 
     assert.equal(typeof result.error.hint, 'string')
   }
 })
+
+// ---------------------------------------------------------------------------
+// 6. The root comes from the settings file (#150)
+// ---------------------------------------------------------------------------
+//
+// `settings.json` has carried `sharedRoot` since #42, and until #150 nothing read
+// it: the library was always `dataDir/shared`, so a configured directory silently
+// did nothing. These three cases pin the wiring (setting wins, a bad value falls
+// back with a warning, an unset field is silent) and, in each one, that answering
+// touches no book at all.
+
+/** `dataDir/settings.json`, written the way the settings page writes it. */
+function writeSettingsFile(dataDir, settings) {
+  mkdirSync(dataDir, { recursive: true })
+  const target = join(dataDir, 'settings.json')
+  writeFileSync(target, `${JSON.stringify({ schemaVersion: 1, ...settings }, null, 2)}\n`, 'utf8')
+  return target
+}
+
+/** A minimal book, so "the answer changed nothing in a book" has something to hash. */
+function bookOf() {
+  const root = mkdtempSync(join(tmpdir(), 'inkflow-shared-book-'))
+  mkdirSync(join(root, 'chapters'), { recursive: true })
+  writeFileSync(join(root, 'inkflow.json'), '{"schemaVersion":1,"title":"书"}\n', 'utf8')
+  writeFileSync(join(root, 'chapters', '0001-a.md'), '# 一\n', 'utf8')
+  return root
+}
+
+test('a configured sharedRoot is the directory the shared page reads', async () => {
+  const dataDir = dataDirOf()
+  const book = bookOf()
+  const configured = mkdtempSync(join(tmpdir(), 'inkflow-shared-alt-'))
+  const before = hashTree(book)
+
+  writeEntry(configured, 'world/门派/白鹤门.md', ['entryId: sh-aaaa1111'], '配置目录里的条目。')
+  // The default location holds a DIFFERENT entry, so "which root answered" is a
+  // real question and not two paths that would look alike.
+  writeEntry(join(dataDir, 'shared'), 'library/默认目录.md', ['entryId: sh-zzzz9999'], '默认目录里的条目。')
+  writeSettingsFile(dataDir, { sharedRoot: configured })
+
+  const harness = createHarness({ dataDir })
+  const response = await sharedCall(harness)
+
+  assert.equal(response.status, 200)
+  assert.equal(response.json.ok, true)
+  const value = response.json.value
+  assert.equal(value.created, true)
+  assert.deepEqual(value.entries.map((entry) => entry.path), ['world/门派/白鹤门.md'])
+  assert.equal(value.indexSource, 'scan')
+  assert.equal(value.sharedRootWarning, undefined, 'a usable setting is not a warning')
+  assert.equal(hashTree(book), before, 'reading a configured library writes nothing into a book')
+})
+
+test('a relative or escaping sharedRoot falls back to dataDir/shared with one warning', async () => {
+  for (const configured of ['libs', '..', '../outside', 'libs/../../outside']) {
+    const dataDir = dataDirOf()
+    const book = bookOf()
+    const before = hashTree(book)
+    writeEntry(join(dataDir, 'shared'), 'library/默认目录.md', ['entryId: sh-zzzz9999'], '默认目录里的条目。')
+    writeSettingsFile(dataDir, { sharedRoot: configured })
+
+    const harness = createHarness({ dataDir })
+    const response = await sharedCall(harness)
+
+    assert.equal(response.json.ok, true, `${configured} must not fail the request`)
+    const value = response.json.value
+    assert.deepEqual(value.entries.map((entry) => entry.path), ['library/默认目录.md'], `${configured} must not become the root`)
+    assert.equal(value.sharedRootWarning?.code, 'SHARED_ROOT_IGNORED', `${configured} is reported, not silently ignored`)
+    assert.match(String(value.sharedRootWarning?.message), /sharedRoot/)
+    assert.equal(hashTree(book), before, 'a rejected setting writes nothing into a book')
+  }
+})
+
+test('an unset sharedRoot reads dataDir/shared and reports no warning', async () => {
+  const dataDir = dataDirOf()
+  const book = bookOf()
+  const before = hashTree(book)
+  writeEntry(join(dataDir, 'shared'), 'library/默认目录.md', ['entryId: sh-zzzz9999'], '默认目录里的条目。')
+
+  const harness = createHarness({ dataDir })
+  const value = (await sharedCall(harness)).json.value
+
+  assert.deepEqual(value.entries.map((entry) => entry.path), ['library/默认目录.md'])
+  assert.equal('sharedRootWarning' in value, false, 'nothing is wrong, so there is nothing to report')
+  assert.equal(hashTree(book), before)
+})

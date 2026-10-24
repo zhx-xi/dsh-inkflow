@@ -71,7 +71,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { HostContext } from './context.js'
-import { sharedDir } from './config.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
 import { buildHubShared } from './hub-shared.js'
 import {
@@ -92,6 +91,7 @@ import {
   writeHubSettings,
 } from './hub-settings.js'
 import { hubApply, hubPlan } from './hub-wizard.js'
+import { sharedRootOf } from './settings.js'
 import {
   CANDIDATES_ACCEPT_BODY_FIELDS,
   CANDIDATES_PURGE_BODY_FIELDS,
@@ -746,9 +746,14 @@ const HUB_ROUTES: readonly HubRoute[] = [
     pattern: /^\/hub\/shared$/,
     methods: ['GET'],
     handle: ({ dataDir, query }) => {
-      const result = buildHubShared(sharedDir(dataDir), {
+      // The root comes from the settings file (#150): `dataDir/shared` unless the
+      // author configured `sharedRoot`. A value the plugin refuses is reported in
+      // the answer (`sharedRootWarning`) instead of being silently re-rooted.
+      const shared = sharedRootOf(dataDir)
+      const result = buildHubShared(shared.root, {
         kind: query.get('kind') ?? undefined,
         q: query.get('q') ?? undefined,
+        ...(shared.warning === undefined ? {} : { rootWarning: shared.warning }),
       })
       if (result.ok) return { status: 200, body: ok(result.value) }
       return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }

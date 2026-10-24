@@ -799,6 +799,23 @@ test('a filtered-to-nothing answer is not an empty library', () => {
   assert.match(sharedSummary(missing), /共 0 条/)
 })
 
+test('the shared page says so when the configured sharedRoot is not in force (#150)', () => {
+  const { readSharedLibrary } = shared
+  const ignored = 'sharedRoot "libs" is not an absolute path, so it is ignored and the shared library stays at dataDir/shared'
+  const warned = readSharedLibrary(sharedAnswer({ sharedRootWarning: { code: 'SHARED_ROOT_IGNORED', message: ignored } }))
+  assert.equal(warned.status, 'ready')
+  assert.match(String(warned.rootWarning), /未生效/, 'the page names the problem instead of showing another library')
+  assert.match(String(warned.rootWarning), /not an absolute path/, 'and quotes the reason the Host gave')
+  assert.equal(
+    readSharedLibrary(sharedAnswer()).rootWarning,
+    null,
+    'a usable setting says nothing at all — the healthy case is silence',
+  )
+  // A half-understood warning still shows: the message is what the author needs.
+  const partial = readSharedLibrary(sharedAnswer({ sharedRootWarning: { code: 'SHARED_ROOT_IGNORED' } }))
+  assert.match(String(partial.rootWarning), /未生效/)
+})
+
 test('the shared page renders names, paths and tags without inventing any', () => {
   const { entryName, describeTags } = shared
   assert.equal(entryName('world/门派/白鹤门.md'), '白鹤门')

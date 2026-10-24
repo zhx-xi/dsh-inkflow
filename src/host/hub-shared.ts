@@ -1,13 +1,20 @@
 /**
- * The shared library's Host half: a **read-only** projection of
- * `dataDir/shared` (ADR-0010 D5, issue #87; the directory layout is ADR-0007 C1).
+ * The shared library's Host half: a **read-only** projection of the plugin-level
+ * shared directory (ADR-0010 D5, issue #87; the directory layout is ADR-0007 C1).
  *
  * WHY IT LIVES BESIDE `hub.ts` INSTEAD OF INSIDE IT: the book hub projects the
  * workspace registry (books, judged per directory). The shared library is the one
  * thing the hub shows that belongs to *no* book — it is a plugin-level directory,
  * so nothing here can be anchored to a session, a workspace or a request field.
- * The root is `config.ts`'s data dir + `shared/` and nothing else (ADR-0010 D5:
- * "不接受任何路径参数"), which is also why the route takes no path parameter.
+ * The root is `settings.ts`'s `sharedRootOf(...)` and nothing else: `dataDir/shared`
+ * unless the author configured `sharedRoot` (ADR-0018 D1), and never a request
+ * parameter (ADR-0010 D5: "不接受任何路径参数") — which is also why the route takes
+ * no path parameter.
+ *
+ * WHICH ROOT IS IN FORCE IS NOT THIS MODULE'S DECISION: it is handed a root and
+ * reports the warning that came with it. Resolution lives in `settings.ts` so this
+ * file cannot disagree with the copies list or `inkflow_shared_list` about where the
+ * library is (the #42 "I set it and nothing happened" defect #150 closes).
  *
  * TWO DATA SOURCES, ONE MEANING (ADR-0010 D5, ADR-0007 C1):
  *
@@ -44,6 +51,7 @@ import { isAbsolute, join } from 'node:path'
 import { SHARED_INDEX_FILE, SHARED_KINDS } from './conventions.js'
 import type { SharedKind } from './conventions.js'
 import { isWithin, realpathLoose } from './project.js'
+import type { SharedRootWarning } from './settings.js'
 
 /** Files considered in one answer; beyond this the answer is `truncated`. */
 export const SHARED_MAX_ENTRIES = 250
@@ -96,6 +104,15 @@ export type HubSharedValue = {
   total: number
   /** True when the entry cap or the time budget cut the answer short. */
   truncated: boolean
+  /**
+   * Why a configured `sharedRoot` is not the root this answer came from (#150).
+   *
+   * Absent in the normal case. Present when `settings.json` named a directory the
+   * plugin refused (not absolute, or climbing with `..`) and answered from
+   * `dataDir/shared` instead: the page then says the setting is not in effect
+   * instead of quietly showing a different library than the author configured.
+   */
+  sharedRootWarning?: SharedRootWarning
 }
 
 export type HubSharedError = { code: 'SHARED_UNAVAILABLE'; message: string; hint: string }
@@ -113,6 +130,14 @@ export interface HubSharedOptions {
   maxHashBytes?: number
   /** Clock seam: the budget tests advance it instead of sleeping. */
   now?: () => number
+  /**
+   * The refusal `settings.ts` reported about `sharedRoot`, echoed into the answer.
+   *
+   * Passed down rather than re-derived: this module is handed a root and has no
+   * access to the settings file, so "the setting was ignored" can only come from
+   * whoever resolved it.
+   */
+  rootWarning?: SharedRootWarning
 }
 
 const UNAVAILABLE: HubSharedError = {
@@ -148,9 +173,10 @@ interface EntryMeta {
 /**
  * Project the shared library.
  *
- * `sharedRoot` is `config.ts`'s `sharedDir(dataDir)` — the ONLY source of that
- * path. Never throws: an unusable root answers `SHARED_UNAVAILABLE` (HTTP 200 +
- * `ok:false`: "cannot answer", not a transport failure).
+ * `sharedRoot` is what `settings.ts`'s `sharedRootOf(dataDir)` answered — the ONLY
+ * source of that path (it is the setting, or `dataDir/shared`). Never throws: an
+ * unusable root answers `SHARED_UNAVAILABLE` (HTTP 200 + `ok:false`: "cannot
+ * answer", not a transport failure).
  */
 export function buildHubShared(sharedRoot: string | undefined, options: HubSharedOptions = {}): HubSharedResult {
   const root = typeof sharedRoot === 'string' ? sharedRoot.trim() : ''
@@ -169,7 +195,7 @@ export function buildHubShared(sharedRoot: string | undefined, options: HubShare
   // Canonical root: a symlinked data dir must not make "inside shared/" mean
   // something else than it does for `isWithin` below.
   const realRoot = realpathLoose(root)
-  if (!isDirectory(realRoot)) return { ok: true, value: emptyValue(false) }
+  if (!isDirectory(realRoot)) return { ok: true, value: withRootWarning(emptyValue(false), options.rootWarning) }
 
   const walked = walkKinds(realRoot, limits)
   const fromManifest = walked.truncated ? undefined : readManifest(realRoot, walked.files)
@@ -507,7 +533,7 @@ function present(
     (a, b) => SHARED_KINDS.indexOf(a.kind) - SHARED_KINDS.indexOf(b.kind) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
   )
 
-  return {
+  const value: HubSharedValue = {
     created: true,
     indexSource,
     kinds: SHARED_KINDS.filter((kind) => (countsByKind[kind] ?? 0) > 0),
@@ -516,6 +542,18 @@ function present(
     total: filtered.length,
     truncated,
   }
+  return withRootWarning(value, options.rootWarning)
+}
+
+/**
+ * Attach the settings refusal when there was one.
+ *
+ * Absent, not `undefined`: a JSON round trip drops an `undefined` property anyway,
+ * so leaving the key out here is what the panel would see either way — and "the key
+ * is absent" is the fact the tests assert for the healthy case.
+ */
+function withRootWarning(value: HubSharedValue, warning: SharedRootWarning | undefined): HubSharedValue {
+  return warning === undefined ? value : { ...value, sharedRootWarning: warning }
 }
 
 function emptyValue(created: boolean): HubSharedValue {

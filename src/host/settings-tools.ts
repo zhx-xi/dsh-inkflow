@@ -112,9 +112,25 @@ function settingsPatch(args: Json): Record<string, unknown> {
   return patch
 }
 
-function describeSettings(settings: InkflowSettings): string[] {
-  return [
-    `sharedRoot: ${settings.sharedRoot ?? '（未设置，用 dataDir/shared）'}`,
+/**
+ * The settings as lines, with the shared library's EFFECTIVE root when the envelope
+ * carried one (#150).
+ *
+ * The stored value and the value in force are two different facts, and the gap
+ * between them is the defect this closes: a `sharedRoot` the plugin refuses looks
+ * perfectly fine in the file. So the line reads "<stored> → <in force>" and an
+ * ignored value says why.
+ */
+function describeSettings(settings: InkflowSettings, sharedRoot?: unknown): string[] {
+  const root = asRecord(sharedRoot)
+  const path = typeof root?.['path'] === 'string' ? root['path'] : undefined
+  const ignored = asRecord(root?.['warn'])
+  const lines = [
+    `sharedRoot: ${settings.sharedRoot ?? '（未设置）'}${
+      path === undefined
+        ? ''
+        : ` → 生效 ${path}（${root?.['source'] === 'setting' ? '设置值' : '缺省 dataDir/shared'}）`
+    }`,
     `semanticSearch: ${String(settings.semanticSearch)}`,
     // The key itself is never printed: "已设置" is the whole answer (ADR-0020 E6).
     `semanticEndpoint: ${settings.semanticEndpoint ?? '（未设置）'}`,
@@ -124,6 +140,8 @@ function describeSettings(settings: InkflowSettings): string[] {
     `excludeDirs: ${settings.excludeDirs.length === 0 ? '（空）' : settings.excludeDirs.join(', ')}`,
     `backupKeep: ${String(settings.backupKeep)}`,
   ]
+  if (ignored !== undefined) lines.push(`注意：sharedRoot 未生效 — ${String(ignored['message'] ?? '')}`)
+  return lines
 }
 
 function backupLines(packages: readonly BackupPackage[], limit = 20): string[] {
@@ -153,7 +171,7 @@ export function settingsTools(deps: SettingsToolDeps): ToolDefinition[] {
         const settings = asRecord(v['settings'])
         const warn = v['warn'] === null || v['warn'] === undefined ? undefined : asRecord(v['warn'])
         const lines = [`设置（来源：${String(v['source'] ?? 'default')}，文件 ${String(v['dataDir'] ?? '')}/settings.json）`]
-        lines.push(...describeSettings(settings as unknown as InkflowSettings))
+        lines.push(...describeSettings(settings as unknown as InkflowSettings, v['sharedRoot']))
         const limits = asRecord(v['limits'])
         const autosave = asRecord(limits['autosaveIntervalMs'])
         const keep = asRecord(limits['backupKeep'])
@@ -180,7 +198,8 @@ export function settingsTools(deps: SettingsToolDeps): ToolDefinition[] {
       properties: {
         sharedRoot: {
           type: 'string',
-          description: 'Shared library root (ADR-0007): absolute, or relative to the plugin data directory. Omit to keep, null to reset to dataDir/shared.',
+          description:
+            'Shared library root (ADR-0007): an ABSOLUTE path. A value that is not absolute, or that climbs with "..", is ignored with a warning and dataDir/shared stays in effect (the stored value is kept either way). Omit to keep, null to reset to dataDir/shared.',
         },
         semanticSearch: { type: 'boolean', description: 'Allow the semantic (OVK) retrieval backend when one is available; it never creates one.' },
         semanticEndpoint: {
@@ -223,7 +242,7 @@ export function settingsTools(deps: SettingsToolDeps): ToolDefinition[] {
         const settings = asRecord(v['settings']) as unknown as InkflowSettings
         const changed = Array.isArray(v['changed']) ? (v['changed'] as unknown[]).map(String) : []
         const lines = [changed.length === 0 ? '设置已保存（没有字段变化）。' : `设置已保存，改动字段：${changed.join(', ')}`]
-        lines.push(...describeSettings(settings))
+        lines.push(...describeSettings(settings, v['sharedRoot']))
         const warn = v['warn'] === null || v['warn'] === undefined ? undefined : asRecord(v['warn'])
         if (warn !== undefined) lines.push(`告警：${String(warn['code'] ?? '')} — ${String(warn['message'] ?? '')}`)
         return text(lines)

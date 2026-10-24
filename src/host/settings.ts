@@ -53,8 +53,14 @@ export const SETTINGS_FILE = 'settings.json'
  */
 export interface InkflowSettings {
   /**
-   * Where the shared library lives (ADR-0007 C1). Absolute, or relative to
-   * `dataDir`. Absent = `dataDir/shared`, which is what `config.ts` already says.
+   * Where the shared library lives (ADR-0007 C1): an ABSOLUTE path. Absent =
+   * `dataDir/shared`, which is what `config.ts` already says. A value that is not
+   * absolute, or that climbs with `..`, is ignored with a warning rather than
+   * re-rooted — see `sharedRootOf`.
+   *
+   * Stored as the author typed it (the whitelist keeps the string): the store does
+   * not decide, `sharedRootOf` does, so "what is in the file" and "what is in
+   * force" stay two different questions.
    */
   sharedRoot?: string
   /**
@@ -367,15 +373,82 @@ export function settingsOf(dataDir: string): InkflowSettings {
 }
 
 /**
- * The shared library root this plugin should use: the setting when present, else
- * `dataDir/shared` (ADR-0007 C1). Relative values resolve against `dataDir`, which
- * keeps `~`-free, machine-independent values possible in a settings file a user
- * copies between machines.
+ * Why a configured `sharedRoot` is NOT the root in force.
+ *
+ * A warning rather than a refusal: D2 says a value the plugin cannot honour falls
+ * back to the default and reports itself, because a settings file must never be
+ * able to stop the plugin (or a book) from opening.
  */
-export function sharedRootOf(dataDir: string, settings: InkflowSettings = settingsOf(dataDir)): string {
+export interface SharedRootWarning {
+  code: 'SHARED_ROOT_IGNORED'
+  message: string
+}
+
+/** The directory the shared library is read from, and how that was decided. */
+export interface SharedRootResolution {
+  /** Always usable, always absolute. */
+  root: string
+  /** `'setting'` = the author's `sharedRoot`; `'default'` = `dataDir/shared`. */
+  source: 'default' | 'setting'
+  /** Present only when a configured value was rejected (and `source` is `'default'`). */
+  warning?: SharedRootWarning
+}
+
+/** `C:\…`, `C:/…`, `/…` or `\…`: lexical, so a Windows value means the same on CI. */
+const ABSOLUTE_SHARED_ROOT = /^([a-zA-Z]:[\\/]|[\\/])/u
+
+/**
+ * Why a configured `sharedRoot` cannot be honoured, or `undefined` when it can.
+ *
+ * TWO REFUSALS, both for the same reason: this value names a directory whose files
+ * the plugin reads and lists, so a value that only LOOKS like a path would make the
+ * panel show something other than the library the author configured.
+ *
+ *   * NOT ABSOLUTE — `settings.json` is a machine-level file, so the only anchor a
+ *     relative value could have is `dataDir`, and re-rooting it silently is exactly
+ *     how "I set it and nothing happened" happens (`libs` would mean
+ *     `$DSH_HOME/inkflow/libs`, which is not what anyone typing into a field called
+ *     *path* expects). This module used to resolve it there; #150 reversed that
+ *     because the surprise cost more than the portability it bought.
+ *   * CLIMBS WITH `..` — an absolute path carrying a `..` segment does not name the
+ *     directory the author read out of the picker, and normalising it here would
+ *     make the field mean something it does not say.
+ *
+ * Both fall back to `dataDir/shared` WITH a warning (ADR-0018 D2), so the failure is
+ * visible in the answer that needed the root instead of being a guess.
+ */
+function sharedRootProblem(configured: string): string | undefined {
+  if (!ABSOLUTE_SHARED_ROOT.test(configured)) return 'not an absolute path'
+  if (configured.split(/[\\/]/u).includes('..')) return 'a path that climbs with ".."'
+  return undefined
+}
+
+/**
+ * The shared library root this plugin should use: the setting when it is usable,
+ * else `dataDir/shared` (ADR-0007 C1, ADR-0018 D1).
+ *
+ * THE ONE ANSWER EVERY READER TAKES: the shared page (`hub-shared.ts`), the copies
+ * list, `inkflow_shared_list` and the copy path all resolve their root here, so a
+ * configured directory cannot be honoured by one surface and ignored by another
+ * (the state #42 left behind: the field existed, no reader looked at it, and the
+ * setting silently did nothing).
+ */
+export function sharedRootOf(dataDir: string, settings: InkflowSettings = settingsOf(dataDir)): SharedRootResolution {
+  const fallback = join(dataDir, 'shared')
   const configured = settings.sharedRoot
-  if (configured === undefined) return join(dataDir, 'shared')
-  return /^([a-zA-Z]:[\\/]|[\\/])/.test(configured) ? configured : join(dataDir, configured)
+  if (configured === undefined) return { root: fallback, source: 'default' }
+  const problem = sharedRootProblem(configured)
+  if (problem !== undefined) {
+    return {
+      root: fallback,
+      source: 'default',
+      warning: {
+        code: 'SHARED_ROOT_IGNORED',
+        message: `sharedRoot ${JSON.stringify(configured)} is ${problem}, so it is ignored and the shared library stays at dataDir/shared`,
+      },
+    }
+  }
+  return { root: configured, source: 'setting' }
 }
 
 /** Which fields differ between two settings objects (whitelist order). */
