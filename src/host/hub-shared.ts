@@ -143,7 +143,7 @@ export interface HubSharedOptions {
 const UNAVAILABLE: HubSharedError = {
   code: 'SHARED_UNAVAILABLE',
   message: 'the plugin data directory is not resolvable, so the shared library cannot be named',
-  hint: 'the shared library lives under the plugin data directory (dataDir/shared); check the InkFlow plugin configuration',
+  hint: 'the shared library lives at the "shared library path" setting when it is set (an absolute path), otherwise under the plugin data directory (dataDir/shared)',
 }
 
 /** One walked file, before any file content is touched. */
