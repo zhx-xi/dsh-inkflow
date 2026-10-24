@@ -1498,7 +1498,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
       'counts of every finding plus the first `limit` of them; pass `export: true` with `confirm: true` to also write ' +
       'the full Markdown report into `.inkflow/audit/`. Two runs on an unchanged book produce the same report, so the ' +
       'file is diffable. Use it after a bulk import or a big edit; for one specific problem prefer the domain tool ' +
-      'that owns it (e.g. inkflow_foreshadow_list for a board, inkflow_fact_snapshot for a timeline-of-facts).',
+      'that owns it (e.g. inkflow_foreshadow_list for a board, inkflow_facts_snapshot for a timeline-of-facts).',
     parameters: {
       type: 'object',
       properties: {

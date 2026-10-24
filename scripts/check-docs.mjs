@@ -59,6 +59,53 @@ for (const file of files) {
   }
 }
 
+/**
+ * The user guide is the only document a first-time reader walks top to bottom, so
+ * its numbering is a navigational contract: `### 5.14` twice means one of the two
+ * sections is unreachable by number, and an in-page anchor `(#515-…)` silently
+ * points at the wrong one (#close-out: the semantic section shipped as a second 5.14).
+ * Every `## N.` block's `### N.M` children must therefore be 1, 2, 3 … in order.
+ */
+function checkGuideNumbering() {
+  const guide = join(ROOT, 'docs', 'user-guide.md')
+  const rel = 'docs/user-guide.md'
+  let text
+  try {
+    text = readFileSync(guide, 'utf8')
+  } catch {
+    return
+  }
+  let parent
+  let expected = 1
+  let line = 0
+  for (const row of text.split('\n')) {
+    line += 1
+    const top = /^##\s+(\d+)\.\s/u.exec(row)
+    if (top !== null) {
+      parent = Number(top[1])
+      expected = 1
+      continue
+    }
+    const sub = /^###\s+(\d+)\.(\d+)\s/u.exec(row)
+    if (sub === null) continue
+    const major = Number(sub[1])
+    const minor = Number(sub[2])
+    if (parent !== undefined && major !== parent) {
+      failures.push(`${rel}:${line}: "### ${major}.${minor}" sits under a "## ${parent}." block`)
+      continue
+    }
+    if (minor !== expected) {
+      failures.push(`${rel}:${line}: "### ${major}.${minor}" should be "### ${major}.${expected}" (numbering must run 1, 2, 3 … with no gap or repeat)`)
+      // Keep walking from what the file says, so one duplicate does not cascade into
+      // a report of every later heading.
+      expected = minor
+    }
+    expected += 1
+  }
+}
+
+checkGuideNumbering()
+
 if (failures.length > 0) {
   for (const failure of failures) console.error(`✗ ${failure}`)
   console.error(`\ndocs gate failed: ${failures.length}`)
