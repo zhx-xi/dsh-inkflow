@@ -533,6 +533,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `foreshadow-model.ts` — 伏笔看板：三个状态（`open`/`late`/按关联实体）各一组文案（`statusLabel`）、`readForeshadowBoard` 的折叠——`late` 只显示 Host 的判定，**不**从 `dueBy` 与章号自行推算
 - `trash-model.ts` — 回收站：`readTrashValue`、`describeEntry`（路径/大小/删除时间/原因）、`restoreBlockedReason`、`purgePrompt`/`purgeStage`（清空的两段确认）、`describeTrashError`
 - `audit-model.ts` — 体检页：分组/严重级/code 文案、`readAuditValue` 与 `auditHeadline`/`auditGroupLine`、`locateLabel` 与 `jumpTargetOf`（能不能跳、跳到哪）、`exportLabel`/`exportNotice`
+- `extract-model.ts` — 候选页：kind/status 筛选、字段摘要、证据文案与跳转目标、置信度与状态文案、逐条两段式采纳（未确认 → 确认）与批量只对未审行生效、半成功批次的两种结果
 - `impact-model.ts` — 改设定的影响清单与改名计划：`buildImpactDigest`（五处影响面折叠）、`impactQuery`、`renamePayload`、`describeImpactError`/`describeRenameError`
 - `search-model.ts` — 检索框：请求路径与「全部类型」开关换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案、点击去向、摘要与降级文案
 - `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
@@ -552,6 +553,33 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - **排序**：`compareFindings`（X-14）＋ `detail` 作最后决胜键 → 同一份未改动的书两次导出正文逐字相同（文件名带时间戳，正文不带）。
 - **导出落点**：`<book>/.inkflow/audit/audit-<YYYYMMDD-HHmmss>.md`（[ADR-0012](../adrs/0012-plugin-private-state-dir.md) #6：派生物、可删、不进 git）；写入经 `writeTextAtomic` → `resolveWriteTarget` 白名单，首次写入时 `ensurePrivateStateIgnored()` 追加 `.gitignore` 行。工具侧 `inkflow_project_audit` 的 `export: true` 与通道侧 `POST /audit/export` 都要求 `confirm: true`。
 - **通道**：`GET /audit`（读）与 `POST /audit/export`（写）；面板页 = `PANEL_TABS` 的 `audit` + `pageRenderers.audit`（X-12）。
+
+### 6.3 写工具 → 域模块校验
+
+X-4 的写入侧是「**域模块的 `parseFile` → `applyCandidate` → `validate({candidate})` → `io.ts` 写锁内原子写**」：同一份文档在落盘前先被**重建期用的同一个解析器**读一遍、被**同一套不变量**判一遍，因此不存在「写进去合法、下次重建报错」的中间态。
+
+按「谁在判」分成三档：**全链**（判定的实现与调用都来自 `DomainModule` 对象）、**同实现直调**（与全链同一份实现，但由域自己的工具直接调，因为 `world.ts` 之类会反向 import 它，走 module 对象会形成运行期环）、**链外**（不新增/不改实体，或由另一套结构契约管）。
+
+| 写工具 | 判定 | 说明 |
+|---|---|---|
+| `inkflow_character_upsert` | 全链 | `characterDomain.parseFile()` + `.validate({candidate})`，`planCharacterUpsert()` 只是预检（I-03 的码由它先给，落盘前的判定仍是域模块） |
+| `inkflow_relation_upsert` | 全链 | 同上；边的两端与自环由 `validate()` 判 |
+| `inkflow_world_upsert` | 全链 | 同上；见下方说明 |
+| `inkflow_extract_accept` | 全链 | 候选变实体的唯一路径：用该域渲染器出文档 → `parseFile` → `applyCandidate` → `validate` |
+| `inkflow_outline_upsert` / `_move` | 同实现直调 | `parseOutlineDocument` + `validateOutlineScan` **就是** `outlineDomain.parseFile()` / `validate()` 委托的那两个函数；`outline.ts` 反向 import 本工具文件，所以只能直调 |
+| `inkflow_timeline_upsert` | 同实现直调 | `timelineFileParse` / `timelineValidate` 与 `timelineDomain.parseFile()` / `validate()` 是同一份实现（`timeline-plan.ts`） |
+| `inkflow_foreshadow_upsert` | 同实现直调 | 解析器只有一份（`parseForeshadowFile`），工具侧只补 `DomainFileParse` 的形状 |
+| `inkflow_facts_append` | 同实现直调 | `factsFileParse` + `factsConflicts`（「一个判定、两张网」） |
+| `inkflow_chapter_create` / `_write` / `_move` / `_delete`、`inkflow_volume_create` / `_rename` | 链外 | 卷章结构由 `chapters.ts` + `catalog.ts` 管（写后 `rebuildCatalog`，漂移由 `validateCatalog` 报）；`chapterDomain.parseFile()` 目前只在重建期用。把 `seq`/`volume`/`status` 的判定搬进 `validate({candidate})` 是独立改动，未做 |
+| `inkflow_library_import` | 链外 | 逐章走 `createChapter` / `writeChapter`（同上），另写 `library/` 原件副本；导入的合法性由分章计划判（`import.ts` / `import-write.ts`） |
+| `inkflow_search_replace` | 链外 | 只替换章正文文本（保留原行尾/BOM），不新建实体、不产生 frontmatter |
+| `inkflow_shared_copy` / `_update` | 链外 | 快照复制/逐条刷新：字节来自共享库，冲突零写入；副本不是「用户刚输入的字段」，过本书的域校验等于让别的书的条目按本书规则被拒 |
+| `inkflow_project_init` / `_repair` / `_migrate` / `_backup_restore` | 链外（结构性写） | 只补缺失项 / 重塑既有文件 / 用备份包逐字节还原（逐文件 CAS）；都不生成新实体 |
+| `inkflow_extract_propose` / `_reject` / `_purge` | 链外（队列） | 只写 `.inkflow/candidates/`；进内容目录只有采纳那一步（在链上） |
+| `inkflow_index_rebuild` | 链外（派生缓存） | 重建 `index/`；索引是缓存，不是真相 |
+| `inkflow_project_audit`（`export`）/ `_settings_update` / `_diagnostics_export` / `_semantic_rebuild` / `_semantic_purge` | 链外（不写内容目录） | 分别写 `.inkflow/audit/`、`$DSH_HOME/inkflow/`、OVK 与 `dataDir/semantic/` |
+
+**world 的具体形状**（因为它最能说明「预检 ≠ 判定」）：`planWorldUpsert()` 与 `worldDomain.validate()` 共用 `worldIssues()` 这一份树规则（I-08：至多一个根、有 parent 必带 category、parent 必须能解析），所以域链对 world 的**净增量**不是新规则，而是两件事——① `parseFile()`：渲染出来的文档能不能被**重建期的同一个解析器**读回（`planWorldUpsert()` 只判树，判不了文档）；② 视图来自 `scanProject()`（文件）而不是派生索引（缓存）。拒绝码一律回域模块给出的那个 code，`planWorldUpsert()` 的错误码只作为预检（让模型在渲染前就拿到能改的理由）。
 
 ## 7. 数据流
 
