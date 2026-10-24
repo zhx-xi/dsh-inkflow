@@ -18,6 +18,10 @@
  *     the rendered block, not on the builder alone.
  *   - **the write gate**: I-23 says "拒" (X-4's double insurance). The refusal is asserted
  *     with a whole-tree hash, so "refused" means zero bytes and zero timestamps changed.
+ *   - **old ledgers (#135)**: the verification copy's real files, reduced to the shapes that
+ *     decided the parse — a single fact in the frontmatter (the pre-ADR-0013 field table) and
+ *     prose bullets. A ledger the author wrote by hand is prose plus notes; it must produce
+ *     facts, not warnings.
  *
  * Every suite runs against the BUILT artifacts (`lib/index.js`), like every other test here.
  */
@@ -33,6 +37,7 @@ import {
   EXTRA_SEGMENTS,
   buildIndex,
   buildWritingContext,
+  classifyFactLine,
   domainTools,
   factsConflicts,
   factsSnapshot,
@@ -185,6 +190,11 @@ test('facts: a line that is not a fact is refused without echoing the author’s
 
   assert.equal(parseFactLine('普通段落：attribute: 境界 | value: 金丹').ok, false)
   assert.equal(parseFactLine('-   ').ok, false)
+
+  // #135: "this list item is not a fact" is **not** a report to make. Only the file-level
+  // parser can tell prose from a fact line written wrong, and it asks this rule first (see
+  // the §6 tests); a bare non-fact line is prose, so no finding is produced for it.
+  assert.equal(classifyFactLine('- 这一行被作者写成了散文'), 'prose')
 })
 
 test('facts: one ledger file yields rows with 1-based file line anchors, and a bad line blocks nothing', () => {
@@ -196,7 +206,8 @@ test('facts: one ledger file yields rows with 1-based file line anchors, and a b
     '',
     '- attribute: 境界 | value: 筑基后期 | since: ch-0007 | chapterId: ch-0009 | source: text',
     '- attribute: 境界 | value: 金丹初期 | since: ch-0042 | chapterId: ch-0045 | source: text',
-    '- 作者随手写的一行',
+    // A fact line written wrong: a known key appears, but not as the first segment (#135).
+    '- attrbiute: 境界 | value: 金丹',
     '- attribute: 持有物 | value: 青锋剑 | since: ch-0012 | until: ch-0061 | source: manual',
     '',
   ].join('\n')
@@ -310,7 +321,7 @@ test('facts I-22: a malformed line is a warning with an anchor and does not hide
     writeFile(
       root,
       'facts/char-a.md',
-      ['---', 'subject: char-a', '---', '', '- attribute: 境界 | value: 练气 | since: ch-1', '- 这一行不是事实', ''].join('\n'),
+      ['---', 'subject: char-a', '---', '', '- attribute: 境界 | value: 练气 | since: ch-1', '- attrbiute: 境界 | value: 筑基', ''].join('\n'),
     )
     await buildIndex(root)
     assert.deepEqual(
@@ -1002,6 +1013,267 @@ test('facts follow-up: appending keeps the author’s BOM and CRLF instead of re
     // as a diff of every line (rework of PR #124).
     assert.equal(text.slice(original.length), '- attribute: 境界 | value: 金丹 | since: ch-3 | source: manual\r\n')
     assert.equal(text.replace(/\r\n/gu, '').includes('\n'), false, 'no LF was introduced into a CRLF file')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 6. Old ledgers: one fact in the frontmatter, prose in the body (#135)
+// ---------------------------------------------------------------------------
+
+/**
+ * The prose bullets of the 0.3.0 verification copy, verbatim from
+ * `facts/时间口径冲突.md` and `facts/正文与大纲章名对照.md`.
+ *
+ * Why verbatim: both shapes *look* like `key: value` to a splitter that does not care which
+ * key it is looking at — one has an ASCII colon inside `2:1`, the other inside a Windows path
+ * (`D:\小说`). They are exactly what made the parser report a fact line the author never
+ * wrote, so they have to stay as typed.
+ */
+const PROSE_BULLETS = [
+  '- 两套都能自洽地解释「他 60 岁上去仍 60 岁」。',
+  '- 差别在**换算比**：A 说 2:1（44→22），B 说 2:1 但基数取 60→30。',
+  '- 真正的不一致是**武侠界那段到底算 44 年还是 60 年**（16→60 是 44 年，写成「活了 60 年」是把年龄当跨度）。',
+  '- 正文：`D:\小说\inkflow\backup-删正文前-20261013-080712.db` 里蜀山项目（id=2）的 31 章。',
+  '- 大纲：`outlines/ch-0001..0137.md`（备份快照原版，节点 930-959 / 778-824 / 826-885）。',
+]
+
+test('facts #135: a prose bullet is prose — no fact and no issue — and it hides no real line', () => {
+  const parsed = parseFactsFile(
+    'facts/时间口径冲突.md',
+    ['---', 'subject: project', '---', '', ...PROSE_BULLETS, '- attribute: 时间口径 | value: 两套并存', ''].join('\n'),
+  )
+  assert.deepEqual(parsed.issues, [], 'a note the author wrote as prose is not a broken fact line')
+  assert.deepEqual(
+    parsed.rows.map((row) => row.value),
+    ['两套并存'],
+    'and the one real line of the file still parses',
+  )
+  // What changed is the *candidate rule*, not the parser: prose is never handed to it.
+  assert.deepEqual(
+    PROSE_BULLETS.map((line) => classifyFactLine(line)),
+    PROSE_BULLETS.map(() => 'prose'),
+  )
+  assert.equal(classifyFactLine('- attribute: 境界 | value: 筑基'), 'fact')
+  assert.equal(classifyFactLine('普通段落 attribute: 境界'), 'prose', 'a non-list paragraph is not a candidate')
+})
+
+test('facts #135: a fact line written wrong is still reported (misspelt key, missing colon, fullwidth colon)', () => {
+  const parsed = parseFactsFile(
+    'facts/char-a.md',
+    [
+      '---',
+      'subject: char-a',
+      '---',
+      '',
+      '- attrbiute: 境界 | value: 金丹',
+      '- attribute 境界 | value: 金丹',
+      '- attribute：境界 | value：金丹',
+      '- attribute: 境界',
+      '',
+    ].join('\n'),
+  )
+  assert.deepEqual(parsed.rows, [])
+  assert.deepEqual(
+    parsed.issues.map((issue) => [issue.code, issue.path]),
+    [
+      ['FACT_LINE_MALFORMED', 'facts/char-a.md#L5'],
+      ['FACT_LINE_MALFORMED', 'facts/char-a.md#L6'],
+      ['FACT_LINE_MALFORMED', 'facts/char-a.md#L7'],
+      ['FACT_LINE_MALFORMED', 'facts/char-a.md#L8'],
+    ],
+    'the hint that catches a typo must survive the change',
+  )
+  assert.equal(classifyFactLine('- attrbiute: 境界 | value: 金丹'), 'malformed')
+  // A fullwidth colon (a Chinese IME's `：`) is not the format — `parseFactLine` refuses it — but
+  // it *is* the intent: the key token is recognised, so the line is judged as a fact line and the
+  // author is told, instead of the line being swallowed as prose.
+  assert.equal(classifyFactLine('- attribute：境界 | value：金丹'), 'fact')
+  assert.match(parsed.issues[0].detail, /attribute/u)
+})
+
+test('facts #135: a legacy single-fact frontmatter reads as one fact, defaults included', () => {
+  // 叶知秋.md verbatim: the whole fact lives in the frontmatter, the body is a table.
+  const yezhiqiu = parseFactsFile(
+    'facts/叶知秋.md',
+    [
+      '---',
+      'id: facts-yezhiqiu',
+      'subject: "char-yezhiqiu"',
+      'attribute: "境界"',
+      'value: "后天中期（开篇 16 岁）"',
+      'chapterId: "outline-930"',
+      'source: manual',
+      '---',
+      '',
+      '## 境界轨迹（设定摘要 §五）',
+      '',
+      '| 年龄 | 修为 | 锚点 |',
+      '|---|---|---|',
+      '| 16 | 后天中期 | 开篇（ch-0001） |',
+      '',
+    ].join('\n'),
+  )
+  assert.deepEqual(yezhiqiu.issues, [])
+  assert.equal(yezhiqiu.subject, 'char-yezhiqiu')
+  assert.equal(yezhiqiu.rows.length, 1)
+  const row = yezhiqiu.rows[0]
+  assert.equal(row.attribute, '境界')
+  assert.equal(row.value, '后天中期（开篇 16 岁）')
+  assert.equal(row.subject, 'char-yezhiqiu')
+  assert.equal(row.chapter, 'outline-930', 'the recording chapter the legacy table called chapterId')
+  assert.equal(row.source, 'manual')
+  assert.equal(row.since, undefined, 'a missing `since` is the beginning of the book (I-23)')
+  // The anchor is the line that carries the fact, so a finding or a list entry can be followed.
+  assert.equal(row.id, 'facts/叶知秋.md#L4')
+
+  // 时间口径冲突.md: a legacy fact *and* prose — the two causes of #135 in one file.
+  const caliber = parseFactsFile(
+    'facts/时间口径冲突.md',
+    [
+      '---',
+      'id: facts-time-caliber',
+      'subject: "project"',
+      'attribute: "时间口径"',
+      'value: "44/22 与 60/30 两套并存，待裁决"',
+      'source: manual',
+      '---',
+      '',
+      ...PROSE_BULLETS,
+      '',
+    ].join('\n'),
+  )
+  assert.deepEqual(caliber.issues, [])
+  assert.deepEqual(
+    caliber.rows.map((entry) => [entry.subject, entry.attribute, entry.value, entry.source]),
+    [['project', '时间口径', '44/22 与 60/30 两套并存，待裁决', 'manual']],
+  )
+
+  // `since` / `until` come from the same-named keys when the author wrote them.
+  const interval = parseFactsFile(
+    'facts/char-c.md',
+    '---\nsubject: char-c\nattribute: 境界\nvalue: 金丹\nsince: ch-2\nuntil: ch-9\n---\n\n',
+  )
+  assert.deepEqual(
+    interval.rows.map((entry) => [entry.since, entry.until]),
+    [['ch-2', 'ch-9']],
+  )
+  // A legacy fact without `source` reads as `manual`, exactly like a body line without one.
+  const minimal = parseFactsFile('facts/char-b.md', '---\nsubject: char-b\nattribute: 境界\nvalue: 练气\n---\n\n')
+  assert.deepEqual(
+    minimal.rows.map((entry) => [entry.attribute, entry.value, entry.source]),
+    [['境界', '练气', 'manual']],
+  )
+  // No `subject` → the file name, the same fallback a line-format ledger gets; the pre-existing
+  // FRONTMATTER_ISSUE for the missing key is still the one to report (and no FACT_ issue).
+  const fallback = parseFactsFile('facts/蜀山派.md', '---\nattribute: 财力\nvalue: 四十七文\n---\n\n')
+  assert.equal(fallback.rows[0].subject, '蜀山派')
+  assert.deepEqual(
+    fallback.issues.map((issue) => issue.code),
+    ['FRONTMATTER_ISSUE'],
+  )
+})
+
+test('facts #135: a legacy fact and a body fact both land, and I-23 still compares them', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, '混写账本书')
+    writeChapters(root, 4)
+    // The frontmatter fact holds from the beginning of the book (no `since`); the body line
+    // starts at ch-2. They overlap and their values differ, so this is one contradiction —
+    // the source of a fact (frontmatter vs body) must not exempt it from being compared.
+    writeLedger(
+      root,
+      'char-a',
+      'char-a',
+      [{ attribute: '境界', value: '金丹', since: 'ch-2', source: 'text', extra: {} }],
+      ['attribute: 境界', 'value: 筑基'],
+    )
+    await buildIndex(root)
+
+    assert.deepEqual(
+      factIssues(root).map((issue) => [issue.code, issue.path]),
+      [['FACT_CONFLICT', 'facts/char-a.md#L7']],
+      'the finding is anchored on the later-starting side, whichever file shape it came from',
+    )
+    const listed = await callTool('inkflow_facts_list', { projectRoot: root })
+    assert.equal(listed.counts.total, 2, 'both rows reach the index')
+    assert.deepEqual(
+      listed.facts.map((fact) => `${fact.attribute}=${fact.value}@${String(fact.line)}`),
+      ['境界=筑基@3', '境界=金丹@7'],
+      'in the documented order: since (by chapter order) decides, and the legacy fact starts at the book',
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('facts #135: the snapshot answers with a legacy fact that has no `since`', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, '老账本快照书')
+    writeChapters(root, 4)
+    writeLedger(root, 'char-a', 'char-a', [], ['attribute: 境界', 'value: 筑基后期'])
+    await buildIndex(root)
+
+    const snapshot = await callTool('inkflow_facts_snapshot', { projectRoot: root, chapterId: 'ch-1' })
+    assert.deepEqual(
+      snapshot.facts.map((fact) => `${fact.subject}/${fact.attribute}=${fact.value}`),
+      ['char-a/境界=筑基后期'],
+      'a fact with no `since` is in effect from the first chapter',
+    )
+    assert.equal(snapshot.facts[0].anchor, 'facts/char-a.md#L3')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('facts #135: appending to a legacy ledger adds a body line and leaves the frontmatter alone', async () => {
+  const dir = workdir()
+  const root = join(dir, 'book')
+  try {
+    scaffold(root, '老账本追加书')
+    writeChapters(root, 4)
+    const original = [
+      '---',
+      'subject: char-a',
+      'attribute: 境界',
+      'value: 筑基后期',
+      'source: manual',
+      '---',
+      '',
+      '作者的笔记：这里本来是一段散文。',
+      '',
+    ].join('\n')
+    writeFile(root, 'facts/char-a.md', original)
+    await buildIndex(root)
+
+    const appended = await callTool('inkflow_facts_append', {
+      projectRoot: root,
+      subject: 'char-a',
+      attribute: '持有物',
+      value: '青锋剑',
+      since: 'ch-2',
+    })
+    assert.equal(appended.ok, true, `append must land: ${JSON.stringify(appended.error ?? null)}`)
+    assert.equal(appended.file, 'facts/char-a.md', 'the legacy ledger is still the file for its subject')
+
+    const text = readFileSync(join(root, 'facts', 'char-a.md'), 'utf8')
+    assert.ok(text.startsWith(original), 'the frontmatter fact is not moved, rewritten or dropped')
+    assert.equal(
+      text.slice(original.length),
+      '- attribute: 持有物 | value: 青锋剑 | since: ch-2 | source: manual\n',
+      'a new fact is one body line — the legacy shape is read, never written',
+    )
+    const parsed = parseFactsFile('facts/char-a.md', text)
+    assert.deepEqual(
+      parsed.rows.map((entry) => `${entry.attribute}=${entry.value}`),
+      ['境界=筑基后期', '持有物=青锋剑'],
+    )
+    assert.deepEqual(parsed.issues, [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
