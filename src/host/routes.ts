@@ -81,6 +81,10 @@ import {
   sharedUpdateReply,
 } from './shared-channel.js'
 import {
+  HUB_BACKUP_CREATE_BODY_FIELDS,
+  HUB_BACKUP_RESTORE_BODY_FIELDS,
+  HUB_DIAGNOSTICS_EXPORT_BODY_FIELDS,
+  HUB_SETTINGS_BODY_FIELDS,
   buildHubBackups,
   buildHubDiagnostics,
   buildHubSettings,
@@ -90,12 +94,15 @@ import {
   restoreHubBackup,
   writeHubSettings,
 } from './hub-settings.js'
-import { hubApply, hubPlan } from './hub-wizard.js'
+import { HUB_APPLY_BODY_FIELDS, HUB_PLAN_BODY_FIELDS, hubApply, hubPlan } from './hub-wizard.js'
 import { sharedRootOf } from './settings.js'
 import {
   CANDIDATES_ACCEPT_BODY_FIELDS,
   CANDIDATES_PURGE_BODY_FIELDS,
   CANDIDATES_REJECT_BODY_FIELDS,
+  CHAPTER_CREATE_BODY_FIELDS,
+  CHAPTER_MOVE_BODY_FIELDS,
+  CHAPTER_SAVE_BODY_FIELDS,
   INTERNAL_PREFIX,
   LIBRARY_WRITE_BODY_FIELDS,
   MAX_INTERNAL_BODY_BYTES,
@@ -232,7 +239,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'chapters',
     pattern: /^\/chapters$/,
     methods: ['GET', 'POST'],
-    body: ['sessionId', 'title', 'volumeId', 'slug', 'seq'],
+    body: CHAPTER_CREATE_BODY_FIELDS,
     handle: async (input) =>
       input.method === 'POST'
         ? toReply(await createChapterViaChannel(writeRequestOf(input)))
@@ -247,7 +254,7 @@ const ROUTES: readonly InternalRoute[] = [
     // normalise, which rewrites a CRLF chapter to LF. Both are validated by
     // `internal.ts` — the whitelist is about *which* fields may travel, not what
     // values they carry.
-    body: ['sessionId', 'title', 'body', 'status', 'eol', 'bom', 'expected'],
+    body: CHAPTER_SAVE_BODY_FIELDS,
     handle: async (input) => {
       if (input.method === 'POST') return toReply(await writeChapterViaChannel(writeRequestOf(input)))
       if (input.method === 'DELETE') return toReply(await deleteChapterViaChannel(writeRequestOf(input)))
@@ -260,7 +267,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'chapter-move',
     pattern: /^\/chapters\/([^/]+)\/move$/,
     methods: ['POST'],
-    body: ['sessionId', 'volumeId', 'expected'],
+    body: CHAPTER_MOVE_BODY_FIELDS,
     handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
   {
@@ -725,7 +732,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-plan',
     pattern: /^\/hub\/plan$/,
     methods: ['POST'],
-    body: ['candidate', 'outsideRegistry', 'title'],
+    body: HUB_PLAN_BODY_FIELDS,
     handle: ({ ctx, body }) => hubPlan(ctx, body),
   },
   {
@@ -734,7 +741,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-apply',
     pattern: /^\/hub\/apply$/,
     methods: ['POST'],
-    body: ['planToken', 'confirm', 'title'],
+    body: HUB_APPLY_BODY_FIELDS,
     handle: ({ ctx, body }) => hubApply(ctx, body),
   },
   {
@@ -808,10 +815,14 @@ const HUB_ROUTES: readonly HubRoute[] = [
     // Saving settings. A write, so it carries every hub write guard (same-origin
     // `Origin`, the body whitelist) plus `confirm: true`: the panel arms its own
     // button, and this is the net under it.
+    //
+    // The whitelist is DERIVED (`SETTINGS_FIELDS` + `confirm`, #162): this route is the
+    // one that shipped a hand-copied field list and nearly refused a legal setting, so
+    // the list lives beside the function that reads it (`writeHubSettings`) instead.
     name: 'hub-settings-update',
     pattern: /^\/hub\/settings\/update$/,
     methods: ['POST'],
-    body: ['sharedRoot', 'semanticSearch', 'semanticEndpoint', 'semanticApiKey', 'autosaveIntervalMs', 'authorName', 'excludeDirs', 'backupKeep', 'confirm'],
+    body: HUB_SETTINGS_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(writeHubSettings({ ctx, dataDir, version }, body)),
   },
   {
@@ -827,7 +838,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-diagnostics-export',
     pattern: /^\/hub\/diagnostics\/export$/,
     methods: ['POST'],
-    body: ['book', 'confirm'],
+    body: HUB_DIAGNOSTICS_EXPORT_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(exportHubDiagnostics({ ctx, dataDir, version }, body)),
   },
   {
@@ -843,7 +854,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-backups-create',
     pattern: /^\/hub\/backups\/create$/,
     methods: ['POST'],
-    body: ['book', 'keep', 'includeTrash', 'confirm'],
+    body: HUB_BACKUP_CREATE_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(createHubBackup({ ctx, dataDir, version }, body)),
   },
   {
@@ -858,7 +869,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-backups-restore',
     pattern: /^\/hub\/backups\/restore$/,
     methods: ['POST'],
-    body: ['book', 'file', 'expected', 'confirm'],
+    body: HUB_BACKUP_RESTORE_BODY_FIELDS,
     handle: async ({ ctx, dataDir, version, body }) => reply(await restoreHubBackup({ ctx, dataDir, version }, body)),
   },
   {

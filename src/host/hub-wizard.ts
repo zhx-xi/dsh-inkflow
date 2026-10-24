@@ -314,6 +314,15 @@ function planValue(plan: WorkspacePlan): Record<string, unknown> {
 }
 
 /**
+ * Field names the wizard's plan step may carry (#162).
+ *
+ * `candidate` is the ONLY path-bearing field on the whole channel (ADR-0010 D3), so
+ * this list is also the answer to "what may name a directory here": exactly one thing,
+ * and only on this route.
+ */
+export const HUB_PLAN_BODY_FIELDS = ['candidate', 'outsideRegistry', 'title'] as const
+
+/**
  * `POST /hub/plan` — judge a directory the user picked, and mint a token.
  *
  * Zero writes on every path, including the refusals: `planWorkspace` calls the
@@ -516,6 +525,14 @@ function nextStepOf(title: string, path: string): Record<string, unknown> {
     message: `书已就绪。在左侧工作区「${shown}」点「新会话」开始创作`,
   }
 }
+
+/**
+ * Field names the wizard's apply step may carry (#162).
+ *
+ * NO path-bearing field: the write route names a one-shot token instead, which is the
+ * whole point of splitting plan from apply (ADR-0010 D3).
+ */
+export const HUB_APPLY_BODY_FIELDS = ['planToken', 'confirm', 'title'] as const
 
 /**
  * `POST /hub/apply` — spend a token, build the book, register it.
