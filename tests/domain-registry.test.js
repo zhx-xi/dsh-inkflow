@@ -44,7 +44,7 @@ const BUILT_IN_TOOLS = [
   // because they span every kind and own no content directory.
   ['inkflow_search', '46e8ca64'],
   ['inkflow_search_replace', '1c309b8e'],
-  ['inkflow_project_audit', '2e5349da'],
+  ['inkflow_project_audit', 'fbf1ebf5'],
   // #37: importing an old manuscript. A built-in rather than a domain tool: it writes
   // chapters *and* a `library/` copy, so no single content directory owns it.
   ['inkflow_library_import', '39f228ea'],

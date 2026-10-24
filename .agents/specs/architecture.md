@@ -420,6 +420,8 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 
 这张表是「新读者判断某件事归谁管」的入口，所以它由 [scripts/check-module-table.mjs](../../scripts/check-module-table.mjs)（`npm run check:docs` 的一环）**对拍**：`src/host/` 下每个 `.ts` 必须在这里有一行（行内写全 `src/host/<文件>.ts`，只在别人的行里被提到不算），客户端纯模型整组列在 §6.2。新增模块却漏了登记 → 守卫直接红并打印缺失清单。
 
+**工具名也是契约**：一个工具名出现在两处——注册处（`name: 'inkflow_…'`）与所有提到它的地方（工具描述、错误提示、手册）。两边漂移时没有任何东西会失败：模型照着描述去调一个不存在的名字。所以 [scripts/check-tool-names.mjs](../../scripts/check-tool-names.mjs)（同样是 `npm run check:docs` 的一环）双向对拍：`src/` 下的每个 `inkflow_*` 提及都必须解析到一个已注册的工具（`inkflow_*`、`inkflow_outline_*` 这类通配不算名字），且每个已注册工具都必须在 [docs/user-guide.md](../../docs/user-guide.md) 里被点名——手册没提的工具，作者不可能发现。
+
 | 模块 | 只做 | 不做 |
 |---|---|---|
 | `src/host/index.ts` | 装配、生命周期、日志 | 业务逻辑 |
@@ -531,6 +533,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `audit-model.ts` — 体检页：分组/严重级/code 文案、`readAuditValue` 与 `auditHeadline`/`auditGroupLine`、`locateLabel` 与 `jumpTargetOf`（能不能跳、跳到哪）、`exportLabel`/`exportNotice`
 - `impact-model.ts` — 改设定的影响清单与改名计划：`buildImpactDigest`（五处影响面折叠）、`impactQuery`、`renamePayload`、`describeImpactError`/`describeRenameError`
 - `search-model.ts` — 检索框：请求路径与「全部类型」开关换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案、点击去向、摘要与降级文案
+- `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
 - `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
 
 ### 6.1 一致性体检（#33）的取数与落点
