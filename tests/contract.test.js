@@ -202,6 +202,11 @@ test('registers the twenty-one built-ins, the tools of every registered domain, 
     // relation tools. An unexpected entry here means a domain was wired without
     // extending this baseline.
     assert.deepEqual([...harness.tools.keys()].sort(), [
+      // #42: the plugin's own state — local backups (list/create/restore live on the
+      // tools `settings-tools.ts` contributes, because none of them belongs to one
+      // content directory).
+      'inkflow_backup_create',
+      'inkflow_backup_restore',
       // Built-ins in `tools.ts`…
       'inkflow_chapter_create',
       'inkflow_chapter_delete',
@@ -214,6 +219,9 @@ test('registers the twenty-one built-ins, the tools of every registered domain, 
       // an explicit list instead of whatever happens to be registered.
       'inkflow_character_list',
       'inkflow_character_upsert',
+      // #42: the diagnostics package — a built-in, and the one tool here that writes a
+      // file meant to leave the machine (ADR-0018 D5).
+      'inkflow_diagnostics_export',
       // #32: the fact ledger's three tools (append / snapshot / list).
       'inkflow_facts_append',
       'inkflow_facts_list',
@@ -244,6 +252,10 @@ test('registers the twenty-one built-ins, the tools of every registered domain, 
       // built-ins — they span every kind and own no content directory.
       'inkflow_search',
       'inkflow_search_replace',
+      // #42: settings. Built-ins that touch no book at all — they read and write
+      // `$DSH_HOME/inkflow/settings.json` (ADR-0018 D1).
+      'inkflow_settings_get',
+      'inkflow_settings_update',
       // #40: the shared library's one read and two writes. Built-ins, not domain
       // tools — the library lives OUTSIDE every book, so no content directory owns
       // it and `domainTools()` cannot contribute it.
