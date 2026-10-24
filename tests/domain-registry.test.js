@@ -73,6 +73,14 @@ const BUILT_IN_TOOLS = [
   ['inkflow_diagnostics_export', '81804879'],
   ['inkflow_backup_create', '375f1aa7'],
   ['inkflow_backup_restore', '830aaf3b'],
+  // #38: the extraction queue (ADR-0017). Built-ins, not domain tools: a candidate is not
+  // an entity, belongs to no content directory, and its one write path lives in
+  // `extract-accept.ts` instead of inside a domain module.
+  ['inkflow_extract_propose', '9a66e773'],
+  ['inkflow_extract_list', 'af0ff41f'],
+  ['inkflow_extract_accept', '0bdd27f8'],
+  ['inkflow_extract_reject', '483c26c2'],
+  ['inkflow_extract_purge', '4d5d5d6e'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

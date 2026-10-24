@@ -1125,3 +1125,22 @@ export type { AuditReply, AuditSource } from './audit-channel.js'
 
 export { IMPORT_BODY_FIELDS, importViaChannel } from './import-channel.js'
 export type { ImportChannelRequest, ImportChannelSource, ImportReply } from './import-channel.js'
+// ---------------------------------------------------------------------------
+// issue #38 — the extraction queue (X-20, ADR-0017). The store lives in `extract.ts`
+// (candidates only), the write path in `extract-accept.ts` (the one place a candidate
+// becomes a file), the four channel replies in `extract-channel.ts`. Re-exported here so
+// `routes.ts` keeps ONE entry point for the channel, the same arrangement as the bin
+// (#35), the audit (#33) and the import (#37).
+// ---------------------------------------------------------------------------
+
+export {
+  CANDIDATES_ACCEPT_BODY_FIELDS,
+  CANDIDATES_PURGE_BODY_FIELDS,
+  CANDIDATES_REJECT_BODY_FIELDS,
+  CANDIDATE_PAGE_LIMIT,
+  acceptViaChannel,
+  buildCandidates,
+  purgeViaChannel,
+  rejectViaChannel,
+} from './extract-channel.js'
+export type { CandidateReply, CandidateSource } from './extract-channel.js'

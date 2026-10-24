@@ -107,8 +107,13 @@ interface WorldFileInput {
  * The whole file text: the fields `scan()` reads, nothing invented. `always` and
  * `priority` are written only when meaningful, so a plain entry stays a three-line
  * frontmatter and `git diff` shows what the author actually asked for.
+ *
+ * Exported because the extraction accept path (#38) must produce the *same* document
+ * from a candidate's `fields`: a second renderer would be a second dialect of
+ * `world/<category>/<slug>.md`, and the two would drift the first time this one
+ * gained a field.
  */
-function renderWorldFile(input: WorldFileInput): string {
+export function renderWorldFile(input: WorldFileInput): string {
   const lines = ['---', frontmatterLine('id', input.id), frontmatterLine('title', input.title)]
   if (input.category !== undefined) lines.push(frontmatterLine('category', input.category))
   if (input.parent !== undefined) lines.push(frontmatterLine('parent', input.parent))

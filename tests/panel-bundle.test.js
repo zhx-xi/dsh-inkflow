@@ -519,13 +519,14 @@ test('PANEL_TABS leaves unimplemented pages disabled with their release note', (
   const { PANEL_TABS } = model
   const available = PANEL_TABS.filter((tab) => tab.available)
   // Issue #30 added 设定库 (the eight-kind setting library), issue #35 回收站 (the
-  // recovery bin), issue #31 伏笔 (the read-only board) and issue #33 体检 (the five-family
-  // audit). This list is the build's own claim about what a user can click, so it is
-  // spelled out rather than derived.
+  // recovery bin), issue #31 伏笔 (the read-only board), issue #33 体检 (the five-family
+  // audit) and issue #38 候选 (the extraction queue — X-20's one new tab). This list is
+  // the build's own claim about what a user can click, so it is spelled out rather than
+  // derived.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit'],
-    '章节, 设定库, 伏笔, 回收站 and 体检 exist in this build',
+    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates'],
+    '章节, 设定库, 伏笔, 回收站, 体检 and 候选 exist in this build',
   )
   const disabled = PANEL_TABS.filter((tab) => !tab.available)
   assert.deepEqual(disabled.map((tab) => tab.id), ['outline'])

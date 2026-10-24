@@ -611,5 +611,10 @@ export const PANEL_TABS: PanelTab[] = [
   { id: 'foreshadowing', label: '伏笔', available: true },
   { id: 'trash', label: '回收站', available: true },
   { id: 'audit', label: '体检', available: true },
+  // Issue #38 (X-20): the extraction queue — the ONE tab this milestone adds. It is a
+  // tab and not a section of the setting library because a candidate is not an entity:
+  // it is a proposal waiting for a decision, and mixing "what is true" with "what might
+  // become true" in one tree is how an author approves a duplicate by accident.
+  { id: 'candidates', label: '候选', available: true },
 ]
 

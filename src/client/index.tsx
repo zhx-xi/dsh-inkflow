@@ -44,6 +44,8 @@ import type { LibraryFocus } from './library-model.js'
 import { TrashView } from './trash.js'
 import { ForeshadowView } from './foreshadow.js'
 import { AuditView } from './audit.js'
+import { ExtractView } from './extract.js'
+import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
 import { HubIcon, HubView } from './hub.js'
 import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
@@ -59,6 +61,7 @@ import {
   describeRouteError,
   describeTitleSuspicion,
   emptyKindOf,
+  flattenChapters,
   projectFacts,
   readBuild,
   readGate,
@@ -496,6 +499,24 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     setTab('library')
   }, [])
 
+  /**
+   * Take the reader to a candidate's evidence (#38): the same rule as an audit finding —
+   * an address is resolved by the workbench, because "which chapter is this?" is this
+   * component's own state (the chapter tree) and not the queue's.
+   */
+  const openFromEvidence = useCallback(
+    (jump: EvidenceJump): void => {
+      const rows = flattenChapters(chapters)
+      const hit =
+        rows.find((chapter) => jump.chapterId !== undefined && chapter.id === jump.chapterId) ??
+        rows.find((chapter) => jump.path !== undefined && chapter.path === jump.path)
+      if (hit === undefined) return
+      setTab('chapters')
+      setSelected(hit.id)
+    },
+    [chapters],
+  )
+
   const pageRenderers: Readonly<Record<string, () => ReactNode>> = {
     // Issue #30: the setting library — eight-kind tree, one entry's detail, the
     // editor and the problem panel. It talks to its own three routes, so this tab
@@ -509,6 +530,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // Issue #33: the five-family consistency audit — counts, findings with their
     // addresses, and the Markdown export into `.inkflow/audit/`.
     audit: () => <AuditView sessionId={sessionId} onOpen={openFromAudit} />,
+    // Issue #38 (X-20): the extraction queue — accept or reject what the session model
+    // proposed. Its own four routes, so it costs the other pages nothing.
+    candidates: () => <ExtractView sessionId={sessionId} onOpenEvidence={openFromEvidence} />,
   }
 
   /**
