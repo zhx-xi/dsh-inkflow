@@ -134,6 +134,9 @@ export const worldDomain: DomainModule = {
   },
 
   tools(deps) {
-    return worldTools(deps)
+    // The domain object is passed in rather than imported by `world-tools.ts`: the write
+    // chain must judge with **this** module (`parseFile`/`validate`), and a module that
+    // imports the registry that imports it would close a runtime cycle (#26).
+    return worldTools(deps, worldDomain)
   },
 }

@@ -11,23 +11,30 @@
  * directory, so the tool would always report `NOT_AN_INKFLOW_PROJECT`.
  *
  * Everything that writes goes through `io.ts` (path checks + write lock + atomic
- * replace); everything that reads goes through the derived index, made fresh by
- * `ensureIndex()`.
+ * replace) **and** through the domain module's own judge (#159): `parseFile()` →
+ * `applyCandidate()` → `validate({ candidate })` before a byte lands, the same chain
+ * `character-tools.ts` runs. `planWorldUpsert()` stays as the precheck that gives the
+ * model a reason it can act on, but the gate is the domain's. Everything that reads
+ * goes through the derived index, made fresh by `ensureIndex()`.
  */
 
-import { resolve as resolvePath } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
 
 import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } from '../context.js'
 import { frontmatterLine } from '../frontmatter.js'
 import { buildIndex, describeIndexBuildFailure } from '../index-build.js'
 import { ensureIndex } from '../index-freshness.js'
-import { writeTextAtomic } from '../io.js'
+import { scanProject } from '../indexer.js'
+import { withProjectWriteLock, writeTextAtomic } from '../io.js'
 import { findProjectRoot, inspectProject } from '../project.js'
 import { sessionCwd } from '../session-cwd.js'
-import { listEntityIds, listWorldEntries } from './query.js'
+import { listWorldEntries } from './query.js'
+import { readText, rowsOf } from './scan-helpers.js'
+import { applyCandidate } from './types.js'
+import type { DomainModule, DomainWriteView, DomainToolDeps } from './types.js'
+import type { WorldRow } from './world.js'
 import { buildWorldTree, planWorldUpsert } from './world-plan.js'
 import type { WorldUpsertCandidate } from './world-plan.js'
-import type { DomainToolDeps } from './types.js'
 
 type Json = Record<string, unknown>
 
@@ -283,178 +290,352 @@ function worldTreeTool(deps: DomainToolDeps): ToolDefinition {
 // inkflow_world_upsert
 // ---------------------------------------------------------------------------
 
-function worldUpsertTool(deps: DomainToolDeps): ToolDefinition {
+/** One world row as the tools report it (null, not `undefined`, so it survives JSON). */
+function worldView(row: WorldRow): Json {
   return {
-    name: 'inkflow_world_upsert',
-  description:
-    'Create or replace one world-book entry: writes `world/<category>/<slug>.md` (or `world/<slug>.md` for a top-level ' +
-    'entry) with `id` / `title` / `category` / `parent` / `keywords` / `always` / `priority`, then rebuilds the derived ' +
-    'index. The write-side half of I-08 runs first and refuses a second root, a child without a category, a dangling ' +
-    'parent or a duplicate id — a flat category book (every entry under `world/<category>/`, no parent) stays legal. ' +
-    'Requires `confirm: true`, and writes nothing without it.',
-  parameters: {
-    type: 'object',
-    properties: {
-      projectRoot: PROJECT_ROOT_PARAM,
-      title: { type: 'string', description: 'Entry title; the file slug derives from it.' },
-      id: {
-        type: 'string',
-        description: 'Stable id. Omit to use the file path (the same default the parser applies), and keep it on edits.',
-      },
-      category: {
-        type: 'string',
-        description: 'Category (= the `world/<category>/` directory), e.g. "门派". Required when `parent` is set.',
-      },
-      parent: { type: 'string', description: 'Parent entry id (`world/` first-level entry with no parent is a root).' },
-      keywords: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'World-book trigger words: a chapter whose text contains one pulls this entry in.',
-      },
-      always: { type: 'boolean', description: 'True when this entry belongs to every chapter unconditionally.' },
-      priority: {
-        type: 'integer',
-        description: 'Ordering among matches: higher first (absent counts as 0).',
-      },
-      body: { type: 'string', description: 'Entry body (Markdown). Omit for a stub with frontmatter only.' },
-      slug: { type: 'string', description: 'File slug; omit to derive it from the title.' },
-      confirm: {
-        type: 'boolean',
-        description: 'Set true only after the user has seen the path and the fields this call would write.',
-      },
-    },
-    required: ['title'],
-    additionalProperties: false,
-  },
-  output: {
-    schema: OUTPUT_SCHEMA,
-    render: (_args, value) => {
-      const v = asRecord(value)
-      if (v['ok'] !== true) {
-        const error = asRecord(v['error'])
-        if (v['requiresConfirmation'] === true) {
-          return text([
-            `Confirmation required: ${String(error['message'] ?? '')}`,
-            `Would write: ${String(v['willWrite'] ?? '?')}${v['replaced'] === true ? ' (replaces the existing file)' : ''}`,
-            'Nothing was written. Show this to the user, then call again with confirm: true.',
-          ])
-        }
-        return text([`World upsert refused: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`])
-      }
-      const indexLine =
-        v['indexRebuilt'] === true
-          ? 'index rebuilt.'
-          : `index NOT rebuilt (${String(asRecord(v['indexError'])['code'] ?? 'unknown')}) — run inkflow_index_rebuild.`
-      return text([
-        `${v['created'] === true ? 'Created' : 'Replaced'} ${String(v['path'])} (id ${String(v['id'])}).`,
-        indexLine,
-      ])
-    },
-  },
-  execute: async (args, exec) =>
-    withProject(deps, exec, args, async (root) => {
-      const a = asRecord(args)
-      const title = optionalString(a['title'])
-      if (title === undefined) {
-        return { ok: false, root, error: { code: 'TITLE_REQUIRED', message: 'a world entry needs a title' } }
-      }
-      const category = optionalString(a['category'])
-      const parent = optionalString(a['parent'])
-      const slugInput = optionalString(a['slug']) ?? slugify(title)
-      if (slugInput === '') {
-        return { ok: false, root, error: { code: 'SLUG_INVALID', message: `"${title}" has no usable file slug` } }
-      }
-      if (UNSAFE_SEGMENT.test(slugInput) || slugInput.includes('/')) {
-        return { ok: false, root, error: { code: 'SLUG_INVALID', message: `"${slugInput}" is not a portable file name` } }
-      }
-      if (category !== undefined && (UNSAFE_SEGMENT.test(category) || category.includes('/'))) {
-        return { ok: false, root, error: { code: 'CATEGORY_INVALID', message: `"${category}" is not a portable directory name` } }
-      }
-      const rawPriority = a['priority']
-      if (rawPriority !== undefined && !(typeof rawPriority === 'number' && Number.isInteger(rawPriority))) {
-        return { ok: false, root, error: { code: 'PRIORITY_INVALID', message: 'priority must be an integer' } }
-      }
-      const keywords = readKeywords(a['keywords'])
-      const path = category === undefined ? `world/${slugInput}.md` : `world/${category}/${slugInput}.md`
-      // Editing an existing entry must keep its id, or every child that points at it
-      // silently dangles: the write-side gate only knows the pre-write snapshot, so the
-      // breakage would surface as DANGLING_PARENT on the *next* rebuild.
-      const existing = listWorldEntries(root)?.find((entry) => entry.path === path)
-      const id = optionalString(a['id']) ?? existing?.id ?? path
-      const candidate: WorldUpsertCandidate = {
-        id,
-        path,
-        title,
-        ...(category === undefined ? {} : { category }),
-        ...(parent === undefined ? {} : { parent }),
-        keywords,
-      }
+    id: row.id,
+    path: row.path,
+    title: row.title,
+    category: row.category ?? null,
+    parent: row.parent ?? null,
+    keywords: [...row.keywords],
+    always: row.always,
+    priority: row.priority ?? null,
+  }
+}
 
-      const ensured = await ensureIndex(root)
-      if (!ensured.ok) return indexFailure(root, ensured.failure)
-      const entries = listWorldEntries(root)
-      const knownIds = listEntityIds(root)
-      if (entries === undefined || knownIds === undefined) {
-        return indexFailure(root, { code: 'INDEX_UNAVAILABLE', message: 'the derived index could not be read' })
-      }
+/** The fields the file now holds, on one line: a lossy render must not pass as success. */
+function describeWorldRow(value: unknown): string {
+  const row = asRecord(value)
+  const parts: string[] = [`「${String(row['title'] ?? '')}」`]
+  const category = row['category']
+  parts.push(category === null || category === undefined ? 'no category' : `category ${String(category)}`)
+  const parent = row['parent']
+  if (parent !== null && parent !== undefined) parts.push(`parent ${String(parent)}`)
+  const keywords = Array.isArray(row['keywords']) ? (row['keywords'] as unknown[]).map(String) : []
+  if (keywords.length > 0) parts.push(`keywords ${keywords.join(', ')}`)
+  if (row['always'] === true) parts.push('always')
+  const priority = row['priority']
+  if (priority !== null && priority !== undefined) parts.push(`priority ${String(priority)}`)
+  return `Read back: ${parts.join(' · ')}.`
+}
 
-      const plan = planWorldUpsert({ entries, candidate, knownIds })
-      if (!plan.ok) return { ok: false, root, error: plan.error }
+/** Everything `applyUpsert()` needs, already argued down to the shape one file has. */
+interface WorldUpsertInput {
+  readonly id?: string
+  readonly title: string
+  readonly path: string
+  readonly category?: string
+  readonly parent?: string
+  readonly keywords: readonly string[]
+  readonly always: boolean
+  readonly priority?: number
+  readonly body: string
+  readonly confirm: boolean
+}
 
-      if (a['confirm'] !== true) {
-        return {
-          ok: false,
-          root,
-          requiresConfirmation: true,
-          willWrite: plan.path,
-          replaced: plan.replaced,
-          error: {
-            code: 'WORLD_UPSERT_REQUIRES_CONFIRMATION',
-            message: `writing ${plan.path} needs confirmation`,
-            hint: 'show the path and fields to the user; nothing was written. Call again with confirm: true',
-          },
-        }
-      }
+/**
+ * Three outcomes, not two: "nothing was written because the caller has not confirmed
+ * yet" is a normal answer carrying the plan, not a refusal. Kept out of `error` so the
+ * tool can hand the model `willWrite`/`replaced` at the top level (that is what the
+ * confirmation prompt reads) without inventing an error code for a non-error.
+ */
+type WriteOutcome =
+  | { readonly ok: true; readonly value: Json }
+  | { readonly ok: false; readonly error: Json }
+  | { readonly ok: false; readonly confirmation: { readonly willWrite: string; readonly replaced: boolean } }
 
-      const content = renderWorldFile({
-        id,
-        title,
-        ...(category === undefined ? {} : { category }),
-        ...(parent === undefined ? {} : { parent }),
-        keywords,
-        always: a['always'] === true,
-        ...(rawPriority === undefined ? {} : { priority: rawPriority }),
-        body: optionalString(a['body']) ?? '',
+function refusal(root: string, code: string, message: string, extra: Json = {}): WriteOutcome {
+  return { ok: false, error: { code, message, root, ...extra } }
+}
+
+/**
+ * The write side of X-4 for the world book, all of it under the project write lock:
+ *
+ *   1. `scanProject()`           — the pre-write view, read from the **files**; the
+ *                                  derived index is a cache, and judging a write against
+ *                                  a stale one is how a second root slips in
+ *   2. `planWorldUpsert()`       — the tree rules early, so the model gets a reason it
+ *                                  can act on before any text is rendered
+ *   3. `renderWorldFile()`       — the one renderer (the accept path of #38 uses it too)
+ *   4. `parseFile()`             — the document, parsed exactly as a rebuild parses it
+ *   5. `applyCandidate()`        — the seam-owned "replace this one path" fold
+ *   6. `validate({ candidate })` — the same invariants a rebuild runs; **this** is the
+ *                                  gate, step 2 is only its precheck
+ *   7. `writeTextAtomic()`       — only then, through `io.ts`
+ *   8. `parseFile()` again       — the answer reports what the file now says
+ *
+ * Steps 1 and 5 come from layers above the registry (`indexer.ts`, `types.ts`), which is
+ * why the orchestration lives up here and not in `world.ts`: a domain module must not
+ * import the seam that imports it (`character-tools.ts` records the same reason, #26).
+ */
+function applyUpsert(domain: DomainModule, projectRoot: string, input: WorldUpsertInput): WriteOutcome {
+  const locked = withProjectWriteLock(resolvePath(projectRoot), (lock): WriteOutcome => {
+    const root = lock.root
+    const scan = scanProject(root)
+    const view: DomainWriteView = {
+      scan: { tables: scan.tables, entities: scan.entities, issues: scan.issues },
+      entities: scan.entities,
+    }
+    const rows = rowsOf<WorldRow>(view.scan, 'world_entries')
+    // Editing an existing entry must keep its id, or every child that points at it
+    // silently dangles: the gate only knows the post-write snapshot, so the breakage
+    // would surface as DANGLING_PARENT on the *next* rebuild.
+    const existing = rows.find((row) => row.path === input.path)
+    const id = input.id ?? existing?.id ?? input.path
+    const candidate: WorldUpsertCandidate = {
+      id,
+      path: input.path,
+      title: input.title,
+      ...(input.category === undefined ? {} : { category: input.category }),
+      ...(input.parent === undefined ? {} : { parent: input.parent }),
+      keywords: input.keywords,
+    }
+
+    const plan = planWorldUpsert({
+      entries: rows,
+      candidate,
+      knownIds: new Set(view.entities.map((entity) => entity.id)),
+    })
+    if (!plan.ok) {
+      return refusal(root, plan.error.code, plan.error.message, plan.error.path === undefined ? {} : { path: plan.error.path })
+    }
+    if (!input.confirm) {
+      return { ok: false, confirmation: { willWrite: plan.path, replaced: plan.replaced } }
+    }
+
+    const text = renderWorldFile({
+      id,
+      title: input.title,
+      ...(input.category === undefined ? {} : { category: input.category }),
+      ...(input.parent === undefined ? {} : { parent: input.parent }),
+      keywords: input.keywords,
+      always: input.always,
+      ...(input.priority === undefined ? {} : { priority: input.priority }),
+      body: input.body,
+    })
+
+    // Double insurance (X-4): the text we are about to write is judged by the very same
+    // parser and invariants a rebuild uses, so an entry can never land in a state the
+    // next rebuild would flag. This is also the one net the plan alone never had — it
+    // judges the tree, never the document.
+    const parsed = domain.parseFile({ root, path: plan.path, text })
+    if (parsed.issues.length > 0) {
+      const issue = parsed.issues[0]
+      return refusal(root, issue?.code ?? 'FRONTMATTER_ISSUE', issue?.detail ?? 'the entry could not be parsed', {
+        path: plan.path,
       })
-      const written = writeTextAtomic(root, plan.path, content)
-      if (!written.ok) return { ok: false, root, path: plan.path, error: written.error }
+    }
+    const post = applyCandidate(view, parsed)
+    const blocking = domain
+      .validate({ root, scan: post.scan, entities: post.entities, candidate: { path: plan.path } })
+      .filter((issue) => issue.path === undefined || issue.path === plan.path)
+    if (blocking.length > 0) {
+      const issue = blocking[0]
+      return refusal(root, issue?.code ?? 'WORLD_INVALID', issue?.detail ?? 'the entry breaks an invariant', {
+        path: plan.path,
+      })
+    }
 
-      let indexRebuilt = false
-      let indexError: Json | undefined
-      try {
-        await buildIndex(root)
-        indexRebuilt = true
-      } catch (cause) {
-        const failure = describeIndexBuildFailure(cause)
-        indexError = { code: failure.code, message: failure.message }
-      }
+    const written = writeTextAtomic(root, plan.path, text)
+    if (!written.ok) {
+      return refusal(root, written.error.code, written.error.message, {
+        path: plan.path,
+        ...(written.error.hint === undefined ? {} : { hint: written.error.hint }),
+      })
+    }
 
-      return {
+    // The file is the truth: report what it now says, not what we meant to write.
+    const after = domain.parseFile({ root, path: plan.path, text: readText(join(root, plan.path)) })
+    const row = rowsOf<WorldRow>({ tables: after.rows }, 'world_entries')[0]
+    if (row === undefined) {
+      return refusal(root, 'WORLD_ENTRY_UNREADABLE', `the entry was written but cannot be read back from ${plan.path}`, {
+        path: plan.path,
+      })
+    }
+    return {
+      ok: true,
+      value: {
         ok: true,
         root,
         path: written.target.relative,
-        id,
-        replaced: plan.replaced,
+        id: row.id,
         created: written.created,
+        replaced: plan.replaced,
         bytes: written.bytes,
-        indexRebuilt,
-        ...(indexError === undefined ? {} : { indexError }),
-      }
-    }),
+        world: worldView(row),
+      },
+    }
+  })
+
+  // The lock itself can fail (PROJECT_BUSY): report its code against the root that was
+  // asked for, so the answer still names a path.
+  return locked.ok ? locked.value : refusal(resolvePath(projectRoot), locked.error.code, locked.error.message)
+}
+
+function worldUpsertTool(deps: DomainToolDeps, domain: DomainModule): ToolDefinition {
+  return {
+    name: 'inkflow_world_upsert',
+    description:
+      'Create or replace one world-book entry: writes `world/<category>/<slug>.md` (or `world/<slug>.md` for a top-level ' +
+      'entry) with `id` / `title` / `category` / `parent` / `keywords` / `always` / `priority`, then rebuilds the derived ' +
+      'index. The write-side half of I-08 runs first and refuses a second root, a child without a category, a dangling ' +
+      'parent or a duplicate id — a flat category book (every entry under `world/<category>/`, no parent) stays legal. ' +
+      'Requires `confirm: true`, and writes nothing without it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        title: { type: 'string', description: 'Entry title; the file slug derives from it.' },
+        id: {
+          type: 'string',
+          description: 'Stable id. Omit to use the file path (the same default the parser applies), and keep it on edits.',
+        },
+        category: {
+          type: 'string',
+          description: 'Category (= the `world/<category>/` directory), e.g. "门派". Required when `parent` is set.',
+        },
+        parent: { type: 'string', description: 'Parent entry id (`world/` first-level entry with no parent is a root).' },
+        keywords: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'World-book trigger words: a chapter whose text contains one pulls this entry in.',
+        },
+        always: { type: 'boolean', description: 'True when this entry belongs to every chapter unconditionally.' },
+        priority: {
+          type: 'integer',
+          description: 'Ordering among matches: higher first (absent counts as 0).',
+        },
+        body: { type: 'string', description: 'Entry body (Markdown). Omit for a stub with frontmatter only.' },
+        slug: { type: 'string', description: 'File slug; omit to derive it from the title.' },
+        confirm: {
+          type: 'boolean',
+          description: 'Set true only after the user has seen the path and the fields this call would write.',
+        },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) {
+          const error = asRecord(v['error'])
+          if (v['requiresConfirmation'] === true) {
+            return text([
+              `Confirmation required: ${String(error['message'] ?? '')}`,
+              `Would write: ${String(v['willWrite'] ?? '?')}${v['replaced'] === true ? ' (replaces the existing file)' : ''}`,
+              'Nothing was written. Show this to the user, then call again with confirm: true.',
+            ])
+          }
+          return text([`World upsert refused: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`])
+        }
+        const indexLine =
+          v['indexRebuilt'] === true
+            ? 'index rebuilt.'
+            : `index NOT rebuilt (${String(asRecord(v['indexError'])['code'] ?? 'unknown')}) — run inkflow_index_rebuild.`
+        return text([
+          `${v['created'] === true ? 'Created' : 'Replaced'} ${String(v['path'])} (id ${String(v['id'])}).`,
+          describeWorldRow(v['world']),
+          indexLine,
+        ])
+      },
+    },
+    execute: async (args, exec) =>
+      withProject(deps, exec, args, async (root) => {
+        const a = asRecord(args)
+        const title = optionalString(a['title'])
+        if (title === undefined) {
+          return { ok: false, root, error: { code: 'TITLE_REQUIRED', message: 'a world entry needs a title' } }
+        }
+        const category = optionalString(a['category'])
+        const parent = optionalString(a['parent'])
+        const idArg = optionalString(a['id'])
+        const slugInput = optionalString(a['slug']) ?? slugify(title)
+        if (slugInput === '') {
+          return { ok: false, root, error: { code: 'SLUG_INVALID', message: `"${title}" has no usable file slug` } }
+        }
+        if (UNSAFE_SEGMENT.test(slugInput) || slugInput.includes('/')) {
+          return { ok: false, root, error: { code: 'SLUG_INVALID', message: `"${slugInput}" is not a portable file name` } }
+        }
+        if (category !== undefined && (UNSAFE_SEGMENT.test(category) || category.includes('/'))) {
+          return { ok: false, root, error: { code: 'CATEGORY_INVALID', message: `"${category}" is not a portable directory name` } }
+        }
+        const rawPriority = a['priority']
+        if (rawPriority !== undefined && !(typeof rawPriority === 'number' && Number.isInteger(rawPriority))) {
+          return { ok: false, root, error: { code: 'PRIORITY_INVALID', message: 'priority must be an integer' } }
+        }
+        // Each of these becomes one `key: value` line, and `frontmatterLine()` throws on a
+        // line break — inside the write lock that throw would be reported as `IO_FAILED`,
+        // telling the model the disk failed when nothing was written. Judged here, before
+        // the lock, so the refusal stays data the model can act on.
+        for (const [field, value] of [
+          ['title', title],
+          ['id', idArg],
+          ['parent', parent],
+        ] as const) {
+          if (value !== undefined && /[\r\n]/u.test(value)) {
+            return {
+              ok: false,
+              root,
+              error: {
+                code: 'FIELD_INVALID',
+                message: `${field} must be a single line: a line break cannot be written into the frontmatter`,
+              },
+            }
+          }
+        }
+        const keywords = readKeywords(a['keywords'])
+        const path = category === undefined ? `world/${slugInput}.md` : `world/${category}/${slugInput}.md`
+
+        const outcome = applyUpsert(domain, root, {
+          ...(idArg === undefined ? {} : { id: idArg }),
+          title,
+          path,
+          ...(category === undefined ? {} : { category }),
+          ...(parent === undefined ? {} : { parent }),
+          keywords,
+          always: a['always'] === true,
+          ...(rawPriority === undefined ? {} : { priority: rawPriority as number }),
+          body: optionalString(a['body']) ?? '',
+          confirm: a['confirm'] === true,
+        })
+        if (!outcome.ok) {
+          if ('confirmation' in outcome) {
+            return {
+              ok: false,
+              root,
+              requiresConfirmation: true,
+              willWrite: outcome.confirmation.willWrite,
+              replaced: outcome.confirmation.replaced,
+              error: {
+                code: 'WORLD_UPSERT_REQUIRES_CONFIRMATION',
+                message: `writing ${outcome.confirmation.willWrite} needs confirmation`,
+                hint: 'show the path and fields to the user; nothing was written. Call again with confirm: true',
+              },
+            }
+          }
+          return { ok: false, error: outcome.error }
+        }
+
+        // The index is a cache: it is refreshed after the lock, and a failed rebuild is
+        // reported rather than rolling the write back.
+        let indexRebuilt = false
+        let indexError: Json | undefined
+        try {
+          await buildIndex(root)
+          indexRebuilt = true
+        } catch (cause) {
+          const failure = describeIndexBuildFailure(cause)
+          indexError = { code: failure.code, message: failure.message }
+        }
+        return { ...outcome.value, indexRebuilt, ...(indexError === undefined ? {} : { indexError }) }
+      }),
   }
 }
 
 /** Both world tools, in registry order (X-5: the domain's whole model-facing surface). */
-export function worldTools(deps: DomainToolDeps): readonly ToolDefinition[] {
-  return [worldTreeTool(deps), worldUpsertTool(deps)]
+export function worldTools(deps: DomainToolDeps, domain: DomainModule): readonly ToolDefinition[] {
+  return [worldTreeTool(deps), worldUpsertTool(deps, domain)]
 }

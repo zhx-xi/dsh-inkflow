@@ -15,11 +15,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  DOMAIN_MODULES,
   INDEX_SCHEMA_VERSION,
   buildIndex,
   buildWorldTree,
@@ -74,6 +75,20 @@ function callTool(name, args) {
   const tool = domainTools().find((candidate) => candidate.name === name)
   assert.ok(tool, `${name} must be registered by a domain module`)
   return tool.execute(args, { signal: new AbortController().signal, callId: 'world-test' })
+}
+
+/** The registered world module — the object the write chain is supposed to judge with. */
+function worldModule() {
+  const module = DOMAIN_MODULES.find((candidate) => candidate.kind === 'world')
+  assert.ok(module, 'the world domain is registered')
+  return module
+}
+
+/** One world row as `parseFile` reads it out of a whole document. */
+function worldRowOf(text, path) {
+  const parsed = worldModule().parseFile({ root: '', path, text })
+  const bucket = parsed.rows.find((candidate) => candidate.table === 'world_entries')
+  return bucket?.rows[0]
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +435,135 @@ test('the upsert tool refuses a book that is not a usable project', async () => 
     assert.equal(result.ok, false)
     assert.equal(result.error.code, 'NOT_AN_INKFLOW_PROJECT')
     assert.equal(existsSync(join(root, 'world')), false, 'the gate refuses before any directory is created')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 6. The write chain (#159) — the gate must be the domain module's, not the plan's
+// ---------------------------------------------------------------------------
+
+test('the upsert judges the candidate with the domain module own validate', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    const domain = worldModule()
+    const original = domain.validate
+    const judged = []
+    // A sentinel issue: this code exists nowhere in the implementation, so a refusal
+    // carrying it can only have come from the domain object the write chain called.
+    domain.validate = (input) => {
+      judged.push(input.candidate?.path)
+      return [{ code: 'SENTINEL_FROM_DOMAIN', path: input.candidate?.path, detail: 'stub judge' }]
+    }
+    try {
+      const refused = await callTool('inkflow_world_upsert', {
+        projectRoot: root,
+        title: '九幽',
+        category: '秘境',
+        confirm: true,
+      })
+      assert.equal(refused.ok, false)
+      assert.equal(refused.error.code, 'SENTINEL_FROM_DOMAIN', 'the refusal code comes from worldDomain.validate()')
+      // Two passes, and both are the domain's: `scanProject()` judges the whole book
+      // (no candidate), then the write chain judges the candidate it is about to write.
+      assert.deepEqual(judged, [undefined, 'world/秘境/九幽.md'], 'the candidate is judged by the domain object')
+      assert.equal(existsSync(join(root, 'world/秘境/九幽.md')), false, 'a blocking issue leaves zero writes')
+    } finally {
+      domain.validate = original
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a confirmed upsert reports what the file actually holds (round-trip)', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    const created = await callTool('inkflow_world_upsert', {
+      projectRoot: root,
+      id: 'w-9',
+      title: '九幽',
+      category: '秘境',
+      parent: 'w-0',
+      keywords: ['九幽', '幽冥'],
+      always: true,
+      priority: 5,
+      body: '九幽之地，不闻天光。',
+      confirm: true,
+    })
+    assert.equal(created.ok, true, `upsert failed: ${JSON.stringify(created.error ?? {})}`)
+
+    const expected = {
+      id: 'w-9',
+      path: 'world/秘境/九幽.md',
+      title: '九幽',
+      category: '秘境',
+      parent: 'w-0',
+      keywords: ['九幽', '幽冥'],
+      always: true,
+      priority: 5,
+    }
+    // The file's own parser is the judge:字段必须原样读得回来（写入侧的 round-trip）。
+    const row = worldRowOf(readFileSync(join(root, 'world/秘境/九幽.md'), 'utf8'), expected.path)
+    assert.deepEqual({ ...row }, expected)
+    // …and the answer reports that readback, not the arguments we meant to write.
+    assert.deepEqual(created.world, expected)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a write the plan accepts but the domain cannot read back is refused', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // Longer than the parser's frontmatter window (frontmatter.ts MAX_FRONTMATTER_BYTES
+    // = 4096): the block this call renders cannot be read back as frontmatter at all.
+    // `planWorldUpsert` has no rule about size — it judges the tree shape only — so this
+    // is the net only the domain module's own parser can provide.
+    const longTitle = '门'.repeat(1600)
+    const path = `world/门派/${'门'.repeat(60)}.md`
+    assert.equal(
+      planWorldUpsert({ entries: [], candidate: { id: path, path, title: longTitle, category: '门派' } }).ok,
+      true,
+      'the plan precheck has nothing to say about this write',
+    )
+
+    const refused = await callTool('inkflow_world_upsert', {
+      projectRoot: root,
+      title: longTitle,
+      category: '门派',
+      confirm: true,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error.code, 'FRONTMATTER_ISSUE', 'the parser is the one that refuses it')
+    assert.equal(existsSync(join(root, path)), false, 'nothing was written')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a field a frontmatter line cannot carry is refused before the lock', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    const refused = await callTool('inkflow_world_upsert', {
+      projectRoot: root,
+      title: '九幽\n幽冥',
+      category: '秘境',
+      confirm: true,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error.code, 'FIELD_INVALID', 'a line break in a frontmatter value is refused as data')
+    assert.equal(existsSync(join(root, 'world/秘境')), true, 'the fixture stays as it was')
+    assert.deepEqual(readdirSync(join(root, 'world/秘境')), ['剑冢.md'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
