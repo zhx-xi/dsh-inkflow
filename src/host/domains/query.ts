@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from '../conventions.js'
+import { locateHit, makeSnippet } from '../snippet.js'
 import { entityFromRow } from './entities.js'
 import { splitTerms } from './scan-helpers.js'
 import { statusOf } from './timeline-plan.js'
@@ -153,6 +154,160 @@ export function searchEntities(root: string, query: string, limit = DEFAULT_LIMI
       Record<string, unknown>
     >
     return rows.map(toSummary)
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * One hit of the cross-class search, in the shape X-16 fixes
+ * (`{kind, id, path, title, snippet, offset?, score?}`, issue #39).
+ *
+ * `snippet` is cut from the entry's own searchable fields (title · aliases ·
+ * keywords) rather than from the file: the projection stores frontmatter values, not
+ * frontmatter text, so a snippet can never leak `id:`/`status:` lines into what the
+ * model or the panel reads back.
+ */
+export interface EntityHit {
+  readonly kind: string
+  readonly id: string
+  readonly path: string
+  readonly title: string
+  readonly snippet: string
+  /** Character offset of the first hit inside the joined field text. */
+  readonly offset: number
+  /** The backend's ranking; higher is better. Absent on the `LIKE` scan. */
+  readonly score?: number
+}
+
+export interface EntityHitPage {
+  readonly items: EntityHit[]
+  /** Every match in the requested kinds, not the page size. */
+  readonly total: number
+  readonly mode: 'fts' | 'like'
+}
+
+export interface EntityHitOptions {
+  /**
+   * Content directories to search. The caller passes already-validated names and
+   * **must not** include `chapters`: chapter rows are also in the projection, and the
+   * unified search reads chapter prose from `chapters_fts` — asking for both would
+   * report the same chapter twice.
+   */
+  readonly kinds?: readonly string[]
+  readonly limit?: number
+  /** Characters kept either side of the hit (default 40). */
+  readonly radius?: number
+}
+
+/** Terms joined the way the projection stored them (`joinTerms` in `scan-helpers.ts`). */
+function fieldTextOf(row: Record<string, unknown>): string {
+  const parts: string[] = []
+  for (const key of ['title', 'aliases', 'keywords']) {
+    const value = row[key]
+    if (typeof value === 'string' && value.trim() !== '') parts.push(value.trim())
+  }
+  return parts.join(' · ')
+}
+
+function entityHitOf(row: Record<string, unknown>, terms: readonly string[], radius: number): EntityHit {
+  const text = fieldTextOf(row)
+  const hit = locateHit(text, terms)
+  const result: EntityHit = {
+    kind: String(row['kind'] ?? ''),
+    id: String(row['id'] ?? ''),
+    path: String(row['path'] ?? ''),
+    title: String(row['title'] ?? ''),
+    snippet: makeSnippet(text, terms, radius),
+    offset: hit === undefined ? 0 : hit.at,
+  }
+  // FTS5's bm25 `rank` is more-negative-is-better; the wire convention is the reverse.
+  if (typeof row['rank'] === 'number' && Number.isFinite(row['rank'])) {
+    return { ...result, score: -(row['rank'] as number) }
+  }
+  return result
+}
+
+/**
+ * Search the entity projection by title, aliases or keywords, with a total and a page.
+ *
+ * This is the shape the unified search (#39, X-16) needs and `searchEntities` above
+ * cannot give it: a count for `total`, a snippet, and multi-term AND semantics that
+ * match the chapter side (every whitespace-separated term has to appear somewhere in
+ * the entry's fields). `undefined` means "no usable index", never "no matches".
+ */
+export function searchEntityHits(
+  root: string,
+  terms: readonly string[],
+  options: EntityHitOptions = {},
+): EntityHitPage | undefined {
+  const effective = terms.filter((term) => term !== '')
+  if (effective.length === 0) return { items: [], total: 0, mode: 'like' }
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  const limit = clamp(options.limit)
+  const radius = options.radius ?? 40
+  const kinds = options.kinds === undefined || options.kinds.length === 0 ? undefined : [...options.kinds]
+  try {
+    if (effective.every((term) => term.length >= 3)) {
+      try {
+        // One quoted phrase per term joined by AND: the same strict semantics the
+        // chapter side uses, and the same guarantee that no term reaches the FTS
+        // parser as an operator (a phrase is literal text).
+        const match = effective.map((term) => ftsPhrase(term)).join(' AND ')
+        const kindWhere = kinds === undefined ? '' : ` AND e.kind IN (${kinds.map(() => '?').join(', ')})`
+        const kindParams = kinds ?? []
+        const counted = db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM entities_fts f JOIN entities e ON e.kind || ':' || e.id = f.entity_key
+              WHERE entities_fts MATCH ?${kindWhere}`,
+          )
+          .get(match, ...kindParams) as { n?: number } | undefined
+        const rows = db
+          .prepare(
+            `SELECT e.kind, e.id, e.path, e.title, e.aliases, e.keywords, f.rank AS rank
+               FROM entities_fts f JOIN entities e ON e.kind || ':' || e.id = f.entity_key
+              WHERE entities_fts MATCH ?${kindWhere}
+              ORDER BY f.rank
+              LIMIT ?`,
+          )
+          .all(match, ...kindParams, limit) as unknown as Array<Record<string, unknown>>
+        return {
+          items: rows.map((row) => entityHitOf(row, effective, radius)),
+          total: typeof counted?.n === 'number' ? counted.n : 0,
+          mode: 'fts',
+        }
+      } catch {
+        // A query FTS5 cannot parse degrades to the scan, exactly as `search.ts` does.
+      }
+    }
+    const termWhere = effective
+      .map(() => "(e.title LIKE ? ESCAPE '\\' OR e.aliases LIKE ? ESCAPE '\\' OR e.keywords LIKE ? ESCAPE '\\')")
+      .join(' AND ')
+    const kindWhere = kinds === undefined ? '' : ` AND e.kind IN (${kinds.map(() => '?').join(', ')})`
+    const params = [
+      ...effective.flatMap((term) => [likePattern(term), likePattern(term), likePattern(term)]),
+      ...(kinds ?? []),
+    ]
+    const counted = db
+      .prepare(`SELECT COUNT(*) AS n FROM entities e WHERE ${termWhere}${kindWhere}`)
+      .get(...params) as { n?: number } | undefined
+    const rows = db
+      .prepare(
+        `SELECT e.kind, e.id, e.path, e.title, e.aliases, e.keywords
+           FROM entities e
+          WHERE ${termWhere}${kindWhere}
+          ORDER BY e.kind, e.title, e.path
+          LIMIT ?`,
+      )
+      .all(...params, limit) as unknown as Array<Record<string, unknown>>
+    return {
+      items: rows.map((row) => entityHitOf(row, effective, radius)),
+      total: typeof counted?.n === 'number' ? counted.n : 0,
+      mode: 'like',
+    }
   } catch {
     return undefined
   } finally {

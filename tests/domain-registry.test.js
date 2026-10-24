@@ -39,6 +39,10 @@ const BUILT_IN_TOOLS = [
   ['inkflow_index_rebuild', '51a5555a'],
   ['inkflow_chapter_list', '4a6eecc1'],
   ['inkflow_chapter_search', 'd10a9b63'],
+  // #39: the one search entry (X-16) and the search-replace batch (X-17). Built-ins
+  // because they span every kind and own no content directory.
+  ['inkflow_search', '46e8ca64'],
+  ['inkflow_search_replace', '1c309b8e'],
   ['inkflow_project_audit', '2e5349da'],
   ['inkflow_project_plan', '52c0ddec'],
   ['inkflow_project_init', '4226bc54'],
@@ -52,6 +56,11 @@ const BUILT_IN_TOOLS = [
   // they judge the book's *layout*, not one content directory.
   ['inkflow_project_repair', 'e9825bce'],
   ['inkflow_project_migrate', '2a0f5b4b'],
+  // #40: the shared library (list / copy / update). Built-ins, not domain tools:
+  // `dataDir/shared` belongs to no book, so no content directory owns them.
+  ['inkflow_shared_list', 'e4280396'],
+  ['inkflow_shared_copy', 'f2d81abe'],
+  ['inkflow_shared_update', '17ae972a'],
   // #42: the plugin's own state — settings, the diagnostics package and the local
   // backups. Built-ins for the same reason as the pair above: none of them belongs to
   // one content directory, and two of them touch no book at all.

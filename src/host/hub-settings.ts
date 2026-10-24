@@ -20,6 +20,7 @@
  */
 
 import type { HostContext } from './context.js'
+import { realpathSync } from 'node:fs'
 import {
   backupStampZip,
   bookSlugOf,
@@ -61,7 +62,7 @@ function homeDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Anchors (a registry id or a book directory name — never a path)
+// Anchors: a registered path, a registry id, or a book directory name
 // ---------------------------------------------------------------------------
 
 export interface HubBookAnchor {
@@ -80,12 +81,29 @@ function basenameOf(path: string): string {
   return index < 0 ? normalised : normalised.slice(index + 1)
 }
 
+/** `realpath` when it resolves, the resolved path otherwise (a Windows junction case). */
+function canonical(path: string): string {
+  try {
+    return realpathSync.native(path)
+  } catch {
+    return path
+  }
+}
+
 /**
  * Resolve a `book` parameter against the workspace registry.
  *
- * Two spellings are accepted on purpose: the registry id (stable, what the panel
- * sends) and the directory name (what a profile without ids can offer, and what a
- * human recognises). An ambiguous name is refused — never resolved to the first match.
+ * THREE spellings, one rule: the anchor is always looked up in
+ * `workspaceRegistry.list()`, and nothing outside the registry is ever accepted.
+ *
+ *   * a **registered path** (what `/hub/books` already hands the panel, and what the
+ *     shared-content routes on this same channel take — one conversation, one
+ *     spelling between the two panels). Compared by `realpath` on both sides, because
+ *     the registry stores canonical paths while the panel may echo the row it was
+ *     given with different casing or a trailing separator on Windows;
+ *   * a **registry id** (stable across a directory rename);
+ *   * a **directory name** (what a profile without ids can offer, and what a human
+ *     recognises) — refused when two registered books share it.
  */
 export function resolveHubBook(ctx: HostContext, anchor: unknown): HubAnchorResult {
   const wanted = trimmed(anchor)
@@ -106,6 +124,26 @@ export function resolveHubBook(ctx: HostContext, anchor: unknown): HubAnchorResu
       },
     }
   }
+  // A path-shaped anchor (a separator, a drive letter) is matched by canonical path
+  // first and never falls through to name matching: "E:\书" must not match a book whose
+  // directory happens to be called `书`.
+  const looksLikePath = /[\\/]/.test(wanted) || /^[a-zA-Z]:/.test(wanted)
+  if (looksLikePath) {
+    const canonicalWanted = canonical(wanted)
+    const match = entries.find((entry) => canonical(entry.path) === canonicalWanted || entry.path === wanted)
+    if (match === undefined) {
+      return {
+        ok: false,
+        error: {
+          code: 'BOOK_NOT_FOUND',
+          message: `${wanted} is not a registered book`,
+          hint: `${ANCHOR_HINTS} — a path is accepted only when it is exactly a registered book`,
+        },
+      }
+    }
+    return { ok: true, value: anchorOf(match) }
+  }
+
   const byId = entries.filter((entry) => entry.id !== undefined && entry.id === wanted)
   const candidates = byId.length > 0 ? byId : entries.filter((entry) => basenameOf(entry.path) === wanted)
   if (candidates.length === 0) {
@@ -120,19 +158,19 @@ export function resolveHubBook(ctx: HostContext, anchor: unknown): HubAnchorResu
       error: {
         code: 'BOOK_AMBIGUOUS',
         message: `${String(candidates.length)} registered books match ${JSON.stringify(wanted)}`,
-        hint: 'pass the workspace id instead of the directory name; this page never guesses which book you meant',
+        hint: 'pass the workspace id (or the book\'s exact registered path) instead of the directory name; this page never guesses which book you meant',
       },
     }
   }
-  const entry = candidates[0] as { path: string; title?: string; id?: string }
+  return { ok: true, value: anchorOf(candidates[0] as { path: string; title?: string; id?: string }) }
+}
+
+function anchorOf(entry: { path: string; title?: string; id?: string }): HubBookAnchor {
   return {
-    ok: true,
-    value: {
-      root: entry.path,
-      title: entry.title ?? basenameOf(entry.path),
-      slug: bookSlugOf(entry.path),
-      ...(entry.id === undefined ? {} : { workspaceId: entry.id }),
-    },
+    root: entry.path,
+    title: entry.title ?? basenameOf(entry.path),
+    slug: bookSlugOf(entry.path),
+    ...(entry.id === undefined ? {} : { workspaceId: entry.id }),
   }
 }
 

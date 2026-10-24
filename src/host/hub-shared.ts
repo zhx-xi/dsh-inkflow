@@ -191,6 +191,44 @@ export function buildHubShared(sharedRoot: string | undefined, options: HubShare
 }
 
 // ---------------------------------------------------------------------------
+// The write side's reader (#40): real hashes, never the manifest
+// ---------------------------------------------------------------------------
+
+export type SharedLibraryScan =
+  | { ok: true; entries: SharedEntry[]; truncated: boolean }
+  | { ok: false; error: HubSharedError }
+
+/**
+ * The library, hashed from the files themselves — the manifest is ignored.
+ *
+ * `buildHubShared` may answer from `shared/index.json` to keep first paint
+ * cheap, and that is fine for a list. COPY and STALE cannot use it: a manifest
+ * that is a scan behind would hand the copy a `contentHash` that never matched
+ * the bytes, and every copy would be born stale. So the writer's reader always
+ * walks and always hashes, and a missing library is an answer (`entries: []`,
+ * `created: false`) rather than an error — copying out of an empty library is
+ * `SHARED_ENTRY_NOT_FOUND`, decided by the caller.
+ */
+export function scanSharedLibrary(sharedRoot: string | undefined, options: HubSharedOptions = {}): SharedLibraryScan {
+  const root = typeof sharedRoot === 'string' ? sharedRoot.trim() : ''
+  if (root === '' || !isAbsolute(root)) return { ok: false, error: UNAVAILABLE }
+
+  const now = options.now ?? Date.now
+  const limits: Limits = {
+    deadline: now() + Math.max(1, options.budgetMs ?? SHARED_SCAN_BUDGET_MS),
+    now,
+    maxEntries: Math.max(1, options.maxEntries ?? SHARED_MAX_ENTRIES),
+    maxHashBytes: Math.max(0, options.maxHashBytes ?? SHARED_MAX_HASH_BYTES),
+  }
+  const realRoot = realpathLoose(root)
+  if (!isDirectory(realRoot)) return { ok: true, entries: [], truncated: false }
+
+  const walked = walkKinds(realRoot, limits)
+  const scanned = scanEntries(realRoot, walked.files, limits)
+  return { ok: true, entries: scanned.entries, truncated: walked.truncated || scanned.truncated }
+}
+
+// ---------------------------------------------------------------------------
 // The directory walk: names only, bounded, containment-checked
 // ---------------------------------------------------------------------------
 

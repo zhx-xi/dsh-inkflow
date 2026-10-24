@@ -245,10 +245,20 @@ test('registers the twenty built-ins, the tools of every registered domain, and 
       'inkflow_project_status',
       'inkflow_relation_list',
       'inkflow_relation_upsert',
+      // #39: the single search entry (X-16) and the search-replace batch (X-17), both
+      // built-ins — they span every kind and own no content directory.
+      'inkflow_search',
+      'inkflow_search_replace',
       // #42: settings. Built-ins that touch no book at all — they read and write
       // `$DSH_HOME/inkflow/settings.json` (ADR-0018 D1).
       'inkflow_settings_get',
       'inkflow_settings_update',
+      // #40: the shared library's one read and two writes. Built-ins, not domain
+      // tools — the library lives OUTSIDE every book, so no content directory owns
+      // it and `domainTools()` cannot contribute it.
+      'inkflow_shared_copy',
+      'inkflow_shared_list',
+      'inkflow_shared_update',
       'inkflow_timeline_list',
       'inkflow_timeline_upsert',
       'inkflow_volume_create',

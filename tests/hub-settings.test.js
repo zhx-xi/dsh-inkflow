@@ -206,6 +206,17 @@ test('the backup anchor is a registry id or a directory name; an unknown or ambi
     assert.equal(byName.json.ok, true)
     assert.equal(byName.json.value.book.workspaceId, 'ws-2')
 
+    // The third spelling is the one the shared-content routes on this same channel use
+    // (#40): the book's exact registered PATH. Accepted because the registry is the only
+    // authority — a path outside it is still refused below.
+    const byPath = await get(h, `/backups?book=${encodeURIComponent(h.bookA)}`)
+    assert.equal(byPath.json.ok, true, JSON.stringify(byPath.json))
+    assert.equal(byPath.json.value.book.workspaceId, 'ws-1')
+
+    const strangerPath = await get(h, `/backups?book=${encodeURIComponent(join(h.parent, 'not-a-book'))}`)
+    assert.equal(strangerPath.json.ok, false)
+    assert.equal(strangerPath.json.error.code, 'BOOK_NOT_FOUND')
+
     const unknown = await get(h, '/backups?book=nope')
     assert.equal(unknown.json.ok, false)
     assert.equal(unknown.json.error.code, 'BOOK_NOT_FOUND')

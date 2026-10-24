@@ -58,6 +58,14 @@
  * cap, and a body-field allowlist per route. A hub write route (`plan`/`apply`,
  * ADR-0010 D4) additionally requires an `Origin` that is the SAME ORIGIN as
  * `Host`, not merely loopback (ADR-0010 D6 #6).
+ *
+ * THE SHARED LIBRARY HAS TWO HALVES (#40, ADR-0007). Browsing it is the one hub
+ * read that belongs to no book (`/hub/shared`, ADR-0010 D5). Taking an entry INTO
+ * a book (`/hub/shared/copies`, `/hub/shared/copy`, `/hub/shared/update`) is a hub
+ * WRITE, so it needs the same-origin guard *and* an anchor: the request names
+ * `book`, which must be the canonical path of a registered workspace — the panel
+ * can write into a book the user already opened, and nowhere else. The shared
+ * library itself is never a write target on any route (no "push" direction).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -66,6 +74,13 @@ import type { HostContext } from './context.js'
 import { sharedDir } from './config.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
 import { buildHubShared } from './hub-shared.js'
+import {
+  SHARED_COPY_BODY_FIELDS,
+  SHARED_UPDATE_BODY_FIELDS,
+  sharedCopiesReply,
+  sharedCopyReply,
+  sharedUpdateReply,
+} from './shared-channel.js'
 import {
   buildHubBackups,
   buildHubDiagnostics,
@@ -114,6 +129,8 @@ import {
   exportAudit,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
+import { MAX_QUERY_CHARS } from './search.js'
+import { REPLACE_APPLY_BODY_FIELDS, replaceApplyReply, replacePreviewReply, searchAllFromQuery } from './search-channel.js'
 
 const PREFIX = '/inkflow'
 const LOOPBACK_AUTHORITY = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
@@ -227,16 +244,49 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
   {
+    // The single search entry (#39, roadmap X-16): body prose plus every setting kind,
+    // one page at a time. `kinds` (repeated or comma-separated) narrows it; an unusable
+    // index is a 200 answer with `degradedReason`, never a 5xx.
     name: 'search',
     pattern: /^\/search$/,
     methods: ['GET'],
     handle: async ({ target, query, version }) => {
       const q = (query.get('q') ?? '').trim()
       if (q === '') {
-        return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text> to search the chapter tree' }) }
+        return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text> to search the book' }) }
       }
-      return { status: 200, body: ok(await buildSearch(target, version, q)) }
+      if (q.length > MAX_QUERY_CHARS) {
+        return {
+          status: 400,
+          body: failure('QUERY_INVALID', { message: `query is ${q.length} characters long; the limit is ${MAX_QUERY_CHARS}` }),
+        }
+      }
+      return { status: 200, body: ok(await buildSearch(target, version, searchAllFromQuery(query))) }
     },
+  },
+  {
+    // The replace preview (#39, X-17): what a batch would change, with the exact
+    // `expected` set an apply must send back. Read-only — it does not even refresh the
+    // index, because a preview is a question and a rebuild during a question is a write.
+    name: 'replace-preview',
+    pattern: /^\/replace$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const q = query.get('q') ?? ''
+      if (q.trim() === '') {
+        return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text>&with=<replacement>' }) }
+      }
+      return replacePreviewReply(target, version, { query: q, replacement: query.get('with') ?? '' })
+    },
+  },
+  {
+    // The batch itself: a write, so it carries every write guard declared above plus
+    // `confirm: true` and the preview's `expected` set (X-17).
+    name: 'replace-apply',
+    pattern: /^\/replace\/apply$/,
+    methods: ['POST'],
+    body: REPLACE_APPLY_BODY_FIELDS,
+    handle: ({ target, version, body }) => replaceApplyReply(target, version, body),
   },
   {
     // The setting library (issue #30, X-7): eight kind groups, `world` carrying
@@ -627,6 +677,42 @@ const HUB_ROUTES: readonly HubRoute[] = [
     },
   },
   {
+    // What this book already holds from the library, and how fresh each copy is
+    // (#40, ADR-0007 C3 — "stale" is a report, never a repair). Read-only: it hashes
+    // the library and reads each copy's head; the library's own manifest is not
+    // written back here either (that stays derived).
+    //
+    // `book` is the second path-shaped field this channel accepts besides the
+    // wizard's `candidate`, and it means "a REGISTERED workspace, named exactly as
+    // /hub/books listed it": `shared-channel.ts` refuses anything else before the
+    // filesystem is touched, so the panel cannot copy into a directory the user has
+    // not opened.
+    name: 'hub-shared-copies',
+    pattern: /^\/hub\/shared\/copies$/,
+    methods: ['GET'],
+    handle: ({ ctx, dataDir, query }) => sharedCopiesReply(ctx, dataDir, query.get('book') ?? undefined),
+  },
+  {
+    // The default take-out action (ADR-0007 C2): copy one entry into a book. A hub
+    // write, so the same-origin `Origin` guard above applies, and `confirm` is the
+    // second half of ADR-0006 D3's discipline.
+    name: 'hub-shared-copy',
+    pattern: /^\/hub\/shared\/copy$/,
+    methods: ['POST'],
+    body: SHARED_COPY_BODY_FIELDS,
+    handle: ({ ctx, dataDir, body }) => sharedCopyReply(ctx, dataDir, body),
+  },
+  {
+    // Refresh ONE stale copy. Explicit by design: the previous bytes go into
+    // `.inkflow/backup/<stamp>/` before the write, so "undo that refresh" does not
+    // depend on git (ADR-0012), and nothing happens without `confirm: true`.
+    name: 'hub-shared-update',
+    pattern: /^\/hub\/shared\/update$/,
+    methods: ['POST'],
+    body: SHARED_UPDATE_BODY_FIELDS,
+    handle: ({ ctx, dataDir, body }) => sharedUpdateReply(ctx, dataDir, body),
+  },
+  {
     // The settings page (#42, ADR-0018 D1): settings live OUTSIDE every book, so this
     // route takes no anchor at all. It also carries the book choices the backup
     // section offers (id + title, never a path) and the retention rule in force.
@@ -662,8 +748,9 @@ const HUB_ROUTES: readonly HubRoute[] = [
     handle: ({ ctx, dataDir, version, body }) => reply(exportHubDiagnostics({ ctx, dataDir, version }, body)),
   },
   {
-    // The backup list of ONE book. The anchor is a registry id or a directory name —
-    // never a path (ADR-0008 D4), and an ambiguous name is refused rather than guessed.
+    // The backup list of ONE book. The anchor is a registered book path, a registry id
+    // or a directory name — nothing outside the registry is accepted, and an ambiguous
+    // name is refused rather than guessed.
     name: 'hub-backups',
     pattern: /^\/hub\/backups$/,
     methods: ['GET'],

@@ -121,17 +121,40 @@
 
 **只读纪律（三层）**
 
-1. **代码层**：模块没有任何写 API —— 不 `mkdir`、不写 `index.json`、不改条目文件；库不存在只回 `created:false`（空不是错误，也不是"顺手建一个"的理由）。
+1. **代码层**：`hub-shared.ts` 没有任何写 API —— 不 `mkdir`、不写 `index.json`、不改条目文件；库不存在只回 `created:false`（空不是错误，也不是"顺手建一个"的理由）。**取用方向（复制/引用/更新）不在这个文件里**：它在 `shared-copy.ts`（§4.2.3），由 `shared-channel.ts` 暴露成三条独立的 hub 路由，各自带写守卫。
 2. **数据层**：`index.json` 是**派生清单**（[ADR-0005](../adrs/0005-files-first-with-derived-index.md)：文件是真相、清单是缓存）。清单与目录不一致时**以目录为准**，清单既不修也不补。
-3. **证据层**：拒绝路径与正常读取都要求 `shared/` 整树 hash 前后一致（`tests/hub-shared.test.js`）。
+3. **证据层**：拒绝路径与正常读取都要求 `shared/` 整树 hash 前后一致（`tests/hub-shared.test.js`）；取用侧另有自己的整树证据（`tests/shared-copy.test.js`、`tests/shared-routes.test.js`）。
 
 **为什么不写回 `index.json`**
 
-- **能力边界**：写入属于共享库写入方（#40）。hub 的能力白名单只有"列书 / 初始化计划 / 初始化执行 / 共享内容只读浏览"（ADR-0010 D3），通道里没有写路由；在同一个投影里顺手写清单，等于给只读页开了一个写后门。
+- **能力边界**：清单是缓存，不是真相；#40 落地后仍然不写回——写回会让"手改清单"变成一件看起来有效的事，而 [ADR-0007](../adrs/0007-plugin-shared-library.md) C1 明确说手改会被下一次扫描覆盖。
 - **幂等与并发**：面板可能同时开在多个窗口。谁都写清单就会出现"最后写者赢"的清单；不写，则任何窗口看到的都是同一份真相——目录本身。
 - **失败形态更好**：清单坏了只是"这次扫描"；扫描被预算截断只是"这次少列 + `truncated:true`"。两者都不留下半写状态。
 
 **成本上限**：见 [conventions.md](conventions.md) §6.2.2。常量在 `hub-shared.ts` 顶部导出，测试注入而非真的等待 1.5 秒。
+
+#### 4.2.3 共享库的取用方向 — `shared-copy.ts` + `shared-channel.ts`（#40）
+
+`GET /hub/shared` 只回答"库里有什么"；把条目**拿进一本书**是另一个方向、另一套纪律（[ADR-0007](../adrs/0007-plugin-shared-library.md) C2–C6），由两个模块分担：
+
+| 模块 | 负责 | 不负责 |
+|---|---|---|
+| `src/host/shared-copy.ts` | 域：`copySharedEntry`（快照 + `origin`）、`updateSharedEntry`（逐条更新，先备份）、`buildSharedCopies`（副本与 stale 列表，只读）、`ensureProjectId`、`applyOriginBlock`/`readOrigin`（`origin` 块的写与读） | 认路径、认会话、认 HTTP；它只接收一个已经过门禁的 `root` |
+| `src/host/shared-channel.ts` | 通道：`book` 必须命中 `workspaceRegistry`（`listRegisteredWorkspaces` + realpath 比较）→ 再过四态门禁 → 才调域；三条路由的 body 白名单 | 判定"什么算一条副本"、写 `inkflow.json` 字段 |
+
+**落位（ADR-0007 C2）**：`world/…` 原样落 `world/…`；`library/*.md` 落 `library/*.md`（连同可选原文副本）；`snippets/*.md` 落 `library/snippets/*.md`（`library/` 是资料域，**不新增第十个一级目录**）；`series/*.json` **不落文件**，只写 `inkflow.json.seriesId`。
+
+**三条路由**（只在写时有 `Origin` 同源要求，与 `plan`/`apply` 同一套守卫）：
+
+| 路由 | 动词 | body | 语义 |
+|---|---|---|---|
+| `/hub/shared/copies` | GET | query: `book` | 本书副本 + `state`（`current`/`stale`/`missing-source`）+ `selfContained` + `seriesId`/`seriesFound`；**只读** |
+| `/hub/shared/copy` | POST | `book` / `entryId` / `mode?` / `confirm` | 复制快照（默认）或 `library/` 引用卡；冲突 → `SHARED_COPY_CONFLICT`，零写入 |
+| `/hub/shared/update` | POST | `book` / `entryId?` / `file?` / `confirm` | 逐条更新：先 `openBackup(root,'shared')` + `stageFile` + `sealBackup(sealed:false)`，再写，再 `sealBackup(sealed:true)` |
+
+**`origin` 的落盘形式**：frontmatter 里的**嵌套映射**（`origin:` 下三行 `projectId`/`entryId`/`contentHash`，引用卡换成 `sha256`）。这要求 `frontmatter.ts` 能读缩进映射——原先缩进行会被报成"unparsed frontmatter line"，而那条 issue 会进 `validation_issues` 与体检报告，等于每条副本都是"坏文件"。因此读侧扩了**一层**嵌套映射支持（值仍只到标量/内联数组/块列表），写侧由 `applyOriginBlock` 负责"插入或整体替换"，不改其他任何字节。
+
+**为什么 `stale` 不动文件**（[ADR-0007](../adrs/0007-plugin-shared-library.md) C3）：副本是作者的正文，来源变了不等于副本该被覆盖。列表报 `contentHash` 与当前 `sha256`，更新是显式动作且有备份包。
 
 #### 4.2.2 向导线（plan → apply）— `src/host/hub-wizard.ts`（唯一的 hub 写面）
 
@@ -407,7 +430,10 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/index-build.ts` | 索引重建的原子替换、进程内单飞、`index/.lock` | 解析文件格式 |
 | `src/host/index-freshness.ts` | **新鲜度判定**（`checkIndexFreshness`，纯读：一次 readdir+stat 对拍 `files` 表）与**唯一重建触发点**（`ensureIndex`，四态 → 至多一次 `buildIndex`，失败结构化） | 改索引内容、删除索引文件、写项目文件 |
 | `src/host/file-cas.ts` | 写入的期望基线：`sha256`/`size`/`mtimeMs`/`absent` 的指纹与比对（`FILE_CHANGED` 的数据面） | 决定是否写（由 chapters/workspace 在写锁内调用）、拼接项目路径 |
-| `src/host/search.ts` | 章正文检索（`chapters_fts`）：trigram `MATCH`、1–2 字 `LIKE` 兜底、片段裁剪；**只读**，不建库不修复 | 写盘、门禁判定（由工具层先过门禁） |
+| `src/host/search.ts` | 章正文检索（`chapters_fts`）：trigram `MATCH`、1–2 字 `LIKE` 兜底、片段裁剪；**只读**，不建库不修复。另含 **X-16 的单一检索入口** `searchEntries`：章正文（正文 + 标题）＋九个内容目录的设定条目，固定条目形状 `{kind,id,path,title,snippet,offset?,score?}`、分页 `{offset,limit,total}`（`limit` ≤ 100，超出上限按上限截断并 `truncated: true`）、后端字段 `searchBackend`/`degradedReason`；索引缺失或异版只得到 `INDEX_UNAVAILABLE`，绝不 500 | 写盘、门禁判定（由工具层先过门禁）、决定是否重建（归 `index-freshness.ts`／工具层） |
+| `src/host/snippet.ts` | **片段裁剪的唯一实现**：`locateHit`（首个命中位置）、`makeSnippet`（半径内上下文，空白折叠）、`sliceContext`（已知位置的上下文，供替换预览的「前/后」）。叶模块（无 import）：`search.ts` 与 `domains/query.ts` 都要用它，而前者经 `indexer.ts` 绕回域注册表，不能成为共享路径 | 读文件、决定命中（只渲染调用方给的文本） |
+| `src/host/replace.ts` | **检索替换的唯一实现**（X-17）：预览与执行共用 `planReplace`（同一份计数 + 同一份新文本 → 预览=执行）；逐章保留原行尾/BOM（`text-style.ts` + `io.ts` 唯一写入口）；`expected`（chapterId + count）对不上的章 `PREVIEW_STALE` 跳过并报告；执行前开 `openBackup(root,'replace')` 并封 `sealed:false`，任一步失败即从备份包回滚。章列表读 catalog（文件的投影）而非索引：预览在没有索引时也必须正确 | 决定是否重建索引（工具层写后 `ensureIndex`）、替换设定条目的结构化正文（需按类写入器） |
+| `src/host/search-channel.ts` | 检索与替换的通道半：`GET /search` 的 X-16 信封（读前 `ensureIndex`，索引不可用时降级为元数据扫描并带 `degradedReason`）、`GET /replace`（预览，**零写盘**，回传 `expected`）、`POST /replace/apply`（要 `confirm: true` + `expected`）、失败码到 HTTP 状态的映射 | 检索/替换规则、投影字段的所有权（归 `search.ts`/`replace.ts`）、HTTP 加固（归 `routes.ts`） |
 | `src/host/io.ts` | **唯一写入口**：路径解析、原子写、单项目写锁 | 业务规则、索引 |
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
@@ -416,15 +442,17 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
 | `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
-| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 12 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete`） | 直接扫目录（走 indexer/project/workspace） |
+| `src/host/tools.ts` | 工具 schema/执行/渲染、四态拒绝清单（当前注册 16 个：`project_status` / `project_plan` / `project_init` / `index_rebuild` / `chapter_list` / `chapter_search` / `search` / `search_replace` / `project_audit` / `volume_create` / `volume_rename` / `chapter_create` / `chapter_write` / `chapter_move` / `chapter_delete` / `project_repair` / `project_migrate`——其中 `search` 是 #39 的 X-16 单一入口，`search_replace` 是 X-17 的预览/执行两段工具） | 直接扫目录（走 indexer/project/workspace） |
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
-| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError` | HTTP 加固、写作品文件、自己决定是否重建 |
+| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError`（`/search` 自 #39 起是 X-16 的单一入口，索引不可用时降级为章元数据扫描并带 `degradedReason`；检索替换的三条路由在 `search-channel.ts`） | HTTP 加固、写作品文件、自己决定是否重建 |
 | `src/host/findings.ts` | **「问题」的唯一形状**（roadmap X-14）：`Finding` / `FindingLocator` / 五个报告分组 / `FINDING_CODES` 目录 / `compareFindings` 的稳定排序 | 任何检查实现、任何 IO（#33 产出、#36 消费） |
 | `src/host/audit.ts` | **一致性体检**（#33，X-14）：五类发现聚合成一份 `Finding[]`（只聚合 / 分组 / 排序 / 给人话 hint，判定一律调域模块）＋ Markdown 报告渲染 ＋ 唯一写动作（`exportAuditReport` → `.inkflow/audit/`） | 判任何不变量（那是 `scanProject` / `validateCatalog` / 域模块的事）、重建索引、在只读路径写盘 |
 | `src/host/audit-channel.ts` | 体检的通道半：`GET /audit` 的投影（分组计数 + 前 N 条 + 定位与地址）与 `POST /audit/export` 的信封、`CONFIRM_REQUIRED` 闸门、失败码到 HTTP 状态的映射 | 体检规则、Markdown 排版、写盘（一律调 `audit.ts` 与 `io.ts`） |
 | `src/host/private-state.ts` | 私有状态目录 `.inkflow/` 的三个共享助手（ADR-0012）：相对路径拼装、`isPrivateStatePath`、`ensurePrivateStateIgnored`（append-only 补 ignore 行，失败返回而不抛） | 决定什么时候删/备份（归 #35/#36）、清单格式 |
 | `src/host/zip.ts` | **store-only ZIP 容器**（[ADR-0018](../adrs/0018-settings-backup-diagnostics.md) D3）：`writeZip`（本地头 + 中央目录 + EOCD，method 0，自算 CRC-32，MS-DOS 时间戳）、`readZip`（**读中央目录**而不是扫本地头，逐条校验 CRC 与长度）、导出的 `crc32`；拒绝 method≠0、zip64、密文包、`..`/绝对/反斜杠/空段名（防解压逃逸）与重名条目 | 压缩与解压（那是被 D3 否掉的方向）、决定备份包含哪些文件（归 #42）、写盘 |
-| `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE`；对外只暴露"列注册表"这一个只读入口（`listRegisteredWorkspaces`），供向导线解析锚点 | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
+| `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE`；对外只暴露"列注册表"这一个只读入口（`listRegisteredWorkspaces`），供向导线与共享库写通道解析锚点 | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
+| `src/host/shared-copy.ts` | **共享库取用方向的唯一实现**（#40、ADR-0007 C2–C6）：`copySharedEntry`（快照 + `origin{projectId,entryId,contentHash}`，冲突零写入）、`updateSharedEntry`（逐条更新：先备份包再写）、`buildSharedCopies`（副本 + stale 列表，只读）、`ensureProjectId`（可选 `inkflow.json.projectId`）、`applyOriginBlock`（`origin` 块的插入/替换） | 认路径/会话/HTTP、写共享库与 `index.json`、自动更新、双向同步 |
+| `src/host/shared-channel.ts` | 共享库的三条 hub 路由信封：`book` 必须命中 `workspaceRegistry`（realpath 比较）→ 四态门禁 → 再调域；body 白名单 `SHARED_COPY_BODY_FIELDS` / `SHARED_UPDATE_BODY_FIELDS`；拒绝码 → HTTP 状态 | 判定副本语义、写 `inkflow.json` 字段、接受 `root`/`path` |
 | `src/host/settings.ts` | **插件级设置的唯一读写口**（[ADR-0018](../adrs/0018-settings-backup-diagnostics.md) D1/D2）：`$DSH_HOME/inkflow/settings.json`（`config.ts` 的 `dataDir`）、`schemaVersion: 1`、六个字段的白名单；读语义集中在一处（文件缺失=默认、字段缺失=该字段默认、越界夹取、类型错回退、坏文件=默认 + 一条 `warn`，**任何情况都不让插件起不来**）、无进程内缓存（用时即读）、写为合并 + 临时文件 rename、文件的 `schemaVersion` 比本版新则**拒绝覆盖**（否则会静默丢掉更新版本写的字段）。配套：`settings-tools.ts`（`inkflow_settings_get`/`_update`）与 `hub-settings.ts` 的设置两路由 | 写任何书内文件（D1：设置与书不镜像）、读作品数据、缓存 |
 | `src/host/diagnostics.ts` | **白名单诊断包**（D5，roadmap X-22）：版本与构建戳、`engines`、平台/架构/Node/ICU、索引元信息（`user_version`/文件数/实体数/最近重建/新鲜度/各域计数）、工具清单（名字 + surface hash）、脱敏后的设置、`logs`（如实写"不可用"：宿主不向插件暴露日志，去尾随宿主的日志会把别的插件的输出一起带出去）；`exportDiagnostics` 落到 `dataDir/diagnostics/<stamp>.json`——选 JSON 而非 Markdown，是因为测试要断言"那段正文不在这里"（字符串搜索对 JSON 精确），且两次导出可直接 diff；另有文档级后置脱敏（`~/…`、`<book>`、形似凭据的串） | 读任何正文/设定/`.env`/`.credentials.yaml`/OVK 私有 peer、在任何输出里留下绝对路径、写任何书内文件 |
 | `src/host/backup-zip.ts` | **本地备份包**（D3/D4/D6）：用 `zip.ts` 写 store-only ZIP 到 `dataDir/backups/<bookSlug>-<stamp>.zip`（stamp 为 UTC，同秒加 `-2` 后缀）、内容集合 = 九内容目录 + `inkflow.json` + `.gitignore`，排除 `index/`、`.git/`、`.inkflow/`（`includeTrash` 可选把 `trash/` 带上）、保留 `backupKeep` 份并删最旧（只认自己写的文件名，手放的 ZIP 不动）、`planRestore` 只比较不写盘、`restoreBookBackup` 用计划里的逐文件摘要做 CAS（改过的文件报 `BACKUP_CONFLICT` 且不覆盖，其余照常写回，写后逐字节校验）再 `ensureIndex(rebuild)`。配套：`settings-tools.ts`（`inkflow_backup_create`/`_restore`）、`hub-settings.ts` 的备份三路由、`client/settings-model.ts` + `settings.tsx`（书库里的「设置」页） | 压缩/解压（D3 否掉的方向）、决定备份何时做（由工具/面板触发）、把备份写进书（`index/` 或 `.inkflow/`） |
@@ -433,10 +461,13 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/impact-write.ts` | **改名的唯一写实现**：写锁内「先写新文件（旧 id 钉进 frontmatter `id`）→ 再删旧文件」、`TARGET_EXISTS`/`FILE_CHANGED`/失败回滚、写后 `ensureIndex(rebuild)` 并回报 `id` 不变 / `path` 更新 / 提及条数不变 | 生成影响清单、重写引用方字段（X-15：一个都不改）、直接拼项目路径（经 `io.ts`） |
 | `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封、body 字段白名单；另含**书库路由组** `/hub/*` 的独立分派（无会话；写路由要求 `Origin` 与 `Host` 同源） | 业务规则、写真相文件、解析会话 |
 | `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 章节树 / 编辑器 / 向导清单）、页表 `pageRenderers`（roadmap X-12：非 `chapters` 页一行一页，JSX 里不再有页分支）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
-| `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、「新开书」向导入口（`HubWizard`）、共享内容的禁用占位（#87）、`apply` 成功后**就地合并**书单行 | 写动作本身、轮询、拼路径参数 |
+| `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、「新开书」向导入口（`HubWizard`）、「共享内容」页入口（关闭时回到书单，并把**书单**交给它当复制目标）、`apply` 成功后**就地合并**书单行 | 写动作本身、轮询、拼路径参数 |
+| `src/client/hub-shared.tsx` | 共享内容页（#87 只读 + #40 取用）：库条目按 kind 分组、目标书选择（只列 `usable`）、复制/引用两段式确认（先臂上再「确认复制」）、本书副本列表与逐条更新（确认后带 `confirm: true`）、`selfContained` 与 `seriesId` 说明；只走 `fetchInternal`/`writeInternal` 的 `sessionless` 调用 | 判副本语义、拼 `root`/`path` 参数、轮询 |
+| `src/client/hub-shared-model.ts` | 共享内容页的纯视图模型：两种信封折叠（库 / 副本）、`state` 文案、`copyNeedsUpdate`（只为 `stale` 给按钮）、`copyModes`（引用只给 `library/`）、`copyTargets`（只列 `usable` 书）、`selfContainedNote`、拒绝码 → 人话 | React、网络、IO |
 | `src/client/hub-wizard.tsx` | 新开书向导的视图：`pickDirectory` → plan → 确认卡（`willCreate[]` / `notices[]` / 书名 / `outsideRegistry` 二次确认）→ apply → 降级 A 卡片；目录选择器不可用时退化为手输绝对路径 | 拼第二套规则、跳转/建会话、轮询 |
 | `src/client/hub-wizard-model.ts` | 向导的纯视图模型：`plan` 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填判定、降级 A 文案、`mergeHubRow`（就地更新或追加） | React、网络、IO |
 | `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
+| `src/client/search-model.ts` | 检索框的纯视图模型（#39，X-16/X-20）：请求路径与「全部类型」开关的换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案（`章正文 · 标题`）、点击去向（章正文 → 本页编辑器；设定条目 → 设定库）、摘要与降级文案 | React、网络、IO |
 | `src/client/hub-model.ts` | 书库的纯视图模型：徽标（含 `timeout`）、`~/…` 相对化、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案、信封折叠 | React、网络、IO |
 | `src/client/layout-model.ts` | 面板滚动 box 的纯几何（§4.3.1）：可用底边规则、`Math.floor` 定高、CSS 变量与兜底、两列共享的样式常量 | React、DOM、配色 |
 | `src/client/layout.ts` | 高度实测的 DOM 读取与 React 接线：`useScrollBox()`（每次渲染复测 + `ResizeObserver` + `window.resize`），把高度写成 `--inkflow-body-h`；量不到返回空样式走 CSS 兜底 | 业务规则、网络、写文件 |
@@ -504,11 +535,11 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | 搜索的正文全文检索 | `/search` 目前只匹配章节元数据（id/路径/标题），并显式标 `searchUnavailable: true` | #22 |
 | 卷章 catalog + `volumeId` | 未落地；卷归属按目录名推导 | #15 |
 | 索引 v2（九目录全实体 + 提及 + 全实体 FTS） | 只覆盖章/角色/世界观/大纲 | #22 / #23 |
-| 插件级共享库 + `origin` 溯源 | 未落地 | #40 |
+| 共享条目的「转为复制快照」 | 引用卡只读（写入即 `REFERENCE_READONLY`）；想改成快照，当前做法是删卡片再复制一次（ADR-0007 C4 的显式动作未做成按钮） | 随 #49 |
 | OVK 语义检索（peer / 分块 / 按章重建 / 降级） | 未落地；当前只有 FTS5 | #41 |
 | 写入器之上的提案制（改写正文需确认） | `io.ts` 已落地，提案制未落地 | #45 |
 | 增量重建 / 大文件流式解析 | 未落地 | 随索引 v2 |
-| 书库的共享内容页 | `/hub/shared` 与「共享内容」入口位未落地；书单与「新开书」向导已落地 | #87 |
+| 书库「共享内容」页的**运行中观感** | 契约测试打 `lib/client.js` 构建产物（入口、两条路由、两段式确认文案、无轮询），**没有在重启后的 DSH 里点过**「复制」「更新」与目标书下拉 | 重启 DSH 后：书库里点「共享内容」→ 选书 → 复制一条 → 看 `origin` 落到文件；改共享库再刷新 → 该行显示落后 → 更新 |
 
 ### 9.2 未验证（已实现但未观测）
 

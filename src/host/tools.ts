@@ -34,7 +34,11 @@ import { applyWorkspace, planWorkspace } from './workspace.js'
 import { checkProjectRootScope, findProjectRoot, inspectProject, projectLabel } from './project.js'
 import { gateFailure, resolveProject } from './domains/tool-project.js'
 import { rememberProject } from './state.js'
-import { DEFAULT_SEARCH_LIMIT, MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, searchChapters } from './search.js'
+import { DEFAULT_SEARCH_LIMIT, MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, SEARCH_KINDS, searchChapters, searchEntries } from './search.js'
+import { replaceApply, replacePreview } from './replace.js'
+import { sharedDir } from './config.js'
+import { scanSharedLibrary } from './hub-shared.js'
+import { buildSharedCopies, copySharedEntry, updateSharedEntry } from './shared-copy.js'
 
 export interface ToolDeps {
   ctx: HostContext
@@ -185,8 +189,7 @@ function renderAuditFailure(value: Json): ContentBlock[] {
   return text(lines)
 }
 
-function renderChapterFailure(verb: string, value: Json): ContentBlock[] {
-  const error = asRecord(value['error'])
+function renderChapterFailure(verb: string, value: Json): ContentBlock[] {  const error = asRecord(value['error'])
   const lines = [`${verb} failed: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`]
   if (error['path'] !== undefined) lines.push(`path: ${String(error['path'])}`)
   if (error['nothingWritten'] === true) {
@@ -208,9 +211,23 @@ function renderChapterFailure(verb: string, value: Json): ContentBlock[] {
   return text(lines)
 }
 
+/**
+ * A shared-library refusal, rendered once for the three tools.
+ *
+ * The codes carry the whole meaning (`SHARED_COPY_CONFLICT`, `REFERENCE_READONLY`,
+ * `REFERENCE_NOT_ALLOWED`, `SHARED_SOURCE_MISSING`, …), so the line names the code,
+ * the path and then the hint — which is the part the model has to act on.
+ */
+function renderSharedFailure(verb: string, value: Json): ContentBlock[] {
+  const error = asRecord(value['error'])
+  const lines = [`${verb} failed: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`]
+  if (error['path'] !== undefined) lines.push(`path: ${String(error['path'])}`)
+  if (error['hint'] !== undefined) lines.push(String(error['hint']))
+  return text(lines)
+}
+
 const SUCCESS_SCHEMA: JsonSchemaNode = {
-  type: 'object',
-  properties: { ok: { type: 'boolean' } },
+  type: 'object',  properties: { ok: { type: 'boolean' } },
   required: ['ok'],
   additionalProperties: true,
 }
@@ -1105,6 +1122,316 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
   }
 
   /**
+   * The single search entry (issue #39, roadmap X-16).
+   *
+   * One tool for every kind instead of one per kind: the model asks "where is this
+   * name" and gets the setting entries and the chapter prose in one paged answer. The
+   * envelope is fixed by X-16 (`{kind,id,path,title,snippet,offset?,score?}` per entry,
+   * `{offset,limit,total}` paging, `searchBackend`), so #41 can put a semantic backend
+   * behind it without changing this tool.
+   */
+  const searchAll: ToolDefinition = {
+    name: 'inkflow_search',
+    description:
+      'Search the whole book through one entry: chapter prose plus every setting-library kind (characters, world, ' +
+      'outlines, foreshadowing, timeline, relations, facts, library). Each hit is `{kind, id, path, title, snippet}` ' +
+      'with `offset`/`score` where the backend provides them; the page is `{offset, limit, total}` and `truncated` ' +
+      'says more matches exist (a `limit` above 100 is clamped, not refused). The setting library is listed before ' +
+      'chapter prose, because an entity matches on its own title/aliases/keywords while the manuscript matches in ' +
+      'every chapter that uses the word. Terms are matched literally (quotes, asterisks and OR are text), 1–2 ' +
+      'character terms use a LIKE scan (trigram cannot match them), and multiple terms all have to appear. Snippets ' +
+      'are prose or field values, never frontmatter. Read-only: if the index is missing or foreign it is rebuilt ' +
+      'once and the query retried; a still-unusable index is INDEX_UNAVAILABLE, never a stack trace.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        query: { type: 'string', description: 'Words to look for. Matched literally; 1–2 character terms use a LIKE scan.' },
+        kinds: {
+          type: 'array',
+          items: { type: 'string', enum: [...SEARCH_KINDS] },
+          description: `Kinds to include: ${SEARCH_KINDS.join(', ')}. Default: all of them.`,
+        },
+        offset: { type: 'integer', description: 'Hits to skip (0–5000, default 0).' },
+        limit: {
+          type: 'integer',
+          description: `Hits per page (1–${MAX_SEARCH_LIMIT}, default ${DEFAULT_SEARCH_LIMIT}). A larger value is clamped and the reply reports truncated.`,
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: SUCCESS_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) {
+          const error = asRecord(v['error'])
+          const message = error['message'] === undefined ? '' : ` — ${String(error['message'])}`
+          const hint = error['hint'] === undefined ? '' : `\n${String(error['hint'])}`
+          return text([`Search failed: ${String(error['code'] ?? 'unknown')}${message}${hint}`])
+        }
+        const items = Array.isArray(v['items']) ? (v['items'] as Json[]) : []
+        const total = typeof v['total'] === 'number' ? v['total'] : items.length
+        const offset = typeof v['offset'] === 'number' ? v['offset'] : 0
+        const query = String(v['query'])
+        const backend = String(v['searchBackend'] ?? 'fts5')
+        if (items.length === 0) {
+          return text([`No match for "${query}" in ${total === 0 ? 'any kind' : 'this page'} (${backend}, ${String(v['mode'])}).`])
+        }
+        const last = offset + items.length
+        const lines = [
+          `${total} match(es) for "${query}" — showing ${offset + 1}–${last} (${backend}, ${String(v['mode'])}${v['indexRebuilt'] === true ? ', index rebuilt' : ''}):`,
+        ]
+        for (const item of items) {
+          lines.push(`- [${String(item['kind'])}] ${String(item['title'])} — ${String(item['path'])} (id ${String(item['id'])})`)
+          if (String(item['snippet'] ?? '') !== '') lines.push(`    ${String(item['snippet'])}`)
+        }
+        if (v['truncated'] === true) {
+          lines.push(`…more matches exist; call again with offset ${String(last)} for the next page.`)
+        }
+        return text(lines)
+      },
+    },
+    execute: async (args, exec) => {
+      const a = asRecord(args)
+      const resolved = await resolveProject(deps, a['projectRoot'], exec)
+      if (resolved.probe === undefined || resolved.probe.usable !== true) return gateFailure(resolved)
+      const probe = resolved.probe
+      const queryRaw = a['query']
+      if (typeof queryRaw !== 'string' || queryRaw.replace(/\s+/gu, '') === '') {
+        return {
+          ok: false,
+          root: probe.root,
+          error: {
+            code: 'QUERY_INVALID',
+            message: 'query must be a non-empty string',
+            hint: `pass the words to look for (limit ${MAX_QUERY_CHARS} characters); 1–2 characters use a LIKE scan, 3+ use the trigram index`,
+          },
+        }
+      }
+      const query = queryRaw.trim()
+      const kinds = Array.isArray(a['kinds']) ? (a['kinds'] as unknown[]).map(String) : undefined
+      const offset = typeof a['offset'] === 'number' ? a['offset'] : 0
+      const limit = typeof a['limit'] === 'number' ? a['limit'] : DEFAULT_SEARCH_LIMIT
+
+      // Same single rebuild trigger as every other read tool (#5): the query is
+      // validated above, so a refused query still writes nothing.
+      const ensured = await ensureIndex(probe.root)
+      if (!ensured.ok) return ensureFailure(ensured, probe.root)
+      const result = searchEntries(probe.root, query, { ...(kinds === undefined ? {} : { kinds }), offset, limit })
+      rememberProject(deps.dataDir, probe.root)
+      if (!result.ok) {
+        return {
+          ok: false,
+          root: probe.root,
+          query,
+          indexRebuilt: ensured.rebuilt,
+          indexState: ensured.state,
+          error: { code: result.code, message: result.message, hint: result.hint },
+        }
+      }
+      return {
+        ok: true,
+        root: probe.root,
+        query,
+        searchBackend: result.searchBackend,
+        mode: result.mode,
+        offset: result.offset,
+        limit: result.limit,
+        total: result.total,
+        truncated: result.truncated,
+        ...(result.degradedReason === undefined ? {} : { degradedReason: result.degradedReason }),
+        indexRebuilt: ensured.rebuilt,
+        indexState: ensured.state,
+        items: result.items,
+      }
+    },
+  }
+
+  /**
+   * Search-and-replace over chapter prose (issue #39, roadmap X-17).
+   *
+   * Two actions in one tool because the contract is "preview = execution": the
+   * preview's `items` ARE the `expected` set an apply must carry, and putting them in
+   * one tool means a model cannot preview with one schema and apply with another.
+   * `preview` writes nothing; `apply` needs `confirm: true` and a matching `expected`,
+   * rewrites through the rollback package, and reports every refused file.
+   */
+  const searchReplace: ToolDefinition = {
+    name: 'inkflow_search_replace',
+    description:
+      'Preview or apply a search-and-replace over chapter prose. `preview` (the default) lists every file the batch ' +
+      'would change with the occurrence count and the text around the first hit, and writes nothing at all. `apply` ' +
+      'rewrites those files: it requires `confirm: true` and the `expected` set from a preview ([{ chapterId, count }]) ' +
+      '— a file whose count changed since the preview is skipped and reported as preview-stale instead of being ' +
+      'rewritten silently. Every file keeps its own line endings and BOM. The batch opens a rollback package under ' +
+      '.inkflow/backup/ before the first write, and rolls back through it if a write fails; the reply names that ' +
+      'directory so the author can undo by hand. Matching is literal and case-insensitive, like search; the ' +
+      'replacement is literal too (`$1` means nothing here). Chapter prose only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        action: {
+          type: 'string',
+          enum: ['preview', 'apply'],
+          description: '`preview` (default) writes nothing; `apply` rewrites the chapters and needs expected + confirm.',
+        },
+        query: { type: 'string', description: 'Literal text to look for (case-insensitive).' },
+        replacement: { type: 'string', description: 'Literal replacement text; pass "" to delete the matches.' },
+        expected: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              chapterId: { type: 'string' },
+              count: { type: 'integer' },
+            },
+            required: ['chapterId', 'count'],
+            additionalProperties: false,
+          },
+          description: 'The preview items as [{ chapterId, count }]. Required for apply.',
+        },
+        confirm: { type: 'boolean', description: 'Required for apply: it rewrites chapter files.' },
+      },
+      required: ['query', 'replacement'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: SUCCESS_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) {
+          const error = asRecord(v['error'])
+          const message = error['message'] === undefined ? '' : ` — ${String(error['message'])}`
+          const hint = error['hint'] === undefined ? '' : `\n${String(error['hint'])}`
+          const rolledBack = v['rolledBack'] === true ? '\nThe batch was rolled back from its backup package.' : ''
+          return text([`Search-replace refused: ${String(error['code'] ?? 'unknown')}${message}${hint}${rolledBack}`])
+        }
+        const query = String(v['query'])
+        const replacement = String(v['replacement'])
+        const items = Array.isArray(v['items']) ? (v['items'] as Json[]) : []
+        const written = Array.isArray(v['written']) ? (v['written'] as Json[]) : []
+        const skipped = Array.isArray(v['skipped']) ? (v['skipped'] as Json[]) : []
+        const lines: string[] = []
+        if (v['applied'] === true) {
+          const replaced = typeof v['replaced'] === 'number' ? v['replaced'] : 0
+          lines.push(`Replaced "${query}" → "${replacement}": ${String(replaced)} occurrence(s) in ${String(written.length)} file(s).`)
+          for (const item of written) {
+            lines.push(`- ${String(item['title'])} — ${String(item['path'])} · ${String(item['count'])} 处`)
+            lines.push(`    前：${String(item['before'])}`)
+            lines.push(`    后：${String(item['after'])}`)
+          }
+          const backup = asRecord(v['backup'])
+          if (backup['dir'] !== undefined) {
+            lines.push(`Rollback package: ${String(backup['dir'])} (undo with inkflow_project_migrate action rollback, or delete the batch by hand).`)
+          }
+          if (v['indexRebuilt'] === true) lines.push('index rebuilt')
+          else if (v['indexError'] !== undefined) {
+            lines.push(`index NOT rebuilt (${String(asRecord(v['indexError'])['code'] ?? 'unknown')}) — run inkflow_index_rebuild`)
+          }
+        } else {
+          const total = typeof v['total'] === 'number' ? v['total'] : items.length
+          lines.push(`Preview: "${query}" → "${replacement}" would change ${String(total)} file(s). Nothing was written.`)
+          for (const item of items) {
+            lines.push(`- ${String(item['title'])} — ${String(item['path'])} · ${String(item['count'])} 处`)
+            lines.push(`    前：${String(item['before'])}`)
+            lines.push(`    后：${String(item['after'])}`)
+          }
+          if (items.length > 0) {
+            lines.push('To apply, call again with action: apply, confirm: true and expected = these items as [{ chapterId, count }].')
+          }
+        }
+        for (const item of skipped) {
+          lines.push(
+            `- skipped ${String(item['path'] === '' ? item['chapterId'] : item['path'])}: ${String(item['reason'])} ` +
+              `(expected ${String(item['expected'])}, actual ${String(item['actual'])})${item['detail'] === undefined ? '' : ` — ${String(item['detail'])}`}`,
+          )
+        }
+        return text(lines)
+      },
+    },
+    execute: async (args, exec) => {
+      const a = asRecord(args)
+      const resolved = await resolveProject(deps, a['projectRoot'], exec)
+      if (resolved.probe === undefined || resolved.probe.usable !== true) return gateFailure(resolved)
+      const probe = resolved.probe
+      const query = typeof a['query'] === 'string' ? a['query'] : ''
+      const replacement = typeof a['replacement'] === 'string' ? a['replacement'] : ''
+      const action = a['action'] === 'apply' ? 'apply' : 'preview'
+      rememberProject(deps.dataDir, probe.root)
+      if (action === 'preview') {
+        const preview = replacePreview(probe.root, { query, replacement })
+        if (!preview.ok) {
+          return { ok: false, root: probe.root, error: { code: preview.code, message: preview.message, hint: preview.hint } }
+        }
+        return {
+          ok: true,
+          root: probe.root,
+          applied: false,
+          query: preview.query,
+          replacement: preview.replacement,
+          kinds: preview.kinds,
+          items: preview.items,
+          total: preview.total,
+        }
+      }
+
+      const expected = Array.isArray(a['expected'])
+        ? (a['expected'] as unknown[]).map((raw) => asRecord(raw)).map((item) => ({
+            chapterId: String(item['chapterId'] ?? ''),
+            count: typeof item['count'] === 'number' ? item['count'] : Number(item['count'] ?? 0),
+          }))
+        : undefined
+      if (expected === undefined) {
+        return {
+          ok: false,
+          root: probe.root,
+          error: {
+            code: 'EXPECTED_REQUIRED',
+            message: 'apply needs the expected set from a preview',
+            hint: 'call with action: preview first, then pass its items as expected: [{ chapterId, count }]',
+          },
+        }
+      }
+      const applied = replaceApply(probe.root, {
+        query,
+        replacement,
+        expected,
+        confirm: a['confirm'] === true,
+      })
+      if (!applied.ok) {
+        return {
+          ok: false,
+          root: probe.root,
+          ...(applied.backup === undefined ? {} : { backup: applied.backup }),
+          ...(applied.written === undefined ? {} : { written: applied.written }),
+          ...(applied.skipped === undefined ? {} : { skipped: applied.skipped }),
+          ...(applied.rolledBack === undefined ? {} : { rolledBack: applied.rolledBack }),
+          error: { code: applied.code, message: applied.message, hint: applied.hint },
+        }
+      }
+      // The manuscript changed, so the derived cache is now stale: rebuild it here
+      // (same single trigger as a chapter write) and report what happened.
+      const ensured = await ensureIndex(probe.root)
+      return {
+        ok: true,
+        root: probe.root,
+        applied: true,
+        query: applied.query,
+        replacement: applied.replacement,
+        ...(applied.backup === undefined ? {} : { backup: applied.backup }),
+        written: applied.written,
+        skipped: applied.skipped,
+        replaced: applied.replaced,
+        indexRebuilt: ensured.ok ? ensured.rebuilt : false,
+        ...(ensured.ok ? {} : { indexError: { code: ensured.failure.code, message: ensured.failure.message } }),
+      }
+    },
+  }
+
+  /**
    * The consistency audit (#33, roadmap X-14). Read-only unless `export: true`, and the
    * export is the one action here that writes — under `.inkflow/audit/` (ADR-0012 #6).
    *
@@ -1232,11 +1559,279 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
       }
     },
   }
+  /**
+   * The shared library (#40, ADR-0007). Three tools, one direction: they read the
+   * plugin-level library (`dataDir/shared`) and copy OUT of it into the current
+   * book. Nothing here writes the library — the manifest is derived and there is no
+   * "push" direction (ADR-0007 C6).
+   *
+   * Why `list` does not require a book: the library belongs to no project, and a
+   * session that is not inside a book must still be able to browse it. When the
+   * session IS inside a usable book, the same answer also carries that book's
+   * copies and which of them are stale, so one call answers "what is there" and
+   * "what is behind" without a second round trip.
+   */
+  const sharedList: ToolDefinition = {
+    name: 'inkflow_shared_list',
+    description:
+      'List the plugin-level shared library (world / library / snippets / series under the plugin data directory) and, ' +
+      'when the session is inside a usable book, what that book already holds from it: one row per copy with its ' +
+      '`origin` and a `state` of `current`, `stale` (the shared entry changed since the copy) or `missing-source` (the ' +
+      'entry was deleted; the copy is still a normal file). Read-only: nothing is written, and `shared/index.json` is ' +
+      'never rewritten (it is a derived manifest). Use `entryId` from this answer with inkflow_shared_copy.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        kind: {
+          type: 'string',
+          enum: ['world', 'library', 'snippets', 'series'],
+          description: 'Only this kind. Omit for all four.',
+        },
+        q: { type: 'string', description: 'Case-insensitive substring match over the entry path.' },
+        staleOnly: {
+          type: 'boolean',
+          description: 'Only report copies whose contentHash no longer matches the shared entry.',
+        },
+      },
+      additionalProperties: false,
+    },
+    output: {
+      schema: SUCCESS_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) return renderSharedFailure('Reading the shared library', v)
+        const entries = Array.isArray(v['entries']) ? (v['entries'] as Json[]) : []
+        const copies = Array.isArray(v['copies']) ? (v['copies'] as Json[]) : []
+        const counts = asRecord(v['counts'])
+        const lines = [`共享库：${String(v['total'] ?? entries.length)} 条（${String(v['libraryPath'] ?? '')}）`]
+        for (const entry of entries) {
+          const tags = Array.isArray(entry['tags']) && entry['tags'].length > 0 ? ` · ${(entry['tags'] as string[]).join('/')}` : ''
+          lines.push(`- [${String(entry['kind'])}] ${String(entry['entryId'])} · ${String(entry['path'])}${tags}`)
+        }
+        if (v['truncated'] === true) lines.push('（未列全：已达扫描上限，用 kind 或 q 缩小范围）')
+        if (v['copiesKnown'] !== true) {
+          lines.push('本书副本：当前会话不在可用的书里，未检查。')
+          return text(lines)
+        }
+        lines.push(
+          `本书副本：${String(counts['total'] ?? 0)} 条 · 最新 ${String(counts['current'] ?? 0)} · 落后 ${String(counts['stale'] ?? 0)} · 来源已删 ${String(counts['missing'] ?? 0)}`,
+        )
+        for (const copy of copies) {
+          lines.push(
+            `- ${String(copy['state'])} · ${String(copy['file'])}${copy['entryId'] === null ? '' : ` ← ${String(copy['entryId'])}`}`,
+          )
+        }
+        if (v['selfContained'] === false) lines.push('注意：本书含引用条目，不自包含（引用卡只读）。')
+        return text(lines)
+      },
+    },
+    execute: async (args, exec) => {
+      const a = asRecord(args)
+      const library = scanSharedLibrary(sharedDir(deps.dataDir))
+      if (!library.ok) {
+        return { ok: false, error: { code: library.error.code, message: library.error.message, hint: library.error.hint } }
+      }
+      const kind = optionalString(a['kind'])?.trim() ?? ''
+      const q = optionalString(a['q'])?.trim().toLowerCase() ?? ''
+      const matching = library.entries.filter((entry) => {
+        if (kind !== '' && entry.kind !== kind) return false
+        if (q !== '' && !entry.path.toLowerCase().includes(q)) return false
+        return true
+      })
+
+      // A book is OPTIONAL here: the library is not part of any project, so a
+      // session outside one still gets an answer instead of a gate refusal.
+      let copies: Json[] = []
+      let copiesKnown = false
+      let selfContained = true
+      let counts: Json = { total: 0, current: 0, stale: 0, missing: 0 }
+      const resolved = await resolveProject(deps, a['projectRoot'], exec)
+      if (resolved.probe !== undefined && resolved.probe.usable === true) {
+        const status = buildSharedCopies({ dataDir: deps.dataDir, root: resolved.probe.root })
+        if (status.ok) {
+          copiesKnown = true
+          selfContained = status.value.selfContained
+          counts = { ...status.value.counts }
+          copies = (a['staleOnly'] === true
+            ? status.value.entries.filter((row) => row.state === 'stale')
+            : status.value.entries) as unknown as Json[]
+        }
+      }
+      return {
+        ok: true,
+        libraryPath: sharedDir(deps.dataDir),
+        kind: kind === '' ? null : kind,
+        q: q === '' ? null : q,
+        total: matching.length,
+        truncated: library.truncated,
+        entries: matching.map((entry) => ({
+          entryId: entry.entryId,
+          kind: entry.kind,
+          path: entry.path,
+          sha256: entry.sha256 ?? null,
+          tags: entry.tags ?? [],
+          entryIdDerived: entry.entryIdDerived === true,
+        })),
+        copiesKnown,
+        selfContained,
+        counts,
+        copies,
+      }
+    },
+  }
+
+  const sharedCopy: ToolDefinition = {
+    name: 'inkflow_shared_copy',
+    description:
+      'Copy ONE entry from the plugin-level shared library into the current book (ADR-0007 C2). This is the default ' +
+      'action and it is a SNAPSHOT: the file lands in the book with an `origin` block recording ' +
+      '`{projectId, entryId, contentHash}` as of the copy, and later changes to the shared entry never touch it. ' +
+      'Destinations: `world/…` keeps its sub-path, a `library/` card lands in `library/` (with its original), a ' +
+      'snippet lands in `library/snippets/`, and a `series/*.json` writes `inkflow.json.seriesId` instead of a file. ' +
+      '`mode: "reference"` exists for `library/` originals only: it writes a read-only card and makes the book ' +
+      'NOT self-contained. An existing destination is refused (SHARED_COPY_CONFLICT) and nothing is written. ' +
+      'Needs `confirm: true`.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        entryId: { type: 'string', description: 'Shared entry id (`sh-xxxxxxxx`) from inkflow_shared_list.' },
+        mode: {
+          type: 'string',
+          enum: ['copy', 'reference'],
+          description:
+            'copy (default) writes the content into the book; reference writes a read-only library card and keeps the text in the shared library (library/ entries only).',
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'Required: this writes files into the book. Show the user the entry and its destination first.',
+        },
+      },
+      required: ['entryId'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: SUCCESS_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) return renderSharedFailure('Copying the shared entry', v)
+        const files = Array.isArray(v['files']) ? (v['files'] as string[]) : []
+        const origin = asRecord(v['origin'])
+        const lines: string[] = []
+        if (files.length === 0) {
+          lines.push(`已把本书关联到系列 ${String(v['seriesId'] ?? '')}（不复制文件；系列分组留在共享库）。`)
+        } else {
+          lines.push(`已复制 ${String(v['entryId'])}（${String(v['kind'])}）→ ${files.join('、')}`)
+          lines.push(
+            `origin：projectId ${String(origin['projectId'] ?? 'null')} · entryId ${String(origin['entryId'])} · ` +
+              `${origin['contentHash'] === undefined ? `sha256 ${String(origin['sha256'])}` : `contentHash ${String(origin['contentHash'])}`}`,
+          )
+        }
+        if (v['mode'] === 'reference') lines.push('这是引用卡（只读）：正文留在共享库，本项目对该条不自包含。')
+        if (v['projectIdCreated'] === true) lines.push('顺手为本书补上了 inkflow.json 的 projectId（uuid v4，不参与门禁）。')
+        for (const warning of Array.isArray(v['warnings']) ? (v['warnings'] as string[]) : []) lines.push(`· ${warning}`)
+        lines.push(commitLine(v))
+        return text(lines)
+      },
+    },
+    execute: async (args, exec) => {
+      const a = asRecord(args)
+      const resolved = await resolveProject(deps, a['projectRoot'], exec)
+      if (resolved.probe === undefined || resolved.probe.usable !== true) return gateFailure(resolved)
+      const probe = resolved.probe
+      const mode = optionalString(a['mode'])?.trim()
+      if (mode !== undefined && mode !== 'copy' && mode !== 'reference') {
+        return {
+          ok: false,
+          root: probe.root,
+          error: {
+            code: 'MODE_INVALID',
+            message: 'mode is `copy` or `reference`',
+            hint: 'omit `mode` for a normal copy snapshot',
+          },
+        }
+      }
+      const result = copySharedEntry({
+        dataDir: deps.dataDir,
+        root: probe.root,
+        entryId: optionalString(a['entryId']) ?? '',
+        ...(mode === undefined ? {} : { mode }),
+        confirm: a['confirm'] === true,
+      })
+      rememberProject(deps.dataDir, probe.root)
+      if (!result.ok) return { ok: false, root: probe.root, error: result.error }
+      return { ok: true, ...result.value }
+    },
+  }
+
+  const sharedUpdate: ToolDefinition = {
+    name: 'inkflow_shared_update',
+    description:
+      'Refresh ONE copy in this book from the shared library, after the user agreed (ADR-0007 C3). Stale copies are ' +
+      'never updated automatically: this call replaces the copy with the shared entry as it is now, re-writes its ' +
+      '`contentHash`, and FIRST puts the previous bytes into `.inkflow/backup/<stamp>/` so the refresh can be rolled ' +
+      'back. A copy that is already current is a no-op (reported in `unchanged`). A reference card is refused with ' +
+      'REFERENCE_READONLY (it holds no snapshot), and a copy whose shared entry was deleted is refused with ' +
+      'SHARED_SOURCE_MISSING. Address it by `entryId` or by `file`. Needs `confirm: true`.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        entryId: { type: 'string', description: 'Shared entry id of the copy to refresh.' },
+        file: {
+          type: 'string',
+          description: 'Project-relative path of the copy (`world/门派/白鹤门.md`); alternative to entryId.',
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'Required: this overwrites a file in the book (a backup package is taken first).',
+        },
+      },
+      additionalProperties: false,
+    },
+    output: {
+      schema: SUCCESS_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) return renderSharedFailure('Updating the copy', v)
+        const updated = Array.isArray(v['updated']) ? (v['updated'] as string[]) : []
+        const unchanged = Array.isArray(v['unchanged']) ? (v['unchanged'] as string[]) : []
+        if (updated.length === 0) return text([`无需更新：${unchanged.join('、')} 已经是最新的（未写盘、未建备份包）。`])
+        const origin = asRecord(v['origin'])
+        return text([
+          `已更新 ${updated.join('、')} → contentHash ${String(origin['contentHash'] ?? '')}`,
+          v['backupDir'] === undefined ? '（未建备份包）' : `备份包：${String(v['backupDir'])}（rollback 可复原）`,
+          commitLine(v),
+        ])
+      },
+    },
+    execute: async (args, exec) => {
+      const a = asRecord(args)
+      const resolved = await resolveProject(deps, a['projectRoot'], exec)
+      if (resolved.probe === undefined || resolved.probe.usable !== true) return gateFailure(resolved)
+      const probe = resolved.probe
+      const entryId = optionalString(a['entryId'])?.trim() ?? ''
+      const file = optionalString(a['file'])?.trim() ?? ''
+      const result = updateSharedEntry({
+        dataDir: deps.dataDir,
+        root: probe.root,
+        ...(entryId === '' ? {} : { entryId }),
+        ...(file === '' ? {} : { file }),
+        confirm: a['confirm'] === true,
+      })
+      rememberProject(deps.dataDir, probe.root)
+      if (!result.ok) return { ok: false, root: probe.root, error: result.error }
+      return { ok: true, ...result.value }
+    },
+  }
   return [
     status,
     rebuild,
     chapterList,
     chapterSearch,
+    searchAll,
+    searchReplace,
     audit,
     plan,
     init,
@@ -1249,6 +1844,12 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // Maintenance (#36): repair and migration own their own gate allowance (a book
     // that is `needs-repair` must still be repairable) and their own module.
     ...repairTools(deps),
+    // The shared library (#40): one read, two writes, all in one direction
+    // (`shared-copy.ts`). Registered after the maintenance pair because they are
+    // the most recent built-ins and the surface baseline lists them in this order.
+    sharedList,
+    sharedCopy,
+    sharedUpdate,
     // The plugin's own state (#42): settings, the diagnostics package and the local
     // backups. They live outside any book, so they ship as one module with one gate
     // policy of their own. `toolSurface` is a provider because the diagnostics package
