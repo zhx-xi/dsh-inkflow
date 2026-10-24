@@ -31,8 +31,9 @@ import { CONTENT_DIRS, DOMAIN_MODULES, apply, applyCandidate, buildTools, domain
  * hash, which is exactly the regression this guards. Recorded from the pre-seam
  * build; an empty registry must reproduce it exactly.
  *
- * Appended since: `inkflow_project_audit` (#33) — a new built-in, not a change to an
- * existing one, which is why the twelve recorded hashes above still hold.
+ * Appended since: `inkflow_project_audit` (#33), the maintenance pair (#36) and
+ * `inkflow_library_import` (#37) — each a new built-in, not a change to an existing one,
+ * which is why the twelve recorded hashes above still hold.
  */
 const BUILT_IN_TOOLS = [
   ['inkflow_project_status', 'cc6903de'],
@@ -44,6 +45,9 @@ const BUILT_IN_TOOLS = [
   ['inkflow_search', '46e8ca64'],
   ['inkflow_search_replace', '1c309b8e'],
   ['inkflow_project_audit', '2e5349da'],
+  // #37: importing an old manuscript. A built-in rather than a domain tool: it writes
+  // chapters *and* a `library/` copy, so no single content directory owns it.
+  ['inkflow_library_import', '39f228ea'],
   ['inkflow_project_plan', '52c0ddec'],
   ['inkflow_project_init', '4226bc54'],
   ['inkflow_volume_create', 'a805a3ed'],

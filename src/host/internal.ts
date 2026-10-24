@@ -1116,3 +1116,12 @@ export type { ForeshadowSource } from './domains/foreshadowing-query.js'
 
 export { AUDIT_EXPORT_BODY_FIELDS, auditWire, buildAudit, exportAudit, findingWire } from './audit-channel.js'
 export type { AuditReply, AuditSource } from './audit-channel.js'
+// ---------------------------------------------------------------------------
+// issue #37 — importing an old manuscript (X-17). The domain lives in `import.ts`
+// (decode + split, pure) and `import-write.ts` (plan/apply + the backup package); the
+// one channel reply in `import-channel.ts`. Re-exported here so `routes.ts` keeps ONE
+// entry point for the channel, the same arrangement as the bin (#35) and the audit (#33).
+// ---------------------------------------------------------------------------
+
+export { IMPORT_BODY_FIELDS, importViaChannel } from './import-channel.js'
+export type { ImportChannelRequest, ImportChannelSource, ImportReply } from './import-channel.js'

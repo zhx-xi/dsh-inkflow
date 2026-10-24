@@ -155,6 +155,16 @@ export interface ChapterCreateInput {
   title: string
   slug?: string
   seq?: number
+  /**
+   * Rebuild the derived index after this call (default true).
+   *
+   * A batch caller (`import-write.ts`, #37) passes `false` and rebuilds once at the end:
+   * one index build per chapter is O(n²) work on a 200-chapter import — measured at 64 s
+   * for a 60万字 manuscript, against ~2 s with a single build — and the index is a cache,
+   * so "rebuilt 200 times" and "rebuilt once" are the same answer to every reader. A
+   * single-chapter caller never passes it: freshness is not negotiable there.
+   */
+  indexCommit?: boolean
 }
 
 export interface ChapterWriteInput {
@@ -175,6 +185,8 @@ export interface ChapterWriteInput {
   bom?: boolean
   /** Baseline the caller last saw (issue #5): a mismatch is `FILE_CHANGED`, zero writes. */
   expected?: FileExpectation
+  /** Rebuild the derived index after this call (default true); see `ChapterCreateInput`. */
+  indexCommit?: boolean
 }
 
 export interface ChapterMoveInput {
@@ -1018,7 +1030,7 @@ export async function createChapter(projectRoot: string, input: ChapterCreateInp
     root,
     chapter: locked.value.value,
     catalogRebuilt: true,
-    ...(await commitIndex(root)),
+    ...(input.indexCommit === false ? UNTOUCHED_INDEX : await commitIndex(root)),
   }
 }
 
@@ -1173,7 +1185,8 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
   if (!locked.ok) return fromIo(locked.error)
   if (!locked.value.ok) return locked.value
   const result = locked.value.value
-  return result.catalogRebuilt ? { ...result, ...(await commitIndex(root)) } : result
+  // A batch caller suppresses this and rebuilds once at the end (see the input type).
+  return result.catalogRebuilt && input.indexCommit !== false ? { ...result, ...(await commitIndex(root)) } : result
 }
 
 // ---------------------------------------------------------------------------
