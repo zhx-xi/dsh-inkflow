@@ -202,7 +202,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 | 工具 | 作用 | 你可以这样说 |
 |---|---|---|
-| `inkflow_chapter_list` | 按阅读顺序列出章节 | 「列一下现在有哪些章」 |
+| `inkflow_chapter_list` | 按阅读顺序**分页**列章：一页最多 500 章（默认 100），`offset` 翻下一页；回复里的 `total` 始终是全书章数，这一页不是全书时标 `truncated` | 「列一下现在有哪些章」/「接着列 501 章以后的」 |
 | `inkflow_chapter_search` | 在章节正文里找关键词，返回命中的章与前后各 40 字的片段（1–2 个字也能搜） | 「哪一章写过云海翻涌」/「搜一下『宝剑』」 |
 | `inkflow_search` | **一处搜全书**：章正文 + 角色 / 世界观 / 大纲 / 伏笔 / 时间线 / 关系 / 账本 / 资料，每条命中带类型、id、路径与片段；支持 `kinds` 只搜某几类、`offset`/`limit` 翻页（一页最多 100 条） | 「『清音』在书里都出现在哪」/「设定库里有没有写过云海」 |
 | `inkflow_volume_create` | 建卷：分配 `vol-NN`、建 `chapters/vol-NN-<slug>/` 并刷新卷章清单 | 「开一个第一卷」 |

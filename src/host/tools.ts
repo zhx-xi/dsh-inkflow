@@ -21,7 +21,7 @@ import { FILE_SCHEMA_VERSION, INDEX_SCHEMA_VERSION, REQUIRED_DIRS, ROOT_META_FIL
 import { buildIndex, describeIndexBuildFailure } from './index-build.js'
 import { ensureIndex } from './index-freshness.js'
 import type { EnsureIndexResult } from './index-freshness.js'
-import { listChapters, readIndexMeta } from './indexer.js'
+import { clampChapterPage, countChapters, listChapters, readIndexMeta } from './indexer.js'
 import { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
 import { applyImport, planImport } from './import-write.js'
 import type { ImportError } from './import-write.js'
@@ -453,14 +453,18 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
   const chapterList: ToolDefinition = {
     name: 'inkflow_chapter_list',
     description:
-      'List chapters of the InkFlow project in reading order, read from the derived index. If the index is missing, ' +
+      'List chapters of the InkFlow project in reading order, read from the derived index, one page at a time. ' +
+      '`limit` caps a single page (at most 500 — it is a page cap, not a book size); a longer book is walked with ' +
+      '`offset`. `total` is always the number of chapters in the whole book, and `truncated` says the reply is a ' +
+      'partial view. If the index is missing, ' +
       'built by another schema, or no longer matches the files (a chapter edited, added or deleted outside the ' +
       'plugin), it is rebuilt first (it is only a cache).',
     parameters: {
       type: 'object',
       properties: {
         projectRoot: PROJECT_ROOT_PARAM,
-        limit: { type: 'integer', description: 'Maximum chapters (1–500). Default 100.' },
+        limit: { type: 'integer', description: 'Maximum chapters per page (1–500; the page cap). Default 100.' },
+        offset: { type: 'integer', description: 'Chapters to skip before this page (0 or higher). Default 0.' },
       },
       additionalProperties: false,
     },
@@ -475,8 +479,11 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
         }
         const chapters = Array.isArray(v['chapters']) ? (v['chapters'] as Json[]) : []
         if (chapters.length === 0) return text(['No chapters yet (chapters/ is empty).'])
+        const total = typeof v['total'] === 'number' ? v['total'] : chapters.length
+        const offset = typeof v['offset'] === 'number' ? v['offset'] : 0
+        const page = `${v['truncated'] === true ? `showing chapters ${String(offset + 1)}–${String(offset + chapters.length)} of ${String(total)} (truncated — pass offset ${String(offset + chapters.length)} to page on)` : `${String(total)} chapter(s)${offset === 0 ? '' : ` — showing chapters ${String(offset + 1)}–${String(offset + chapters.length)}`}`}`
         return text([
-          `${chapters.length} chapter(s)${v['indexRebuilt'] === true ? ' (index was rebuilt)' : ''}:`,
+          `${page}${v['indexRebuilt'] === true ? ' (index was rebuilt)' : ''}:`,
           ...chapters.map(
             (c) =>
               `- ${c['seq'] === null ? '?' : String(c['seq'])}. ${String(c['title'])} [${String(c['status'])}] ${String(c['wordCount'])} 字 — ${String(c['path'])}`,
@@ -492,17 +499,31 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
       }
       const probe = resolved.probe
       rememberProject(deps.dataDir, probe.root)
-      const limit = typeof a['limit'] === 'number' ? a['limit'] : 100
+      // The reply reports the page it actually served, so the bounds are applied once
+      // here and once inside `listChapters` (which must not trust its caller).
+      const page = clampChapterPage(a['limit'], a['offset'])
       // Issue #5: the read path no longer decides anything itself. `ensureIndex`
       // is the single trigger, so this list and `inkflow_chapter_search` below
       // can never disagree about which build they are reading.
       const ensured = await ensureIndex(probe.root)
       if (!ensured.ok) return ensureFailure(ensured, probe.root)
-      const chapters = listChapters(probe.root, limit) ?? []
+      const chapters = listChapters(probe.root, page.limit, page.offset) ?? []
+      // Issue #161: `total` is the book. Reading it back as `chapters.length` made the page
+      // cap invisible — a 520-chapter book answered "100 chapters" with no sign of a cut.
+      const total = countChapters(probe.root)
+      if (total === undefined) {
+        return {
+          ok: false,
+          error: { code: 'INDEX_UNAVAILABLE', message: 'the derived index could not be read; rebuild it and retry' },
+        }
+      }
       return {
         ok: true,
         root: probe.root,
-        total: chapters.length,
+        total,
+        returned: chapters.length,
+        offset: page.offset,
+        truncated: chapters.length < total,
         indexRebuilt: ensured.rebuilt,
         indexState: ensured.state,
         chapters,

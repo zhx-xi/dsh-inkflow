@@ -219,10 +219,21 @@ export { FRESHNESS_REASON_LIMIT, checkIndexFreshness, ensureIndex } from './inde
 export type { EnsureIndexOptions, EnsureIndexResult, IndexFreshness, IndexFreshnessState } from './index-freshness.js'
 export { walkProjectFiles } from './indexer.js'
 export type { WalkedFile } from './indexer.js'
-// The two read-only projections over the cache, exported for the same reason
+// The read-only projections over the cache, exported for the same reason
 // `walkProjectFiles` is: a caller that must prove "the cache already knows this" cannot
 // do it through `ensureIndex` (which would rebuild first and hide the staleness).
-export { listChapters, readIndexMeta } from './indexer.js'
+// `listChapters` serves one page (capped at `LIST_CHAPTERS_MAX`), `countChapters` is the
+// whole book, and `listAllChapters` is the unabridged read for the semantic ledger — one
+// chapter count, one source (issue #161).
+export {
+  LIST_CHAPTERS_DEFAULT,
+  LIST_CHAPTERS_MAX,
+  clampChapterPage,
+  countChapters,
+  listAllChapters,
+  listChapters,
+  readIndexMeta,
+} from './indexer.js'
 export type { ChapterSummary, IndexMeta } from './indexer.js'
 
 /**
