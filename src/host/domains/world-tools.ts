@@ -94,9 +94,29 @@ function slugify(title: string): string {
   return [...trimmed].slice(0, SLUG_MAX).join('').replace(/[-. ]+$/u, '')
 }
 
-/** Keywords as an inline list: `keywords: [白鹤, 鹤鸣剑]` (what `conventions.md` §3.4 shows). */
+/**
+ * Keywords as an inline list: `keywords: [白鹤, 鹤鸣剑]` (what `conventions.md` §3.4 shows).
+ *
+ * A value is quoted when the parser would otherwise read it as something else (issue #169).
+ * The renderer writes plain text but the reader is a YAML-shaped type guesser: a bare `true`
+ * becomes boolean `true`, `null`/`~` become null, and `#` starts a comment — `keywordsOf()`
+ * only keeps strings, so those keywords used to vanish between "written successfully" and
+ * the next read. `parseScalar()` strips quotes, so `"true"` comes back as the string
+ * `true`. Values that quoting CANNOT save (a comma breaks the inline list itself, a line
+ * break ends it) are refused by `keywordProblem()` before we get here.
+ */
 function renderKeywords(keywords: readonly string[]): string {
-  return `[${keywords.join(', ')}]`
+  return `[${keywords.map(renderKeyword).join(', ')}]`
+}
+
+/** Quote a keyword unless it is already unambiguous, and escape what YAML reads specially. */
+function renderKeyword(value: string): string {
+  const quoted = `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+  const needsQuotes =
+    /^(?:true|false|null|~)$/iu.test(value) ||
+    /[:#[\]{}&*?|>'"%@`]/u.test(value) ||
+    value !== value.trim()
+  return needsQuotes ? quoted : value
 }
 
 interface WorldFileInput {

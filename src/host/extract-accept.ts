@@ -45,6 +45,7 @@ import { renderForeshadowDocument } from './domains/foreshadowing-plan.js'
 import type { ForeshadowStatus } from './domains/foreshadowing-plan.js'
 import { defaultRelationPath, renderRelationFile } from './domains/relation-write.js'
 import type { RelationRow } from './domains/relation-write.js'
+import { keywordProblem } from './domains/world-plan.js'
 import { renderWorldFile } from './domains/world-tools.js'
 import { isPortableSlug, slugify } from './domains/tool-support.js'
 import { readCandidateStore, setCandidateStatuses } from './extract.js'
@@ -168,6 +169,18 @@ export function materializeCandidate(proposal: CandidateProposal): MaterializeRe
     const path = category === undefined ? at.path : `world/${category}/${at.path.slice('world/'.length)}`
     const parent = textField(fields, 'parent')
     const priority = numberField(fields, 'priority')
+    // The same keyword rule the tool applies (#169): a keyword carrying a separator cannot
+    // survive `keywords: [a, b]`, so accepting it would write a document whose trigger word
+    // is silently different from the candidate the author approved.
+    const keywords = listField(fields, 'keywords')
+    const badKeyword = keywordProblem(keywords)
+    if (badKeyword !== undefined) {
+      return refuse(
+        'KEYWORD_INVALID',
+        `the keyword "${badKeyword}" contains a separator (comma, bracket or newline) the frontmatter cannot read back`,
+        'keywords',
+      )
+    }
     return {
       ok: true,
       value: {
@@ -177,7 +190,7 @@ export function materializeCandidate(proposal: CandidateProposal): MaterializeRe
           title,
           ...(category === undefined ? {} : { category }),
           ...(parent === undefined ? {} : { parent }),
-          keywords: listField(fields, 'keywords'),
+          keywords,
           always: fields['always'] === true,
           ...(priority === undefined ? {} : { priority }),
           body: textField(fields, 'body') ?? '',

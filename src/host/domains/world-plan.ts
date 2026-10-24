@@ -115,6 +115,19 @@ export function worldIssues(rows: readonly WorldPlanRow[], knownIds: ReadonlySet
  * is a rebuild finding — the index already reports it — and must not wedge edits
  * that cannot fix it.
  */
+/**
+ * A keyword that cannot survive the round trip through `keywords: [a, b]`, or `undefined`.
+ *
+ * The list form is split on commas and ended by a line break, and `[`/`]` close the array
+ * early — quoting cannot save any of those (see `renderKeyword` in `world-tools.ts` for the
+ * values quoting DOES save, like a YAML-reserved `true`). Exported because the extraction
+ * accept path renders the same document: a candidate must be refused with the same code the
+ * tool gives, or the same author input would land from one door and be rejected from another.
+ */
+export function keywordProblem(keywords: readonly string[]): string | undefined {
+  return keywords.find((keyword) => /[,[\]\r\n]/u.test(keyword))
+}
+
 export function planWorldUpsert(input: {
   readonly entries: readonly WorldPlanRow[]
   readonly candidate: WorldUpsertCandidate
@@ -123,7 +136,7 @@ export function planWorldUpsert(input: {
   const candidate = input.candidate
   const path = candidate.path
 
-  const invalidKeyword = (candidate.keywords ?? []).find((keyword) => /[,[\]\r\n]/u.test(keyword))
+  const invalidKeyword = keywordProblem(candidate.keywords ?? [])
   if (invalidKeyword !== undefined) {
     return {
       ok: false,
