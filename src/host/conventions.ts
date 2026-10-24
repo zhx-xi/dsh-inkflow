@@ -50,6 +50,13 @@ export type ContentDir = (typeof CONTENT_DIRS)[number]
 export const CHAPTERS_DIR = 'chapters' satisfies ContentDir
 
 /**
+ * The reference library (conventions §3.6): arbitrary files the author keeps for
+ * reference. Named here because the import path (#37) copies an old manuscript into it,
+ * and a literal directory name outside this file is what breaks the contract.
+ */
+export const LIBRARY_DIR = 'library' satisfies ContentDir
+
+/**
  * Volume/chapter catalog file (ADR-0006 D6): one in `chapters/` for the volume
  * list plus loose chapters, and one in every volume directory for its chapters.
  * It is a committed **projection** of the `.md` files, not a second truth.

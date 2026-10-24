@@ -219,6 +219,11 @@ export { FRESHNESS_REASON_LIMIT, checkIndexFreshness, ensureIndex } from './inde
 export type { EnsureIndexOptions, EnsureIndexResult, IndexFreshness, IndexFreshnessState } from './index-freshness.js'
 export { walkProjectFiles } from './indexer.js'
 export type { WalkedFile } from './indexer.js'
+// The two read-only projections over the cache, exported for the same reason
+// `walkProjectFiles` is: a caller that must prove "the cache already knows this" cannot
+// do it through `ensureIndex` (which would rebuild first and hide the staleness).
+export { listChapters, readIndexMeta } from './indexer.js'
+export type { ChapterSummary, IndexMeta } from './indexer.js'
 
 /**
  * The internal channel's request-body ceiling (#115). Exported so the tests state
@@ -686,3 +691,40 @@ export type {
   RollbackOutcome,
 } from './migrate.js'
 export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from './repair-report.js'
+
+/**
+ * 资料导入的分析半（#37，roadmap X-17）：字节 → 编码嗅探 → 行尾风格 → 分章。
+ *
+ * 全是纯函数，写盘一律在 `import-write.ts`（预览与执行共用同一份分析，所以「预览 =
+ * 执行」是集合比较得出的，不是两处各算一遍）。
+ */
+export {
+  IMPORT_EXTENSIONS,
+  MAX_IMPORT_BYTES,
+  analyzeImportBytes,
+  decodeImportBytes,
+  splitImportChapters,
+} from './import.js'
+export type {
+  ImportAnalysis,
+  ImportChapter,
+  ImportDecoded,
+  ImportEncoding,
+  ImportEol,
+  ImportPattern,
+} from './import.js'
+export { applyImport, planImport } from './import-write.js'
+export type {
+  ImportApplyOptions,
+  ImportApplyResult,
+  ImportApplyValue,
+  ImportAppliedChapter,
+  ImportError,
+  ImportPlan,
+  ImportPlanChapter,
+  ImportPlanLibrary,
+  ImportPlanOptions,
+  ImportPlanResult,
+  ImportPlanSource,
+  ImportPlanTarget,
+} from './import-write.js'

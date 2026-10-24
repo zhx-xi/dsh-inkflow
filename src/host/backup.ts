@@ -47,8 +47,17 @@ export const BACKUP_MANIFEST_FILE = 'manifest.json'
 /** Where the byte copies live inside one backup directory. */
 export const BACKUP_FILES_DIR = 'files'
 
-/** Which batch produced the package — the two keep separate report prefixes too. */
-export type BackupKind = 'repair' | 'migrate'
+/**
+ * Which batch produced the package — each one keeps its own report prefix too.
+ *
+ * `import` (#37) joined for the same reason the other two are here: a manuscript import
+ * is a batch of writes that has to be undoable in one action, and it needs its own kind
+ * so a reader can tell it from a repair pass without reading the steps. The other kinds
+ * the roadmap names (`replace` / `shared` / `restore`) land with the features that
+ * produce them: adding one here without a producer would only make `readBackup` accept a
+ * manifest nothing can write.
+ */
+export type BackupKind = 'repair' | 'migrate' | 'import'
 
 /** What a file is, as far as a restore cares. */
 export interface BackupDigest {
@@ -382,7 +391,7 @@ export function readBackup(root: string, dirInput: string): BackupReadResult {
     )
   }
   const kind = record['kind']
-  if (kind !== 'repair' && kind !== 'migrate') {
+  if (kind !== 'repair' && kind !== 'migrate' && kind !== 'import') {
     return fail('BACKUP_MANIFEST_INVALID', `${manifestPath} has an unknown kind`, { root, path: manifestPath })
   }
   const strings = (value: unknown): string[] =>

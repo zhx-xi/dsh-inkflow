@@ -102,6 +102,8 @@ import {
   AUDIT_EXPORT_BODY_FIELDS,
   buildAudit,
   exportAudit,
+  IMPORT_BODY_FIELDS,
+  importViaChannel,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 
@@ -367,6 +369,20 @@ const ROUTES: readonly InternalRoute[] = [
     methods: ['POST'],
     body: AUDIT_EXPORT_BODY_FIELDS,
     handle: ({ target, version, body }) => exportAudit(target, version, body),
+  },
+  {
+    // Importing an old manuscript (#37, X-17): `action: 'plan'` previews, `action:
+    // 'apply'` writes with `confirm: true`. ONE POST for both actions, because the
+    // preview has to name the file the author picked (`sourcePath`) — and a field that may
+    // point outside the book has to ride the write route's guards (Origin present and
+    // loopback) rather than relax them. `path`/`root`/`cwd`/… stay forbidden: a browser
+    // still never names a directory, only the manuscript. `import-channel.ts` holds the
+    // whole argument and the status vocabulary.
+    name: 'library-import',
+    pattern: /^\/library\/import$/,
+    methods: ['POST'],
+    body: IMPORT_BODY_FIELDS,
+    handle: async ({ target, version, body }) => importViaChannel({ source: target, version, body }),
   },
 ]
 
