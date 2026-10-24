@@ -58,6 +58,14 @@
  * cap, and a body-field allowlist per route. A hub write route (`plan`/`apply`,
  * ADR-0010 D4) additionally requires an `Origin` that is the SAME ORIGIN as
  * `Host`, not merely loopback (ADR-0010 D6 #6).
+ *
+ * THE SHARED LIBRARY HAS TWO HALVES (#40, ADR-0007). Browsing it is the one hub
+ * read that belongs to no book (`/hub/shared`, ADR-0010 D5). Taking an entry INTO
+ * a book (`/hub/shared/copies`, `/hub/shared/copy`, `/hub/shared/update`) is a hub
+ * WRITE, so it needs the same-origin guard *and* an anchor: the request names
+ * `book`, which must be the canonical path of a registered workspace — the panel
+ * can write into a book the user already opened, and nowhere else. The shared
+ * library itself is never a write target on any route (no "push" direction).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -66,6 +74,13 @@ import type { HostContext } from './context.js'
 import { sharedDir } from './config.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
 import { buildHubShared } from './hub-shared.js'
+import {
+  SHARED_COPY_BODY_FIELDS,
+  SHARED_UPDATE_BODY_FIELDS,
+  sharedCopiesReply,
+  sharedCopyReply,
+  sharedUpdateReply,
+} from './shared-channel.js'
 import { hubApply, hubPlan } from './hub-wizard.js'
 import {
   INTERNAL_PREFIX,
@@ -615,6 +630,42 @@ const HUB_ROUTES: readonly HubRoute[] = [
       if (result.ok) return { status: 200, body: ok(result.value) }
       return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
     },
+  },
+  {
+    // What this book already holds from the library, and how fresh each copy is
+    // (#40, ADR-0007 C3 — "stale" is a report, never a repair). Read-only: it hashes
+    // the library and reads each copy's head; the library's own manifest is not
+    // written back here either (that stays derived).
+    //
+    // `book` is the second path-shaped field this channel accepts besides the
+    // wizard's `candidate`, and it means "a REGISTERED workspace, named exactly as
+    // /hub/books listed it": `shared-channel.ts` refuses anything else before the
+    // filesystem is touched, so the panel cannot copy into a directory the user has
+    // not opened.
+    name: 'hub-shared-copies',
+    pattern: /^\/hub\/shared\/copies$/,
+    methods: ['GET'],
+    handle: ({ ctx, dataDir, query }) => sharedCopiesReply(ctx, dataDir, query.get('book') ?? undefined),
+  },
+  {
+    // The default take-out action (ADR-0007 C2): copy one entry into a book. A hub
+    // write, so the same-origin `Origin` guard above applies, and `confirm` is the
+    // second half of ADR-0006 D3's discipline.
+    name: 'hub-shared-copy',
+    pattern: /^\/hub\/shared\/copy$/,
+    methods: ['POST'],
+    body: SHARED_COPY_BODY_FIELDS,
+    handle: ({ ctx, dataDir, body }) => sharedCopyReply(ctx, dataDir, body),
+  },
+  {
+    // Refresh ONE stale copy. Explicit by design: the previous bytes go into
+    // `.inkflow/backup/<stamp>/` before the write, so "undo that refresh" does not
+    // depend on git (ADR-0012), and nothing happens without `confirm: true`.
+    name: 'hub-shared-update',
+    pattern: /^\/hub\/shared\/update$/,
+    methods: ['POST'],
+    body: SHARED_UPDATE_BODY_FIELDS,
+    handle: ({ ctx, dataDir, body }) => sharedUpdateReply(ctx, dataDir, body),
   },
 ]
 

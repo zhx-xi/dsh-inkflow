@@ -48,6 +48,13 @@ export interface ProjectMeta {
   title?: string
   author?: string
   seriesId?: string | null
+  /**
+   * The book's identity (ADR-0007 C3 / ADR-0018 D7): minted by the wizard, carried
+   * by the repository, and the value a shared-library copy records as
+   * `origin.projectId`. **Optional and not a gate input** — a book without one is
+   * still usable; the copies made from it record `null`.
+   */
+  projectId?: string
   createdAt?: string
 }
 
@@ -296,6 +303,9 @@ export function readMeta(root: string): { meta?: ProjectMeta; error?: string } {
   if (typeof record['author'] === 'string') meta.author = record['author']
   if (typeof record['seriesId'] === 'string' || record['seriesId'] === null) {
     meta.seriesId = record['seriesId'] as string | null
+  }
+  if (typeof record['projectId'] === 'string' && record['projectId'].trim() !== '') {
+    meta.projectId = record['projectId'].trim()
   }
   if (typeof record['createdAt'] === 'string') meta.createdAt = record['createdAt']
   return { meta }

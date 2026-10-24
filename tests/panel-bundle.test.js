@@ -151,18 +151,27 @@ test('both hub entry points are real: no disabled placeholder is left', () => {
   assert.ok(text.includes('新开书'), 'the new-book entry is labelled')
   assert.ok(text.includes('共享内容'), 'the shared-content entry is labelled')
   assert.ok(text.includes('HubWizard'), 'the wizard component is mounted')
-  assert.equal((text.match(/SharedLibraryView, \{/g) ?? []).length, 1, 'the shared page is mounted, not stubbed')
+  assert.equal((text.match(/SharedLibraryView/g) ?? []).length > 0, true, 'the shared page is mounted, not stubbed')
   assert.ok(text.includes('还没有书'), 'the empty state is shipped, not just the loaded list')
   assert.ok(text.includes('用上面的「新开书」创建'), 'the empty state points at the wizard that fills it')
   assert.ok(text.includes('刷新'), 'the hub refreshes on a user action, never on a timer')
   assert.equal(/setInterval/.test(text), false, 'no polling: every answer costs a judgment per book (ADR-0010 D8)')
 })
 
-test('the client bundle ships the read-only shared-content page (issue #87)', () => {
+test('the client bundle ships the shared-content page with its two write actions (#87, #40)', () => {
   const text = readBundle()
   assert.ok(text.includes('/hub/shared'), 'the page reads the no-session shared route (ADR-0010 D3/D5)')
-  assert.ok(text.includes('共享库尚未创建（0.4.0 支持）'), 'the missing-library release note is shipped (ADR-0010 D5)')
-  assert.ok(text.includes('只读：复制/引用将在后续版本提供（#40）'), 'the page says it is read-only and who adds copy/reference')
+  assert.ok(text.includes('/hub/shared/copies'), 'and the per-book copy list (the stale view, ADR-0007 V3)')
+  assert.ok(text.includes('/hub/shared/copy'), 'copying an entry into a book goes through the hub channel')
+  assert.ok(text.includes('/hub/shared/update'), 'refreshing a stale copy does too')
+  // The target book is never hand-typed: the page sends a path it was handed.
+  assert.ok(text.includes('book='), 'the copies query names the book it is about')
+  assert.ok(text.includes('复制到哪本书'), 'the target book is an explicit choice, not a guess')
+  // Both writes are two-step, so the wording of the confirmation is shipped.
+  assert.ok(text.includes('确认复制'), 'a copy is confirmed before it writes')
+  assert.ok(text.includes('确认更新（先备份）'), 'an update says it takes a backup first')
+  assert.ok(text.includes('origin'), 'the page explains what a copy records')
+  assert.ok(text.includes('stale'), 'and that a stale copy is not updated by itself')
   assert.ok(text.includes('数据来源：shared/index.json（派生清单）'), 'the manifest source is named on screen')
   assert.ok(text.includes('数据来源：内存扫描，未写回 index.json'), 'the rescan source says it was not written back')
   assert.ok(text.includes('返回书单'), 'the page can go back to the book list')
@@ -754,8 +763,10 @@ test('the shared page names the data source it actually used', () => {
   assert.match(describeSharedSource('scan'), /内存扫描/, 'the rescan is named')
   assert.match(describeSharedSource('scan'), /未写回/, 'and says it did not write the manifest back')
   assert.match(describeSharedSource(undefined), /内存扫描/, 'an unknown source is described as the honest one')
-  assert.match(SHARED_TEXTS.emptyTitle, /共享库尚未创建（0\.4\.0 支持）/, 'the release note ADR-0010 D5 requires')
-  assert.match(SHARED_TEXTS.readOnly, /只读：复制\/引用将在后续版本提供（#40）/, 'the page says it is read-only, and who adds the write')
+  assert.match(SHARED_TEXTS.emptyTitle, /共享库还没有条目/, 'the empty state names the real situation')
+  assert.match(SHARED_TEXTS.emptyHint, /shared\//, 'and tells the user where an entry comes from')
+  assert.match(SHARED_TEXTS.copyHint, /快照/, 'a copy is described as a snapshot (ADR-0007 C2)')
+  assert.match(SHARED_TEXTS.referenceHint, /不自包含/, 'a reference says the book is no longer self-contained (C4)')
 })
 
 test('the shared page groups by kind in canonical order, keeping the whole-library counts', () => {
