@@ -318,7 +318,7 @@
 | I-06 | 章状态取值合法 | 拒绝 | 非法值降级为 `draft`（不阻断） |
 | I-07 | 正文文件必须是 `.md`。**例外**：`chapters/index.json` 与 `chapters/<vol>/index.json` 是本插件写的 catalog（结构投影，见 I-11），索引重建时不参与章节扫描，因此不报这一条 | 拒绝 | `CHAPTER_NOT_MARKDOWN` |
 | I-08 | 树/图引用完整：世界观根唯一、非根必须有 `parent` + `category`；**扁平分类书**（全部条目在 `world/<category>/` 且都不写 `parent`）允许无根；关系两端各恰一个实体且都存在 | 拒绝 | `WORLD_ROOT_MISSING` / `WORLD_ROOT_MULTIPLE` / `WORLD_CATEGORY_REQUIRED`；`RELATION_ENDPOINT` / `RELATION_SELF_LOOP` / `RELATION_DUPLICATE`（#27 落地） |
-| I-09 | 伏笔 `resolved: true` 必须带 `resolvedChapter` | 拒绝 | `FORESHADOW_RESOLVED_WITHOUT_CHAPTER` |
+| I-09 | 伏笔 `resolved: true` 必须带 `resolvedChapter` | 拒绝 | `FORESHADOW_RESOLVED_WITHOUT_CHAPTER` | 修法要作者指名章（或把状态退回 advanced/planted），修复器不猜（`fixable: false`，ADR-0015 D2）。
 | I-10 | frontmatter / JSON 可解析 | 写入前序列化 | `FRONTMATTER_ISSUE` |
 | I-11 | catalog 与 `.md` 一致（结构投影不漂移） | 写入时重建受影响的 catalog | `CATALOG_STALE` |
 | I-12 | 同一章不得同时出现在两个卷或两条 catalog 项 | 拒绝 | `CATALOG_DUPLICATE` |

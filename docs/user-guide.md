@@ -284,6 +284,11 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 - **执行前先开备份包**：受影响文件快照进 `<书>/.inkflow/backup/<时间戳>/`；中途失败**不会自动回滚**（改的是已存在的文件，撤销必须能跨进程重放），你可以用 `rollback` 从那个包里退回去——回滚会先核对「改动后」的摘要，你在迁移之后又编辑过的文件会被保护并报冲突。
 
 
+### 5.10 事实账本的两个约定
+
+- **文件名不等于主体**：`facts/叶知秋.md` 的 `subject` 可以是 `char-yezhiqiu`（老书都是这种写法，文件名只是位置）。追加事实时按 `subject` 找文件，找不到同名文件也不会另建第二份。
+- **一条事实一个正文列表项**（`- attribute: 境界 | value: 筑基后期 | since: <章 id>`）。老文件把**一条事实写在 frontmatter** 里（`attribute` / `value` / `source`），插件仍然读得出来（只读兼容），但**不要再新增**这种写法；正文里的散文与表格不会被当成事实，也不会再报「坏行」。
+
 ## 6. 文件格式速查
 
 正文（`chapters/vol-01/0001-入山.md`）：
