@@ -966,12 +966,15 @@ test('foreshadow: the panel model groups the board and words each state', async 
   })
   assert.equal(view.error, null)
   assert.equal(view.summary, '超期 1 · 本期到期 1 · 未回收 2 / 共 3')
-  assert.deepEqual(view.sections.map((section) => section.key), ['overdue', 'unresolved', 'byEntity'])
-  assert.equal(view.sections[0].title, '超期')
-  assert.equal(view.sections[0].items[0].badge, '超期')
-  assert.equal(view.sections[1].items[1].badge, '本期到期')
-  assert.equal(view.sections[1].items[1].current, true)
-  assert.equal(view.sections[2].entities[0].label, '清音（2）')
+  assert.deepEqual(view.sections.map((section) => section.key), ['dueNow', 'overdue', 'unresolved', 'byEntity'])
+  assert.equal(view.sections[0].title, '本期到期')
+  assert.equal(view.sections[0].items[0].badge, '本期到期')
+  assert.equal(view.sections[0].items[0].current, true)
+  assert.equal(view.sections[1].title, '超期')
+  assert.equal(view.sections[1].items[0].badge, '超期')
+  assert.equal(view.sections[2].items[1].badge, '本期到期')
+  assert.equal(view.sections[2].items[1].current, true)
+  assert.equal(view.sections[3].entities[0].label, '清音（2）')
 
   // "Cannot answer" is not "no foreshadows": the wording has to keep them apart.
   const unavailable = model.readForeshadowBoard({ ok: true, status: 200, value: { currentChapter: null, indexAvailable: false, counts: null, groups: null } })
@@ -983,6 +986,81 @@ test('foreshadow: the panel model groups the board and words each state', async 
   assert.equal(model.statusLabel('planted'), '已埋')
   assert.equal(model.statusLabel('advanced'), '已推进')
   assert.equal(model.statusLabel('resolved'), '已回收')
+})
+
+/**
+ * Issue 137: the board had three sections while the verification checklist and the
+ * user guide both promised four — 本期到期 existed only in the summary line, and it is
+ * the one that says "pay this off in the chapter you are writing".
+ *
+ * The fixture is the smallest one that exercises every branch: one entry due in the
+ * current chapter, one already late, one still ahead of its deadline. Membership AND
+ * the counts are asserted, because the section must agree with the summary line the
+ * author reads first — the Host sends both and they must not drift.
+ */
+test('foreshadow: the board renders 本期到期 as its own section, ahead of 超期 (issue 137)', async () => {
+  const model = await bundle('foreshadow-model.ts')
+  const now = { id: 'fs-now', title: '旧信', file: 'foreshadowing/旧信.md', status: 'planted', declaredStatus: 'planted', overdue: false, dueNow: true, dueBy: 'ch-3', dueKind: 'chapter', linkedEntities: ['c-qingyin'] }
+  const late = { id: 'fs-late', title: '断剑', file: 'foreshadowing/断剑.md', status: 'advanced', declaredStatus: 'advanced', overdue: true, dueNow: false, dueBy: 'ch-1', dueKind: 'chapter', linkedEntities: ['c-qingyin'] }
+  const future = { id: 'fs-future', title: '玉佩', file: 'foreshadowing/玉佩.md', status: 'planted', declaredStatus: 'planted', overdue: false, dueNow: false, dueBy: 'ch-9', dueKind: 'chapter', linkedEntities: [] }
+
+  const view = model.readForeshadowBoard({
+    ok: true,
+    status: 200,
+    value: {
+      currentChapter: { id: 'ch-3', title: '第三章', volume: 'vol-01', seq: 3, path: 'chapters/vol-01/0003-第三章.md' },
+      indexAvailable: true,
+      counts: { total: 3, unresolved: 3, resolved: 0, overdue: 1, dueNow: 1 },
+      groups: {
+        // The Host's own two lists: `unresolved` is `status !== 'resolved'`, `overdue`
+        // is the computed lateness. `dueNow` is a flag ON those rows, not a third list.
+        unresolved: [late, now, future],
+        overdue: [late],
+        byEntity: [{ id: 'c-qingyin', title: '清音', kind: 'characters', items: [now, late] }],
+      },
+    },
+  })
+
+  assert.deepEqual(
+    view.sections.map((section) => section.key),
+    ['dueNow', 'overdue', 'unresolved', 'byEntity'],
+    '本期到期 → 超期 → 未回收 → 按角色: what to do this chapter comes first',
+  )
+  const byKey = Object.fromEntries(view.sections.map((section) => [section.key, section]))
+  assert.deepEqual(byKey.dueNow.items.map((card) => card.id), ['fs-now'], 'only the entry due in this chapter')
+  assert.deepEqual(byKey.overdue.items.map((card) => card.id), ['fs-late'])
+  assert.deepEqual(byKey.unresolved.items.map((card) => card.id), ['fs-late', 'fs-now', 'fs-future'])
+  // The counts the author reads at the top and the section sizes are the same numbers.
+  assert.equal(view.summary, '超期 1 · 本期到期 1 · 未回收 3 / 共 3')
+  assert.equal(byKey.dueNow.items.length, 1, 'the section holds exactly the 1 the summary claims')
+  assert.equal(byKey.overdue.items.length, 1)
+  assert.equal(byKey.unresolved.items.length, 3)
+  assert.equal(byKey.dueNow.items[0].badge, '本期到期')
+  assert.equal(byKey.overdue.items[0].badge, '超期')
+
+  // Empty groups are not rendered: no "本期到期（0）" placeholder pushing the real
+  // sections down. A chapter later the same entry is late, not due, so that section
+  // disappears entirely (the summary line still says 本期到期 0).
+  const later = model.readForeshadowBoard({
+    ok: true,
+    status: 200,
+    value: {
+      currentChapter: { id: 'ch-4', title: '第四章', volume: 'vol-01', seq: 4, path: 'chapters/vol-01/0004-第四章.md' },
+      indexAvailable: true,
+      counts: { total: 3, unresolved: 3, resolved: 0, overdue: 2, dueNow: 0 },
+      groups: {
+        unresolved: [late, { ...now, status: 'overdue', overdue: true, dueNow: false }, future],
+        overdue: [late, { ...now, status: 'overdue', overdue: true, dueNow: false }],
+        byEntity: [],
+      },
+    },
+  })
+  assert.deepEqual(
+    later.sections.map((section) => section.key),
+    ['overdue', 'unresolved'],
+    'nothing due now → no 本期到期 section at all (and no byEntity card either)',
+  )
+  assert.match(later.summary, /本期到期 0/, 'the zero is still stated — by the summary, not by an empty card')
 })
 
 // ---------------------------------------------------------------------------

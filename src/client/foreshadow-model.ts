@@ -101,12 +101,11 @@ export interface ForeshadowEntityRow {
 }
 
 export interface ForeshadowSection {
-  key: 'overdue' | 'unresolved' | 'byEntity'
+  key: 'dueNow' | 'overdue' | 'unresolved' | 'byEntity'
   title: string
   note: string
   items: ForeshadowCard[]
   entities: ForeshadowEntityRow[]
-  empty: string
 }
 
 export interface ForeshadowView {
@@ -165,8 +164,23 @@ export function describeForeshadowError(error: InternalError | undefined): strin
   return `读取伏笔看板失败（${code}）${detail}`
 }
 
-function emptySection(key: ForeshadowSection['key'], title: string, note: string, empty: string): ForeshadowSection {
-  return { key, title, note, items: [], entities: [], empty }
+/**
+ * The four sections, in the order an author works in: what is due in the chapter being
+ * written, then what is already late, then the rest of the backlog, then who is in them.
+ *
+ * 本期到期 used to exist only in the summary line (issue 137), while the verification
+ * checklist and the user guide both promised four sections — and "due in this very
+ * chapter" is the one that carries the action.
+ */
+const SECTION_TEXT = {
+  dueNow: { title: '本期到期', note: 'dueBy 就是正在写的这一章：这是回收它的最后机会' },
+  overdue: { title: '超期', note: '已越过 dueBy 指向的章/卷，仍未回收' },
+  unresolved: { title: '未回收', note: '所有未回收的伏笔，含已超期与本期到期的' },
+  byEntity: { title: '按角色分组', note: '每条伏笔关联的角色/世界观条目（linkedEntities）' },
+} as const
+
+function sectionOf(key: 'dueNow' | 'overdue' | 'unresolved', items: ForeshadowCard[]): ForeshadowSection {
+  return { key, ...SECTION_TEXT[key], items, entities: [] }
 }
 
 /** Fold the wire payload into what the View renders. */
@@ -204,26 +218,29 @@ export function readForeshadowBoard(result: InternalResult<ForeshadowBoardValue>
 
   const overdue = value.groups.overdue.map(cardOf)
   const unresolved = value.groups.unresolved.map(cardOf)
+  // 本期到期 comes from the SAME list the counts are taken over and reuses the Host's
+  // own `dueNow` flag (`foreshadowUrgency`, data-model §3.2.2) — the panel must not
+  // re-derive "due in this chapter" from `dueBy` and a chapter number and then
+  // disagree with the tool. `overdue` and `dueNow` are mutually exclusive by
+  // construction (strictly later vs. exactly this one), so nothing lands in both.
+  const dueNow = value.groups.unresolved.filter((item) => item.dueNow).map(cardOf)
   const entities: ForeshadowEntityRow[] = value.groups.byEntity.map((group) => ({
     id: group.id,
     label: `${group.title}（${String(group.items.length)}）`,
     count: group.items.length,
   }))
 
+  // Empty groups are not rendered (issue 137 acceptance): the summary line above
+  // already carries the zeroes, so a "本期到期（0）" card would be a placeholder that
+  // pushes the sections the author actually has to act on off the screen.
   const sections: ForeshadowSection[] = [
-    {
-      ...emptySection('overdue', '超期', '已越过 dueBy 指向的章/卷，仍未回收', '没有超期条目。'),
-      items: overdue,
-    },
-    {
-      ...emptySection('unresolved', '未回收', '所有未回收的伏笔，含已超期与本期到期的', '这本书没有未回收的伏笔。'),
-      items: unresolved,
-    },
-    {
-      ...emptySection('byEntity', '按角色分组', '每条伏笔关联的角色/世界观条目（linkedEntities）', '还没有伏笔关联到角色条目。'),
-      entities,
-    },
-  ]
+    sectionOf('dueNow', dueNow),
+    sectionOf('overdue', overdue),
+    sectionOf('unresolved', unresolved),
+  ].filter((section) => section.items.length > 0)
+  if (entities.length > 0) {
+    sections.push({ key: 'byEntity', ...SECTION_TEXT.byEntity, items: [], entities })
+  }
 
   return {
     error: null,

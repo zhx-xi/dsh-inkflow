@@ -143,23 +143,20 @@ export function ForeshadowView({ sessionId }: { sessionId: string }) {
         <NoteCard title="索引不可读" body={view.empty} />
       ) : null}
 
+      {/* Issue 137: four sections, in the order an author works in — 本期到期 /
+          超期 / 未回收 / 按角色. The model drops empty ones, so no section here needs
+          a "（0）" placeholder; the summary line above already carries the zeroes. */}
       {view.sections.map((section) => (
         <div key={section.key} style={cardStyle}>
           <SectionTitle note={section.note}>{section.title}</SectionTitle>
           {section.key === 'byEntity' ? (
-            section.entities.length === 0 ? (
-              <div style={{ ...muted, fontSize: 12, marginTop: 6 }}>{section.empty}</div>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                {section.entities.map((entity) => (
-                  <span key={entity.id ?? 'none'} style={{ ...badgeStyle('plain'), fontSize: 12 }}>
-                    {entity.label}
-                  </span>
-                ))}
-              </div>
-            )
-          ) : section.items.length === 0 ? (
-            <div style={{ ...muted, fontSize: 12, marginTop: 6 }}>{section.empty}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {section.entities.map((entity) => (
+                <span key={entity.id ?? 'none'} style={{ ...badgeStyle('plain'), fontSize: 12 }}>
+                  {entity.label}
+                </span>
+              ))}
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
               {section.items.map((card) => (

@@ -36,12 +36,13 @@ import {
   describeSaveError,
   draftFromItem,
   draftPayload,
+  editorActions,
   fieldsForKind,
   fingerprintOf,
   renameTitleField,
   unknownFields,
 } from './library-model.js'
-import type { LibraryDraft, LibraryFieldSpec, LibraryItemValue, LibraryTreeItem } from './library-model.js'
+import type { EditorActionState, LibraryDraft, LibraryFieldSpec, LibraryItemValue, LibraryTreeItem } from './library-model.js'
 
 const labelStyle = {
   display: 'flex',
@@ -127,18 +128,25 @@ export interface LibraryItemEditorProps {
  *     rule the ordinary save follows — see `library-write.ts`).
  *   * **A dirty draft blocks the rename.** Both writes target the same bytes, so
  *     renaming with unsaved edits would silently drop them.
+ *
+ * What the author sees is decided by `editorActions()` in `library-model.ts` (issue
+ * 134): at most ONE of the two writes is a button at a time, and when neither is on
+ * offer the panel says why instead of greying a button out. `planReady` travels up to
+ * the editor because the 保存 side of that decision lives there.
  */
 function RenameImpactPanel({
   item,
   baseline,
   sessionId,
-  dirty,
+  actions,
+  onPlanReadyChange,
   onRenamed,
 }: {
   item: LibraryTreeItem
   baseline: LibraryItemValue
   sessionId: string
-  dirty: boolean
+  actions: EditorActionState
+  onPlanReadyChange: (ready: boolean) => void
   onRenamed: (value: LibraryItemValue) => void
 }) {
   const titleField = renameTitleField(item.kind)
@@ -151,6 +159,12 @@ function RenameImpactPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  // The 保存 button lives one component up (`LibraryItemEditor`), and whether it is a
+  // button depends on this state — so the answer travels up, the same way `dirty` does.
+  useEffect(() => {
+    onPlanReadyChange(plan !== undefined)
+  }, [plan, onPlanReadyChange])
 
   /** The preview the dialog shows: the same route the listing uses, with the plan. */
   const preview = async (): Promise<void> => {
@@ -214,6 +228,14 @@ function RenameImpactPanel({
     })
   }
 
+  // Issue 134: while the content has unsaved edits, renaming would silently drop
+  // them, so the whole block folds into the one sentence that says so. Nothing is
+  // lost: the plan and the inputs are component state, and they come back the moment
+  // the draft is saved or cancelled.
+  if (actions.rename === 'blocked') {
+    return <div style={{ ...muted, fontSize: 12 }}>{actions.renameNote}</div>
+  }
+
   return (
     <div style={cardStyle}>
       <div style={{ fontWeight: 600, marginBottom: 4 }}>改名与影响面</div>
@@ -241,15 +263,16 @@ function RenameImpactPanel({
         <button type="button" style={buttonStyle} disabled={busy} onClick={() => void preview()}>
           {busy ? '查询中…' : '查看影响面'}
         </button>
-        <button type="button" style={primaryButtonStyle} disabled={busy || dirty || plan === undefined} onClick={() => void confirm()}>
-          确认改名
-        </button>
+        {/* Only in the 'confirm' state (no dirty draft, and a plan has answered):
+            otherwise this button would sit greyed out with no explanation — the very
+            thing issue 134 reports. */}
+        {actions.rename === 'confirm' ? (
+          <button type="button" style={primaryButtonStyle} disabled={busy} onClick={() => void confirm()}>
+            确认改名
+          </button>
+        ) : null}
         <span style={{ ...muted, fontSize: 11 }}>
-          {dirty
-            ? '先保存或放弃当前的字段改动，再改名（两处改动会互相覆盖）。'
-            : plan === undefined
-              ? '先看影响面：确认按钮在清单出来之后才可用。'
-              : `${plan.from} → ${plan.to} · id 钉住 ${plan.pinId}`}
+          {actions.renameNote ?? (plan === undefined ? '' : `${plan.from} → ${plan.to} · id 钉住 ${plan.pinId}`)}
         </span>
       </div>
 
@@ -378,6 +401,10 @@ export function LibraryItemEditor({ item, detail, sessionId, onSaved, onReloaded
 
   const payload = draftPayload(item.kind, draft, baseline.frontmatter ?? {}, baseline.body ?? '')
   const dirty = payload !== null
+  // `planReady` is reported by the rename block; `editorActions` is the ONE place that
+  // decides which of the two writes is a button (issue 134).
+  const [planReady, setPlanReady] = useState(false)
+  const actions = editorActions({ dirty, planReady })
 
   useEffect(() => {
     onDirtyChange(dirty)
@@ -499,7 +526,14 @@ export function LibraryItemEditor({ item, detail, sessionId, onSaved, onReloaded
         <div style={{ ...muted, ...mono, marginTop: 4 }}>{[...draft.body.replace(/\s+/gu, '')].length} 字</div>
       </div>
 
-      <RenameImpactPanel item={item} baseline={baseline} sessionId={sessionId} dirty={dirty} onRenamed={onSaved} />
+      <RenameImpactPanel
+        item={item}
+        baseline={baseline}
+        sessionId={sessionId}
+        actions={actions}
+        onPlanReadyChange={setPlanReady}
+        onRenamed={onSaved}
+      />
 
       {/* The refusal/notice sits NEXT TO the button that produced it (issue 115):
           the old position was the top of the editor, which on a long entry is
@@ -525,9 +559,15 @@ export function LibraryItemEditor({ item, detail, sessionId, onSaved, onReloaded
       {notice === null ? null : <div style={{ ...muted, ...mono }} role="status">{notice}</div>}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button type="button" style={primaryButtonStyle} disabled={saving || payload === null} onClick={() => void save()}>
-          {saving ? '保存中…' : '保存'}
-        </button>
+        {/* Issue 134: with a rename plan on screen, 保存 is not a second primary
+            button — it is a grey line, because there is nothing left to save. */}
+        {actions.contentSave === 'primary' ? (
+          <button type="button" style={primaryButtonStyle} disabled={saving || payload === null} onClick={() => void save()}>
+            {saving ? '保存中…' : '保存'}
+          </button>
+        ) : (
+          <span style={{ ...muted, fontSize: 11 }}>{actions.contentNote}</span>
+        )}
         <button type="button" style={buttonStyle} disabled={saving} onClick={onCancel}>
           取消
         </button>

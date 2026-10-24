@@ -69,6 +69,21 @@ const columnStyle = {
 
 const dividerStyle = { borderLeft: '1px solid var(--dsw-alias-border-l1)' } as const
 
+/**
+ * The detail column: same look as the tree column, but no BOTTOM padding.
+ *
+ * The measured box inside it ends at this column's border box (that is what
+ * `layout.ts` measures — padding is invisible to it), so a 14px bottom pad would
+ * make the column overflow by exactly 14px and the header would slide up under
+ * that scroll — the very bug issue 133 reports. The breathing room moves into the
+ * box, where it scrolls with the content.
+ */
+const detailColumnStyle = {
+  ...columnStyle,
+  ...dividerStyle,
+  paddingBottom: 0,
+} as const
+
 const cardStyle = {
   border: '1px solid var(--dsw-alias-border-l1)',
   borderRadius: 8,
@@ -178,8 +193,14 @@ function DetailPane({
   // Editing needs a baseline: without a fingerprint the save route would refuse
   // the request, so the button says why instead of pretending.
   const editable = detail !== null && detail.readable !== false && fingerprintOf(detail) !== null
+  // Issue 133: the header is ONE row and never scrolls; only the content below it
+  // scrolls. Two siblings, not one column — a long entry used to carry 编辑 out of
+  // view with it. The box below measures the height it actually has (`useScrollBox`,
+  // the issue-116 contract): the slot wrapper is content-sized, so `height: 100%` or
+  // a pixel count would be a guess that stops scrolling.
+  const scrollBox = useScrollBox()
   return (
-    <div style={{ ...columnStyle, gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>{detail?.title ?? item.title}</span>
         <span style={{ ...muted, ...mono }}>{item.path}</span>
@@ -192,64 +213,82 @@ function DetailPane({
         {editable ? null : <span style={{ ...muted, fontSize: 11 }}>读不到文件基线，暂时不能编辑</span>}
       </div>
 
-      {status === null ? null : <div style={{ ...muted, ...mono }}>{status}</div>}
-      {error === null ? null : <NoteCard title="详情读取失败" body={error} tone="error" />}
-      {detail?.readError === undefined ? null : (
-        <NoteCard title="文件读不出来" body={detail.readError.message ?? '索引里有这一条，但它的文件读不出来'} />
-      )}
-
-      <div style={cardStyle}>
-        <SectionTitle>索引投影（entities 行）</SectionTitle>
-        <div style={{ display: 'grid', gap: 2, marginTop: 6 }}>
-          <Field name="kind" value={entity['kind'] ?? item.kind} />
-          <Field name="id" value={entity['id'] ?? item.id} />
-          <Field name="title" value={entity['title'] ?? item.title} />
-          <Field name="category" value={entity['category'] ?? item.category} />
-          <Field name="parent" value={entity['parent'] ?? item.parent} />
-          <Field name="status" value={entity['status'] ?? item.status} />
-          <Field name="aliases" value={entity['aliases']} />
-          <Field name="keywords" value={entity['keywords']} />
-        </div>
-      </div>
-
-      <div style={cardStyle}>
-        <SectionTitle>frontmatter（文件里的字段）</SectionTitle>
-        {Object.keys(frontmatter).length === 0 ? (
-          <div style={{ ...muted, marginTop: 6 }}>
-            {detail?.hasFrontmatter === true ? '这个文件有 frontmatter 段，但没有可读字段。' : '这个文件没有 frontmatter 段。'}
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gap: 2, marginTop: 6 }}>
-            {Object.entries(frontmatter).map(([key, value]) => (
-              <Field key={key} name={key} value={value} />
-            ))}
-          </div>
+      <div
+        ref={scrollBox.ref}
+        style={{
+          ...SCROLL_BOX_STYLE,
+          ...scrollBox.style,
+          // A COLUMN of cards, so the shared grid row is overridden: the box only needs
+          // its height from there. The bottom breathing room lives inside the scroller
+          // (see `detailColumnStyle`: padding below a measured box is counted as
+          // available height and would push the header up again).
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          overflowY: 'auto',
+          paddingBottom: 14,
+          paddingRight: 4,
+        }}
+      >
+        {status === null ? null : <div style={{ ...muted, ...mono }}>{status}</div>}
+        {error === null ? null : <NoteCard title="详情读取失败" body={error} tone="error" />}
+        {detail?.readError === undefined ? null : (
+          <NoteCard title="文件读不出来" body={detail.readError.message ?? '索引里有这一条，但它的文件读不出来'} />
         )}
-      </div>
 
-      <div style={cardStyle}>
-        <SectionTitle>正文（只读）</SectionTitle>
-        <div style={{ ...muted, ...mono, margin: '4px 0' }}>{detail?.bodyChars ?? 0} 字</div>
-        <div style={{ ...mono, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto' }}>
-          {(detail?.body ?? '').trim() === '' ? '（正文为空）' : detail?.body}
-        </div>
-      </div>
-
-      {Array.isArray(detail?.validationIssues) && detail.validationIssues.length > 0 ? (
         <div style={cardStyle}>
-          <SectionTitle>这一条被记下的问题</SectionTitle>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, ...mono }}>
-            {detail.validationIssues.map((issue, index) => {
-              const record = typeof issue === 'object' && issue !== null ? (issue as Record<string, unknown>) : {}
-              return (
-                <li key={`detail-issue-${index}`}>
-                  {String(record['code'] ?? '')} {String(record['detail'] ?? '')}
-                </li>
-              )
-            })}
-          </ul>
+          <SectionTitle>索引投影（entities 行）</SectionTitle>
+          <div style={{ display: 'grid', gap: 2, marginTop: 6 }}>
+            <Field name="kind" value={entity['kind'] ?? item.kind} />
+            <Field name="id" value={entity['id'] ?? item.id} />
+            <Field name="title" value={entity['title'] ?? item.title} />
+            <Field name="category" value={entity['category'] ?? item.category} />
+            <Field name="parent" value={entity['parent'] ?? item.parent} />
+            <Field name="status" value={entity['status'] ?? item.status} />
+            <Field name="aliases" value={entity['aliases']} />
+            <Field name="keywords" value={entity['keywords']} />
+          </div>
         </div>
-      ) : null}
+
+        <div style={cardStyle}>
+          <SectionTitle>frontmatter（文件里的字段）</SectionTitle>
+          {Object.keys(frontmatter).length === 0 ? (
+            <div style={{ ...muted, marginTop: 6 }}>
+              {detail?.hasFrontmatter === true ? '这个文件有 frontmatter 段，但没有可读字段。' : '这个文件没有 frontmatter 段。'}
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 2, marginTop: 6 }}>
+              {Object.entries(frontmatter).map(([key, value]) => (
+                <Field key={key} name={key} value={value} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <SectionTitle>正文（只读）</SectionTitle>
+          <div style={{ ...muted, ...mono, margin: '4px 0' }}>{detail?.bodyChars ?? 0} 字</div>
+          <div style={{ ...mono, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto' }}>
+            {(detail?.body ?? '').trim() === '' ? '（正文为空）' : detail?.body}
+          </div>
+        </div>
+
+        {Array.isArray(detail?.validationIssues) && detail.validationIssues.length > 0 ? (
+          <div style={cardStyle}>
+            <SectionTitle>这一条被记下的问题</SectionTitle>
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18, ...mono }}>
+              {detail.validationIssues.map((issue, index) => {
+                const record = typeof issue === 'object' && issue !== null ? (issue as Record<string, unknown>) : {}
+                return (
+                  <li key={`detail-issue-${index}`}>
+                    {String(record['code'] ?? '')} {String(record['detail'] ?? '')}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -511,7 +550,7 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
         ))}
       </div>
 
-      <div style={{ ...columnStyle, ...dividerStyle }}>
+      <div style={detailColumnStyle}>
         {selected === null ? (
           <NoteCard title={LIBRARY_EMPTY['no-selection'].title} body={LIBRARY_EMPTY['no-selection'].body} />
         ) : editing && current !== null && fingerprintOf(current) !== null ? (

@@ -903,3 +903,50 @@ test('the wizard names every action it will perform, and knows when a title is r
   assert.match(HUB_WIZARD_TEXTS.anchorBody, /不会覆盖/, 'the second confirmation promises only additive writes')
   assert.equal(wizard.readHubApply({ ok: false, status: 400, error: { code: 'META_TITLE_REQUIRED' } }).status, 'refused')
 })
+
+// ---------------------------------------------------------------------------
+// 5. The setting-library pages as SOURCE structure (issues 133 / 134)
+//
+// `node --test` has no DOM, so the two panel-structure bugs of the 0.3.0
+// verification pass cannot be reproduced by rendering. They can be pinned as
+// source structure instead, which is what these two tests do — the same style as
+// the "no hardcoded colour" guard above: read the file, assert the shape.
+// ---------------------------------------------------------------------------
+
+function clientSource(name) {
+  return readFileSync(join(ROOT, 'src', 'client', name), 'utf8')
+}
+
+/** One top-level function of a client source (the files are 2-space indented). */
+function functionSource(source, name) {
+  const match = new RegExp(`function ${name}\\([\\s\\S]*?\\n}\\n`).exec(source)
+  assert.ok(match !== null, `${name} is still a top-level function`)
+  return match[0]
+}
+
+test('the library detail pane keeps its header OUT of the scrolling box (issue 133)', () => {
+  const pane = functionSource(clientSource('library.tsx'), 'DetailPane')
+
+  // The bug: the pane's outermost element WAS the scroll column (`...columnStyle`),
+  // so 标题 + 路径 + 编辑 shared one scroll container with the content and scrolled
+  // out of view on a long entry. The root must not be a scroll column again.
+  assert.equal(pane.includes('SCROLL_COLUMN_STYLE'), false, 'the pane root must not be the scroll column')
+  // The content box takes its height from the shared measurement (issue 116): a
+  // hardcoded pixel height or `height: 100%` would resolve against a content-sized
+  // wrapper and silently stop scrolling (layout-model.ts quotes the measurement).
+  assert.ok(pane.includes('useScrollBox()'), 'the content box measures the height it has')
+  assert.ok(pane.includes('SCROLL_BOX_STYLE'), 'the content box takes its height source from the shared style')
+  assert.ok(pane.includes("overflowY: 'auto'"), 'the content box is the scroller')
+  assert.equal(/height:\s*['"]/.test(pane), false, 'no written height in the pane: it is measured, never typed')
+
+  // Structure: the header is a SIBLING of the measured box, never its first child.
+  // Depth (opens minus closes) must be exactly 1 when the box's own tag opens — i.e.
+  // inside the pane root only. Merging the two back into one container fails here.
+  const refAt = pane.indexOf('ref={scrollBox.ref}')
+  assert.ok(refAt > 0, 'the measured box is the element that carries the ref')
+  const before = pane.slice(pane.indexOf('return ('), pane.lastIndexOf('<div', refAt))
+  const depth = (before.match(/<div\b/g) ?? []).length - (before.match(/<\/div>/g) ?? []).length
+  assert.equal(depth, 1, 'the scrolling box is a direct child of the pane root: the header is not in its scroll flow')
+  assert.ok(before.includes('编辑'), 'the 编辑 button belongs to the header that never scrolls')
+  assert.ok(before.includes('item.path'), 'so does the path the author copies')
+})

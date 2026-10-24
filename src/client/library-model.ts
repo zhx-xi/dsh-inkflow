@@ -669,6 +669,70 @@ export function fingerprintOf(value: LibraryItemValue | null | undefined): Libra
 }
 
 // ---------------------------------------------------------------------------
+// The editor's two writes: which one is on offer (issue 134)
+// ---------------------------------------------------------------------------
+
+/** The rename block's state: no confirm yet, folded away, or its confirm button. */
+export type EditorRenameState = 'hidden' | 'blocked' | 'confirm'
+
+/** One state of the editor's action area, as the view renders it. */
+export interface EditorActionState {
+  /** The content save: the primary button, or a grey line where that button stood. */
+  readonly contentSave: 'primary' | 'muted'
+  readonly rename: EditorRenameState
+  /** The sentence shown where the 保存 button stood; `null` while the button is there. */
+  readonly contentNote: string | null
+  /** The sentence telling the author why the rename is not on offer; `null` when it is. */
+  readonly renameNote: string | null
+}
+
+/**
+ * Which of the editor's two writes the author is being offered, and why not the other.
+ *
+ * The bug (issue 134): 确认改名 was `disabled={busy || dirty || plan === undefined}`,
+ * so before 查看影响面 answered it sat there greyed out with no sentence saying why —
+ * and the content's 保存 was rendered next to it as a second, equally primary button.
+ * A greyed-out button is a question the panel refuses to answer.
+ *
+ * Two inputs decide it, and only two: `dirty` (the draft differs from the file) and
+ * `planReady` (查看影响面 has answered, so a rename plan exists).
+ *
+ * | dirty | planReady | 保存          | 改名与影响面                      |
+ * |-------|-----------|---------------|-----------------------------------|
+ * | no    | no        | primary       | inputs + 查看影响面, no 确认改名   |
+ * | yes   | either    | primary       | folded into one grey line         |
+ * | no    | yes       | grey line     | inputs + 查看影响面 + 确认改名     |
+ *
+ * `dirty` wins over `planReady` because both writes target the same bytes: renaming
+ * with an unsaved draft would silently drop it (the plan is refused for exactly that
+ * reason, so the panel must not offer the click either).
+ */
+export function editorActions(state: { dirty: boolean; planReady: boolean }): EditorActionState {
+  if (state.dirty) {
+    return {
+      contentSave: 'primary',
+      rename: 'blocked',
+      contentNote: null,
+      renameNote: '内容有未保存的改动：先保存或放弃，再改名（两处改动会互相覆盖）。',
+    }
+  }
+  if (state.planReady) {
+    return {
+      contentSave: 'muted',
+      rename: 'confirm',
+      contentNote: '内容没有未保存的改动，「保存」这时用不上。',
+      renameNote: null,
+    }
+  }
+  return {
+    contentSave: 'primary',
+    rename: 'hidden',
+    contentNote: null,
+    renameNote: '先点「查看影响面」确认影响，才能改名。',
+  }
+}
+
+// ---------------------------------------------------------------------------
 // State wording: every card the tab can show instead of a blank area
 // ---------------------------------------------------------------------------
 
