@@ -505,14 +505,15 @@ test('io: the write lock file itself is not a writable target', () => {
   }
 })
 
-test('io: the private state directory is writable only inside its three subdirectories', () => {
+test('io: the private state directory is writable only inside its four subdirectories', () => {
   const dir = workdir()
   try {
     const root = project(dir)
 
-    // ADR-0012 / roadmap X-9: exactly trash/ backup/ audit/, one segment deeper
-    // than a content directory because the file lives inside the subdirectory.
-    for (const sub of ['trash', 'backup', 'audit']) {
+    // ADR-0012 / roadmap X-9, X-18: exactly trash/ backup/ audit/ candidates/, one
+    // segment deeper than a content directory because the file lives inside the
+    // subdirectory.
+    for (const sub of ['trash', 'backup', 'audit', 'candidates']) {
       const resolved = resolveWriteTarget(root, `.inkflow/${sub}/chapters/vol-01/0001-a.md`)
       assert.equal(resolved.ok, true, `.inkflow/${sub}/ must be writable`)
       assert.equal(resolved.target.dir, '.inkflow')
@@ -526,6 +527,8 @@ test('io: the private state directory is writable only inside its three subdirec
       '.inkflow/other/x.md',
       '.inkflow/trash',
       '.inkflow/trash/',
+      '.inkflow/candidates',
+      '.inkflow/candidates/',
       '.inkflow',
       '.inkflow/../chapters/x.md',
       '.inkflow/trash/../../inkflow.json',
@@ -534,12 +537,31 @@ test('io: the private state directory is writable only inside its three subdirec
       assert.equal(resolved.ok, false, `${relative} must be refused`)
     }
     // A path that reaches out of the whitelist by name is PATH_NOT_WRITABLE; one with
-    // a `..` segment is PATH_INVALID before the directory is even considered.
+    // a `..` segment is PATH_INVALID before the directory is even considered, and so is
+    // a bare subdirectory with no file name under it.
     assert.equal(resolveWriteTarget(root, '.inkflow/other/x.md').error.code, 'PATH_NOT_WRITABLE')
+    assert.equal(resolveWriteTarget(root, '.inkflow/other/a.json').error.code, 'PATH_NOT_WRITABLE')
     assert.equal(resolveWriteTarget(root, '.inkflow/trash/../../inkflow.json').error.code, 'PATH_INVALID')
+    assert.equal(resolveWriteTarget(root, '.inkflow/candidates').error.code, 'PATH_INVALID')
 
     // Resolving still writes nothing: no `.inkflow/` appears on disk.
     assert.equal(existsSync(join(root, '.inkflow')), false)
+
+    // A candidate is a work file the extract pipeline keeps until the author reviews it
+    // (ADR-0017 D3) rather than a derived artefact, so one real write proves the fourth
+    // subdirectory is writable through the same path resolver, not only resolvable.
+    const candidate = '.inkflow/candidates/20261024T011500Z-character.json'
+    const written = writeTextAtomic(root, candidate, '{"schemaVersion":1}\n')
+    assert.equal(written.ok, true, '.inkflow/candidates/<file> must be writable')
+    assert.equal(readFileSync(join(root, '.inkflow', 'candidates', '20261024T011500Z-character.json'), 'utf8'), '{"schemaVersion":1}\n')
+
+    // The neighbours that must stay out, through the writer and not only the resolver.
+    const refusedCandidate = writeTextAtomic(root, '.inkflow/other/a.json', 'x\n')
+    assert.equal(refusedCandidate.ok, false, '.inkflow/other/a.json must be refused')
+    assert.equal(refusedCandidate.error.code, 'PATH_NOT_WRITABLE')
+    const refusedBare = writeTextAtomic(root, '.inkflow/candidates', 'x\n')
+    assert.equal(refusedBare.ok, false, '.inkflow/candidates without a file name must be refused')
+    assert.equal(refusedBare.error.code, 'PATH_INVALID')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

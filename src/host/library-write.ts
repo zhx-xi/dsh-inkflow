@@ -33,6 +33,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 
 import type { ContentDir } from './conventions.js'
+import { SHARED_REFERENCE_MODE } from './conventions.js'
 import { countChars } from './domains/scan-helpers.js'
 import { compareExpectation, fingerprintBytes, fingerprintProjectFile } from './file-cas.js'
 import type { FileChange, FileExpectation, FileFingerprint } from './file-cas.js'
@@ -200,6 +201,28 @@ function resolveById(root: string, kind: ContentDir, id: string): ResolveOutcome
     if (entityId === id) return { ok: true, path: relative }
   }
   return { ok: false, reply: notFound(kind, id) }
+}
+
+/**
+ * ADR-0007 C4: a `mode: reference` card points at the shared library's original and
+ * holds no body, so the book is not self-contained for that entry. Letting the save
+ * path write it would silently turn a reference into a second copy that still claims
+ * to be a reference — so every write to it is refused, before anything is patched.
+ *
+ * Read here (before the lock, so the refusal is not masked by a missing `expected`)
+ * and again inside `writeLocked` (after the lock, so the check is authoritative).
+ */
+function referenceCardReply(root: string, relativePath: string): LibraryItemReply | undefined {
+  const text = readTextFile(join(root, ...relativePath.split('/')))
+  if (text === undefined) return undefined
+  if (stringField(parseMarkdown(text).data, 'mode') !== SHARED_REFERENCE_MODE) return undefined
+  return refused(409, 'REFERENCE_READONLY', {
+    path: relativePath,
+    nothingWritten: true,
+    hint:
+      'this card is a reference to a shared library original (ADR-0007 C4): the book does not hold its text. ' +
+      'Edit the shared entry, or remove the card and copy the entry as a snapshot (mode: copy)',
+  })
 }
 
 function resolveEntityFile(root: string, kind: ContentDir, id: string): ResolveOutcome {
@@ -375,6 +398,24 @@ function writeLocked(root: string, input: LockedInput): LockedWrite {
   }
 
   const text = bytes.toString('utf8')
+  // ADR-0007 C4: a `mode: reference` card points at the shared library's原文 and
+  // holds no body, so the book is no longer self-contained for that entry. Letting
+  // the save path write it would silently turn a reference into a second copy that
+  // still claims to be a reference — so the refusal is here, on the one path that
+  // could do it, and it happens before anything is patched.
+  const parsedText = parseMarkdown(text)
+  if (stringField(parsedText.data, 'mode') === SHARED_REFERENCE_MODE) {
+    return {
+      ok: false,
+      reply: refused(409, 'REFERENCE_READONLY', {
+        path: input.path,
+        nothingWritten: true,
+        hint:
+          'this card is a reference to a shared library original (ADR-0007 C4): the book does not hold its text. ' +
+          'Edit the shared entry, or remove the card and copy the entry as a snapshot (mode: copy)',
+      }),
+    }
+  }
   const baseline = fingerprintBytes(bytes, mtimeMs)
   const drift = compareExpectation(baseline, input.expected)
   if (drift !== undefined) return { ok: false, reply: fileChanged(input.path, drift) }
@@ -476,11 +517,17 @@ export async function writeLibraryItem(request: LibraryWriteRequest): Promise<Li
       hint: 'send `frontmatter`, `body`, or both: a save with neither would rewrite nothing',
     })
   }
-  const expected = readExpectation(body)
-  if (!expected.ok) return expected.reply
-
+  // `expected` is validated AFTER the target is resolved and its reference mode is
+  // decided: a request against a read-only card must answer "this card has no text
+  // in this book" rather than "you forgot the baseline" (ADR-0007 C4).
   const resolved = resolveEntityFile(source.root, kind, id)
   if (!resolved.ok) return resolved.reply
+
+  const readOnly = referenceCardReply(source.root, resolved.path)
+  if (readOnly !== undefined) return readOnly
+
+  const expected = readExpectation(body)
+  if (!expected.ok) return expected.reply
 
   const locked = withProjectWriteLock(source.root, (lock) =>
     writeLocked(lock.root, {

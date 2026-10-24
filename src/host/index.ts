@@ -647,6 +647,7 @@ export type { AuditReply, AuditSource } from './audit-channel.js'
  * that expose them are registered through `tools.ts` like every other built-in.
  */
 export {
+  BACKUP_KINDS,
   BACKUP_MANIFEST_FILE,
   BACKUP_SCHEMA_VERSION,
   backupCopyPath,
@@ -693,10 +694,57 @@ export type {
 export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from './repair-report.js'
 
 /**
- * 资料导入的分析半（#37，roadmap X-17）：字节 → 编码嗅探 → 行尾风格 → 分章。
+ * The shared library's take-out direction (#40, ADR-0007 C2–C6): copy snapshot,
+ * `origin` provenance, the stale list and the explicit per-entry update.
  *
- * 全是纯函数，写盘一律在 `import-write.ts`（预览与执行共用同一份分析，所以「预览 =
- * 执行」是集合比较得出的，不是两处各算一遍）。
+ * Exported for the same reason as every other domain here — the behaviour IS the
+ * contract: "a conflict writes nothing", "a stale copy is only a report" and
+ * "reference is library/-only" are proved by driving these functions directly and
+ * comparing whole-tree hashes, not by reading a route envelope.
+ */
+export {
+  SHARED_COPY_MAX_ROWS,
+  applyOriginBlock,
+  buildSharedCopies,
+  copySharedEntry,
+  ensureProjectId,
+  updateSharedEntry,
+} from './shared-copy.js'
+// The library save path is exported here so a test can prove the one rule that
+// lives in it and nowhere else: a `mode: reference` card refuses every write
+// (ADR-0007 C4 `REFERENCE_READONLY`), whatever the panel or a tool asks for.
+export { writeLibraryItem } from './library-write.js'
+export type {
+  EnsureProjectIdValue,
+  SharedCopiesValue,
+  SharedCopyError,
+  SharedCopyInput,
+  SharedCopyMode,
+  SharedCopyRow,
+  SharedCopyValue,
+  SharedOriginCopy,
+  SharedOriginReference,
+  SharedResult,
+  SharedUpdateInput,
+  SharedUpdateValue,
+} from './shared-copy.js'
+export { scanSharedLibrary } from './hub-shared.js'
+export type { SharedLibraryScan } from './hub-shared.js'
+
+/**
+ * The ZIP container (ADR-0018 D3, issue #146): store-only by design, so a backup can
+ * be opened by any tool and checked by hand. Exported for the tests and for the
+ * settings/backup work that writes the package.
+ */
+export { ZipError, crc32, readZip, writeZip } from './zip.js'
+export type { ZipEntry, ZipErrorCode, ZipWriteEntry, ZipWriteOptions } from './zip.js'
+
+/**
+ * 资料导入（#37，roadmap X-17）：字节 → 编码嗅探 → 行尾风格 → 分章的分析半，以及
+ * 「预览 = 执行」的写入半。
+ *
+ * 全是纯函数或经 `chapters.ts` / `io.ts` 的写入；预览与执行共用同一份 `prepare()`，
+ * 所以「预览 = 执行」是集合比较得出的，不是两处各算一遍。
  */
 export {
   IMPORT_EXTENSIONS,

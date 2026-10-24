@@ -657,6 +657,34 @@ export function parseMarkdown(text: string): ParsedMarkdown {
       continue
     }
 
+    // Nested mapping — one level, which is all a field like the shared-library
+    // `origin` needs (ADR-0007 C3 writes `origin:` then indented fields).
+    //
+    // Why it is read instead of refused: `origin` is a real field on copies and
+    // on reference cards, and an "unparsed line" issue lands in
+    // `validation_issues` and then in the audit — every copy would be reported
+    // as a broken file. Only an INDENTED `key: value` attaches to the pending
+    // key, so a scalar key followed by an indented line stays the invalid YAML
+    // it is, and a key that already collected list items is not silently turned
+    // into a map.
+    const nestedMatch = /^\s+([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$/.exec(content)
+    if (nestedMatch !== null && pendingKey !== undefined) {
+      const current = data[pendingKey]
+      if (Array.isArray(current) && current.length > 0) {
+        issues.push(`mixed list and mapping under "${pendingKey}" at line ${lineNumber} (byte ${lineByte})`)
+        continue
+      }
+      const nestedRaw = (nestedMatch[2] ?? '').trim()
+      const nested: Record<string, unknown> =
+        typeof current === 'object' && current !== null && !Array.isArray(current)
+          ? (current as Record<string, unknown>)
+          : {}
+      nested[nestedMatch[1] as string] =
+        nestedRaw.startsWith('[') && nestedRaw.endsWith(']') ? splitInlineArray(nestedRaw) : parseScalar(nestedRaw)
+      data[pendingKey] = nested
+      continue
+    }
+
     const kvMatch = /^([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$/.exec(content)
     if (kvMatch === null) {
       issues.push(`unparsed frontmatter line at line ${lineNumber} (byte ${lineByte})`)

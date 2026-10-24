@@ -121,17 +121,40 @@
 
 **只读纪律（三层）**
 
-1. **代码层**：模块没有任何写 API —— 不 `mkdir`、不写 `index.json`、不改条目文件；库不存在只回 `created:false`（空不是错误，也不是"顺手建一个"的理由）。
+1. **代码层**：`hub-shared.ts` 没有任何写 API —— 不 `mkdir`、不写 `index.json`、不改条目文件；库不存在只回 `created:false`（空不是错误，也不是"顺手建一个"的理由）。**取用方向（复制/引用/更新）不在这个文件里**：它在 `shared-copy.ts`（§4.2.3），由 `shared-channel.ts` 暴露成三条独立的 hub 路由，各自带写守卫。
 2. **数据层**：`index.json` 是**派生清单**（[ADR-0005](../adrs/0005-files-first-with-derived-index.md)：文件是真相、清单是缓存）。清单与目录不一致时**以目录为准**，清单既不修也不补。
-3. **证据层**：拒绝路径与正常读取都要求 `shared/` 整树 hash 前后一致（`tests/hub-shared.test.js`）。
+3. **证据层**：拒绝路径与正常读取都要求 `shared/` 整树 hash 前后一致（`tests/hub-shared.test.js`）；取用侧另有自己的整树证据（`tests/shared-copy.test.js`、`tests/shared-routes.test.js`）。
 
 **为什么不写回 `index.json`**
 
-- **能力边界**：写入属于共享库写入方（#40）。hub 的能力白名单只有"列书 / 初始化计划 / 初始化执行 / 共享内容只读浏览"（ADR-0010 D3），通道里没有写路由；在同一个投影里顺手写清单，等于给只读页开了一个写后门。
+- **能力边界**：清单是缓存，不是真相；#40 落地后仍然不写回——写回会让"手改清单"变成一件看起来有效的事，而 [ADR-0007](../adrs/0007-plugin-shared-library.md) C1 明确说手改会被下一次扫描覆盖。
 - **幂等与并发**：面板可能同时开在多个窗口。谁都写清单就会出现"最后写者赢"的清单；不写，则任何窗口看到的都是同一份真相——目录本身。
 - **失败形态更好**：清单坏了只是"这次扫描"；扫描被预算截断只是"这次少列 + `truncated:true`"。两者都不留下半写状态。
 
 **成本上限**：见 [conventions.md](conventions.md) §6.2.2。常量在 `hub-shared.ts` 顶部导出，测试注入而非真的等待 1.5 秒。
+
+#### 4.2.3 共享库的取用方向 — `shared-copy.ts` + `shared-channel.ts`（#40）
+
+`GET /hub/shared` 只回答"库里有什么"；把条目**拿进一本书**是另一个方向、另一套纪律（[ADR-0007](../adrs/0007-plugin-shared-library.md) C2–C6），由两个模块分担：
+
+| 模块 | 负责 | 不负责 |
+|---|---|---|
+| `src/host/shared-copy.ts` | 域：`copySharedEntry`（快照 + `origin`）、`updateSharedEntry`（逐条更新，先备份）、`buildSharedCopies`（副本与 stale 列表，只读）、`ensureProjectId`、`applyOriginBlock`/`readOrigin`（`origin` 块的写与读） | 认路径、认会话、认 HTTP；它只接收一个已经过门禁的 `root` |
+| `src/host/shared-channel.ts` | 通道：`book` 必须命中 `workspaceRegistry`（`listRegisteredWorkspaces` + realpath 比较）→ 再过四态门禁 → 才调域；三条路由的 body 白名单 | 判定"什么算一条副本"、写 `inkflow.json` 字段 |
+
+**落位（ADR-0007 C2）**：`world/…` 原样落 `world/…`；`library/*.md` 落 `library/*.md`（连同可选原文副本）；`snippets/*.md` 落 `library/snippets/*.md`（`library/` 是资料域，**不新增第十个一级目录**）；`series/*.json` **不落文件**，只写 `inkflow.json.seriesId`。
+
+**三条路由**（只在写时有 `Origin` 同源要求，与 `plan`/`apply` 同一套守卫）：
+
+| 路由 | 动词 | body | 语义 |
+|---|---|---|---|
+| `/hub/shared/copies` | GET | query: `book` | 本书副本 + `state`（`current`/`stale`/`missing-source`）+ `selfContained` + `seriesId`/`seriesFound`；**只读** |
+| `/hub/shared/copy` | POST | `book` / `entryId` / `mode?` / `confirm` | 复制快照（默认）或 `library/` 引用卡；冲突 → `SHARED_COPY_CONFLICT`，零写入 |
+| `/hub/shared/update` | POST | `book` / `entryId?` / `file?` / `confirm` | 逐条更新：先 `openBackup(root,'shared')` + `stageFile` + `sealBackup(sealed:false)`，再写，再 `sealBackup(sealed:true)` |
+
+**`origin` 的落盘形式**：frontmatter 里的**嵌套映射**（`origin:` 下三行 `projectId`/`entryId`/`contentHash`，引用卡换成 `sha256`）。这要求 `frontmatter.ts` 能读缩进映射——原先缩进行会被报成"unparsed frontmatter line"，而那条 issue 会进 `validation_issues` 与体检报告，等于每条副本都是"坏文件"。因此读侧扩了**一层**嵌套映射支持（值仍只到标量/内联数组/块列表），写侧由 `applyOriginBlock` 负责"插入或整体替换"，不改其他任何字节。
+
+**为什么 `stale` 不动文件**（[ADR-0007](../adrs/0007-plugin-shared-library.md) C3）：副本是作者的正文，来源变了不等于副本该被覆盖。列表报 `contentHash` 与当前 `sha256`，更新是显式动作且有备份包。
 
 #### 4.2.2 向导线（plan → apply）— `src/host/hub-wizard.ts`（唯一的 hub 写面）
 
@@ -423,16 +446,22 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/audit.ts` | **一致性体检**（#33，X-14）：五类发现聚合成一份 `Finding[]`（只聚合 / 分组 / 排序 / 给人话 hint，判定一律调域模块）＋ Markdown 报告渲染 ＋ 唯一写动作（`exportAuditReport` → `.inkflow/audit/`） | 判任何不变量（那是 `scanProject` / `validateCatalog` / 域模块的事）、重建索引、在只读路径写盘 |
 | `src/host/audit-channel.ts` | 体检的通道半：`GET /audit` 的投影（分组计数 + 前 N 条 + 定位与地址）与 `POST /audit/export` 的信封、`CONFIRM_REQUIRED` 闸门、失败码到 HTTP 状态的映射 | 体检规则、Markdown 排版、写盘（一律调 `audit.ts` 与 `io.ts`） |
 | `src/host/private-state.ts` | 私有状态目录 `.inkflow/` 的三个共享助手（ADR-0012）：相对路径拼装、`isPrivateStatePath`、`ensurePrivateStateIgnored`（append-only 补 ignore 行，失败返回而不抛） | 决定什么时候删/备份（归 #35/#36）、清单格式 |
-| `src/host/import.ts` | **旧稿导入的分析半**（#37，X-17）：编码三档回落（UTF-8 严格 → UTF-16 BOM → `TextDecoder('gbk')`）、原文行尾记忆、分章识别（强标记 / `一、` / 短行独占）、段落与字数计数；**全是纯函数**（`Buffer` 进，结构出） | 任何 IO、写盘、备份、门禁 |
-| `src/host/import-write.ts` | **旧稿导入的写入半**：`planImport`（零写盘：读源 + 读 catalog 投影算序号）与 `applyImport`（`confirm` + `planToken` 闸门、逐章走 `createChapter`/`writeChapter`、`library/` 原件副本、一次 `openBackup('import')` 封包、失败整批 `rollbackBackup`、末尾一次索引重建） | 解析规则（在 `import.ts`）、HTTP 信封（在 `import-channel.ts`）、自己拼章文件路径（一律经 `chapters.ts` → `io.ts`） |
+| `src/host/zip.ts` | **store-only ZIP 容器**（[ADR-0018](../adrs/0018-settings-backup-diagnostics.md) D3）：`writeZip`（本地头 + 中央目录 + EOCD，method 0，自算 CRC-32，MS-DOS 时间戳）、`readZip`（**读中央目录**而不是扫本地头，逐条校验 CRC 与长度）、导出的 `crc32`；拒绝 method≠0、zip64、密文包、`..`/绝对/反斜杠/空段名（防解压逃逸）与重名条目 | 压缩与解压（那是被 D3 否掉的方向）、决定备份包含哪些文件（归 #42）、写盘 |
+| `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE`；对外只暴露"列注册表"这一个只读入口（`listRegisteredWorkspaces`），供向导线与共享库写通道解析锚点 | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
+| `src/host/shared-copy.ts` | **共享库取用方向的唯一实现**（#40、ADR-0007 C2–C6）：`copySharedEntry`（快照 + `origin{projectId,entryId,contentHash}`，冲突零写入）、`updateSharedEntry`（逐条更新：先备份包再写）、`buildSharedCopies`（副本 + stale 列表，只读）、`ensureProjectId`（可选 `inkflow.json.projectId`）、`applyOriginBlock`（`origin` 块的插入/替换） | 认路径/会话/HTTP、写共享库与 `index.json`、自动更新、双向同步 |
+| `src/host/shared-channel.ts` | 共享库的三条 hub 路由信封：`book` 必须命中 `workspaceRegistry`（realpath 比较）→ 四态门禁 → 再调域；body 白名单 `SHARED_COPY_BODY_FIELDS` / `SHARED_UPDATE_BODY_FIELDS`；拒绝码 → HTTP 状态 | 判定副本语义、写 `inkflow.json` 字段、接受 `root`/`path` |
+| `src/host/import.ts` | **旧稿导入的分析半**（#37，X-17）：编码三档回落（UTF-8 严格 → UTF-16 BOM → `TextDecoder('gbk')`）、原文行尾记忆、分章识别（强标记 / `一、` / 短行独占，各带最低证据数）、段落与字数计数；**全是纯函数**（`Buffer` 进，结构出） | 任何 IO、写盘、备份、门禁 |
+| `src/host/import-write.ts` | **旧稿导入的写入半**：`planImport`（零写盘：读源 + 读 catalog 投影算序号；同名原件按「相同则复用、不同则排 -2/-3」选名）与 `applyImport`（`confirm` + `planToken` 闸门、逐章走 `createChapter`/`writeChapter`、`library/` 原件副本、一次 `openBackup('import')` 封包、失败整批 `rollbackBackup`、末尾一次索引重建） | 解析规则（在 `import.ts`）、HTTP 信封（在 `import-channel.ts`）、自己拼章文件路径（一律经 `chapters.ts` → `io.ts`） |
 | `src/host/import-channel.ts` | 导入的通道半：`POST /library/import` 的 `plan`/`apply` 两个动作、字段校验、失败码到 HTTP 状态的映射；`sourcePath` 为什么走写路由的守卫（POST + 必须有 loopback `Origin`）写在这一层的文件头 | 导入规则、写盘、会话解析 |
-| `src/host/hub.ts` | **书库投影**（无会话）：`workspaceRegistry.list()` → 书单行（四态门禁 + `dirStatus` + 只读 catalog 计数 + `notABook`）、realpath 去重、并发 4 / 单本 2 s→`timeout` / 预算 3 s→`truncated` / 200 行→`capped`、注册表缺失 → `HUB_UNAVAILABLE`；对外只暴露"列注册表"这一个只读入口（`listRegisteredWorkspaces`），供向导线解析锚点 | 接受任何路径、写盘、重建索引或 catalog、自动注册/移除工作区 |
+| `src/client/library-import.tsx` + `library-import-model.ts` | 设定库「资料」分组里的导入对话框（三步：选文件 → 预览 → 确认）与它的纯视图模型（草案校验、请求体、预览文案、结果文案、拒绝码 → 人话） | 读文件（Client 无文件 API：路径由作者填、Host 读）、判分章规则、写任何文件 |
 | `src/host/hub-wizard.ts` | **新开书向导**（ADR-0010 D4/D6）：`plan`（锚点三级判定 → 路径闸门 → 只读 plan → 签发 token）与 `apply`（消耗 token → 摘要比对 → `applyWorkspace` → `workspaceRegistry.create`）、一次性 `planToken` 存储（TTL 5 分钟、可注入时钟）、`nextStep` 降级 A 文案 | 自己写文件（一律走 `workspace.ts`）、接受 `apply` 的路径、发 token 给已注册目录、commit/配远端 |
 | `src/host/impact.ts` | **改设定前的影响清单 + 改名计划**（#34，[ADR-0014](../adrs/0014-entity-id-pinning.md)）：`(kind, id)`／标题模糊匹配 → 实体文件（只读扫描，索引不可用时也能解析）；五处影响面（提及章读 `entity_mentions`、关系读 `relations`、时间线/账本/伏笔因无投影直接读文件）＋总计数；改名计划（目标路径、要钉的 id、冲突判定） | 写任何文件、重建索引、决定是否执行（执行由 `impact-write.ts` 与面板的确认动作承担） |
 | `src/host/impact-write.ts` | **改名的唯一写实现**：写锁内「先写新文件（旧 id 钉进 frontmatter `id`）→ 再删旧文件」、`TARGET_EXISTS`/`FILE_CHANGED`/失败回滚、写后 `ensureIndex(rebuild)` 并回报 `id` 不变 / `path` 更新 / 提及条数不变 | 生成影响清单、重写引用方字段（X-15：一个都不改）、直接拼项目路径（经 `io.ts`） |
 | `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封、body 字段白名单；另含**书库路由组** `/hub/*` 的独立分派（无会话；写路由要求 `Origin` 与 `Host` 同源） | 业务规则、写真相文件、解析会话 |
 | `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 章节树 / 编辑器 / 向导清单）、页表 `pageRenderers`（roadmap X-12：非 `chapters` 页一行一页，JSX 里不再有页分支）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
-| `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、「新开书」向导入口（`HubWizard`）、共享内容的禁用占位（#87）、`apply` 成功后**就地合并**书单行 | 写动作本身、轮询、拼路径参数 |
+| `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、「新开书」向导入口（`HubWizard`）、「共享内容」页入口（关闭时回到书单，并把**书单**交给它当复制目标）、`apply` 成功后**就地合并**书单行 | 写动作本身、轮询、拼路径参数 |
+| `src/client/hub-shared.tsx` | 共享内容页（#87 只读 + #40 取用）：库条目按 kind 分组、目标书选择（只列 `usable`）、复制/引用两段式确认（先臂上再「确认复制」）、本书副本列表与逐条更新（确认后带 `confirm: true`）、`selfContained` 与 `seriesId` 说明；只走 `fetchInternal`/`writeInternal` 的 `sessionless` 调用 | 判副本语义、拼 `root`/`path` 参数、轮询 |
+| `src/client/hub-shared-model.ts` | 共享内容页的纯视图模型：两种信封折叠（库 / 副本）、`state` 文案、`copyNeedsUpdate`（只为 `stale` 给按钮）、`copyModes`（引用只给 `library/`）、`copyTargets`（只列 `usable` 书）、`selfContainedNote`、拒绝码 → 人话 | React、网络、IO |
 | `src/client/hub-wizard.tsx` | 新开书向导的视图：`pickDirectory` → plan → 确认卡（`willCreate[]` / `notices[]` / 书名 / `outsideRegistry` 二次确认）→ apply → 降级 A 卡片；目录选择器不可用时退化为手输绝对路径 | 拼第二套规则、跳转/建会话、轮询 |
 | `src/client/hub-wizard-model.ts` | 向导的纯视图模型：`plan` 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填判定、降级 A 文案、`mergeHubRow`（就地更新或追加） | React、网络、IO |
 | `src/client/panel-model.ts` | 纯视图模型：四态徽标文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表、预览裁剪 | React、网络、IO |
@@ -503,11 +532,11 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | 搜索的正文全文检索 | `/search` 目前只匹配章节元数据（id/路径/标题），并显式标 `searchUnavailable: true` | #22 |
 | 卷章 catalog + `volumeId` | 未落地；卷归属按目录名推导 | #15 |
 | 索引 v2（九目录全实体 + 提及 + 全实体 FTS） | 只覆盖章/角色/世界观/大纲 | #22 / #23 |
-| 插件级共享库 + `origin` 溯源 | 未落地 | #40 |
+| 共享条目的「转为复制快照」 | 引用卡只读（写入即 `REFERENCE_READONLY`）；想改成快照，当前做法是删卡片再复制一次（ADR-0007 C4 的显式动作未做成按钮） | 随 #49 |
 | OVK 语义检索（peer / 分块 / 按章重建 / 降级） | 未落地；当前只有 FTS5 | #41 |
 | 写入器之上的提案制（改写正文需确认） | `io.ts` 已落地，提案制未落地 | #45 |
 | 增量重建 / 大文件流式解析 | 未落地 | 随索引 v2 |
-| 书库的共享内容页 | `/hub/shared` 与「共享内容」入口位未落地；书单与「新开书」向导已落地 | #87 |
+| 书库「共享内容」页的**运行中观感** | 契约测试打 `lib/client.js` 构建产物（入口、两条路由、两段式确认文案、无轮询），**没有在重启后的 DSH 里点过**「复制」「更新」与目标书下拉 | 重启 DSH 后：书库里点「共享内容」→ 选书 → 复制一条 → 看 `origin` 落到文件；改共享库再刷新 → 该行显示落后 → 更新 |
 
 ### 9.2 未验证（已实现但未观测）
 

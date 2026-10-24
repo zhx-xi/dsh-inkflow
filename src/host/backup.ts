@@ -48,16 +48,19 @@ export const BACKUP_MANIFEST_FILE = 'manifest.json'
 export const BACKUP_FILES_DIR = 'files'
 
 /**
- * Which batch produced the package — each one keeps its own report prefix too.
+ * Which batch produced the package — the two maintenance passes (#36) and the four
+ * 0.4.0 producers that reuse this package instead of inventing their own
+ * (roadmap X-17: batch import, id replace, shared-content copy, restore).
  *
- * `import` (#37) joined for the same reason the other two are here: a manuscript import
- * is a batch of writes that has to be undoable in one action, and it needs its own kind
- * so a reader can tell it from a repair pass without reading the steps. The other kinds
- * the roadmap names (`replace` / `shared` / `restore`) land with the features that
- * produce them: adding one here without a producer would only make `readBackup` accept a
- * manifest nothing can write.
+ * One closed list rather than a union per issue: a kind the writer accepts but a
+ * reader refuses is a package nobody can roll back, so writer and reader both take
+ * their vocabulary from `BACKUP_KINDS`. `shared` is the shared-library copy/update
+ * batch (#40, ADR-0007 C2/C3): one package per copy or per per-entry update, so
+ * "undo that refresh" does not depend on git.
  */
-export type BackupKind = 'repair' | 'migrate' | 'import'
+export const BACKUP_KINDS = ['repair', 'migrate', 'import', 'replace', 'shared', 'restore'] as const
+
+export type BackupKind = (typeof BACKUP_KINDS)[number]
 
 /** What a file is, as far as a restore cares. */
 export interface BackupDigest {
@@ -351,6 +354,11 @@ function readEntry(raw: unknown): BackupFileEntry | undefined {
   }
 }
 
+/** Whether a value read out of a manifest is one of the kinds this build writes. */
+function isBackupKind(value: unknown): value is BackupKind {
+  return typeof value === 'string' && (BACKUP_KINDS as readonly string[]).includes(value)
+}
+
 /** Read one package's manifest; anything unreadable is refused, never rebuilt. */
 export function readBackup(root: string, dirInput: string): BackupReadResult {
   const dir = normalizeBackupDir(dirInput)
@@ -391,7 +399,9 @@ export function readBackup(root: string, dirInput: string): BackupReadResult {
     )
   }
   const kind = record['kind']
-  if (kind !== 'repair' && kind !== 'migrate' && kind !== 'import') {
+  // A word this build does not know is refused, not coerced to a default: reading a
+  // foreign package as "some other batch" would make its report lie about what it is.
+  if (!isBackupKind(kind)) {
     return fail('BACKUP_MANIFEST_INVALID', `${manifestPath} has an unknown kind`, { root, path: manifestPath })
   }
   const strings = (value: unknown): string[] =>

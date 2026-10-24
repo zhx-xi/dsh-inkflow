@@ -184,7 +184,7 @@
 
 两条轴各有一套判定口径（详见 §5 的 I-16–I-19）：
 
-- **`worldTime` 用扁平标量而不是 `{era, year, month, day, precision}` 对象**：项目读取器只支持标量、行内数组与块数组，嵌套映射会被读回成一整个字符串；而对象里 `precision` 要表达的信息恰好是「作者写了几段日期」，因此由段数推导。纪元（`era`）留给多纪元历法（Q7）。
+- **`worldTime` 用扁平标量而不是 `{era, year, month, day, precision}` 对象**：对象里 `precision` 要表达的信息恰好是「作者写了几段日期」，因此由段数推导；扁平标量还让「按时间排序」是一次字符串比较而不是三处取字段。纪元（`era`）留给多纪元历法（Q7）。（读取器现在支持一层嵌套映射，见 [ADR-0019](../adrs/0019-one-level-nested-frontmatter.md)——这条选择与「解析器能不能读」无关。）
 - **`narrativeOrder` 是书内出现次序**：叙事轴按它全局排序，槽位冲突也在全书一个桶里判（跨章同槽即矛盾）。
 - **叙事顺序与世界顺序不一致本身不是错误**：倒叙/回忆正是双时间轴要表达的东西，重建期报 `TIMELINE_WORLD_TIME_REVERSED` 作为提示，写入侧放行。
 
@@ -219,7 +219,7 @@
 - **哪些 `- ` 列表项算事实行**：看第一个分段的键——是上面六个已知键之一就是事实行（解析失败则报 `FACT_LINE_MALFORMED`）；否则若任意分段含已知键，判「想写事实但写坏了」并报同一条 code；两者都不满足就是**散文，静默忽略**（零 issue）。账本同时是作者的笔记，把散文报成坏行会让体检报告淹没真正写坏的那一行（[ADR-0013](../adrs/0013-facts-ledger-line-format.md) 修订一节）。
 - 不可解析的**事实行**报 `FACT_LINE_MALFORMED` 并带行锚 `path#L<n>`，不阻断整文件。
 - **旧式单事实 frontmatter（只读兼容）**：ADR-0013 之前的字段表把一条事实放在 frontmatter（`subject` / `attribute` / `value` / `since` / `until` / `chapterId` / `source`）。这种文件按**一条**事实读入：`attribute` 与 `value` **同时存在**才产生事实；`subject` 缺省回退文件名；缺 `since` = 书首、缺 `source` = `manual`；行锚取 `attribute:` 所在行；`conflictsWith` 不读。**只读**——没有写入路径产出这种形状，`inkflow_facts_append` 仍只写正文行，老格式的事实不被搬运或改写；同一文件里两种形状并存时两条都进索引，并按同一 `attribute` 正常参与 I-23。**不再新增这种写法**（新建账本只写 `subject`）。
-- 为什么不用 frontmatter 块数组或 Markdown 表格：见 ADR-0013 的备选表（嵌套映射读回成一个字符串；表格与中文竖线冲突且 diff 不可读）。
+- 为什么不用 frontmatter 块数组或 Markdown 表格：见 ADR-0013 的备选表（块数组装映射会让一条事实跨多行、丢掉行锚；表格与中文竖线冲突且 diff 不可读）。
 
 ### 3.6 资料卡片 `library/<slug>.md`
 
@@ -243,6 +243,21 @@
 | `contentHash` | string | **复制那一刻**共享条目的 `sha256` |
 
 `origin` 是来源证据，不是同步指针；`contentHash` 与共享库当前内容不一致 → 副本标 stale，但**不自动改**。
+
+**落盘形式是嵌套映射**（`origin:` 下三行缩进字段），不是 `origin.projectId: …` 这类扁平键：
+
+```yaml
+origin:
+  projectId: 4b1f…（或 null）
+  entryId: sh-aaaa1111
+  contentHash: 9f2c…（64 位十六进制）
+```
+
+两个理由：一是扁平键的点号不在 frontmatter 键的字符集里（读侧会报 unparsed line）；二是把它写成一个 `origin:` 标量（例如内联 JSON）会让"字段存在"这件事在文件里不可读。读侧因此支持**一层**嵌套映射（值仍只到标量/内联数组/块列表），写侧由 `applyOriginBlock` 只插入或整体替换这一块——**其他字节（键序、注释、行尾）不动**。
+
+**引用卡（`mode: reference`）** 的 `origin` 换成 `sha256`（共享库侧原文哈希）且**没有** `contentHash`：它没有副本内容可比，stale 判定拿 `sha256` 与当前源对比。
+
+**副本与 `chapter`/`world` 等实体一样是普通文件**：索引不为它建表，也不复制 `origin` 进索引；"这本书有哪些副本、哪条落后"由 `buildSharedCopies` 扫文件头得出（`shared-copy.ts`），与 [ADR-0005](../adrs/0005-files-first-with-derived-index.md) 的"文件是真相"一致。
 
 ## 4. 派生索引（`index/inkflow.db`）
 
@@ -373,5 +388,5 @@
 |---|---|---|
 | 索引 v2 剩余部分（`foreshadowings` 表 + 伏笔解析器与状态机校验） | 未落地 | #31 |
 | 故事线 / 场景契约 / 角色分组独立文件 | 未落地 | 对应功能 issue |
-| 共享库与 `origin` 溯源 | 未落地 | #40 |
+| 共享库与 `origin` 溯源 | 已落地（§3.7）：副本 frontmatter 带嵌套 `origin`，`buildSharedCopies` 报 stale；**索引不建表**——副本就是普通文件，谁复制过由文件自己回答 | 副本列表由文件扫描得出（`shared-copy.ts`） |
 | OVK 语义块与 `semantic_blocks` | 未落地 | #41 |
