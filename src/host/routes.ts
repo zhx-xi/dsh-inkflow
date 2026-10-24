@@ -119,6 +119,8 @@ import {
   exportAudit,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
+import { MAX_QUERY_CHARS } from './search.js'
+import { REPLACE_APPLY_BODY_FIELDS, replaceApplyReply, replacePreviewReply, searchAllFromQuery } from './search-channel.js'
 
 const PREFIX = '/inkflow'
 const LOOPBACK_AUTHORITY = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
@@ -232,16 +234,49 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
   {
+    // The single search entry (#39, roadmap X-16): body prose plus every setting kind,
+    // one page at a time. `kinds` (repeated or comma-separated) narrows it; an unusable
+    // index is a 200 answer with `degradedReason`, never a 5xx.
     name: 'search',
     pattern: /^\/search$/,
     methods: ['GET'],
     handle: async ({ target, query, version }) => {
       const q = (query.get('q') ?? '').trim()
       if (q === '') {
-        return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text> to search the chapter tree' }) }
+        return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text> to search the book' }) }
       }
-      return { status: 200, body: ok(await buildSearch(target, version, q)) }
+      if (q.length > MAX_QUERY_CHARS) {
+        return {
+          status: 400,
+          body: failure('QUERY_INVALID', { message: `query is ${q.length} characters long; the limit is ${MAX_QUERY_CHARS}` }),
+        }
+      }
+      return { status: 200, body: ok(await buildSearch(target, version, searchAllFromQuery(query))) }
     },
+  },
+  {
+    // The replace preview (#39, X-17): what a batch would change, with the exact
+    // `expected` set an apply must send back. Read-only — it does not even refresh the
+    // index, because a preview is a question and a rebuild during a question is a write.
+    name: 'replace-preview',
+    pattern: /^\/replace$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const q = query.get('q') ?? ''
+      if (q.trim() === '') {
+        return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text>&with=<replacement>' }) }
+      }
+      return replacePreviewReply(target, version, { query: q, replacement: query.get('with') ?? '' })
+    },
+  },
+  {
+    // The batch itself: a write, so it carries every write guard declared above plus
+    // `confirm: true` and the preview's `expected` set (X-17).
+    name: 'replace-apply',
+    pattern: /^\/replace\/apply$/,
+    methods: ['POST'],
+    body: REPLACE_APPLY_BODY_FIELDS,
+    handle: ({ target, version, body }) => replaceApplyReply(target, version, body),
   },
   {
     // The setting library (issue #30, X-7): eight kind groups, `world` carrying
