@@ -9,7 +9,7 @@
 
 现状（本机实测，2026-10-24）：
 
-- OVK 的数据面是 **HTTP**：`@openviking/dsh-memory-plugin` 的 `client.mjs` 通过 `createOvHttp()` 打 `/health` 与 `/api/v1/…`，头是 `Authorization: Bearer <apiKey>` + `X-OpenViking-Actor-Peer: <peer>`，base URL 来自配置里的 `baseUrl`/`endpoint`（[ov-http.mjs](file:///C:/Users/zhx-xi/.dsh/profiles/desktop/node_modules/@openviking/dsh-memory-plugin/shared/ov-http.mjs)）。也就是说**用 `fetch` 就能接**，不需要任何依赖。
+- OVK 的数据面是 **HTTP**：`@openviking/dsh-memory-plugin` 的 `client.mjs` 通过 `createOvHttp()` 打 `/health` 与 `/api/v1/…`，头是 `Authorization: Bearer <apiKey>` + `X-OpenViking-Actor-Peer: <peer>`，base URL 来自配置里的 `baseUrl`/`endpoint`（`@openviking/dsh-memory-plugin` 的 `shared/ov-http.mjs`，本机 profile 里可读）。也就是说**用 `fetch` 就能接**，不需要任何依赖。
 - 这套连接信息由 OVK 自己的解析链给出：`~/.openviking/ov.conf` 的 `dsh` 段 + `OPENVIKING_*` 环境变量 + `~/.openviking/ovcli.conf` 的 `plugin` 段（那份 `resolveConfig()` 就是它的规则）。
 - 本机当前**没有 OVK 服务在跑**（`127.0.0.1:7801` 无响应；`ov.conf` 里只有一个 embedding 端点 `127.0.0.1:11435/v1`，那是 OVK 自己用的）。
 
