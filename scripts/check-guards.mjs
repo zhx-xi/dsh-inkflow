@@ -94,6 +94,23 @@ check('no UTF-8 BOM in tracked text files', () => {
   if (offenders.length > 0) throw new Error(offenders.join(', '))
 })
 
+/**
+ * React's rules of hooks, as a mechanism (#174).
+ *
+ * The settings page rendered as a blank panel because `HubView` called a `useCallback`
+ * *below* the `if (view === …) return` switch: the render that switched pages had one
+ * hook fewer than the previous one, React threw, and nothing in the UI said why. That is
+ * a source-level defect, so it is checked at source level — the analysis needs the AST
+ * (TypeScript) and lives in `scripts/check-hooks-order.mjs` so it can also be run alone
+ * with a directory argument while debugging.
+ */
+check('no hook is called after an early return (client components)', () => {
+  const result = spawnSync(process.execPath, [join(ROOT, 'scripts', 'check-hooks-order.mjs')], { encoding: 'utf8' })
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || 'check-hooks-order.mjs failed').trim())
+  }
+})
+
 if (!skipArtifacts) {
   check('built host bundle is ESM with apply()', () => {
     const path = join(ROOT, 'lib', 'index.js')
