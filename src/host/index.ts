@@ -79,7 +79,20 @@ export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
 /** Hard dependency: the tool registry. `webServer` is injected lazily. */
 export const inject = ['tools']
 
-const VERSION = '0.0.2'
+/**
+ * Injected by esbuild from `package.json` (`scripts/build.mjs`).
+ *
+ * A bundle built without the define — a test bundling this file on the fly — sees the
+ * identifier as undefined and degrades instead of failing to load, exactly like
+ * `__INKFLOW_BUILD__`. The literal used to live here *and* in `package.json`, and the two
+ * drifted for three milestones (package 0.0.2 while the roadmap reached 0.4.0), so the
+ * version now has one source and `tests/build-info.test.js` fails when a bump is forgotten.
+ */
+declare const __INKFLOW_VERSION__: string
+const VERSION: string = typeof __INKFLOW_VERSION__ === 'string' && __INKFLOW_VERSION__ !== '' ? __INKFLOW_VERSION__ : '0.0.0-unknown'
+
+/** The version this bundle was built for; the tests compare it with `package.json`. */
+export const PLUGIN_VERSION = VERSION
 
 /**
  * Index-build API for embedders and tests. Tools/routes use these too; exporting
