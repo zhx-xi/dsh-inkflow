@@ -1043,3 +1043,47 @@ test('the client bundle ships the candidate tab and its two actions', () => {
   assert.ok(bundle.includes('跳到原文'), 'the evidence row offers the jump')
   assert.equal(/setInterval/u.test(bundle), false, 'the candidate page polls nothing: one read per open + 刷新')
 })
+
+test('a world keyword the inline list cannot carry is refused at the accept door too (#169)', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
+    const before = contentDigests(root)
+
+    // The tool splits a comma into two keywords; extraction has no such splitter, so the
+    // candidate carries the raw string. Accepting it would write a `keywords: [a, b]` whose
+    // halves are not what the author approved — it must be refused instead.
+    const proposed = await propose(harness, root, 'world', [
+      { fields: { title: '白鹤门', category: '门派', keywords: ['白鹤,剑宗'] }, evidence: 'ch-0001' },
+    ])
+    const accepted = await callTool(harness, 'inkflow_extract_accept', {
+      projectRoot: root,
+      candidateIds: [proposed.created[0].candidateId],
+      confirm: true,
+    })
+    assert.equal(accepted.accepted, 0)
+    assert.equal(accepted.outcomes[0].error.code, 'KEYWORD_INVALID', 'the same code the tool gives')
+    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'nothing was written')
+    assert.equal(existsSync(join(root, 'world', '门派', '白鹤门.md')), false)
+
+    // And the quoted shapes still land: `true` survives as a string.
+    const ok = await propose(harness, root, 'world', [
+      { fields: { title: '静水观', category: '门派', keywords: ['true', '静水'] }, evidence: 'ch-0001' },
+    ])
+    const acceptedOk = await callTool(harness, 'inkflow_extract_accept', {
+      projectRoot: root,
+      candidateIds: [ok.created[0].candidateId],
+      confirm: true,
+    })
+    assert.equal(acceptedOk.accepted, 1, JSON.stringify(acceptedOk.outcomes))
+    assert.match(
+      readFileSync(join(root, 'world', '门派', '静水观.md'), 'utf8'),
+      /^keywords: \["true", 静水\]$/mu,
+      'the reserved word is quoted on the accept path as well',
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

@@ -568,3 +568,56 @@ test('a field a frontmatter line cannot carry is refused before the lock', async
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('keywords come back as written: a YAML-reserved word is quoted, not dropped (#169)', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // `parseScalar()` maps exactly true / false / null / ~ to non-strings — it is not a full
+    // YAML resolver, so `no`/`on` stay strings. That is why the renderer quotes only what the
+    // reader would actually misread, and this test pins both halves.
+    const words = ['true', '白鹤', '~', 'no', 'a:b', ' yes']
+    const written = await callTool('inkflow_world_upsert', {
+      projectRoot: root,
+      title: '白鹤门',
+      category: '门派',
+      parent: 'w-0',
+      keywords: words,
+      confirm: true,
+    })
+    assert.equal(written.ok, true, JSON.stringify(written.error))
+
+    const text = readFileSync(join(root, 'world/门派/白鹤门.md'), 'utf8')
+    assert.match(text, /^keywords: \["true", 白鹤, "~", no, "a:b", yes\]$/mu, 'only what the reader would misread gets quoted')
+
+    const read = await callTool('inkflow_world_tree', { projectRoot: root })
+    assert.equal(read.ok, true)
+    assert.deepEqual(written.world?.keywords, ['true', '白鹤', '~', 'no', 'a:b', 'yes'], 'every keyword comes back as a string, in order')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the tool reads a comma as a separator, so one string becomes two keywords (#169)', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    const written = await callTool('inkflow_world_upsert', {
+      projectRoot: root,
+      title: '白鹤门',
+      category: '门派',
+      keywords: ['白鹤,剑宗'],
+      confirm: true,
+    })
+    // The tool reads a comma as a separator (one string, two keywords) — so a comma can never
+    // reach the renderer from this door. The extraction path has no such splitter, which is
+    // why the refusal lives in `keywordProblem()` and is tested there (tests/extract.test.js).
+    assert.equal(written.ok, true, JSON.stringify(written.error))
+    const text = readFileSync(join(root, 'world/门派/白鹤门.md'), 'utf8')
+    assert.match(text, /^keywords: \[白鹤, 剑宗\]$/mu)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
