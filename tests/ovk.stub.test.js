@@ -44,6 +44,8 @@ const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadow
 async function startStub(options = {}) {
   const state = {
     mode: options.mode ?? 'ok',
+    /** How late this stub answers, in ms — a slow runner, reproduced deterministically. */
+    delayMs: options.delayMs ?? 0,
     blocks: new Map(),
     requests: [],
     synonyms: options.synonyms ?? {},
@@ -58,6 +60,11 @@ async function startStub(options = {}) {
       const body = text === '' ? undefined : JSON.parse(text)
       state.requests.push({ method: req.method, path: url.pathname, query: url.search, headers: req.headers, body })
 
+      // A late answer, on purpose: see the regression case for the 401/timeout mix-up.
+      if (state.delayMs > 0) setTimeout(() => answer(), state.delayMs)
+      else answer()
+
+      function answer() {
       if (state.mode === 'hang') return // never answers: the client must time out
       if (state.mode === 'unauthorized') {
         res.writeHead(401, { 'content-type': 'application/json' })
@@ -103,6 +110,7 @@ async function startStub(options = {}) {
       }
 
       return json({ status: 'error', error: { message: `no route ${url.pathname}` } }, 404)
+      }
     })
   })
   server.on('connection', (socket) => {
@@ -254,6 +262,17 @@ function deleteCalls(stub) {
 // 1. The six degradation cases: keyword answer, fixed reason, no throw
 // ---------------------------------------------------------------------------
 
+/**
+ * One degradation case: the keyword answer still comes back and names the same reason.
+ *
+ * `options.timeoutMs` is the probe budget, and the default is deliberately **generous**
+ * rather than tight. It used to be 200 ms for every case, which made the reason depend on
+ * how fast the runner happened to be: in `unauthorized` mode the stub answers 401
+ * immediately, but on a loaded Windows CI box the 200 ms budget could expire first and the
+ * answer became `timeout` — a red build for a correct implementation (see the 401 case in
+ * the CI log of PR #164). Only the case that *tests* the timeout wants a small budget, and
+ * it passes one (`{ timeoutMs: 200 }`); every other case is timing-independent.
+ */
 async function degradedCase(name, prepare, expectedReason, options = {}) {
   const dir = workdir()
   try {
@@ -264,7 +283,8 @@ async function degradedCase(name, prepare, expectedReason, options = {}) {
     assert.equal(rebuild.ok, true)
     const cleanup = await prepare({ root, dataDir })
     try {
-      const outcome = await searchWithSemantic(root, '残锋', {}, { dataDir, timeoutMs: 200 })
+      const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 60_000
+      const outcome = await searchWithSemantic(root, '残锋', {}, { dataDir, timeoutMs })
       assert.equal(outcome.availability.reason, expectedReason, `${name}: availability reason`)
       assert.equal(outcome.result.ok, true, `${name}: a search never fails because a backend is absent`)
       assert.equal(outcome.result.searchBackend, 'fts5', `${name}: the keyword backend answered`)
@@ -329,6 +349,26 @@ test('degrades with `unauthorized` when the endpoint answers 401', async () => {
   }
 })
 
+// The regression case for the CI failure on PR #164. The stub answers 401 *late* (400 ms —
+// a stand-in for a loaded runner) and the case must still say `unauthorized`: with the old
+// hard-coded 200 ms budget the probe gave up first and reported `timeout`, which is a red
+// build for a correct implementation. The budget now comes from the case, not from a
+// constant, and this test is what keeps it that way.
+test('a late 401 is still `unauthorized`, not `timeout`: the probe budget is the caller\'s', async () => {
+  const stub = await startStub({ mode: 'unauthorized', delayMs: 400 })
+  try {
+    await degradedCase(
+      'unauthorized-late',
+      ({ dataDir }) => {
+        writeSemanticSettings(dataDir, { semanticSearch: true, semanticEndpoint: stub.url, semanticApiKey: 'wrong' })
+      },
+      'unauthorized',
+    )
+  } finally {
+    await stub.close()
+  }
+})
+
 test('degrades with `timeout` when the endpoint hangs (injected timeout)', async () => {
   const stub = await startStub({ mode: 'hang' })
   try {
@@ -338,6 +378,9 @@ test('degrades with `timeout` when the endpoint hangs (injected timeout)', async
         writeSemanticSettings(dataDir, { semanticSearch: true, semanticEndpoint: stub.url })
       },
       'timeout',
+      // The one case that IS about the clock: a hang must be cut off quickly. Every other
+      // caller keeps the generous default, so "401" can never be reported as "timeout".
+      { timeoutMs: 200 },
     )
   } finally {
     await stub.close()
