@@ -72,6 +72,7 @@ import {
   SEARCH_PAGE_LIMIT,
   describeSearchDegradation,
   describeSearchPage,
+  searchBackendLabel,
   readSearchPage,
   searchHitLabel,
   searchHitTarget,
@@ -729,7 +730,11 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
                 )}
                 {searchPage === null ? null : (
                   <>
-                    <div style={muted}>{describeSearchPage(searchPage, searchQuery, searchAllKinds)}</div>
+                    <div style={muted}>
+                      {describeSearchPage(searchPage, searchQuery, searchAllKinds)}
+                      {' · '}
+                      {searchBackendLabel(searchPage)}
+                    </div>
                     {(() => {
                       const degraded = describeSearchDegradation(searchPage)
                       return degraded === null ? null : <div style={{ ...muted, fontSize: 12 }}>{degraded}</div>

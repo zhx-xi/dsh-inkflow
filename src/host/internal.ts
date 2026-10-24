@@ -49,6 +49,7 @@ import { countChars, indexPaths, readIndexMeta } from './indexer.js'
 import { ensureIndex } from './index-freshness.js'
 import type { EnsureIndexResult } from './index-freshness.js'
 import { searchEntries } from './search.js'
+import { searchWithSemantic } from './ovk-search.js'
 import type { ProjectProbe, ProjectState } from './project.js'
 import { findProjectRoot, inspectProject, isWithin, projectLabel, realpathLoose } from './project.js'
 import { detectTextStyle } from './text-style.js'
@@ -622,7 +623,12 @@ export interface ChannelSearchInput {
  * to a metadata scan of the same files and `degradedReason` says exactly that — a panel
  * read never fails and never answers "no such word" when the cache is the problem.
  */
-export async function buildSearch(target: ChannelTarget, version: string, input: ChannelSearchInput): Promise<JsonRecord> {
+export async function buildSearch(
+  target: ChannelTarget,
+  version: string,
+  input: ChannelSearchInput,
+  pluginDataDir?: string,
+): Promise<JsonRecord> {
   const ensured = await ensureIndex(target.root)
   const base = {
     pluginVersion: version,
@@ -633,11 +639,29 @@ export async function buildSearch(target: ChannelTarget, version: string, input:
     indexState: ensured.state,
     ...indexFailureOf(ensured),
   }
-  const result = searchEntries(target.root, input.query, {
-    ...(input.kinds === undefined ? {} : { kinds: input.kinds }),
-    ...(input.offset === undefined ? {} : { offset: input.offset }),
-    ...(input.limit === undefined ? {} : { limit: input.limit }),
-  })
+  // #41: the semantic backend sits behind this same entry. With no `dataDir` (a caller that
+  // has no plugin state to read) the answer is the keyword one, which is exactly what the
+  // `disabled` degradation returns anyway — so the two paths agree instead of diverging.
+  const semantic =
+    pluginDataDir === undefined
+      ? undefined
+      : await searchWithSemantic(
+          target.root,
+          input.query,
+          {
+            ...(input.kinds === undefined ? {} : { kinds: input.kinds }),
+            ...(input.offset === undefined ? {} : { offset: input.offset }),
+            ...(input.limit === undefined ? {} : { limit: input.limit }),
+          },
+          { dataDir: pluginDataDir },
+        )
+  const result =
+    semantic?.result ??
+    searchEntries(target.root, input.query, {
+      ...(input.kinds === undefined ? {} : { kinds: input.kinds }),
+      ...(input.offset === undefined ? {} : { offset: input.offset }),
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    })
   if (result.ok) {
     return {
       ...base,
@@ -649,6 +673,7 @@ export async function buildSearch(target: ChannelTarget, version: string, input:
       total: result.total,
       truncated: result.truncated,
       items: result.items,
+      ...(semantic === undefined ? {} : { semantic: { backend: semantic.availability.backend, hits: semantic.semanticHits, staleIndex: semantic.staleHits } }),
     }
   }
 

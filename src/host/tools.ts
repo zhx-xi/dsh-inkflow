@@ -29,6 +29,8 @@ import { domainTools } from './domains/index.js'
 import { sessionCwd } from './session-cwd.js'
 import { repairTools } from './repair-tools.js'
 import { settingsTools } from './settings-tools.js'
+import { semanticTools } from './ovk-tools.js'
+import { searchWithSemantic } from './ovk-search.js'
 import { DOMAIN_MODULES } from './domains/index.js'
 import type { DomainModule } from './domains/types.js'
 import type { FileExpectation } from './file-cas.js'
@@ -1252,7 +1254,17 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
       // validated above, so a refused query still writes nothing.
       const ensured = await ensureIndex(probe.root)
       if (!ensured.ok) return ensureFailure(ensured, probe.root)
-      const result = searchEntries(probe.root, query, { ...(kinds === undefined ? {} : { kinds }), offset, limit })
+      // The semantic backend sits BEHIND this same entry (X-16): when it is configured and
+      // answering, its chapter hits lead the page; when it is not, the answer is the keyword
+      // one with `degradedReason` (ADR-0009 P8). Nothing here can 500 — the composition
+      // returns a structured result either way.
+      const outcome = await searchWithSemantic(
+        probe.root,
+        query,
+        { ...(kinds === undefined ? {} : { kinds }), offset, limit },
+        { dataDir: deps.dataDir },
+      )
+      const result = outcome.result
       rememberProject(deps.dataDir, probe.root)
       if (!result.ok) {
         return {
@@ -1275,6 +1287,7 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
         total: result.total,
         truncated: result.truncated,
         ...(result.degradedReason === undefined ? {} : { degradedReason: result.degradedReason }),
+        semantic: { backend: outcome.availability.backend, hits: outcome.semanticHits, staleIndex: outcome.staleHits },
         indexRebuilt: ensured.rebuilt,
         indexState: ensured.state,
         items: result.items,
@@ -2065,6 +2078,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // lists what this table registers, and building the table again at export time is
     // the only way to name the real surface without a module cycle.
     ...settingsTools({ ...deps, toolSurface: () => buildTools(deps, modules) }),
+    // Semantic retrieval (#41): status / rebuild / purge. One module, because all three
+    // read the same availability verdict and the same block ledger, and the purge is the
+    // only path in this plugin allowed to call OVK's physical delete (ADR-0009 P6).
+    ...semanticTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),

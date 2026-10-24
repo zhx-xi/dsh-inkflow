@@ -133,6 +133,12 @@ import {
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 import { MAX_QUERY_CHARS } from './search.js'
 import { REPLACE_APPLY_BODY_FIELDS, replaceApplyReply, replacePreviewReply, searchAllFromQuery } from './search-channel.js'
+import {
+  SEMANTIC_HUB_BODY_FIELDS,
+  buildHubSemantic,
+  purgeHubSemantic,
+  rebuildHubSemantic,
+} from './ovk-hub.js'
 
 const PREFIX = '/inkflow'
 const LOOPBACK_AUTHORITY = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::(\d{1,5}))?$/i
@@ -157,6 +163,11 @@ interface RouteInput {
   method: HttpMethod
   query: URLSearchParams
   version: string
+  /**
+   * The plugin's own data directory, for the reads that need plugin-level state rather than
+   * book content (the settings file behind the semantic backend's endpoint, #41).
+   */
+  dataDir: string
   /** `pattern` capture groups, still percent-encoded. */
   params: readonly string[]
   /** Parsed JSON object body (empty for a bodyless request). */
@@ -252,7 +263,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'search',
     pattern: /^\/search$/,
     methods: ['GET'],
-    handle: async ({ target, query, version }) => {
+    handle: async ({ target, query, version, dataDir }) => {
       const q = (query.get('q') ?? '').trim()
       if (q === '') {
         return { status: 400, body: failure('QUERY_REQUIRED', { param: 'q', hint: 'pass ?q=<text> to search the book' }) }
@@ -263,7 +274,7 @@ const ROUTES: readonly InternalRoute[] = [
           body: failure('QUERY_INVALID', { message: `query is ${q.length} characters long; the limit is ${MAX_QUERY_CHARS}` }),
         }
       }
-      return { status: 200, body: ok(await buildSearch(target, version, searchAllFromQuery(query))) }
+      return { status: 200, body: ok(await buildSearch(target, version, searchAllFromQuery(query), dataDir)) }
     },
   },
   {
@@ -744,7 +755,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-settings-update',
     pattern: /^\/hub\/settings\/update$/,
     methods: ['POST'],
-    body: ['sharedRoot', 'semanticSearch', 'autosaveIntervalMs', 'authorName', 'excludeDirs', 'backupKeep', 'confirm'],
+    body: ['sharedRoot', 'semanticSearch', 'semanticEndpoint', 'semanticApiKey', 'autosaveIntervalMs', 'authorName', 'excludeDirs', 'backupKeep', 'confirm'],
     handle: ({ ctx, dataDir, version, body }) => reply(writeHubSettings({ ctx, dataDir, version }, body)),
   },
   {
@@ -793,6 +804,36 @@ const HUB_ROUTES: readonly HubRoute[] = [
     methods: ['POST'],
     body: ['book', 'file', 'expected', 'confirm'],
     handle: async ({ ctx, dataDir, version, body }) => reply(await restoreHubBackup({ ctx, dataDir, version }, body)),
+  },
+  {
+    // Semantic retrieval (#41): status + estimate for ONE book, on the page that owns the
+    // settings that decide whether it can work at all. The anchor is a registered book, like
+    // the backup section above — never a path (ADR-0010 D3), and never the endpoint itself:
+    // the connection comes from `settings.json` (ADR-0020 E1), so no request can point this
+    // plugin at another server.
+    name: 'hub-semantic',
+    pattern: /^\/hub\/semantic$/,
+    methods: ['GET'],
+    handle: async ({ ctx, dataDir, version, query }) =>
+      reply(await buildHubSemantic({ ctx, dataDir, version }, query.get('book'))),
+  },
+  {
+    // The rebuild: `confirm` is the net under the panel's armed button, and above the
+    // first-build thresholds an unconfirmed call answers CONFIRM_REQUIRED with the estimate.
+    name: 'hub-semantic-rebuild',
+    pattern: /^\/hub\/semantic\/rebuild$/,
+    methods: ['POST'],
+    body: SEMANTIC_HUB_BODY_FIELDS,
+    handle: async ({ ctx, dataDir, version, body }) => reply(await rebuildHubSemantic({ ctx, dataDir, version }, body)),
+  },
+  {
+    // The purge — the only route that can make OVK physically delete something, and only for
+    // blocks the ledger records as tombstones (ADR-0009 P6).
+    name: 'hub-semantic-purge',
+    pattern: /^\/hub\/semantic\/purge$/,
+    methods: ['POST'],
+    body: SEMANTIC_HUB_BODY_FIELDS,
+    handle: async ({ ctx, dataDir, version, body }) => reply(await purgeHubSemantic({ ctx, dataDir, version }, body)),
   },
 ]
 
@@ -1089,6 +1130,7 @@ export function createHttpHandler(deps: HttpDeps) {
       method,
       query: url.searchParams,
       version: deps.version,
+      dataDir: deps.dataDir,
       params: matched.params,
       body: parsed.value,
     })

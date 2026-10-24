@@ -64,6 +64,23 @@ export interface InkflowSettings {
    * author's preference, they do not implement a backend.
    */
   semanticSearch: boolean
+  /**
+   * Where the OpenViking HTTP server answers (`http://host:port`; a trailing slash is
+   * stripped on read). Absent = nothing configured, so the retrieval layer degrades to
+   * FTS5 with `no-endpoint` (ADR-0009 P8 / ADR-0020 E1).
+   *
+   * Deliberately NOT discovered from OVK's own machine config (`ov.conf`): that file is
+   * machine state the reader cannot see in this page, it drifts per machine, and it
+   * carries credentials that are not this plugin's to read.
+   */
+  semanticEndpoint?: string
+  /**
+   * Optional bearer token for that server, sent as `Authorization: Bearer`.
+   *
+   * A secret. It never travels back out: the panel, the tools and the diagnostics
+   * package report only that it is set (ADR-0020 E6, ADR-0018 D5).
+   */
+  semanticApiKey?: string
   /** Idle delay before the workbench autosaves, in ms. */
   autosaveIntervalMs: number
   /** Default author name offered by the new-book wizard; absent = ask. */
@@ -105,6 +122,8 @@ export const SETTINGS_LIMITS = {
 export const SETTINGS_FIELDS = [
   'sharedRoot',
   'semanticSearch',
+  'semanticEndpoint',
+  'semanticApiKey',
   'autosaveIntervalMs',
   'authorName',
   'excludeDirs',
@@ -150,6 +169,20 @@ export type SettingsResult<T> = { ok: true; value: T } | { ok: false; error: Set
 /** `dataDir/settings.json` — the one file this module owns. */
 export function settingsPath(dataDir: string): string {
   return join(dataDir, SETTINGS_FILE)
+}
+
+/**
+ * The settings as a surface may SHOW them: everything except the secret.
+ *
+ * One function because three surfaces read settings into a reply (the settings tool, the
+ * settings page's channel, the diagnostics package) and each of them would otherwise need to
+ * remember that `semanticApiKey` is a credential (ADR-0020 E6, ADR-0018 D5). `semanticApiKeySet`
+ * replaces it, so "configured but hidden" stays distinguishable from "not configured" —
+ * which is the first question in "why is semantic search not working".
+ */
+export function redactSettings(settings: InkflowSettings): Omit<InkflowSettings, 'semanticApiKey'> & { semanticApiKeySet: boolean } {
+  const { semanticApiKey, ...rest } = settings
+  return { ...rest, semanticApiKeySet: semanticApiKey !== undefined }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -234,7 +267,34 @@ export function coerceSettings(raw: unknown): InkflowSettings {
   if (sharedRoot !== undefined) settings.sharedRoot = sharedRoot
   const authorName = trimmedString(record['authorName'])
   if (authorName !== undefined) settings.authorName = authorName
+  const semanticEndpoint = normalizeEndpoint(record['semanticEndpoint'])
+  if (semanticEndpoint !== undefined) settings.semanticEndpoint = semanticEndpoint
+  const semanticApiKey = trimmedString(record['semanticApiKey'])
+  if (semanticApiKey !== undefined) settings.semanticApiKey = semanticApiKey
   return settings
+}
+
+/**
+ * A server URL, or nothing.
+ *
+ * Only `http:`/`https:` are kept: this value is handed to `fetch`, so a relative path,
+ * a `file:` URL or a scheme typo must read as "not configured" (degrade to FTS5) rather
+ * than become a request the retrieval layer tries to make. Trailing slashes are stripped
+ * because every request path in `ovk.ts` starts with `/` — keeping `http://x:1/` would
+ * produce `//health`, which some servers answer and others do not.
+ */
+export function normalizeEndpoint(value: unknown): string | undefined {
+  const raw = trimmedString(value)
+  if (raw === undefined) return undefined
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return undefined
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined
+  if (parsed.host === '') return undefined
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname.replace(/\/+$/u, '')}`
 }
 
 /**

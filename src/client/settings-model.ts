@@ -25,6 +25,10 @@ import type { InternalResult } from './internal.js'
 export interface SettingsValues {
   sharedRoot?: string
   semanticSearch: boolean
+  /** OpenViking HTTP endpoint for semantic search (ADR-0020 E1); absent = not configured. */
+  semanticEndpoint?: string
+  /** Whether a bearer token is stored. The token itself never travels to the panel (E6). */
+  semanticApiKeySet?: boolean
   autosaveIntervalMs: number
   authorName?: string
   excludeDirs: string[]
@@ -105,6 +109,12 @@ export type Loadable<T> = { status: 'ready'; value: T } | { status: 'error'; mes
 export interface SettingsDraft {
   sharedRoot: string
   semanticSearch: boolean
+  semanticEndpoint: string
+  /**
+   * Write-only: the stored key is never echoed back (ADR-0020 E6), so this box starts empty
+   * every time and an empty box means "keep the stored key".
+   */
+  semanticApiKey: string
   autosaveIntervalMs: string
   authorName: string
   excludeDirs: string
@@ -144,6 +154,8 @@ export const SETTINGS_TEXTS = {
 export const SETTINGS_FIELD_LABELS: Record<string, string> = {
   sharedRoot: '共享库路径',
   semanticSearch: '语义检索',
+  semanticEndpoint: '语义检索端点',
+  semanticApiKey: '语义检索密钥',
   autosaveIntervalMs: '自动保存间隔（ms）',
   authorName: '作者名',
   excludeDirs: '排除目录',
@@ -158,6 +170,9 @@ export function formFromSettings(settings: SettingsValues): SettingsDraft {
   return {
     sharedRoot: settings.sharedRoot ?? '',
     semanticSearch: settings.semanticSearch === true,
+    semanticEndpoint: settings.semanticEndpoint ?? '',
+    // Never prefilled: the Host does not send the stored key back, only `semanticApiKeySet`.
+    semanticApiKey: '',
     autosaveIntervalMs: String(settings.autosaveIntervalMs),
     authorName: settings.authorName ?? '',
     excludeDirs: settings.excludeDirs.join(', '),
@@ -184,6 +199,11 @@ export function patchFromForm(draft: SettingsDraft): Record<string, unknown> {
   const patch: Record<string, unknown> = { semanticSearch: draft.semanticSearch }
   patch['sharedRoot'] = draft.sharedRoot.trim() === '' ? null : draft.sharedRoot.trim()
   patch['authorName'] = draft.authorName.trim() === '' ? null : draft.authorName.trim()
+  // An empty endpoint clears it (that IS the intent: "no semantic backend"). An empty key
+  // box means "keep the stored one", because the value is never shown back to be re-typed.
+  patch['semanticEndpoint'] = draft.semanticEndpoint.trim() === '' ? null : draft.semanticEndpoint.trim()
+  const key = draft.semanticApiKey.trim()
+  if (key !== '') patch['semanticApiKey'] = key
   const autosave = integerOrUndefined(draft.autosaveIntervalMs)
   if (autosave !== undefined) patch['autosaveIntervalMs'] = autosave
   const keep = integerOrUndefined(draft.backupKeep)
@@ -215,7 +235,8 @@ export function describeDraftChanges(draft: SettingsDraft, settings: SettingsVal
 export function describeSettings(settings: SettingsValues): string[] {
   return [
     `共享库：${settings.sharedRoot ?? '未设置（用插件目录下的 shared）'}`,
-    `语义检索：${settings.semanticSearch === true ? '开' : '关'}`,
+    `语义检索：${settings.semanticSearch === true ? '开' : '关'}${settings.semanticEndpoint === undefined ? '（未填端点，仍用关键词检索）' : `（端点 ${settings.semanticEndpoint}）`}`,
+    `语义检索密钥：${settings.semanticApiKeySet === true ? '已设置（不显示）' : '未设置'}`,
     `自动保存间隔：${String(settings.autosaveIntervalMs)} ms`,
     `作者名：${settings.authorName ?? '未设置'}`,
     `排除目录：${settings.excludeDirs.length === 0 ? '无' : settings.excludeDirs.join('、')}`,
@@ -245,6 +266,150 @@ export function backupSummary(value: HubBackupsValue): string {
   if (value.backups.length === 0) return `${value.book.title}：还没有备份（保留 ${String(value.keep)} 份）`
   const total = value.backups.reduce((sum, pack) => sum + pack.bytes, 0)
   return `${value.book.title}：${String(value.backups.length)} 份（保留 ${String(value.keep)} 份，共 ${formatBytes(total)}）`
+}
+
+// ---------------------------------------------------------------------------
+// Semantic retrieval (#41): the status section's wire shapes and sentences
+// ---------------------------------------------------------------------------
+
+export interface SemanticRebuildSummary {
+  at: string
+  written: number
+  tombstoned: number
+  unchanged: number
+  blocks: number
+  bytes: number
+  calls: number
+  stale: number
+  staleChapters: string[]
+}
+
+export interface SemanticStatusValue {
+  availability: {
+    backend: 'ovk' | 'fts5'
+    reason?: string
+    detail?: string
+    peer?: string
+    peerSource?: string
+    configPath?: string
+    endpoint?: string
+  }
+  settings: { enabled: boolean; endpoint: string | null; apiKeySet: boolean }
+  peer: { id: string | null; source: string | null; configPath: string | null }
+  ledger: {
+    projectId: string | null
+    fresh: boolean
+    chapters: number
+    blocks: number
+    tombstones: number
+    lastRebuild: SemanticRebuildSummary | null
+  }
+  queue: { state: string; queued: number }
+  thresholds: { chapters: number; bytes: number }
+}
+
+export interface SemanticEstimateValue {
+  chapters: number
+  pending: number
+  blocks: number
+  bytes: number
+  calls: number
+  unchanged: number
+  tombstones: number
+  totalBlocks: number
+  requiresConfirm: boolean
+}
+
+/** `GET /hub/semantic?book=` — status plus the estimate the rebuild button shows. */
+export interface SemanticSectionValue {
+  book: { slug: string; title: string }
+  indexRebuilt?: boolean
+  indexState?: string
+  status: SemanticStatusValue
+  estimate: SemanticEstimateValue | null
+}
+
+/** `POST /hub/semantic/rebuild` and `…/purge` share this envelope. */
+export interface SemanticRunValue {
+  book: { slug: string; title: string }
+  estimate?: SemanticEstimateValue
+  executed?: boolean
+  requiresConfirm?: boolean
+  status?: string
+  summary?: SemanticRebuildSummary
+  staleChapters?: string[]
+  uris?: string[]
+  deleted?: string[]
+  stoppedAt?: { uri: string; reason: string; detail: string }
+}
+
+/**
+ * What each fixed degradation means as a next step.
+ *
+ * The vocabulary is fixed in the Host (ADR-0020 E5) exactly so this table can exist: one
+ * sentence per reason, each naming an action the author can take. A free-text reason would
+ * have forced a substring guess here.
+ */
+export const SEMANTIC_REASON_TEXTS: Record<string, string> = {
+  disabled: '设置里的「语义检索」开关是关的',
+  'no-endpoint': '没有填语义检索端点（设置里的「语义检索端点」）',
+  'no-peer': '这本书没有 .openviking 里的 peer.id',
+  unreachable: '端点没有响应（OpenViking 没起来，或端口不对）',
+  unauthorized: '端点拒绝了凭据（密钥不对）',
+  timeout: '端点在超时内没有回答',
+}
+
+/** The section's headline: which backend answers, and what to do about it. */
+export function describeSemantic(value: SemanticSectionValue): string[] {
+  const status = value.status
+  const lines: string[] = []
+  lines.push(
+    status.availability.backend === 'ovk'
+      ? '语义检索：可用（召回由 OpenViking 提供）'
+      : `语义检索：降级为关键词检索 — ${SEMANTIC_REASON_TEXTS[status.availability.reason ?? ''] ?? String(status.availability.reason ?? '未配置')}`,
+  )
+  if (status.availability.detail !== undefined && status.availability.detail !== '') {
+    lines.push(`  ${status.availability.detail}`)
+  }
+  lines.push(
+    `端点：${status.settings.endpoint ?? '未设置'} · 密钥：${status.settings.apiKeySet ? '已设置（不显示）' : '未设置'} · peer：${status.peer.id ?? '无'}`,
+  )
+  lines.push(
+    `已写入：${String(status.ledger.blocks)} 块（章 ${String(status.ledger.chapters)} · 已删除章的占位 ${String(status.ledger.tombstones)}）`,
+  )
+  const last = status.ledger.lastRebuild
+  if (last !== null) {
+    lines.push(
+      `最近重建：${formatStamp(last.at)} · 写 ${String(last.written)} 章 / 占位 ${String(last.tombstoned)} 章 · ${formatBytes(last.bytes)} · 调用 ${String(last.calls)} 次`,
+    )
+    if (last.stale > 0) lines.push(`  未完成 ${String(last.stale)} 章（下次重建会重试）`)
+  }
+  return lines
+}
+
+/** The estimate under the rebuild button: size AND cost, because both are the decision. */
+export function describeSemanticEstimate(estimate: SemanticEstimateValue | null, thresholds: { chapters: number; bytes: number }): string {
+  if (estimate === null) return '预估不可用（索引读不出来）'
+  if (estimate.pending === 0) return '这本书已与语义索引同步，无需重建。'
+  const confirm = estimate.chapters > thresholds.chapters || estimate.bytes > thresholds.bytes
+  return `待写 ${String(estimate.pending)} 章（未变 ${String(estimate.unchanged)}）· 约 ${String(estimate.blocks)} 块 · ${formatBytes(estimate.bytes)} · 约 ${String(estimate.calls)} 次摘要调用${confirm ? '（超过首次重建阈值，需要二次确认）' : ''}`
+}
+
+/** The line a finished run leaves behind. */
+export function describeSemanticRun(value: SemanticRunValue): string[] {
+  if (value.uris !== undefined && value.deleted !== undefined) {
+    const stopped = value.stoppedAt
+    return [
+      `已清理 ${String(value.deleted.length)} 个占位块（共列出 ${String(value.uris.length)} 个）。`,
+      ...(stopped === undefined ? [] : [`在 ${stopped.uri} 处停止：${stopped.reason} — ${stopped.detail}`]),
+    ]
+  }
+  const summary = value.summary
+  if (summary === undefined) return ['没有需要重建的章节。']
+  return [
+    `重建完成：写 ${String(summary.written)} 章 / 占位 ${String(summary.tombstoned)} 章 / 未变 ${String(summary.unchanged)} 章`,
+    `块 ${String(summary.blocks)} 个 · ${formatBytes(summary.bytes)} · 调用 ${String(summary.calls)} 次${summary.stale > 0 ? ` · 未完成 ${String(summary.stale)} 章` : ''}`,
+  ]
 }
 
 // ---------------------------------------------------------------------------

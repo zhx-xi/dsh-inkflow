@@ -32,7 +32,7 @@ import {
 import type { BackupPackage, RestorePlan } from './backup-zip.js'
 import { buildDiagnostics, exportDiagnostics, maskPath } from './diagnostics.js'
 import { listRegisteredWorkspaces } from './hub.js'
-import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, writeSettings } from './settings.js'
+import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, redactSettings, writeSettings } from './settings.js'
 import { buildTools } from './tools.js'
 
 type Json = Record<string, unknown>
@@ -196,7 +196,9 @@ function bookChoices(ctx: HostContext): Array<{ workspaceId: string | null; book
 export function buildHubSettings(deps: HubSettingsDeps): Json {
   const read = readSettings(deps.dataDir)
   return {
-    settings: read.settings,
+    // Redacted: the page may show "a key is set", never the key (ADR-0020 E6). A browser is a
+    // lower-trust surface than the file, and nothing on the page needs the value.
+    settings: redactSettings(read.settings),
     source: read.source,
     warn: read.warn ?? null,
     fields: [...SETTINGS_FIELDS],

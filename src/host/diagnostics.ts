@@ -124,7 +124,7 @@ export interface DiagnosticsDocument {
   }
   settings: {
     schemaVersion: number
-    /** Absolute paths replaced by `~/…`; see `maskDocument`. */
+    /** Absolute paths replaced by `~/…`; the API key replaced by `[redacted]`. */
     values: InkflowSettings
     warn: SettingsWarning | null
   }
@@ -403,6 +403,21 @@ function maskString(text: string, roots: MaskRoots): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * The settings as a package may carry them: every value except the secrets.
+ *
+ * A whitelist of what to KEEP would have to be maintained for every future field; naming the
+ * one secret instead keeps a new knob useful in a package by default, which is the common
+ * case. `[redacted]` rather than absence, so "configured but hidden" stays distinguishable
+ * from "not configured" when a maintainer reads the file — that difference is the whole
+ * question in "why is semantic search not working".
+ */
+export function maskSettingsSecrets(settings: InkflowSettings): Record<string, unknown> {
+  const values: Record<string, unknown> = { ...settings }
+  if (settings.semanticApiKey !== undefined) values['semanticApiKey'] = '[redacted]'
+  return values
+}
+
+/**
  * Assemble the package. Pure apart from one read-only index open and one `stat`.
  *
  * Never throws: an unreadable index, a missing manifest or a broken settings file each
@@ -431,7 +446,9 @@ export function buildDiagnostics(input: DiagnosticsInput): DiagnosticsDocument {
     },
     settings: {
       schemaVersion: SETTINGS_SCHEMA_VERSION,
-      values: settingsRead.settings,
+      // The semantic search key is a credential (ADR-0020 E6): the package is meant to be
+      // pasted into an issue, so it carries "a key is set", never the key itself.
+      values: maskSettingsSecrets(settingsRead.settings) as unknown as InkflowSettings,
       warn: settingsRead.warn ?? null,
     },
     book:

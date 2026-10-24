@@ -635,7 +635,11 @@ test('internal channel: /search answers X-16 entries over body prose and titles'
     // #39: the panel's search is the one X-16 entry — body prose included, no
     // placeholder about "body search arrives later".
     assert.equal(empty.json.value.searchBackend, 'fts5')
-    assert.equal(empty.json.value.degradedReason, undefined)
+    // #41: the semantic backend is behind this same entry, and an install that has not
+    // configured one says so instead of staying silent — `disabled` is the first of the six
+    // fixed reasons (ADR-0020 E5), and the keyword answer is still the answer.
+    assert.equal(empty.json.value.degradedReason, 'disabled')
+    assert.equal(empty.json.value.semantic.backend, 'fts5')
     assert.equal(empty.json.value.total, 1, '门外下着雨 — a body match, not a metadata one')
     assert.deepEqual(empty.json.value.items, [
       {

@@ -33,6 +33,9 @@ import {
   describeDraftChanges,
   describePlan,
   describeRestore,
+  describeSemantic,
+  describeSemanticEstimate,
+  describeSemanticRun,
   describeSettings,
   formFromSettings,
   formatBytes,
@@ -49,6 +52,8 @@ import type {
   Loadable,
   RestoreDoneValue,
   RestorePlanValue,
+  SemanticRunValue,
+  SemanticSectionValue,
   SettingsDraft,
 } from './settings-model.js'
 
@@ -134,6 +139,8 @@ type Pending =
   | { kind: 'diagnostics'; label: string }
   | { kind: 'backup'; label: string; anchor: string }
   | { kind: 'restore'; label: string; anchor: string; file: string; expected: Record<string, string | null> }
+  | { kind: 'semanticRebuild'; label: string; anchor: string }
+  | { kind: 'semanticPurge'; label: string; anchor: string; count: number }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -172,6 +179,9 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   const [backups, setBackups] = useState<Loadable<HubBackupsValue>>({ status: 'loading' })
   const [plan, setPlan] = useState<RestorePlanValue | null>(null)
   const [done, setDone] = useState<string[] | null>(null)
+  // The semantic section (#41): status + the estimate the rebuild button shows. Loaded for the
+  // same book the backup section names, so the page has one book in focus.
+  const [semantic, setSemantic] = useState<Loadable<SemanticSectionValue>>({ status: 'loading' })
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -231,6 +241,21 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
     }
   }, [bookAnchor, revision])
 
+  useEffect(() => {
+    if (bookAnchor === '') {
+      setSemantic({ status: 'error', message: '还没有登记的书；先在书库里打开一本书。' })
+      return
+    }
+    let live = true
+    setSemantic({ status: 'loading' })
+    void fetchInternal<SemanticSectionValue>(`/hub/semantic?book=${encodeURIComponent(bookAnchor)}`, { sessionless: true }).then((result) => {
+      if (live) setSemantic(loadableFrom(result))
+    })
+    return () => {
+      live = false
+    }
+  }, [bookAnchor, revision])
+
   const refresh = useCallback(() => {
     setPlan(null)
     setPending(null)
@@ -280,6 +305,36 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
           return
         }
         setPending(null)
+        setRevision((current) => current + 1)
+        return
+      }
+      if (pending.kind === 'semanticRebuild') {
+        const result = await writeInternal<SemanticRunValue>('/hub/semantic/rebuild', {
+          book: pending.anchor,
+          confirm: true,
+        }, { sessionless: true })
+        setPending(null)
+        if (!result.ok) {
+          setError(`${result.error?.code ?? 'failed'} — ${result.error?.message ?? ''}`)
+          setRevision((current) => current + 1)
+          return
+        }
+        if (result.value !== undefined) setDone(describeSemanticRun(result.value))
+        setRevision((current) => current + 1)
+        return
+      }
+      if (pending.kind === 'semanticPurge') {
+        const result = await writeInternal<SemanticRunValue>('/hub/semantic/purge', {
+          book: pending.anchor,
+          confirm: true,
+        }, { sessionless: true })
+        setPending(null)
+        if (!result.ok) {
+          setError(`${result.error?.code ?? 'failed'} — ${result.error?.message ?? ''}`)
+          setRevision((current) => current + 1)
+          return
+        }
+        if (result.value !== undefined) setDone(describeSemanticRun(result.value))
         setRevision((current) => current + 1)
         return
       }
@@ -404,6 +459,24 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
               />
               {SETTINGS_FIELD_LABELS['semanticSearch'] ?? 'semanticSearch'}（有语义后端时才生效）
             </label>
+            <Field label={`${SETTINGS_FIELD_LABELS['semanticEndpoint'] ?? 'semanticEndpoint'}（http://主机:端口，留空=只用关键词检索）`}>
+              <input
+                style={inputStyle}
+                value={draft.semanticEndpoint}
+                placeholder="http://127.0.0.1:1933"
+                onChange={(event) => setDraft({ ...draft, semanticEndpoint: event.target.value })}
+              />
+            </Field>
+            <Field
+              label={`${SETTINGS_FIELD_LABELS['semanticApiKey'] ?? 'semanticApiKey'}（${settings.value.settings.semanticApiKeySet === true ? '已设置，留空=不改' : '未设置，可选'}）`}
+            >
+              <input
+                style={inputStyle}
+                type="password"
+                value={draft.semanticApiKey}
+                onChange={(event) => setDraft({ ...draft, semanticApiKey: event.target.value })}
+              />
+            </Field>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <button
                 type="button"
@@ -421,6 +494,56 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 {SETTINGS_TEXTS.save}
               </button>
               <span style={{ ...muted, fontSize: 12 }}>{describeSettings(settings.value.settings).join(' · ')}</span>
+            </div>
+          </>
+        ) : null}
+      </Section>
+
+      {/* -------- 语义检索（#41） -------- */}
+      <Section
+        title="语义检索"
+        hint="可选能力：需要你自己起一个 OpenViking 并在这里填端点。没配或连不上时，检索自动用关键词（不会报错）；删章不会物理删除语义条目，只有「清理占位」才会。"
+      >
+        {semantic.status === 'loading' ? <div style={muted}>{SETTINGS_TEXTS.loading}</div> : null}
+        {semantic.status === 'error' ? <div style={{ ...muted, fontSize: 12 }}>{semantic.message}</div> : null}
+        {semantic.status === 'ready' ? (
+          <>
+            {describeSemantic(semantic.value).map((line) => (
+              <div key={line} style={{ ...muted, fontSize: 12 }}>
+                {line}
+              </div>
+            ))}
+            <div style={{ ...muted, fontSize: 12 }}>{describeSemanticEstimate(semantic.value.estimate, semantic.value.status.thresholds)}</div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                style={primaryButtonStyle}
+                disabled={busy}
+                onClick={() =>
+                  setPending({
+                    kind: 'semanticRebuild',
+                    label: `${semantic.value.book.title}：${describeSemanticEstimate(semantic.value.estimate, semantic.value.status.thresholds)}`,
+                    anchor: bookAnchor,
+                  })
+                }
+              >
+                重建语义索引
+              </button>
+              <button
+                type="button"
+                style={buttonStyle}
+                disabled={busy || semantic.value.status.ledger.tombstones === 0}
+                onClick={() =>
+                  setPending({
+                    kind: 'semanticPurge',
+                    label: `清理 ${semantic.value.book.title} 已删除章的 ${String(semantic.value.status.ledger.tombstones)} 章占位条目（不可恢复）`,
+                    anchor: bookAnchor,
+                    count: semantic.value.status.ledger.tombstones,
+                  })
+                }
+              >
+                清理占位条目
+              </button>
             </div>
           </>
         ) : null}
@@ -532,7 +655,11 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 ? SETTINGS_TEXTS.confirmExport
                 : pending.kind === 'backup'
                   ? SETTINGS_TEXTS.confirmBackup
-                  : SETTINGS_TEXTS.confirmRestore}
+                  : pending.kind === 'semanticRebuild'
+                    ? '确认重建语义索引（每块会产生一次模型摘要调用）'
+                    : pending.kind === 'semanticPurge'
+                      ? '确认清理占位条目（物理删除，不可恢复）'
+                      : SETTINGS_TEXTS.confirmRestore}
           </div>
           <div style={mono}>{pending.label}</div>
           {pending.kind === 'restore' && plan !== null ? (
