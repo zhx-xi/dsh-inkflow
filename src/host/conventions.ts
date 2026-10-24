@@ -105,7 +105,14 @@ export type WriteDir = (typeof WRITE_DIRS)[number]
  * itself and never elsewhere under it.
  */
 export const PRIVATE_STATE_DIR = '.inkflow'
-export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit'] as const
+/**
+ * The four writable names under `.inkflow/` (roadmap X-18 widened this from three).
+ *
+ * `candidates/` holds the extract pipeline's unreviewed proposals (ADR-0017 D3): they
+ * are work files, not derived artefacts, so a rebuild must not be able to sweep them
+ * away — which is exactly why they are here instead of under `index/`.
+ */
+export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit', 'candidates'] as const
 export type PrivateStateSubdir = (typeof PRIVATE_STATE_SUBDIRS)[number]
 
 /**

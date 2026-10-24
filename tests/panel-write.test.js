@@ -22,6 +22,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
+import { findColorLiterals } from './color-guard.mjs'
+
 const ROOT = resolve(import.meta.dirname, '..')
 const BUNDLE = join(ROOT, 'lib', 'client.js')
 const require = createRequire(import.meta.url)
@@ -164,10 +166,24 @@ test('the editor draws every colour from theme tokens', () => {
     const path = join(ROOT, 'src/client', file)
     if (!existsSync(path)) continue
     const source = readFileSync(path, 'utf8')
-    assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(source), false, `${file}: no hardcoded colour literals (AGENTS.md §6)`)
+    assert.deepEqual(findColorLiterals(source), [], `${file}: no hardcoded colour literals (AGENTS.md §6)`)
   }
   const editor = readFileSync(join(ROOT, 'src/client', 'editor.tsx'), 'utf8')
   assert.ok(editor.includes('var(--dsw-alias-'), 'the editor uses --dsw-alias-* tokens')
+})
+
+test('the colour guard sees colours, not issue numbers (#144)', () => {
+  // The guard exists to catch a hardcoded colour. It used to be `#[0-9a-fA-F]{3,8}`,
+  // which also matches an issue reference in a comment (`// issue #132`) — and the fix
+  // people then reach for is rewriting the comment, i.e. the guard edits prose instead
+  // of code. Both directions are asserted here so the judgement lives in one place.
+  assert.deepEqual(findColorLiterals('// issue #132: the save indicator\nconst a = 1\n'), [], 'an issue number in a comment is not a colour')
+  assert.deepEqual(findColorLiterals('/** see #144 and #40 */\n'), [], 'so is a bare reference')
+  const literal = findColorLiterals("const style = { color: '#ff0000' }\n")
+  assert.equal(literal.length, 1, 'a quoted colour literal is still a hardcoded colour')
+  assert.equal(literal[0].text, '#ff0000')
+  assert.equal(findColorLiterals('style={{ background: "#abc" }}').length, 1, 'so is a quoted one in JSX')
+  assert.equal(findColorLiterals('const s = { border: 1px solid #0f0 }').length, 1, 'and an unquoted one beside a colour property')
 })
 
 test('the editor model stays pure: no React, no IO, no channel import', () => {
