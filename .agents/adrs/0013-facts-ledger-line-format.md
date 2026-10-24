@@ -33,8 +33,44 @@ subject: char-qingyin
 2. **键集合**：`attribute` / `value` / `since` / `until` / `chapterId` / `source`；`attribute` 与 `value` 必填，其余可缺省。缺省 `until` 表示**至今仍成立**；缺省 `source` 视为 `manual`。
 3. **`|` 冲突**：`value` / `attribute` 里要含字面 `|` 时写成 `\|`；读取时反转义。写入侧一律转义，读取侧容忍未转义但**不猜测**（未转义的 `|` 就是分隔符）。
 4. **未知键保留**：与 frontmatter「未知字段保留、索引忽略」同一策略——不报错、不丢、写回时原样保留。
-5. **不可解析的行**报 `FACT_LINE_MALFORMED`（warning，行锚 `path#L<n>`），不阻断整文件；**同一 `attribute` 内 `since` 单调不减**是 #32 的校验职责，不是格式职责。
-6. **frontmatter 只放身份**：`subject`（必填）、可选 `title` / `aliases`。事实一律不写 frontmatter。
+5. **只有「想写事实但写坏了」的行**报 `FACT_LINE_MALFORMED`（warning，行锚 `path#L<n>`），不阻断整文件；**同一 `attribute` 内 `since` 单调不减**是 #32 的校验职责，不是格式职责。判定「想不想写事实」按下面的「候选规则」，散文不报（见「修订」一节）。
+6. **frontmatter 只放身份**：`subject`（必填）、可选 `title` / `aliases`。事实一律**新增**到正文，不写 frontmatter。
+
+## 修订（2026-10-24，0.3.0 验证回退 #135）
+
+两条实测反馈推翻了「每条 `- ` 列表项都是事实候选」这个隐含前提：作者真实书的 6 个账本文件里只有 1 个能读出事实，另外 5 个各报 1–3 条 `FACT_LINE_MALFORMED`（其中 5 条是散文 `<path>#L<n>`，真正写坏的一条都没有）。判据错在「谁算候选」，不在行的编码。
+
+### 候选规则：散文不是坏行
+
+一行以 `- ` 开头时，按**第一个分段**的键决定它是什么：
+
+| 条件 | 判定 | 后果 |
+|---|---|---|
+| 第一个分段的键 ∈ 已知键（`attribute` / `value` / `since` / `until` / `chapterId` / `source`） | 事实行 | 交给解析器；解析失败照旧报 `FACT_LINE_MALFORMED` |
+| 否则，**任意**分段的键 ∈ 已知键 | 想写事实、写坏了（`attrbiute: 境界 \| value: x`） | 报 `FACT_LINE_MALFORMED`，理由指明「第一个分段不是已知键」 |
+| 其余 | 散文（作者笔记、含全角冒号或路径里带 `:` 的句子） | **静默忽略，零 issue** |
+
+- 找键时把全角冒号 `：` 也当键终止符，**只用于识别**、不用于解析：`- attribute：境界 | value：金丹` 因此判成事实行并报错（中文输入法默认打全角冒号，静默吞掉它比报警更糟）；而 `- 差别在**换算比**：A 说 2:1…` 的键是「差别在**换算比**」，仍判散文。
+- 为什么不「一律宽松」：账本也是笔记，作者会把判断、来源、待裁决写在同一文件里；把这些都报成坏行，体检报告会被淹没，真正写坏的那一行反而看不见。
+- 为什么保留「任意分段含已知键就报」：`attrbiute: …` 这类错别字是唯一值得打断作者的情形，它是**写侧意图明确但格式错**，不是散文。
+
+### 旧式单事实 frontmatter（只读兼容）
+
+本 ADR 之前的字段表（`data-model` §3.5 的历史版本）把**一条**事实放在 frontmatter：`subject` / `attribute` / `value` / `since` / `until` / `chapterId` / `source`。这样写的书仍然在盘上（验证副本 6 个账本里 5 个），把事实搬到正文后这些文件「一条事实都读不出来」。兼容口径：
+
+| frontmatter 键 | 映射 | 缺省 |
+|---|---|---|
+| `subject` | 这一条事实的 `subject` | 文件名（与该文件没有 `subject` 时同一回退，并照旧报 `FRONTMATTER_ISSUE`） |
+| `attribute` / `value` | 必填字段；**两者都在**才产生事实 | 缺任一 → 不产生事实（半个记录不是事实） |
+| `since` / `until` | 生效区间 | 缺 `since` = 书首；缺 `until` = 至今（与正文行同义） |
+| `chapterId` | 登记章 | 缺省无 |
+| `source` | 来源 | `manual` |
+| `conflictsWith` | **不读**（一直是「仅索引列」，不是文件字段） | — |
+
+- **只读**：解析器读它，**没有任何写入路径产出它**。`inkflow_facts_append` 仍只写正文行；老格式的事实不会被搬运、改写或去重。
+- **行锚**：这条事实没有正文行，锚取 frontmatter 里 `attribute:` 所在的行（`path#L<n>`），findings 与 `inkflow_facts_list` 因此能指到字段本身。
+- **不再新增这种写法**：新建账本只写 `subject`，事实一律写成正文列表项。老格式保留的唯一理由是存量文件的读取，不是表达力。
+- 同一文件既有 frontmatter 事实又有正文行事实时，**两条都进索引**，并按同一 `attribute` 正常参与 I-23 判定（来源不同不是豁免理由）。
 
 ## 备选与取舍
 
@@ -59,3 +95,4 @@ subject: char-qingyin
 
 - `tests/facts.test.js`：多事实解析；`\|` 转义 round-trip；未知键保留；缺省 `until` 视为未失效；`FACT_LINE_MALFORMED` 带 `path#L<n>`；同一 `subject` 两段 `since` 按章序聚合。
 - round-trip 断言：解析 → 渲染 → 再解析，两次结果深相等（写回不改变作者原行以外的东西）。
+- 修订条（#135）的用例：散文 bullet（含全角冒号与路径里的 `:`，正文逐字取自验证副本）零 issue 且不影响同文件的真实行；写坏的行（错键、缺冒号、全角冒号）仍报 `FACT_LINE_MALFORMED`；旧式 frontmatter 事实读出 1 条且字段/缺省/行锚正确；旧式与正文行混写时两条都进索引并触发 `FACT_CONFLICT`；追加只加正文行、frontmatter 事实原文不动。
