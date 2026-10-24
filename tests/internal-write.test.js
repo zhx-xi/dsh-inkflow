@@ -710,3 +710,93 @@ test('write route: an oversized body is a 413 and an undeclared verb is a 405', 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 9. The file's own line endings and BOM survive a panel save (issue #132)
+// ---------------------------------------------------------------------------
+
+/**
+ * The single edited window between two texts: everything outside it must be
+ * byte-identical. "Fixed" means `before`/`after` hold the one character the
+ * author actually touched — not the whole manuscript rewritten to LF.
+ */
+function editWindow(before, after) {
+  let prefix = 0
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1
+  let suffix = 0
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix += 1
+  }
+  return { before: before.slice(prefix, before.length - suffix), after: after.slice(prefix, after.length - suffix) }
+}
+
+function writeRaw(root, relativePath, text) {
+  const absolute = join(root, relativePath)
+  mkdirSync(join(absolute, '..'), { recursive: true })
+  writeFileSync(absolute, text, 'utf8')
+}
+
+test('eol: a CRLF+BOM chapter saved from the panel keeps both (issue #132)', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    scaffold(root)
+    const original =
+      '\uFEFF---\r\nid: ch-1\r\ntitle: 开篇\r\nvolume: vol-01\r\nseq: 1\r\nstatus: final\r\n---\r\n\r\n他走进白鹤门。\r\n门外下着雨。\r\n'
+    writeRaw(root, CHAPTER, original)
+    const harness = createHarness({ workspace: root })
+
+    const detail = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/chapters/ch-1?sessionId=session-1` }))
+    assert.equal(detail.status, 200)
+    // The read path reports the file's own format while the body stays LF: the
+    // editor never sees a `\r`, and the metadata is what makes the save lossless.
+    assert.equal(detail.json.value.eol, 'crlf')
+    assert.equal(detail.json.value.bom, true)
+    assert.equal(detail.json.value.body.includes('\r'), false)
+
+    const edited = detail.json.value.body.replace('白鹤门', '青鹤门')
+    assert.notEqual(edited, detail.json.value.body)
+    const saved = await writeCall(harness, '/chapters/ch-1', {
+      payload: { body: edited, eol: detail.json.value.eol, bom: detail.json.value.bom },
+    })
+    assert.equal(saved.status, 200, JSON.stringify(saved.json).slice(0, 200))
+
+    const after = readFileSync(join(root, ...CHAPTER.split('/')), 'utf8')
+    assert.deepEqual(editWindow(original, after), { before: '白', after: '青' }, 'only the edited character may change')
+    assert.equal(after.startsWith('\uFEFF'), true, 'the BOM must survive the save')
+    assert.equal((after.match(/\r\n/g) ?? []).length, (original.match(/\r\n/g) ?? []).length)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('eol: an LF chapter saved from the panel stays LF and gains no BOM (issue #132)', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+    const original = readChapter(root)
+
+    const detail = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/chapters/ch-1?sessionId=session-1` }))
+    assert.equal(detail.json.value.eol, 'lf')
+    assert.equal(detail.json.value.bom, false)
+
+    const edited = detail.json.value.body.replace('白鹤门', '青鹤门')
+    const saved = await writeCall(harness, '/chapters/ch-1', {
+      payload: { body: edited, eol: detail.json.value.eol, bom: detail.json.value.bom },
+    })
+    assert.equal(saved.status, 200, JSON.stringify(saved.json).slice(0, 200))
+
+    const after = readChapter(root)
+    assert.deepEqual(editWindow(original, after), { before: '白', after: '青' })
+    assert.equal(after.includes('\r'), false, 'an LF chapter must not be "fixed" into CRLF')
+    assert.equal(after.startsWith('\uFEFF'), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

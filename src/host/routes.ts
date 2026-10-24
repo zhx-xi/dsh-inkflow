@@ -195,7 +195,12 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'chapter',
     pattern: /^\/chapters\/([^/]+)$/,
     methods: ['GET', 'POST', 'DELETE'],
-    body: ['sessionId', 'title', 'body', 'status', 'expected'],
+    // `eol`/`bom` are the file's own format, read from `GET /chapters/:id` and
+    // handed back on save (ADR-0016): without them the write door can only
+    // normalise, which rewrites a CRLF chapter to LF. Both are validated by
+    // `internal.ts` — the whitelist is about *which* fields may travel, not what
+    // values they carry.
+    body: ['sessionId', 'title', 'body', 'status', 'eol', 'bom', 'expected'],
     handle: async (input) => {
       if (input.method === 'POST') return toReply(await writeChapterViaChannel(writeRequestOf(input)))
       if (input.method === 'DELETE') return toReply(await deleteChapterViaChannel(writeRequestOf(input)))

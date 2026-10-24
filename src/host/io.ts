@@ -57,6 +57,8 @@ import { INDEX_DIR, PRIVATE_STATE_DIR, PRIVATE_STATE_SUBDIRS, WRITE_DIRS } from 
 import { checkSegment } from './path-rules.js'
 import type { SegmentProblem } from './path-rules.js'
 import { isWithin, realpathLoose } from './project.js'
+import { LF_STYLE, applyTextStyle } from './text-style.js'
+import type { TextStyle } from './text-style.js'
 
 // ---------------------------------------------------------------------------
 // Contract types
@@ -145,6 +147,14 @@ export interface AtomicWriteOptions {
    * *previous bytes* back, so it passes `verbatim: true` and skips both steps.
    */
   verbatim?: boolean
+  /**
+   * The style to serialise the normalised payload in (ADR-0016, issue #132).
+   *
+   * Normalisation is not the end of the story: an existing chapter has a format
+   * of its own (CRLF, a BOM), and rewriting it to LF turns a one-character edit
+   * into a whole-chapter diff. Omitted = a new file, i.e. `LF_STYLE`.
+   */
+  style?: TextStyle
 }
 
 // ---------------------------------------------------------------------------
@@ -608,8 +618,10 @@ function sweepStaleTemps(dir: string): void {
 
 function normalizeText(text: string): string {
   // A BOM makes the file unreadable by JSON.parse and shows up in every diff;
-  // CRLF is rewritten by .gitattributes on the next commit. Normalizing at the
-  // write door keeps the invariant in one place (data-safety §2.4).
+  // CRLF mixed with LF makes every diff unreadable. Normalising at the write door
+  // keeps the invariant in one place (data-safety §2.6). It is *not* a decision
+  // about the file's format: a caller editing an existing file passes that file's
+  // own style back (ADR-0016) and `applyTextStyle` re-applies it right after.
   const withoutBom = text.startsWith('\uFEFF') ? text.slice(1) : text
   return withoutBom.replace(/\r\n?/g, '\n')
 }
@@ -712,7 +724,11 @@ export function writeTextAtomic(
   const { target, lock } = opened
   try {
     const created = !existsSync(target.absolute)
-    const payload = options.verbatim === true ? text : normalizeText(text)
+    // Two steps, one door: normalise (the invariant), then re-serialise in the
+    // style the caller asked for — the file's own style when it is being edited
+    // (ADR-0016), LF/no-BOM for every new file.
+    const payload =
+      options.verbatim === true ? text : applyTextStyle(normalizeText(text), options.style ?? LF_STYLE)
     const result = writeAtomically(target, payload, options)
     return { ok: true, target: { ...target, exists: true }, bytes: result.bytes, created }
   } catch (cause) {

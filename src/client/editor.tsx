@@ -39,6 +39,7 @@ import type {
   SaveOutcome,
   SaveRequest,
 } from './editor-model.js'
+import type { ChapterStyle } from './editor-model.js'
 import { describeRouteError } from './panel-model.js'
 import type { ChapterDetailValue } from './panel-model.js'
 
@@ -114,6 +115,16 @@ function fieldsOf(detail: ChapterDetailValue, chapterId: string): EditorFields {
 }
 
 /**
+ * The file's own format from the same answer (ADR-0016). Only the two values the
+ * Host can report are accepted; anything else falls back to what a new file gets,
+ * so a chatty field can never make the editor declare a style the Host rejects.
+ */
+function styleOf(source: { eol?: unknown; bom?: unknown }): ChapterStyle {
+  const eol = source.eol === 'crlf' ? 'crlf' : 'lf'
+  return { eol, bom: source.bom === true }
+}
+
+/**
  * `POST /chapters/:id` → the editor's `SaveOutcome`.
  *
  * A 409 `FILE_CHANGED` is the one answer that must not be flattened into "save
@@ -124,17 +135,27 @@ async function saveChapter(sessionId: string, chapterId: string, request: SaveRe
     title: request.title,
     body: request.body,
     status: request.status,
+    // The format round trip (issue 132): the Host normalises every payload, so the
+    // file's own line ending and BOM can only survive if they are sent back.
+    eol: request.eol,
+    bom: request.bom,
   }
   if (request.expected !== undefined) payload['expected'] = request.expected
 
-  const result = await writeInternal<{ fingerprint?: FileFingerprint | null }>(
+  const result = await writeInternal<{ fingerprint?: FileFingerprint | null; eol?: unknown; bom?: unknown }>(
     `/chapters/${encodeURIComponent(chapterId)}`,
     payload,
     { sessionId },
   )
   if (result.ok) {
     const fingerprint = asFingerprint(result.value?.fingerprint)
-    return fingerprint === null ? { ok: true } : { ok: true, fingerprint }
+    const style = styleOf(result.value ?? {})
+    return {
+      ok: true,
+      ...(fingerprint === null ? {} : { fingerprint }),
+      // The Host echoes what it actually wrote; the model adopts it.
+      ...(result.value?.eol === undefined ? {} : { style }),
+    }
   }
   const error = result.error
   if (result.status === 409 && error?.code === 'FILE_CHANGED') {
@@ -156,6 +177,7 @@ async function loadChapter(sessionId: string, chapterId: string): Promise<Reload
   return {
     fields: fieldsOf(result.value, chapterId),
     fingerprint: asFingerprint(result.value.fingerprint),
+    style: styleOf(result.value),
   }
 }
 
@@ -177,6 +199,7 @@ export function EditorPane({ sessionId, chapterId, detail, volumes, onSaved, onG
       path: detail.path ?? chapterId,
       fields: fieldsOf(detail, chapterId),
       fingerprint: asFingerprint(detail.fingerprint),
+      style: styleOf(detail),
       save: (request) => saveChapter(sessionId, chapterId, request),
       reload: () => loadChapter(sessionId, chapterId),
     })
