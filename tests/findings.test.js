@@ -66,6 +66,9 @@ const WRITE_SIDE_CODES = new Set([
   'FACT_SOURCE_INVALID',
   'FACT_SUBJECT_MISMATCH',
   'FACT_VALUE_INVALID',
+  // #159: a value that cannot be one frontmatter line (`title` / `id` / `parent`), so it
+  // is a bad request, not a problem in the book.
+  'FIELD_INVALID',
   // #31: the foreshadow write path's argument rejections and its confirm gate.
   'FORESHADOW_FIELD_INVALID',
   'FORESHADOW_STATUS_INVALID',
