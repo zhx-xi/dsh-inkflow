@@ -116,7 +116,11 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'FACT_CONFLICT', group: 'ledger', fixable: false, meaning: '同主体同属性的生效区间重叠且取值不同' },
 
   // foreshadow — foreshadowing/ (data-model I-09, I-21)
-  { code: 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER', group: 'foreshadow', fixable: true, meaning: 'resolved: true 缺 resolvedChapter' },
+  // Not auto-fixable on purpose (#143, ADR-0015 D2): the fix is either naming the chapter
+  // that pays the setup off (the author's knowledge) or retracting `resolved` (denying what
+  // the author wrote). A catalogue entry claiming `fixable` with no action behind it makes
+  // the report say "1 fixable" while the repair pass offers nothing.
+  { code: 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER', group: 'foreshadow', fixable: false, meaning: 'resolved: true 缺 resolvedChapter' },
   { code: 'FORESHADOW_TRANSITION_INVALID', group: 'foreshadow', fixable: true, meaning: '伏笔状态非法流转（可由证据字段确定性推导）' },
   // The two **audit-only** codes (#33). They are not invariants: nothing is refused and
   // no rebuild reports them, because "late" is a fact about where the book stands today,

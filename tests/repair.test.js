@@ -341,3 +341,32 @@ test('repair: an audit report is a derivative under .inkflow/audit', () => {
   // And nothing under it is discovered as a book file.
   assert.equal(detected.findings.some((finding) => finding.locator.kind === 'path' && finding.locator.path.startsWith('.inkflow')), false)
 })
+
+/**
+ * A code the catalogue no longer calls fixable must not appear in the plan (#143).
+ *
+ * `FORESHADOW_RESOLVED_WITHOUT_CHAPTER` was listed as `fixable: true` while no repair
+ * action existed for it, so the report said "1 fixable" and the repair pass answered
+ * "no action yet" — the author's only clue that nothing would happen was the wording.
+ * The flag is `false` now, and this pins the two surfaces together: whatever the plan
+ * offers has to be what the catalogue promised.
+ */
+test('repair: a code the catalogue calls unfixable never reaches the plan (issue 143)', () => {
+  const root = sampleBook()
+  writeMarkdown(root, 'foreshadowing/缺章.md', ['title: 缺章', 'status: resolved', 'resolved: true', 'plantedAt: ch-1'], '回收了却没写是哪一章回收的。')
+  const detected = detectFindings(root)
+  const target = detected.findings.find((finding) => finding.code === 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER')
+  assert.ok(target !== undefined, 'the fixture must raise the code this test is about')
+  assert.equal(target.fixable, false, 'the catalogue must not promise a repair that does not exist')
+
+  const plan = planRepair(root)
+  assert.equal(
+    plan.actions.some((action) => action.code === 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER'),
+    false,
+    'no action may target it',
+  )
+  assert.ok(
+    plan.skipped.some((entry) => entry.code === 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER'),
+    'it must be reported as left to the author, not silently dropped',
+  )
+})
