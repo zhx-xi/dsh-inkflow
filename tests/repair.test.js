@@ -20,13 +20,14 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
   applyRepair,
   detectFindings,
+  openBackup,
   listBackups,
   planRepair,
   rollbackMigration,
@@ -369,4 +370,29 @@ test('repair: a code the catalogue calls unfixable never reaches the plan (issue
     plan.skipped.some((entry) => entry.code === 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER'),
     'it must be reported as left to the author, not silently dropped',
   )
+})
+
+/**
+ * A backup opened over an unwritable `.gitignore` must say so (#149).
+ *
+ * Both branches of `openBackup` used to return the same object, so "the ignore rule
+ * is in place" and "it is not" were indistinguishable — the package's files would
+ * appear as untracked and nothing in the caller could tell. The batch still runs
+ * (a backup is more important than one ignore line), but the handle carries it.
+ */
+test('repair: a backup opened without the .gitignore line reports it (#149)', () => {
+  const root = sampleBook()
+  // A directory where the file should be: reading it throws, so the append cannot happen.
+  rmSync(join(root, '.gitignore'), { force: true })
+  mkdirSync(join(root, '.gitignore'), { recursive: true })
+
+  const opened = openBackup(root, 'repair')
+  assert.equal(opened.ok, true, 'the package still opens')
+  assert.deepEqual(opened.value.warnings, ['gitignore-not-updated'])
+
+  // And a normal book reports nothing: no false positive on the happy path.
+  const clean = sampleBook()
+  const plain = openBackup(clean, 'repair')
+  assert.equal(plain.ok, true)
+  assert.equal(plain.value.warnings, undefined)
 })
