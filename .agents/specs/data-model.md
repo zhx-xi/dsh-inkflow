@@ -262,7 +262,7 @@ origin:
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v7（现行，`PRAGMA user_version = 7`）
+### 4.1 v8（现行，`PRAGMA user_version = 8`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
@@ -297,7 +297,7 @@ origin:
 - 每行 `(path, size, mtime)` 描述建库那一刻该文件的字节数与 mtime；`mtime` 与磁盘 `stat.mtime.toISOString()` **同源同精度**（毫秒），因此比较是字符串相等，不需要额外列，也不需要改 schema。
 - 对拍方式：一次 `readdir`+`stat`（与建索引同一个 `walkProjectFiles`）得到磁盘视图，与 `files` 全表比对 → 新增 / 删除 / `size` 变 / `mtime` 变 都算 `stale`。**不读文件内容、不算 hash**，所以 3000 文件量级仍是几十毫秒。
 - 为什么 `meta.builtAt` 不够：删文件不会抬高任何 mtime，一删一增的「等量替换」也骗得过时间戳。`builtAt` 仅用于诊断输出。
-- 索引 schema 不变（仍是 `user_version = 1`）：加入新鲜度不需要新列。若将来把内容 hash 也存进 `files`（用于「同 size 同 mtime 但内容被替换」这种极端情形），那是一次 `INDEX_SCHEMA_VERSION` 递增 + 删库重建，不写 ALTER。
+- 加入新鲜度这件事本身不碰 schema（它只读 `files` 已有的 `size` / `mtime`，没有为它加列）。若将来把内容 hash 也存进 `files`（用于「同 size 同 mtime 但内容被替换」这种极端情形），那是一次 `INDEX_SCHEMA_VERSION` 递增 + 删库重建，不写 ALTER。
 
 - 版本不符 → **删库重建**，不做 `ALTER`。
 - 重建：清空 → 全量扫描 → 事务写入 → 校验；`index/` 里除 `.gitkeep` 外全部是派生物。

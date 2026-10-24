@@ -184,7 +184,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
-插件提供三十四个工具（18 个内置 + 16 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
+插件提供 50 个工具（34 个内置 + 16 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
 
 **项目与索引**
 
