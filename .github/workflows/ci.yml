@@ -76,8 +76,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      # Every gate `npm run check:docs` runs must be here — that job is what branch
+      # protection requires, so a step missing from this list is a gate that only runs
+      # on a developer's machine. `check-module-table.mjs` was exactly that: main's
+      # `check` was red for a release while CI reported green (#150/#156), because this
+      # job stopped at `check-docs.mjs`. The scripts are dependency-free, so this stays a
+      # plain `node` job with no install step.
       - run: node scripts/check-links.mjs
       - run: node scripts/check-docs.mjs
+      - run: node scripts/check-module-table.mjs
+      - run: node scripts/check-tool-names.mjs
 
   package:
     name: package
