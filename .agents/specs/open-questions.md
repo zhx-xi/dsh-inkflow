@@ -18,7 +18,7 @@
 | Q9 | 会话疲劳检测的指标与阈值 | 连续 N 轮质量下降 + 上下文占用率 | 写作稳定性 | 待定 |
 | Q10 | 项目级文风档案的维度与落点 | 复用 9 轴文风卡；落点 `world/` 或 `library/` 未定（不新增一级目录） | 写作质量 | 待定 |
 | Q11 | 性能基线（500 章树、检索、保存、重建） | 先按 [product-scope.md](product-scope.md) §6.3 执行，实测后统一校准 | 各阶段 DoD 阈值 | 待定 |
-| Q12 | `inkflow.json.projectId` 的生成归属 | 由共享库落地（#40）时补进初始化向导；可缺省、不参与门禁 | 共享库 `origin.projectId` | 待定 |
+| Q12 | `inkflow.json.projectId` 的生成归属 | 由共享库落地（#40）时补进初始化向导；可缺省、不参与门禁 | 共享库 `origin.projectId` | 已裁决 → §2 R23 |
 | Q13 | frontmatter 键是否允许非 ASCII（如 `作者备注:`） | 仅 ASCII 键（现状），中文键记 `FRONTMATTER_ISSUE`；若要支持需扩展解析器 | frontmatter 契约 | 待定 |
 
 > 已关闭的旧项：Q1（`index/` 缺失自动重建）、Q2/Q3（六目录与四域归属）、Q4（嵌套仓库 ignore）、Q5（init 是否代跑 `git init`）已转入 §2；产品范围里的「七分类树 / 多书 / MCP / 对外 API / 作品库目录」等口径同样在 §2 关闭，不再单列。
@@ -52,6 +52,7 @@
 | R20 | 语义检索应**自研 embedding + 向量表**（`sqlite-vec` 或纯 JS 余弦），把能力握在自己手里 | ✏️ 修正为**复用 OpenViking**：InkFlow 不自研 embedding/向量库，不新增运行时依赖；只负责「哪本书的哪些内容、怎么写进去、召回后怎么定位」 | [ADR-0009](../adrs/0009-ovk-semantic-search.md) P1 |
 | R21 | 删章可以直接映射 `forget`；检索返回的 `abstract` 可当正文/引用原文用；每次重建「先 forget 再重建」 | ✏️ 修正：**删章不调用 `forget`**（它是永久物理删除）——文件进回收站 + 块覆盖为 tombstone + 召回过滤；`forget` 只在用户显式「清理已删除章节的语义条目」时执行；`abstract` 不是正文，定位必须回文件；重建 = 同路径覆盖 + 孤儿清理 | [ADR-0009](../adrs/0009-ovk-semantic-search.md) P5–P8 |
 | R22 | 总估工 123–175 人日（逐项）/ 125–185 人日（规格口径）；issue 里程碑纪律未固化 | ✅ 确认里程碑纪律 + ✏️ 修正估工口径：**122–162 人日**（净开发 99–130 + 缓冲 23–32；旧 123–175 / 125–185 作废）；每个 issue 必须挂**当前里程碑**，过程中新发现的缺陷/补充分项也挂当前里程碑，仓库不允许无里程碑 issue | 2026-10-21 设计评审口径；[engineering-discipline](../constitution/engineering-discipline.md) §4 |
+| R23 | `projectId` 何时生成、缺失怎么办未定 | ✅ 确认：**初始化向导写入** `inkflow.json`（uuid v4），既有书缺失即保持缺失（`origin.projectId` 可为 `null`）；不参与门禁、不作解析来源 | [ADR-0018](../adrs/0018-settings-backup-diagnostics.md) D7 |
 
 ## 3. 邻接口径（不单独占裁决条目）
 
