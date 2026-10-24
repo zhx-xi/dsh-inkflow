@@ -344,9 +344,10 @@ export function resolveWriteTarget(projectRoot: string, relativePath: string): R
   const dir = segments[0] ?? ''
 
   // The private state directory (ADR-0012) is writable only inside its declared
-  // subdirectories: `trash/`, `backup/`, `audit/`. `.inkflow/` itself and any
-  // other name under it stay outside the whitelist, so the widening is three
-  // paths rather than "a whole dot-directory the caller may shape freely".
+  // subdirectories: `trash/`, `backup/`, `audit/`, `candidates/`. `.inkflow/` itself
+  // and any other name under it stay outside the whitelist, so the widening is a
+  // closed list of four paths rather than "a whole dot-directory the caller may shape
+  // freely" (X-18 added the fourth for the extract pipeline's candidates).
   const privateSub = dir === PRIVATE_STATE_DIR ? (segments[1] ?? '') : ''
   const inPrivateState = (PRIVATE_STATE_SUBDIRS as readonly string[]).includes(privateSub)
 

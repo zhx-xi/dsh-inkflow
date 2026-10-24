@@ -642,6 +642,7 @@ export type { AuditReply, AuditSource } from './audit-channel.js'
  * that expose them are registered through `tools.ts` like every other built-in.
  */
 export {
+  BACKUP_KINDS,
   BACKUP_MANIFEST_FILE,
   BACKUP_SCHEMA_VERSION,
   backupCopyPath,
@@ -696,7 +697,8 @@ export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from 
  * "reference is library/-only" are proved by driving these functions directly and
  * comparing whole-tree hashes, not by reading a route envelope.
  */
-export { SHARED_COPY_MAX_ROWS,
+export {
+  SHARED_COPY_MAX_ROWS,
   applyOriginBlock,
   buildSharedCopies,
   copySharedEntry,
@@ -723,3 +725,11 @@ export type {
 } from './shared-copy.js'
 export { scanSharedLibrary } from './hub-shared.js'
 export type { SharedLibraryScan } from './hub-shared.js'
+
+/**
+ * The ZIP container (ADR-0018 D3, issue #146): store-only by design, so a backup can
+ * be opened by any tool and checked by hand. Exported for the tests and for the
+ * settings/backup work that writes the package.
+ */
+export { ZipError, crc32, readZip, writeZip } from './zip.js'
+export type { ZipEntry, ZipErrorCode, ZipWriteEntry, ZipWriteOptions } from './zip.js'

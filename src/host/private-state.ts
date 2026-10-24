@@ -1,12 +1,12 @@
 /**
- * The private state directory (ADR-0012): three helpers its two writers share.
+ * The private state directory (ADR-0012): three helpers its writers share.
  *
- *   * `<book>/.inkflow/{trash,backup,audit}/` is **not** a content directory — the
- *     gate never requires it, no domain scans it, and `walk()` in `indexer.ts` skips
- *     it because every dot entry is skipped (`indexer.ts:99`).
+ *   * `<book>/.inkflow/{trash,backup,audit,candidates}/` is **not** a content directory
+ *     — the gate never requires it, no domain scans it, and `walk()` in `indexer.ts`
+ *     skips it because every dot entry is skipped (`indexer.ts:99`).
  *   * Writes go through `resolveWriteTarget` + `writeTextAtomic` like every other
- *     write; the whitelist was widened by exactly these three subdirectories
- *     (`io.ts`, `conventions.ts`).
+ *     write; the whitelist was widened by exactly these four subdirectories
+ *     (`io.ts`, `conventions.ts`; `candidates/` arrived with ADR-0017 D3 / X-18).
  *   * `.gitignore` gains `.inkflow/` **when the directory is first used**, not from
  *     the gate: an optional directory must not produce a permanent wizard action for
  *     a book that never deletes anything.
