@@ -15,7 +15,9 @@
  *
  * * **I-22 `FACT_LINE_MALFORMED`** — a body list item that is not a fact (ADR-0013). It is
  *   a **warning** carrying a line anchor `path#L<n>`: one bad line must not hide the rest
- *   of the file, and the author usually typed it by hand.
+ *   of the file, and the author usually typed it by hand. Only a line that *meant* to be a
+ *   fact is reported (`classifyFactLine`, rework of #135): the author's prose in a ledger is
+ *   notes, not a defect.
  * * **I-23 `FACT_CONFLICT`** — two facts of the same `subject + attribute` whose intervals
  *   overlap **and** whose values differ. Intervals are `[since, until)` and are compared
  *   **by chapter order (`chapters.seq`)**, never by id: `ch-10` sorts before `ch-9` as a
@@ -40,7 +42,7 @@ import { splitFrontmatter, parseMarkdown, stringField } from '../frontmatter.js'
 import { nameKey } from './naming.js'
 import { rowsBucket } from './types.js'
 import type { DomainEntityRef, DomainFileParse, ValidationIssue } from './types.js'
-import { DEFAULT_FACT_SOURCE, isFactLine, parseFactLine } from './facts-line.js'
+import { DEFAULT_FACT_SOURCE, classifyFactLine, parseFactLine } from './facts-line.js'
 import type { FactLine } from './facts-line.js'
 
 /**
@@ -90,6 +92,16 @@ export function factAnchor(path: string, line: number): string {
 }
 
 /**
+ * The reason a `malformed` verdict reports (I-22): the line holds a key this format knows, but
+ * not as its first segment (`attrbiute: 境界 | value: 金丹`). Names the fix instead of the
+ * downstream symptom ("`attribute` is required"). Never contains the line's own text — it reaches
+ * the model and the tool output, and the ledger may hold the author's prose (data-safety §5).
+ */
+const MALFORMED_FIRST_SEGMENT =
+  'the first segment is not a known key (`attribute` / `value` / `since` / `until` / `chapterId` / `source`)' +
+  ' — a fact line starts with one of them'
+
+/**
  * Where the body starts, 1-based, so a body line index becomes a file line number.
  *
  * `parseMarkdown` returns the body without its offsets on purpose (it also normalises
@@ -103,6 +115,68 @@ function bodyFirstLine(text: string): number {
   // `head` ends with the closing delimiter's newline, so the split's last element is the
   // (empty) first body line — its position *is* the body's first line number.
   return normalized.split('\n').length
+}
+
+/**
+ * The 1-based line of `<key>:` inside the frontmatter block, else line 1.
+ *
+ * A legacy fact has no body line, so its anchor has to be the line that carries it: an entry in
+ * `inkflow_facts_list` (or a finding) pointing at line 1 would make the author hunt for the
+ * field it is talking about. The search stops at the closing delimiter, so an `attribute:`
+ * written in the prose cannot move the anchor.
+ */
+function frontmatterKeyLine(text: string, key: string): number {
+  const head = splitFrontmatter(text).head
+  if (head === '') return 1
+  const lines = head.replace(/^\uFEFF/u, '').replace(/\r\n/gu, '\n').split('\n')
+  const pattern = new RegExp(`^\\s*${key}\\s*:`, 'u')
+  const index = lines.findIndex((line) => pattern.test(line))
+  return index <= 0 ? 1 : index + 1
+}
+
+/**
+ * The single fact a **legacy** ledger keeps in its frontmatter (read-only, rework of #135).
+ *
+ * Before ADR-0013 the field table of this very spec (§3.5, in git history) put one fact in the
+ * frontmatter: `subject` / `attribute` / `value` / `since` / `until` / `chapterId` / `source`.
+ * Books written against it are still on disk — five of the six ledgers of the 0.3.0
+ * verification copy — and reading them as "no facts at all" is what made the ledger look empty
+ * on real data. Such a file therefore yields **one** row, with the line format's own defaults
+ * (missing `since` = the beginning of the book, missing `source` = `manual`).
+ *
+ * Read-only on purpose: no writer in this plugin produces this shape, and the append tool keeps
+ * writing the ADR-0013 body line (a legacy fact is never moved, rewritten or de-duplicated).
+ *
+ * Both `attribute` and `value` must be present. One of them alone is prose that happens to use a
+ * word this format knows, and inventing a fact from half a record is worse than reading none.
+ */
+function legacyFrontmatterFact(
+  data: Record<string, unknown>,
+  subject: string,
+  path: string,
+  text: string,
+): FactRow | undefined {
+  const attribute = (stringField(data, 'attribute') ?? '').trim()
+  const value = (stringField(data, 'value') ?? '').trim()
+  if (attribute === '' || value === '') return undefined
+  const since = (stringField(data, 'since') ?? '').trim() || undefined
+  const until = (stringField(data, 'until') ?? '').trim() || undefined
+  const chapter = (stringField(data, 'chapterId') ?? '').trim() || undefined
+  const source = (stringField(data, 'source') ?? '').trim() || DEFAULT_FACT_SOURCE
+  const line = frontmatterKeyLine(text, 'attribute')
+  return {
+    id: factAnchor(path, line),
+    path,
+    line,
+    subject,
+    attribute,
+    value,
+    ...(since === undefined ? {} : { since }),
+    ...(until === undefined ? {} : { until }),
+    ...(chapter === undefined ? {} : { chapter }),
+    source,
+    extra: {},
+  }
 }
 
 /**
@@ -147,18 +221,27 @@ export function parseFactsFile(path: string, text: string): ParsedFacts {
   const title = (stringField(parsed.data, 'title') ?? '').trim() || undefined
 
   const rows: FactRow[] = []
+  // A legacy ledger's frontmatter fact comes first: its interval usually starts at the book, so
+  // this is also the order `factsSnapshot` would sort it into.
+  const legacy = legacyFrontmatterFact(parsed.data, subject, path, text)
+  if (legacy !== undefined) rows.push(legacy)
   const firstLine = bodyFirstLine(text)
   const lines = parsed.body.split('\n')
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] as string
-    if (!isFactLine(line)) continue
+    const verdict = classifyFactLine(line)
+    // Prose is the author's notebook, and a ledger *is* notes with facts in them (#135): a `- `
+    // bullet that carries no known key is not a defect to report. `classifyFactLine` decides.
+    if (verdict === 'prose') continue
     const lineNumber = firstLine + index
     const result = parseFactLine(line)
     if (!result.ok) {
       issues.push({
         code: 'FACT_LINE_MALFORMED',
         path: factAnchor(path, lineNumber),
-        detail: result.reason,
+        // A `malformed` verdict already knows what is wrong — the first segment is not a key —
+        // and saying so is more useful than the parse error it causes downstream.
+        detail: verdict === 'malformed' ? MALFORMED_FIRST_SEGMENT : result.reason,
       })
       continue
     }

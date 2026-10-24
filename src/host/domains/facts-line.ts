@@ -78,6 +78,67 @@ export function isFactLine(line: string): boolean {
   return FACT_LINE_PREFIX.test(line)
 }
 
+/** Which of three things one body list item is (see {@link classifyFactLine}). */
+export type FactLineVerdict =
+  /** The first segment's key is a known key: hand it to {@link parseFactLine}. */
+  | 'fact'
+  /** A known key appears, but not first: the author meant a fact and mis-typed. Report it. */
+  | 'malformed'
+  /** Not fact-shaped at all: the author's prose. Silent, because a ledger *is* notes. */
+  | 'prose'
+
+/**
+ * First `:` of a segment — and `：` too, but **only to find the key** (#135).
+ *
+ * A Chinese IME produces `：` by default, and `- attribute：境界 | value：金丹` is unambiguously
+ * a fact line written with the wrong colon. Reading it as prose would swallow the line without
+ * a word, which is the one outcome worse than a warning: the author sees no fact *and* no hint.
+ * Recognising the key token is not accepting the syntax — `parseFactLine` still refuses the
+ * line, because the format (ADR-0013) is the ASCII colon.
+ */
+const KEY_TERMINATOR = /[:：]/u
+
+/** The key token of one segment, or `undefined` when the segment starts with a colon or has none. */
+function segmentKey(segment: string): string | undefined {
+  const index = segment.search(KEY_TERMINATOR)
+  if (index <= 0) return undefined
+  return unescapePipe(segment.slice(0, index)).trim()
+}
+
+function isKnownKey(key: string | undefined): boolean {
+  return key !== undefined && (FACT_KEYS as readonly string[]).includes(key)
+}
+
+/**
+ * Is this list item a fact line, a spoiled fact line, or just prose (I-22, rework of #135)?
+ *
+ * Every `- ` item used to be a candidate, so an author's notebook — which is mostly prose and
+ * tables under bullets (`- 差别在**换算比**：A 说 2:1…`, `- 正文：`D:\小说\…``) — was reported
+ * line by line as `FACT_LINE_MALFORMED` and drowned the real findings: six ledger files of the
+ * verification copy produced five false files' worth of warnings and one fact. The line's
+ * *first key* is what separates the two worlds:
+ *
+ *   1. first segment's key is a known key → a fact line, parse it (a bad one is reported by
+ *      {@link parseFactLine}, which is where "`value` is required" comes from);
+ *   2. a known key appears later → the author meant a fact and wrote the first field wrong
+ *      (`attrbiute: 境界 | value: 金丹`) → `malformed`, so the typo hint survives;
+ *   3. otherwise → prose → `prose`, and no finding is produced at all.
+ *
+ * Note the asymmetry with {@link parseFactLine}: that one answers "is this a *valid* fact", this
+ * one answers "did the author mean a fact". Reporting belongs to the second question.
+ */
+export function classifyFactLine(line: string): FactLineVerdict {
+  if (!isFactLine(line)) return 'prose'
+  const content = line.replace(/[\r\n]+$/u, '').replace(FACT_LINE_PREFIX, '')
+  const segments = splitSegments(content)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== '')
+  if (segments.length === 0) return 'prose'
+  const keys = segments.map((segment) => segmentKey(segment))
+  if (isKnownKey(keys[0])) return 'fact'
+  return keys.some((key) => isKnownKey(key)) ? 'malformed' : 'prose'
+}
+
 /**
  * Split on `|` that is **not** preceded by a backslash.
  *

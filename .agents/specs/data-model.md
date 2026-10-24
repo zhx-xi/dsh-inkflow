@@ -216,7 +216,9 @@
 - 一主体一文件、一文件多事实；跨章校验的输入是同一 `subject + attribute` 的多个 `since` 区段。
 - `subject` 是**引用字段**（指向被描述的主体 id），不是本文件的实体 id：本文件的实体 id 是路径（§4.1）。缺 `subject` 时按文件名回退，并在重建时以 `FRONTMATTER_ISSUE`（warning，不阻断）提示——否则这些事实会登记到一个没人选的 subject 名下。
 - 值里要含字面 `|` 时写 `\|`；未知键**保留不报错**（与 frontmatter 未知字段同策略），包括**空值**未知键（`备注:`）——它必须能被原样渲染回去，否则「解析→渲染→再解析」会丢掉作者写的字段。
-- 不可解析的行报 `FACT_LINE_MALFORMED` 并带行锚 `path#L<n>`，不阻断整文件。
+- **哪些 `- ` 列表项算事实行**：看第一个分段的键——是上面六个已知键之一就是事实行（解析失败则报 `FACT_LINE_MALFORMED`）；否则若任意分段含已知键，判「想写事实但写坏了」并报同一条 code；两者都不满足就是**散文，静默忽略**（零 issue）。账本同时是作者的笔记，把散文报成坏行会让体检报告淹没真正写坏的那一行（[ADR-0013](../adrs/0013-facts-ledger-line-format.md) 修订一节）。
+- 不可解析的**事实行**报 `FACT_LINE_MALFORMED` 并带行锚 `path#L<n>`，不阻断整文件。
+- **旧式单事实 frontmatter（只读兼容）**：ADR-0013 之前的字段表把一条事实放在 frontmatter（`subject` / `attribute` / `value` / `since` / `until` / `chapterId` / `source`）。这种文件按**一条**事实读入：`attribute` 与 `value` **同时存在**才产生事实；`subject` 缺省回退文件名；缺 `since` = 书首、缺 `source` = `manual`；行锚取 `attribute:` 所在行；`conflictsWith` 不读。**只读**——没有写入路径产出这种形状，`inkflow_facts_append` 仍只写正文行，老格式的事实不被搬运或改写；同一文件里两种形状并存时两条都进索引，并按同一 `attribute` 正常参与 I-23。**不再新增这种写法**（新建账本只写 `subject`）。
 - 为什么不用 frontmatter 块数组或 Markdown 表格：见 ADR-0013 的备选表（嵌套映射读回成一个字符串；表格与中文竖线冲突且 diff 不可读）。
 
 ### 3.6 资料卡片 `library/<slug>.md`
