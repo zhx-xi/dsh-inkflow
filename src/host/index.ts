@@ -695,3 +695,84 @@ export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from 
  */
 export { ZipError, crc32, readZip, writeZip } from './zip.js'
 export type { ZipEntry, ZipErrorCode, ZipWriteEntry, ZipWriteOptions } from './zip.js'
+
+/**
+ * The plugin's own state (#42, ADR-0018): settings (D1/D2), the diagnostics package
+ * (D5) and the local ZIP backups (D3/D4/D6). None of it is book data, which is why
+ * these three modules sit together and write only under `dataDir`.
+ */
+export {
+  SETTINGS_DEFAULTS,
+  SETTINGS_FIELDS,
+  SETTINGS_FILE,
+  SETTINGS_LIMITS,
+  SETTINGS_SCHEMA_VERSION,
+  coerceSettings,
+  readSettings,
+  removeSettingsFile,
+  settingsOf,
+  settingsPath,
+  sharedRootOf,
+  writeSettings,
+} from './settings.js'
+export type {
+  InkflowSettings,
+  SettingsError,
+  SettingsField,
+  SettingsRead,
+  SettingsResult,
+  SettingsWarning,
+  SettingsWrite,
+} from './settings.js'
+export {
+  BACKUPS_DIR,
+  BACKUP_EXCLUDED_DIRS,
+  BACKUP_KEEP_DEFAULT,
+  BACKUP_KEEP_MAX,
+  BACKUP_KEEP_MIN,
+  BACKUP_ROOT_FILES,
+  bookSlugOf,
+  backupsDir,
+  collectBackupFiles,
+  createBookBackup,
+  listBookBackups,
+  openBookBackup,
+  planRestore,
+  pruneBookBackups,
+  restoreBookBackup,
+} from './backup-zip.js'
+export type {
+  BackupPackage,
+  BackupZipError,
+  BackupZipErrorCode,
+  BackupZipResult,
+  CollectOptions,
+  CreateBackupOptions,
+  CreateBackupValue,
+  OpenBackupValue,
+  RestoreOptions,
+  RestorePlan,
+  RestorePlanEntry,
+  RestoreReport,
+} from './backup-zip.js'
+export {
+  DIAGNOSTICS_DIR,
+  DIAGNOSTICS_FORMAT,
+  DIAGNOSTICS_LOG_LINES,
+  buildDiagnostics,
+  diagnosticsDir,
+  exportDiagnostics,
+  maskPath,
+  toolSurfaceHash,
+} from './diagnostics.js'
+export type {
+  DiagnosticsDocument,
+  DiagnosticsIndex,
+  DiagnosticsInput,
+  DiagnosticsResult,
+  ExportDiagnosticsValue,
+  ToolSurfaceEntry,
+  ToolSurfaceSource,
+} from './diagnostics.js'
+export { settingsTools } from './settings-tools.js'
+export type { SettingsToolDeps } from './settings-tools.js'

@@ -52,6 +52,14 @@ const BUILT_IN_TOOLS = [
   // they judge the book's *layout*, not one content directory.
   ['inkflow_project_repair', 'e9825bce'],
   ['inkflow_project_migrate', '2a0f5b4b'],
+  // #42: the plugin's own state — settings, the diagnostics package and the local
+  // backups. Built-ins for the same reason as the pair above: none of them belongs to
+  // one content directory, and two of them touch no book at all.
+  ['inkflow_settings_get', 'd41c07e7'],
+  ['inkflow_settings_update', 'c2af9334'],
+  ['inkflow_diagnostics_export', '81804879'],
+  ['inkflow_backup_create', '375f1aa7'],
+  ['inkflow_backup_restore', '830aaf3b'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

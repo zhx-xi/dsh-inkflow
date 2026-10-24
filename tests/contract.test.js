@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the fourteen built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the twenty built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -202,6 +202,11 @@ test('registers the fourteen built-ins, the tools of every registered domain, an
     // relation tools. An unexpected entry here means a domain was wired without
     // extending this baseline.
     assert.deepEqual([...harness.tools.keys()].sort(), [
+      // #42: the plugin's own state — local backups (list/create/restore live on the
+      // tools `settings-tools.ts` contributes, because none of them belongs to one
+      // content directory).
+      'inkflow_backup_create',
+      'inkflow_backup_restore',
       // Built-ins in `tools.ts`…
       'inkflow_chapter_create',
       'inkflow_chapter_delete',
@@ -214,6 +219,9 @@ test('registers the fourteen built-ins, the tools of every registered domain, an
       // an explicit list instead of whatever happens to be registered.
       'inkflow_character_list',
       'inkflow_character_upsert',
+      // #42: the diagnostics package — a built-in, and the one tool here that writes a
+      // file meant to leave the machine (ADR-0018 D5).
+      'inkflow_diagnostics_export',
       // #32: the fact ledger's three tools (append / snapshot / list).
       'inkflow_facts_append',
       'inkflow_facts_list',
@@ -237,6 +245,10 @@ test('registers the fourteen built-ins, the tools of every registered domain, an
       'inkflow_project_status',
       'inkflow_relation_list',
       'inkflow_relation_upsert',
+      // #42: settings. Built-ins that touch no book at all — they read and write
+      // `$DSH_HOME/inkflow/settings.json` (ADR-0018 D1).
+      'inkflow_settings_get',
+      'inkflow_settings_update',
       'inkflow_timeline_list',
       'inkflow_timeline_upsert',
       'inkflow_volume_create',

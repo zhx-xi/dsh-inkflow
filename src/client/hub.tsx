@@ -22,6 +22,11 @@
  * WHAT THE SHARED PAGE ADDS (#87): 「共享内容」 opens `SharedLibraryView`, a
  * read-only browse of `dataDir/shared` (`hub-shared.tsx`). It owns no book, so it
  * never touches this list; copy/ref edges belong to #40.
+ *
+ * WHAT THE SETTINGS PAGE ADDS (#42): 「设置」 opens `SettingsView` (`settings.tsx`) —
+ * plugin settings, the diagnostics package and the local backups, in one body area.
+ * Roadmap X-20 puts that entry in the 书库 (root scope) rather than in a session tab,
+ * because settings are cross-book and the backups are per-book but chosen here.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -43,6 +48,8 @@ import type { HubBadgeTone, HubBookRow, HubBooksValue, HubState } from './hub-mo
 import { HubWizard } from './hub-wizard.js'
 import type { HubAppliedRow } from './hub-wizard.js'
 import { HUB_WIZARD_LABEL, mergeHubRow } from './hub-wizard-model.js'
+import { SETTINGS_TEXTS } from './settings-model.js'
+import { SettingsView } from './settings.js'
 
 // ---------------------------------------------------------------------------
 // Theme tokens only: every visible colour comes from --dsw-alias-* (AGENTS.md §6)
@@ -146,7 +153,7 @@ export function HubView() {
   const [revision, setRevision] = useState(0)
   // The shared library is a page of its own (#87). A root-scoped panel has one
   // body area, so it is a mode of this view instead of a second slot.
-  const [view, setView] = useState<'books' | 'shared'>('books')
+  const [view, setView] = useState<'books' | 'shared' | 'settings'>('books')
   /** The wizard is a panel of its own: its confirm card does not belong in the header row. */
   const [wizardOpen, setWizardOpen] = useState(false)
 
@@ -170,6 +177,7 @@ export function HubView() {
   }, [])
 
   if (view === 'shared') return <SharedLibraryView onClose={() => setView('books')} />
+  if (view === 'settings') return <SettingsView onClose={() => setView('books')} />
 
   /**
    * The wizard's answer, merged into the list in place (issue #86).
@@ -200,6 +208,9 @@ export function HubView() {
           </button>
           <button type="button" style={buttonStyle} onClick={() => setView('shared')}>
             {HUB_SHARED_LABEL}
+          </button>
+          <button type="button" style={buttonStyle} onClick={() => setView('settings')}>
+            {SETTINGS_TEXTS.settingsTitle}
           </button>
           <button type="button" style={buttonStyle} onClick={refresh} disabled={loading}>
             {HUB_TEXTS.refresh}

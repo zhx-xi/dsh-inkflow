@@ -66,6 +66,16 @@ import type { HostContext } from './context.js'
 import { sharedDir } from './config.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
 import { buildHubShared } from './hub-shared.js'
+import {
+  buildHubBackups,
+  buildHubDiagnostics,
+  buildHubSettings,
+  createHubBackup,
+  exportHubDiagnostics,
+  planHubRestore,
+  restoreHubBackup,
+  writeHubSettings,
+} from './hub-settings.js'
 import { hubApply, hubPlan } from './hub-wizard.js'
 import {
   INTERNAL_PREFIX,
@@ -616,7 +626,84 @@ const HUB_ROUTES: readonly HubRoute[] = [
       return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
     },
   },
+  {
+    // The settings page (#42, ADR-0018 D1): settings live OUTSIDE every book, so this
+    // route takes no anchor at all. It also carries the book choices the backup
+    // section offers (id + title, never a path) and the retention rule in force.
+    name: 'hub-settings',
+    pattern: /^\/hub\/settings$/,
+    methods: ['GET'],
+    handle: ({ ctx, dataDir, version }) => ({ status: 200, body: ok(buildHubSettings({ ctx, dataDir, version })) }),
+  },
+  {
+    // Saving settings. A write, so it carries every hub write guard (same-origin
+    // `Origin`, the body whitelist) plus `confirm: true`: the panel arms its own
+    // button, and this is the net under it.
+    name: 'hub-settings-update',
+    pattern: /^\/hub\/settings\/update$/,
+    methods: ['POST'],
+    body: ['sharedRoot', 'semanticSearch', 'autosaveIntervalMs', 'authorName', 'excludeDirs', 'backupKeep', 'confirm'],
+    handle: ({ ctx, dataDir, version, body }) => reply(writeHubSettings({ ctx, dataDir, version }, body)),
+  },
+  {
+    // The diagnostics PREVIEW (#42, D5): built, never written — the page shows the
+    // summary and the target name before the user confirms the export.
+    name: 'hub-diagnostics',
+    pattern: /^\/hub\/diagnostics$/,
+    methods: ['GET'],
+    handle: ({ ctx, dataDir, version, query }) =>
+      reply(buildHubDiagnostics({ ctx, dataDir, version }, query.get('book') ?? undefined)),
+  },
+  {
+    name: 'hub-diagnostics-export',
+    pattern: /^\/hub\/diagnostics\/export$/,
+    methods: ['POST'],
+    body: ['book', 'confirm'],
+    handle: ({ ctx, dataDir, version, body }) => reply(exportHubDiagnostics({ ctx, dataDir, version }, body)),
+  },
+  {
+    // The backup list of ONE book. The anchor is a registry id or a directory name —
+    // never a path (ADR-0008 D4), and an ambiguous name is refused rather than guessed.
+    name: 'hub-backups',
+    pattern: /^\/hub\/backups$/,
+    methods: ['GET'],
+    handle: ({ ctx, dataDir, version, query }) => reply(buildHubBackups({ ctx, dataDir, version }, query.get('book'))),
+  },
+  {
+    name: 'hub-backups-create',
+    pattern: /^\/hub\/backups\/create$/,
+    methods: ['POST'],
+    body: ['book', 'keep', 'includeTrash', 'confirm'],
+    handle: ({ ctx, dataDir, version, body }) => reply(createHubBackup({ ctx, dataDir, version }, body)),
+  },
+  {
+    // The restore preview: read-only, and it is what produces the per-file `current`
+    // digests the execute call hands back as `expected` (D6).
+    name: 'hub-backups-plan',
+    pattern: /^\/hub\/backups\/plan$/,
+    methods: ['GET'],
+    handle: ({ ctx, dataDir, version, query }) => reply(planHubRestore({ ctx, dataDir, version }, query)),
+  },
+  {
+    name: 'hub-backups-restore',
+    pattern: /^\/hub\/backups\/restore$/,
+    methods: ['POST'],
+    body: ['book', 'file', 'expected', 'confirm'],
+    handle: async ({ ctx, dataDir, version, body }) => reply(await restoreHubBackup({ ctx, dataDir, version }, body)),
+  },
 ]
+
+/** Turn a hub module's `{ok,value|error}` into the channel's reply envelope. */
+function reply(result: { ok: true; value: JsonRecord } | { ok: false; error: { code: string; message: string; hint?: string } }): RouteReply {
+  if (result.ok) return { status: 200, body: ok(result.value) }
+  return {
+    status: 200,
+    body: failure(result.error.code, {
+      message: result.error.message,
+      ...(result.error.hint === undefined ? {} : { hint: result.error.hint }),
+    }),
+  }
+}
 
 function matchHubRoute(path: string): HubRoute | undefined {
   for (const route of HUB_ROUTES) {
