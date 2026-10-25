@@ -1,16 +1,33 @@
 /**
- * Host wiring for the writing context (issue #20): one `systemPrompt` section,
- * its session-directory resolution and its degradation rules.
+ * Host wiring for the writing context: one `systemPrompt` section, its
+ * session-directory resolution and its degradation rules.
  *
- * WHY A SECTION: the four facts (book, current chapter, previous tail, matched
- * world-book entries) must be in front of the model *before* its first token. A
- * tool call happens after the model already decided what to write; a skill body
- * loads on demand. `systemPrompt.section()` is the only surface rendered first.
+ * WHY A SECTION: what the model must know before its first token (which chapter it
+ * is writing, that chapter's task statement, the previous chapter's tail, the cast
+ * the chapter names, the world entries it triggers) has to be in front of the model
+ * *before* its first token. A tool call happens after the model already decided what
+ * to write; a skill body loads on demand. `systemPrompt.section()` is the only
+ * surface rendered first.
  *
  * WHY THE SECTION IS FREE OF STATE: `text` is a thunk the host calls for every
  * assembly, so it must be synchronous and must never throw. It resolves the
- * session directory, runs the projection in `writing-context.ts`, and returns
+ * session directory, runs the assembly in `writing-context.ts`, and returns
  * the text — any failure is one log line plus an empty section.
+ *
+ * WHY THE BRIEF AND NOT THE SIX-SEGMENT CONTEXT (issue #183, ADR-0022 D1/X-23):
+ * the section used to inject `buildWritingContext()`'s six segments, which meant
+ * the nine-segment brief could be previewed and audited but never reached the
+ * model — "the preview is what the model gets" held only for the preview itself.
+ * It now calls `briefFor()`: the SAME function, the SAME input and therefore the
+ * SAME bytes as `GET /brief` and as the audit record (one computation, three
+ * consumers). `briefFor` also carries the process-wide over-budget counters that
+ * `inkflow_diagnostics_export` reports (ADR-0022 D2), so the injection side — not
+ * just the preview side — is now measurable.
+ *
+ * The index is NOT rebuilt here (the thunk is synchronous): `characters`/`voice`
+ * render from whatever the index holds, and a missing index makes them `missing`
+ * rather than wrong. That is the same degradation the six-segment assembly had for
+ * `facts`/`foreshadow`.
  *
  * WHY THE SERVICE IS OPTIONAL: `ctx.get('systemPrompt')` instead of
  * `inject: ['systemPrompt']`, exactly like `skills` / `agentPresets`. A profile
@@ -23,11 +40,12 @@
  * without filesystem IO).
  */
 
+import { briefFor } from './brief.js'
 import type { HostContext, LogSink, PromptSessionLike, SystemPromptServiceLike, WorkingDirectoryLike } from './context.js'
 import { findProjectRoot } from './project.js'
 import { describeError, optionalService } from './probe.js'
 import type { WritingContextOptions } from './writing-context.js'
-import { DEFAULT_BUDGET_TOKENS, buildWritingContext } from './writing-context.js'
+import { DEFAULT_BUDGET_TOKENS } from './writing-context.js'
 
 /** Section name on `ctx.systemPrompt`. Unique: a duplicate in one layer throws. */
 export const PROMPT_SECTION_NAME = 'inkflow:writing-context'
@@ -103,7 +121,12 @@ export function registerWritingContext(
 
 /**
  * The whole per-assembly body: session directory → project root → gate →
- * projection. Any failure is one log line and an empty section.
+ * assembly. Any failure is one log line and an empty section.
+ *
+ * `briefFor` and not `buildWritingBrief`: the counters it adds are the injection-side
+ * half of ADR-0022 D2's "超预算次数进诊断包", and they cost nothing when the budget fits.
+ * The text itself is identical either way — the counter is process state beside a pure
+ * function, not a second computation.
  */
 function writingContextText(
   ctx: HostContext,
@@ -116,7 +139,7 @@ function writingContextText(
     if (cwd === '') return ''
     const root = findProjectRoot(cwd)
     if (root === undefined) return ''
-    return buildWritingContext(root, options).text
+    return briefFor(root, options).text
   } catch (error) {
     log.warn(`writing context skipped: ${describeError(error)}`)
     return ''

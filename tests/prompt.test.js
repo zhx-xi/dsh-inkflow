@@ -19,6 +19,13 @@
  *
  * Everything imports the BUILT bundle (`lib/index.js`), like the rest of the
  * suite: the tests exercise what users install.
+ *
+ * Since #183 the injected text is the **nine-segment brief** (`buildWritingBrief`,
+ * ADR-0022 D2) rather than the six-segment context; `buildWritingContext` stays
+ * exported and tested because it is the other projection of the same renderers and
+ * because the equivalence test below compares the two byte for byte. The three
+ * assertions that used to pin the six-segment shape are marked `MIGRATED (#183)`
+ * where they stand.
  */
 
 import test from 'node:test'
@@ -28,15 +35,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  BRIEF_LABELS,
+  BRIEF_TRIM_ORDER,
   DEFAULT_BUDGET_TOKENS,
   DEFAULT_TAIL_CHARS,
   PROMPT_SECTION_NAME,
   PROMPT_SECTION_ORDER,
   apply,
+  briefRunSummary,
   buildIndex,
+  buildWritingBrief,
   buildWritingContext,
   estimateTokens,
   registerWritingContext,
+  resetBriefRunSummary,
 } from '../lib/index.js'
 
 /** ADR-0006 D1: nine content directories + the derived index/, each with `.gitkeep`. */
@@ -283,77 +295,214 @@ test('an explicit chapterSeq overrides "the newest chapter"', async (t) => {
   assert.ok(!result.segments.some((segment) => segment.name === 'tail'))
 })
 
-test('the budget trims in the documented order and never drops the current chapter', async (t) => {
+/**
+ * #183 — MIGRATED, not deleted. This test used to pin the six-rung ladder of
+ * `buildWritingContext` (`项目摘要 → 当前章大纲 → 世界书 → 上章结尾`, reported as
+ * the `trimmed` label list). The generation path now injects the nine-segment
+ * brief, so the ladder the model is subject to is ADR-0022 D2's
+ * (`world → facts → foreshadow → prevTail`) and the never-dropped segments are
+ * `outline` / `promise` / `characters`.
+ *
+ * Same shape of assertions (prefix of the ladder, monotone under a growing
+ * budget, every rung reachable, the task statement survives, the marker names
+ * what went and how to get it back), aimed at the new ladder and the new ids.
+ * The one assertion whose ANSWER flipped is called out inline: the chapter
+ * outline is no longer dropped at the floor — it is undroppable now, so the
+ * brief reports `overBudget` instead.
+ *
+ * This fixture has sources for `world` and `prevTail` only (no `facts/`, no
+ * `foreshadowing/`), so `facts`/`foreshadow` rungs render identically to the
+ * rung above them and are correctly skipped: the reachable rungs are `world`
+ * and `world, prevTail`. The full four-rung sweep lives in `tests/brief.test.js`
+ * against a book that has all four sources.
+ */
+test('the brief trims in the documented order and never drops the task statement', async (t) => {
   const root = workdir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
 
-  const ladder = ['项目摘要', '当前章大纲', '世界书', '上章结尾']
-  const reached = new Map()
+  const ladder = [...BRIEF_TRIM_ORDER]
+  const labels = ladder.map((id) => BRIEF_LABELS[id])
+  // The six-segment labels the injection used to report (#20): they must be gone from
+  // the wire marker, otherwise a reader cannot tell which assembly produced the text.
+  const retired = ['项目摘要', '当前章大纲']
+  const reached = new Set()
   const rungs = []
-  const full = buildWritingContext(root)
-  assert.deepEqual(full.trimmed, [])
+  const full = buildWritingBrief(root)
+  assert.deepEqual(full.trims, [], 'a generous budget trims nothing')
 
-  // Sweep every budget between "only the chapter fits" and "everything fits":
-  // each rung's threshold is an exact token count, so a coarse step would skip
-  // the narrow ones (the project summary is only a couple of dozen tokens).
+  // Sweep every budget between "only the task statement fits" and "everything fits":
+  // each rung's threshold is an exact token count, so a coarse step would skip the
+  // narrow ones.
   let previousCount = Number.POSITIVE_INFINITY
   for (let budgetTokens = 30; budgetTokens <= full.tokens; budgetTokens += 1) {
-    const result = buildWritingContext(root, { budgetTokens })
-    // `trimmed` is always a prefix of the ladder: order is a contract, not an
-    // artifact of the order segments happen to be rendered in.
+    const brief = buildWritingBrief(root, { budgetTokens })
+    const trimmed = brief.trims.map((trim) => trim.segment)
+    // A segment may be trimmed twice (the tail shrinks, then drops), so order is
+    // asserted on the distinct sequence: it can only ever walk the ladder forward.
+    // NOTE (#183): this fixture has no `facts/` or `foreshadowing/` sources, so those
+    // rungs render exactly like the rung above them and are skipped by the builder —
+    // hence "a subsequence of the ladder", not "a prefix of it" (the prefix form holds
+    // for a book with all four sources; `tests/brief.test.js` sweeps that one).
+    const distinct = [...new Set(trimmed)]
+    const walked = distinct.map((id) => ladder.indexOf(id))
+    assert.ok(walked.every((index) => index >= 0), `budget ${String(budgetTokens)}: unknown segment ${trimmed.join(',')}`)
     assert.deepEqual(
-      result.trimmed,
-      ladder.slice(0, result.trimmed.length),
-      `budget ${String(budgetTokens)} produced ${result.trimmed.join(',')}`,
+      walked,
+      [...walked].sort((left, right) => left - right),
+      `budget ${String(budgetTokens)} trimmed out of order: ${trimmed.join(',')}`,
     )
     // A larger budget can only keep more, never less.
     assert.ok(
-      result.trimmed.length <= previousCount,
+      brief.trims.length <= previousCount,
       `trimming grew while the budget grew (${String(budgetTokens)})`,
     )
-    previousCount = result.trimmed.length
-    // The hard floor: the current chapter block is present on every rung.
-    assert.ok(result.text.includes('### 当前章'), `chapter kept at budget ${String(budgetTokens)}`)
-    assert.ok(result.text.includes('标题：第二章 夜行'))
-    reached.set(result.trimmed.join('|'), result)
-    rungs.push(result)
+    previousCount = brief.trims.length
+    // The hard floor: the task statement is on the wire on every rung.
+    assert.ok(brief.text.includes('### 当前章'), `chapter kept at budget ${String(budgetTokens)}`)
+    assert.ok(brief.text.includes('鹤鸣剑出鞘'))
+    // The marker the model reads names the same segments, in the same order — and
+    // none of the retired six-segment labels.
+    const marker = /\[trimmed: ([^（\]]*)/u.exec(brief.text)
+    if (marker !== null) {
+      const named = marker[1].split('、')
+      for (const label of named) {
+        assert.ok(labels.includes(label), `the marker names "${label}", which is not a brief segment`)
+      }
+      const order = named.map((label) => labels.indexOf(label))
+      assert.deepEqual(order, [...order].sort((left, right) => left - right), 'the marker follows the ladder')
+      for (const label of retired) {
+        assert.ok(!named.includes(label), `the retired label "${label}" is off the wire (#183)`)
+      }
+    }
+    // The undroppable three never spend a trim, whatever the budget.
+    for (const trim of brief.trims) {
+      assert.ok(
+        !['outline', 'promise', 'characters'].includes(trim.segment),
+        `${trim.segment} must never be trimmed`,
+      )
+    }
+    reached.add(distinct.join('|'))
+    rungs.push(brief)
   }
 
-  // Every rung is actually reachable, including "only the current chapter left".
-  for (let depth = 0; depth <= ladder.length; depth += 1) {
-    const key = ladder.slice(0, depth).join('|')
-    assert.ok(reached.has(key), `rung "${key}" is reachable`)
-  }
+  // Every rung this fixture can reach is actually reachable.
+  assert.ok(reached.has('world'), 'the world book is droppable here')
+  assert.ok(reached.has('world|prevTail'), 'and so is the tail, after it')
 
-  // The world book is dropped before the tail is touched: the tail has no side
-  // channel (the model cannot re-read the previous chapter), the world book does.
+  // The world book goes before the tail is touched: the tail has no side channel
+  // (the model cannot re-read the previous chapter), the world book does.
   assert.ok(
-    rungs.some((result) => result.trimmed.includes('世界书') && result.text.includes('最后 300 字')),
+    rungs.some((brief) => brief.trims.some((trim) => trim.segment === 'world') && brief.text.includes('最后 300 字')),
     'the world book is dropped while the tail is still full length',
   )
-  // Then the tail shrinks (L4) before it is dropped (L5) — the marker says so.
+  // Then the tail shrinks before it is dropped — the marker says so.
   assert.ok(
-    rungs.some((result) => result.text.includes('最后 120 字')),
+    rungs.some((brief) => brief.text.includes('最后 120 字')),
     'the tail is shrunk to 120 characters before being dropped',
   )
   assert.ok(
-    rungs.some((result) => result.trimmed.includes('上章结尾') && !result.text.includes('### 上一章结尾')),
+    rungs.some((brief) => brief.trims.some((trim) => trim.segment === 'prevTail') && !brief.text.includes('### 上一章结尾')),
     'the dropped tail is reported',
   )
   // And the recovery hint: a dropped tail must say how to get it back, because
   // "no tail" otherwise reads to the model as "there was no previous chapter".
   assert.ok(
-    rungs.some((result) => result.text.includes('找回：读 chapters/vol-01/0001-入山.md')),
+    rungs.some((brief) => brief.text.includes('找回：读 chapters/vol-01/0001-入山.md')),
     'a dropped tail carries a recovery path',
   )
 
-  const squeezed = buildWritingContext(root, { budgetTokens: 20 })
-  assert.deepEqual(squeezed.trimmed, ladder)
-  assert.match(squeezed.text, /\[trimmed: 项目摘要、当前章大纲、世界书、上章结尾\]/)
+  // Squeezed to the floor. MIGRATED ANSWER (#183): the six-segment context dropped the
+  // chapter outline here; the brief may not, so it goes over budget and says so.
+  const squeezed = buildWritingBrief(root, { budgetTokens: 20 })
+  assert.equal(squeezed.overBudget, true, 'over budget rather than dropping the task statement')
+  assert.match(squeezed.text, /\[trimmed: 世界书、上章结尾/u)
   assert.ok(!squeezed.text.includes('### 世界书'))
-  assert.ok(!squeezed.text.includes('鹤鸣剑出鞘'), 'the outline is gone, not just hidden')
-  assert.ok(squeezed.tokens > squeezed.budgetTokens, 'over budget rather than dropping the chapter')
+  assert.ok(squeezed.text.includes('鹤鸣剑出鞘'), 'the outline is kept, not hidden')
+  assert.ok(!/项目摘要|当前章大纲/u.test(squeezed.text), 'the retired labels are gone from the text too')
+})
+
+// ---------------------------------------------------------------------------
+// #183: the injection assembly IS the brief
+// ---------------------------------------------------------------------------
+
+/**
+ * The switch must not be a silent content change: every segment both assemblies
+ * render must come out byte-identical, because they share one renderer
+ * (`writing-context-render.ts`, ADR-0022 D1). Without this, "we now inject the
+ * brief" would also mean "and the chapter block reads differently now" — an
+ * invisible edit to what the model is told.
+ */
+test('the shared segments come out byte-identical through both assemblies (#183)', async (t) => {
+  const root = workdir()
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  await sampleProject(root)
+
+  const context = buildWritingContext(root)
+  const brief = buildWritingBrief(root)
+  const fromContext = (name) => context.segments.find((segment) => segment.name === name)?.text ?? ''
+  const fromBrief = (id) => brief.segments.find((segment) => segment.id === id)?.text ?? ''
+
+  // The same four materials under two ids: current chapter, previous tail, world book.
+  assert.equal(fromBrief('outline'), fromContext('chapter'), 'the current chapter block is the same bytes')
+  assert.equal(fromBrief('prevTail'), fromContext('tail'), 'the previous tail is the same bytes')
+  assert.equal(fromBrief('world'), fromContext('world'), 'the world book is the same bytes')
+  // The two registered domain segments come from one builder each (X-13), so they agree too.
+  assert.equal(fromBrief('facts'), fromContext('facts'))
+  assert.equal(fromBrief('foreshadow'), fromContext('foreshadow'))
+  // A missing segment and an absent one are the same empty string, not a placeholder.
+  assert.equal(fromBrief('facts'), '')
+
+  // `project` is the one segment that does NOT cross over: the brief's nine segments do
+  // not include it (ADR-0022 D2 revision), so this is where the two assemblies differ —
+  // and the six-segment projection keeps rendering it for anyone who still asks.
+  assert.equal(brief.segments.some((segment) => segment.id === 'project'), false)
+  assert.ok(fromContext('project').includes('《测试之书》'), 'the six-segment projection is unchanged')
+})
+
+/**
+ * #213 owns the sources for `promise` and `anchors`. Until then the brief must report
+ * them as absent — an honest gap, never invented instructions in front of the writer.
+ * Pinned through the injected text, because that is where a placeholder would hurt.
+ */
+test('promise and anchors stay honestly missing on the injection path (#213)', async (t) => {
+  const root = workdir()
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  await sampleProject(root)
+
+  const brief = buildWritingBrief(root)
+  const text = brief.text
+  for (const id of ['promise', 'anchors']) {
+    const segment = brief.segments.find((entry) => entry.id === id)
+    assert.ok(segment !== undefined, `${id}: the record still lists the segment`)
+    assert.equal(segment.missing, true, `${id}: no source yet`)
+    assert.equal(segment.text, '', `${id}: no text`)
+    assert.equal(segment.bytes, 0)
+    assert.equal(segment.tokens, 0)
+    // The label is the author's word for it; it must not appear on the wire either,
+    // which is what a fabricated block would look like.
+    assert.equal(text.includes(BRIEF_LABELS[id]), false, `${id}: no heading, no placeholder prose`)
+  }
+})
+
+/**
+ * The brief has no `project` segment, so the book-level title is no longer carried by
+ * this section. What MUST survive is the chapter identity the writer addresses: title,
+ * volume, sequence, status and the outline path — losing that would leave the model
+ * writing into an unnamed chapter. Pinned here so the switch cannot quietly drop it.
+ */
+test('the injected text still addresses the chapter it is for (#183)', async (t) => {
+  const root = workdir()
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  await sampleProject(root)
+
+  const text = buildWritingBrief(root).text
+  assert.ok(text.includes('### 当前章'))
+  assert.ok(text.includes('标题：第二章 夜行'), 'which chapter')
+  assert.ok(text.includes('卷：vol-01'), 'which volume')
+  assert.ok(text.includes('seq：2'), 'which number')
+  assert.ok(text.includes('状态：draft'), 'its status')
+  assert.ok(text.includes('大纲 outlines/ch-0002.md：'), 'and where its outline lives')
 })
 
 test('a zero previous tail is a definition, not a trim', async (t) => {
@@ -497,7 +646,7 @@ test('estimateTokens is a conservative character heuristic', () => {
 // Host wiring
 // ---------------------------------------------------------------------------
 
-test('the section is registered once and its text is the projection', async (t) => {
+test('the section is registered once and its text is the nine-segment brief', async (t) => {
   const root = workdir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
@@ -513,7 +662,15 @@ test('the section is registered once and its text is the projection', async (t) 
   assert.equal(sections[0].order, PROMPT_SECTION_ORDER)
 
   const text = sections[0].text({ agent: { session: { id: 'session-1' } } })
-  assert.equal(text, buildWritingContext(root).text)
+  // MIGRATED (#183): this used to pin `=== buildWritingContext(root).text` — the
+  // six-segment assembly. The generation path now injects the brief, and the pin
+  // moves with it: byte-for-byte the brief's own `text`, so the preview, the audit
+  // record and the model keep reading one computation (ADR-0022 D1, X-23).
+  assert.equal(text, buildWritingBrief(root).text)
+  // …and the old assembly is gone, not merely equal: a regression back to
+  // `buildWritingContext` must fail here, which an "is a string" assertion would not.
+  assert.notEqual(text, buildWritingContext(root).text)
+  assert.equal(text.includes('### 项目'), false, 'the brief has no project segment (ADR-0022 D2 revision)')
   assert.ok(logs.some((entry) => entry.level === 'info' && entry.text.includes(PROMPT_SECTION_NAME)))
 })
 
@@ -600,4 +757,55 @@ test('apply() assembles the section and honours the configured budget', async (t
   const other = createCtx({ services: { systemPrompt: second.service, workingDirectory: { get: () => root } } })
   apply(other.ctx, { dataDir, serveHttp: false })
   assert.ok(!second.sections[0].text({ agent: { session: {} } }).includes('[trimmed: '))
+})
+
+/**
+ * #183 / ADR-0022 D2: "每次裁剪都要埋点……同一章的超预算次数进诊断包". The counter
+ * lives on `briefFor`, and `briefFor` is what the injection calls now — so a
+ * squeezed injection has to show up in `briefRunSummary()` (which is what
+ * `inkflow_diagnostics_export` reads). Before the switch the injected text came
+ * from `buildWritingContext` and the injection side contributed nothing.
+ *
+ * The budget a profile can configure bottoms out at 200 tokens (`PROMPT_LIMITS`),
+ * so "over budget" on the injection path needs a book whose undroppable task
+ * statement alone is bigger than that — a real 800-character outline, which is
+ * exactly the case the ADR says must be reported rather than silently emptied.
+ */
+test('a squeezed injection is counted in the brief run summary (diagnostics)', async (t) => {
+  const root = workdir()
+  const dataDir = workdir()
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(dataDir, { recursive: true, force: true })
+  })
+  await sampleProject(root)
+  // A chapter outline long enough that `outline` alone overruns the floor budget:
+  // the four droppable segments can go, and it is still too big — the honest answer
+  // is `overBudget`, never a silently emptied task statement.
+  const longOutline = `- ${'夜行：在雾里找山门，鹤鸣剑出鞘。'.repeat(60)}`
+  writeMarkdown(root, 'outlines/ch-0002.md', ['id: oc-2', 'kind: chapter', 'title: 第二章细纲', 'parent: vol-1'], longOutline)
+  await buildIndex(root)
+
+  resetBriefRunSummary()
+  assert.deepEqual(briefRunSummary(), { runs: 0, overBudgetRuns: 0, last: null })
+
+  const { service, sections } = createPromptService()
+  const { ctx } = createCtx({ services: { systemPrompt: service, workingDirectory: { get: () => root } } })
+  apply(ctx, { dataDir, serveHttp: false, promptBudgetTokens: 200 })
+
+  const text = sections[0].text({ agent: { session: {} } })
+  assert.ok(text.includes('### 当前章'), 'the task statement is still injected')
+  assert.match(text, /\[trimmed: 世界书、上章结尾/u)
+
+  const summary = briefRunSummary()
+  assert.equal(summary.runs, 1, 'the injection assembled exactly one brief')
+  assert.equal(summary.overBudgetRuns, 1, 'and it was over budget')
+  assert.ok(summary.last !== null)
+  assert.equal(summary.last.overBudget, true)
+  assert.equal(summary.last.budgetTokens, 200)
+  assert.deepEqual(
+    [...new Set(summary.last.trimmed)],
+    ['world', 'prevTail'],
+    'which segments it cost, in ladder order',
+  )
 })
