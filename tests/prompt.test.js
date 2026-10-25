@@ -461,11 +461,13 @@ test('the shared segments come out byte-identical through both assemblies (#183)
 })
 
 /**
- * #213 owns the sources for `promise` and `anchors`. Until then the brief must report
- * them as absent — an honest gap, never invented instructions in front of the writer.
- * Pinned through the injected text, because that is where a placeholder would hurt.
+ * #213 gave `promise` / `anchors` a source (the chapter outline's own `- [承诺]` /
+ * `- [锚点]` bullets). This fixture's outline writes neither, so the honest gap must
+ * still be a gap: absent, never invented instructions in front of the writer. Pinned
+ * through the injected text, because that is where a placeholder would hurt. The other
+ * direction — a node that DOES write them — is pinned in `tests/brief.test.js`.
  */
-test('promise and anchors stay honestly missing on the injection path (#213)', async (t) => {
+test('promise and anchors stay honestly missing when the outline writes no marker (#213)', async (t) => {
   const root = workdir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
@@ -475,7 +477,7 @@ test('promise and anchors stay honestly missing on the injection path (#213)', a
   for (const id of ['promise', 'anchors']) {
     const segment = brief.segments.find((entry) => entry.id === id)
     assert.ok(segment !== undefined, `${id}: the record still lists the segment`)
-    assert.equal(segment.missing, true, `${id}: no source yet`)
+    assert.equal(segment.missing, true, `${id}: this outline writes no marker`)
     assert.equal(segment.text, '', `${id}: no text`)
     assert.equal(segment.bytes, 0)
     assert.equal(segment.tokens, 0)

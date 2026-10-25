@@ -28,6 +28,8 @@
 
 import type { CharacterSummary } from './domains/character-query.js'
 import { listCharacters } from './domains/character-query.js'
+import { parsePlotPoints } from './domains/outline-model.js'
+import { clipHead } from './writing-context-render.js'
 
 /** A segment body packed from whole lines, plus whether anything had to be left out. */
 export interface BriefPackedText {
@@ -49,6 +51,63 @@ export interface BriefCastSource {
 /** How many cards one segment may list, whatever the budget (a readability bound). */
 export const MAX_CAST_SHOWN = 8
 export const MAX_VOICE_SHOWN = 6
+
+/**
+ * Cap for one **marker** segment (`promise` / `anchors`), in characters (#213).
+ *
+ * One constant for both: they are the same shape of material — a few hand-written lines
+ * the author typed into the chapter's own outline node — read by the same function and
+ * rendered the same way, so a second number would be a tuning knob nobody asked for (the
+ * same reasoning `BRIEF_CAP_RATIOS` gives for its `0` shares). The cap exists only so one
+ * pasted paragraph cannot eat the whole brief; the trim ladder never drops these two.
+ */
+export const MAX_TAGGED_CHARS = 400
+
+/**
+ * The two marker tags a chapter-level outline node may carry (#213).
+ *
+ * `promise` / `anchors` had no source at all (X-26), so the brief said so with
+ * `missing: true`. Giving them one does **not** mean a new frontmatter field — that would
+ * move ADR-0019's read-back contract and data-model §3. The author's own words ride in
+ * the outline node's body as two tagged bullets, the mechanism `[故事线]` already uses and
+ * the parser below already understands: one spelling of "a bullet with a tag", everywhere.
+ */
+const TAG_OF = { promise: '承诺', anchors: '锚点' } as const
+
+export type TaggedSegmentId = keyof typeof TAG_OF
+
+/** A marker segment's body: text plus whether the cap shortened it (never "dropped"). */
+export interface BriefTaggedText {
+  readonly text: string
+  /** The cap cut the tail. Distinct from {@link BriefPackedText}'s "some lines left out". */
+  readonly truncated: boolean
+}
+
+/**
+ * The `promise` / `anchors` segment, built from the tagged bullets of **this** chapter's
+ * own outline body (issue #213).
+ *
+ * `undefined` means exactly one thing: the author wrote no such bullet here, so the brief
+ * reports `missing: true`. There is no fallback — not to the previous chapter's node, not
+ * to a character card, not to placeholder prose. A brief that invents a commitment is
+ * worse than one that admits the gap, and this is the function where that is decided.
+ *
+ * The tag is a marker, not content: `- [承诺] 断剑必须露一角` renders as
+ * `- 断剑必须露一角` under the segment's own heading, the way `[故事线]` names a story line
+ * instead of being spoken. Over-long material is clipped from the head (the commitment is
+ * stated first) and reported as `truncated`; these two segments are on the never-trimmed
+ * side of ADR-0022 D2, so the cap shortens them but the ladder never drops them.
+ */
+export function taggedOutlineSegment(
+  body: string,
+  id: TaggedSegmentId,
+  heading: string,
+): BriefTaggedText | undefined {
+  const points = parsePlotPoints(body).filter((point) => point.arc === TAG_OF[id])
+  if (points.length === 0) return undefined
+  const text = [`### ${heading}`, ...points.map((point) => `- ${point.text}`)].join('\n')
+  return { text: clipHead(text, MAX_TAGGED_CHARS), truncated: text.length > MAX_TAGGED_CHARS }
+}
 
 /** One character of a name/alias is too short: "清" would match half a book. */
 const MIN_MATCH_CHARS = 2
