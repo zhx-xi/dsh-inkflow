@@ -379,6 +379,38 @@ origin:
 
 两者都是「书走到哪儿」的函数而不是文件属性，所以不写进 `validation_issues`（每天的答案都不同，存进索引就会过期）；它们进 `FINDING_CODES` 是为了让报告与修复共用一套词（X-14）。
 
+**仅门禁期诊断**（质量问题，不是不变量：写入侧与重建侧都不报，只出现在质量门禁结论 `.inkflow/audit/gate-<chapterId>.json` 里，由 [`gate-rules.ts`](../../src/host/gate-rules.ts) 产出，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D3/D4）：
+
+| code | 门禁项 | 判据（零模型：正则 / 词表 / 阈值） | `group` | `fixable` |
+|---|---|---|---|---|
+| `GATE_WORD_COUNT_LOW` | 字数 | 正文去空白字数 < 目标下限（缺省 2000，可配） | `catalog` | false |
+| `GATE_WORD_COUNT_HIGH` | 字数 | 正文去空白字数 > 目标上限（缺省 4500，可配） | `catalog` | false |
+| `GATE_HOOK_MISSING` | 章末钩子 | 末段是纯陈述句：无 `？/！/…`，也无转折或悬念词 | `catalog` | false |
+| `GATE_HOOK_SUMMARY` | 章末钩子 | 末段以总结/抒情/预告开头，或带「未完待续」类标记 | `catalog` | false |
+| `GATE_AI_SENTENCE` | 六维去 AI 味 | 句长均值超上限，或变异系数低于下限（过于均匀） | `catalog` | false |
+| `GATE_AI_PUNCT` | 六维去 AI 味 | 破折号 / 省略号每千字密度超上限（≥ 300 字才计价） | `catalog` | false |
+| `GATE_AI_PARALLEL` | 六维去 AI 味 | 「不是…而是…」或连续三句同构 | `catalog` | false |
+| `GATE_AI_NARRATION` | 六维去 AI 味 | 解释性旁白模板（心中一沉 / 感到愤怒 / 五味杂陈） | `catalog` | false |
+| `GATE_AI_MODIFIER` | 六维去 AI 味 | 「的/地」+ 程度副词每千字密度超上限 | `catalog` | false |
+| `GATE_AI_TEMPLATE` | 六维去 AI 味 | 段末命中套路话词表 | `catalog` | false |
+| `GATE_CONSISTENCY_POV_UNKNOWN` | 一致性 | frontmatter `pov` 不匹配任何角色卡的 id / name / alias | `structure` | false |
+| `GATE_CONSISTENCY_FACT_STALE` | 一致性 | 账本里 `until` 已过去的取值，在本章同段与主体名同现 | `ledger` | false |
+| `GATE_SENSITIVE_WORD` | 敏感自查 | 命中敏感词表（词面与出现次数） | `catalog` | false |
+| `GATE_PLATFORM_RESIDUE` | 平台规则 | 命中分页/求票/码字工具残留词表 | `catalog` | false |
+| `GATE_PLATFORM_PROMO` | 平台规则 | 命中站外引流/广告词表，或正文出现 URL | `catalog` | false |
+| `GATE_PROOF_PUNCT_UNPAIRED` | 机械校对 | 引号/括号/书名号左右计数不等（或半角 `"` 为奇数） | `catalog` | false |
+| `GATE_PROOF_HALF_PUNCT` | 机械校对 | 半角 `, ; : ! ?` 紧邻汉字 | `catalog` | false |
+| `GATE_PROOF_FULLWIDTH_ALNUM` | 机械校对 | 出现全角字母或数字 | `catalog` | false |
+| `GATE_PROOF_REPEAT_WORD` | 机械校对 | 功能词叠字（的的/了了）或 2–4 字紧邻重复 | `catalog` | false |
+| `GATE_PROOF_NEAR_NAME` | 机械校对 | 与角色名同长、只差一字且未登记为重名/别名（仅 ≥3 字名字参与） | `structure` | false |
+| `GATE_PROOF_APPELLATION_MIXED` | 机械校对 | 同一角色在一章内 ≥2 种称谓各出现 ≥2 次 | `catalog` | false |
+| `GATE_PROOF_ARABIC_MEASURE` | 机械校对 | 阿拉伯数字后紧接中文量词（年份/编号除外） | `catalog` | false |
+| `GATE_PROOF_NUMBER_MIXED` | 机械校对 | 同一段里同一单位既有汉字数字又有阿拉伯数字 | `catalog` | false |
+
+> **为什么 `group` 只有这三个值**：`FINDING_GROUPS` 仍固定五个（ADR-0022 D3 未扩枚举），门禁按「这条 finding 挂在哪个域」归档——名字/实体引用属 `structure`、账本取值属 `ledger`、其余属章族 `catalog`；七项仍以 `check` 列与 code 前缀区分（面板按 `check` 分组）。
+>
+> **为什么全部 `fixable: false`**：`repair.ts` 是唯一修复路径且按 code 分派动作，`GATE_PROOF_*` 目前没有动作；标 `true` 会让报告说「N 项可自动修复」而一键修复什么也不做（ADR-0015 D2，同类事故见 #143）。机械校对类翻成 `true` 的那次提交必须同时让 `repair.ts` 学会改写并补用例。
+
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 
 ## 6. 2.0 同步为什么更容易了

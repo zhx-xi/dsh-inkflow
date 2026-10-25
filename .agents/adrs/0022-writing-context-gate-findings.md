@@ -65,6 +65,9 @@ world → facts → foreshadow → prevTail
 - 复用 `{ code, group, severity, locator, detail, hint, fixable }` 与 `FindingLocator` 的四个形状（`entity` / `path` / `chapter` / `catalog`）。
 - 新 `code` 必须**同一提交**写进 [data-model §5](../specs/data-model.md)，`tests/findings.test.js` 的双向对拍继续兜底（代码里有、表里没有 → 红；反过来也红）。
 - `fixable` **只对机械可修项为 true**：校对类（标点、全半角、重复空格）可修；#46 的审美类判读（节奏拖沓、人物动机不足）一律 `false`——一个 `fixable: true` 后面没有动作，会让「一键修复」变成数据丢失按钮（ADR-0015 D2 的同一理由）。
+
+  > **修订（2026-10-25，#44）**：`fixable` 当且仅当 `repair.ts` 里存在对应动作时才为 `true`。`GATE_PROOF_*` 目前一律 `false`；#36 实现机械改写时在同一提交翻 `true` 并补用例。理由：#143 / ADR-0015 D2——报告说可修、按钮却不做事，比不报更糟。「判定层面机械可判」与「可自动改写」是两件事，前者本单交付，后者归修复路径。
+
 - 分组（`FINDING_GROUPS`）暂不扩：门禁的七项先归入既有五组，确实归不进去时**先改本 ADR 再扩枚举**，而不是在 #44 里就地加一个字符串。
 
 ### D4 门禁结论落 `.inkflow/audit/gate-<chapterId>.json`，同输入同字节
@@ -108,3 +111,12 @@ world → facts → foreshadow → prevTail
 - `tests/writing-context-segments.test.js`（既有）：段注册表的顺序与「只声明不排序」纪律；#43 扩到九段时这条用例必须同步扩展而不是被删。
 - #43 落地时追加：预览返回的段数组与落盘审计记录**逐字段相等**（同一个函数、同一份入参，两次调用结果相同）。
 - #44 落地时追加：同一章跑两次门禁 → `git diff --no-index .inkflow/audit/gate-<chapterId>.json.bak .inkflow/audit/gate-<chapterId>.json` 为空；文件里不含时间戳与绝对路径（字符串搜索断言）。
+
+## 补充（#44 落地，2026-10-25）
+
+D3 留了两个「落地时再定」的口子。按 A7（代码与 ADR 不一致时先改 ADR）在动代码之前把它们定案：
+
+1. **`FINDING_GROUPS` 仍然不扩。** 门禁的七项确实不属于五个不变量族，但扩一枚组名的代价是：`audit.ts` 的 `GROUP_LABELS` 是 `Record<FindingGroup, string>`（不加就 tsc 红）、`tests/audit.test.js` 两条既有断言逐字钉住五组、体检页正文会多出一个**恒为 0** 的小节——那会被读成「门禁通过」，而体检从不跑门禁。所以 #44 走 D3 的默认：七项各成一个 `check`（面板按 `check` 分组），`group` 回答「这条 finding 挂在哪个域」——名字与实体引用 → `structure`、账本取值 → `ledger`、其余（章文本层）→ `catalog`。判定规则写在 `gate-rules.ts` 的文件头。
+2. **`GATE_*` 的 `fixable` 全部为 `false`**，机械校对类也一样。D3 的「校对类可修」说的是**判定层面机械可判**；「可修」要求 `repair.ts` 里有对应动作，而它是唯一修复路径、目前没有 `GATE_*` 分支。先标 `true` 会让报告说「N 项可由一键修复处理」而按钮什么也不做（ADR-0015 D2；同类事故见 #143，`tests/repair.test.js` 有回归用例）。翻成 `true` 的那次提交必须同时让 `repair.ts` 学会改写并补用例。
+
+若日后确实需要第六个组（例如 #46 的审美类也要求独立分组），那是**扩枚举 + 同时改上面三处**的一次提交，不在别单里顺手加。

@@ -141,6 +141,7 @@ import {
   AUDIT_EXPORT_BODY_FIELDS,
   buildAudit,
   exportAudit,
+  buildGate,
   IMPORT_BODY_FIELDS,
   importViaChannel,
   BRIEF_AUDIT_BODY_FIELDS,
@@ -428,6 +429,24 @@ const ROUTES: readonly InternalRoute[] = [
     pattern: /^\/foreshadow$/,
     methods: ['GET'],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildForeshadowBoard(target, version)) }),
+  },
+  {
+    // The quality gate (#44, ADR-0022 D4): seven checks over ONE chapter — 字数 / 章末钩子 /
+    // 六维去 AI 味 / 一致性 / 敏感自查 / 平台规则 / 机械校对 — with the counts of all seven
+    // and one row per finding.
+    //
+    // GET-only and **read-only**: it calls `buildGate`, which runs the gate with
+    // `record: false`. A page refresh must not write the verdict file — otherwise "the
+    // conclusion on disk" would depend on who happened to open a tab, and the whole point of
+    // the file (two runs, same bytes) would be gone. The file is produced by
+    // `inkflow_gate_check`; this route only reads the same computation.
+    name: 'gate',
+    pattern: /^\/gate$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const chapterId = query.get('chapterId') ?? ''
+      return buildGate(target, version, chapterId.trim() === '' ? {} : { chapterId })
+    },
   },
   {
     // The consistency audit (#33, roadmap X-14): five families — structure / ledger /

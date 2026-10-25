@@ -185,7 +185,11 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
+<<<<<<< HEAD
 插件提供 53 个工具（34 个内置 + 19 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
+=======
+插件提供 51 个工具（35 个内置 + 16 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
+>>>>>>> cea52c8 (feat(gate): 质量门禁七项与确定性结论文件（含机械校对）(#44))
 
 **项目与索引**
 
@@ -196,6 +200,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_project_init` | 执行上面那份清单（建目录 + `.gitkeep` + `inkflow.json` + `.gitignore` + 必要时 `git init`）；**只补缺的，不覆盖已有文件**；必须带确认 | 「就按这个清单建」/「把缺的补齐」 |
 | `inkflow_index_rebuild` | 从文件重建索引并检查一致性 | 「重建一下索引」 |
 | `inkflow_project_audit` | 一致性体检：结构 / 账本 / 伏笔 / 时间线 / catalog 五类一次列全，每条带定位与修法；`export: true` 再导出 Markdown 到 `.inkflow/audit/` | 「体检一下这本书」/「导一份体检报告」 |
+| `inkflow_gate_check` | 质量门禁：对**一章**跑七项——字数 / 章末钩子 / 六维去 AI 味 / 一致性 / 敏感自查 / 平台规则 / 机械校对（标点配对、全半角、重复词、近似名、称谓、数字单位），每条带定位与修法，结论落 `.inkflow/audit/gate-<章 id>.json`（同章同文件跑两次字节相同）；零模型调用，一章不到 1 秒 | 「给这章过一遍门禁」/「看看有没有错字」 |
 | `inkflow_project_repair` | 三段式修复：`detect` 只列问题、`preview` 只给动作（零写盘）、`fix` 才写（需确认）；只补必填键 / 按证据字段推导伏笔 `status` / 重挂 parent / 删重复关系 / 重建 catalog | 「看看能自动修哪些」/「把能修的修掉」 |
 | `inkflow_project_migrate` | 老六目录书升到九目录：`plan` 只读、`apply` 需确认、`rollback` 从 `.inkflow/backup/` 回滚 | 「这本书是老结构，迁一下」/「刚才那次迁移撤回」 |
 
