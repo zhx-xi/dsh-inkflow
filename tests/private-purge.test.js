@@ -33,6 +33,7 @@ const ORIGIN = `http://${HOST}`
 const INTERNAL = '/inkflow/internal'
 const JSON_TYPE = 'application/json'
 const CHAPTER = 'chapters/vol-01/0001-开篇.md'
+const ROOT = join(import.meta.dirname, '..')
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 
 // ---------------------------------------------------------------------------
@@ -581,4 +582,130 @@ test('还原：未知 id 是 404，不猜最近一条', async () => {
   } finally {
     fixture.done()
   }
+})
+
+// ---------------------------------------------------------------------------
+// 5. The panels' pure decisions (no React, no network: `*-model.ts` rules)
+// ---------------------------------------------------------------------------
+
+/** Bundle one client model on the fly — the panel tests' own trick (same compiler). */
+async function loadClientModel(file) {
+  const { createRequire } = await import('node:module')
+  const require = createRequire(import.meta.url)
+  const esbuild = require('esbuild')
+  const built = await esbuild.build({
+    entryPoints: [join(ROOT, 'src/client', file)],
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    target: 'node22',
+    write: false,
+    logLevel: 'silent',
+  })
+  const code = Buffer.from(built.outputFiles[0].text, 'utf8').toString('base64')
+  return import(`data:text/javascript;base64,${code}`)
+}
+
+function proposalRow(overrides = {}) {
+  return {
+    proposalId: 'pr-00000001',
+    chapterId: 'ch-0001',
+    path: CHAPTER,
+    title: '第一章 开篇',
+    createdAt: '2026-10-25T09:00:00.000Z',
+    status: 'open',
+    counts: { total: 2, pending: 0, accepted: 2, rejected: 0 },
+    source: { kind: 'revised-body', label: 'session-model' },
+    decision: null,
+    apply: null,
+    rollback: null,
+    ...overrides,
+  }
+}
+
+/** A `GET /proposal` envelope with `rows` + the host's full-population `counts`. */
+function proposalEnvelope({ rows, counts, total = rows.length, limit = 50 }) {
+  return {
+    pluginVersion: '0.0.0-test',
+    sessionId: 'session-1',
+    root: '/book',
+    proposals: rows,
+    total,
+    returned: rows.length,
+    truncated: total > rows.length,
+    counts,
+    detail: null,
+  }
+}
+
+test('面板纯模型：提案首屏只列 open，已结束的进折叠组且计数同一口径（#199）', async () => {
+  const model = await loadClientModel('proposal-model.ts')
+  const rows = [
+    proposalRow({ proposalId: 'pr-00000003' }),
+    proposalRow({ proposalId: 'pr-00000002', status: 'applied' }),
+    proposalRow({ proposalId: 'pr-00000001' }),
+  ]
+  const page = model.readProposalPage({ ok: true, status: 200, value: proposalEnvelope({ rows, counts: { open: 2, applied: 1, rolledBack: 0 } }) }, false)
+  const split = model.splitProposals(page)
+  assert.deepEqual(split.open.map((row) => row.proposalId), ['pr-00000003', 'pr-00000001'])
+  assert.deepEqual(split.closed.map((row) => row.proposalId), ['pr-00000002'])
+  assert.equal(split.closedCount, 1)
+  assert.equal(
+    model.describeTotals(page).includes('待决定 2'),
+    true,
+    'the header counts the same split the list draws, not a second tally',
+  )
+  assert.equal(model.describeTotals(page).includes('已结束 1'), true)
+
+  // A truncated page says so instead of under-reporting what it did not fetch.
+  const big = model.readProposalPage(
+    { ok: true, status: 200, value: proposalEnvelope({ rows, counts: { open: 5, applied: 2, rolledBack: 1 }, total: 8 }) },
+    true,
+  )
+  const bigSplit = model.splitProposals(big)
+  assert.equal(bigSplit.closedCount, 3, 'counts come from the host when the page only holds part of the book')
+  assert.equal(model.describeTotals(big).includes('待决定 5'), true)
+  assert.equal(model.describeTotals(big).includes('本页列出 3 个'), true)
+})
+
+test('面板纯模型：回收区条目按页面分拣，清理与还原的请求体是同一个形状（#199）', async () => {
+  const model = await loadClientModel('purge-model.ts')
+  const value = model.readPurgedValue({
+    manifestPath: '.inkflow/purged/index.json',
+    total: 2,
+    bytes: 300,
+    entries: [
+      {
+        id: 'e1',
+        kind: 'review-run',
+        target: 'ch-0001/20261025T09000000Z',
+        label: 'ch-0001 · 运行 20261025T09000000Z',
+        deletedAt: '2026-10-25T09:55:01.123Z',
+        bytes: 120,
+        present: true,
+        files: [{ path: 'review/ch-0001/20261025T09000000Z.json', bytes: 120, sha256: 'a'.repeat(64) }],
+      },
+      {
+        id: 'e2',
+        kind: 'proposal',
+        target: 'pr-00000002',
+        label: 'pr-00000002 · 第一章 开篇 · applied',
+        deletedAt: '2026-10-25T09:56:01.123Z',
+        bytes: 180,
+        present: false,
+        files: [{ path: 'proposals/pr-00000002/meta.json', bytes: 180, sha256: 'b'.repeat(64) }],
+      },
+    ],
+  })
+  assert.equal(value.entries.length, 2)
+  assert.equal(value.bytes, 300)
+  assert.deepEqual(model.purgedFor(value, 'review-run').map((entry) => entry.id), ['e1'])
+  assert.deepEqual(model.purgedFor(value, 'proposal').map((entry) => entry.id), ['e2'])
+  assert.match(model.describePurgedEntry(value.entries[0]), /120 字节/)
+  assert.match(model.describePurgedEntry(value.entries[1]), /副本已不在/, 'a missing copy says so instead of pretending')
+  assert.deepEqual(model.cleanPayload('review-run', 'ch-0001/run-1'), { kind: 'review-run', target: 'ch-0001/run-1', confirm: true })
+  assert.deepEqual(model.restorePayload('e1'), { id: 'e1' })
+  assert.equal(model.cleanActionLabel(false), '清理')
+  assert.match(model.cleanActionLabel(true), /确认清理/)
+  assert.equal(model.readPurgedValue(undefined).entries.length, 0)
 })

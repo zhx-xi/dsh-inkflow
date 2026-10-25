@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { EvidenceJump } from './extract-model.js'
-import { fetchInternal } from './internal.js'
+import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
@@ -43,6 +43,19 @@ import {
   statusLabel,
 } from './review-model.js'
 import type { ReviewOpinionView, ReviewRunRow } from './review-model.js'
+import {
+  PURGED_PATH,
+  PURGE_CLEAN_PATH,
+  PURGE_RESTORE_PATH,
+  cleanActionLabel,
+  cleanPayload,
+  describePurgedError,
+  describePurgedFailure,
+  purgedFor,
+  readPurgedValue,
+  restorePayload,
+} from './purge-model.js'
+import { PurgeCard } from './purge-card.js'
 
 const bodyStyle = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', minHeight: 0 } as const
 
@@ -134,6 +147,11 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
   // #199: whether the run list's "更早的 N 次运行" row is open. The page it needs is fetched,
   // not hidden: folding is about what the first screen shows, never about dropping history.
   const [olderOpen, setOlderOpen] = useState(false)
+  /** #199: the cleanup the author is confirming, and the purge area as it stands. */
+  const [armedClean, setArmedClean] = useState<string | null>(null)
+  const [purgedResult, setPurgedResult] = useState<InternalResult<unknown> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
   const scrollBox = useScrollBox()
 
   const rows: readonly ChapterNode[] = useMemo(() => flattenChapters(chapters), [chapters])
@@ -193,6 +211,12 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
     [sessionId],
   )
 
+  /** The purge area (#199): what the author cleaned up and can still put back. */
+  const loadPurge = useCallback(async () => {
+    const result = await fetchInternal<unknown>(PURGED_PATH, { sessionId })
+    setPurgedResult(result)
+  }, [sessionId])
+
   useEffect(() => {
     void loadChapters()
   }, [loadChapters])
@@ -203,6 +227,10 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
     void loadReview(selected, '', 0)
     void loadCompare(selected)
   }, [loadCompare, loadReview, selected])
+
+  useEffect(() => {
+    void loadPurge()
+  }, [loadPurge])
 
   const view = useMemo(() => readReviewValue(review !== null && review.ok ? (review.value ?? undefined) : undefined), [review])
   const compareView = useMemo(
@@ -230,6 +258,39 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
     const next = !olderOpen
     setOlderOpen(next)
     void loadReview(selected, runId, next ? view.runCount : 0)
+  }
+
+  const purgedView = useMemo(() => readPurgedValue(purgedResult?.ok === true ? purgedResult.value : undefined), [purgedResult])
+  const purgedRuns = useMemo(() => purgedFor(purgedView, 'review-run'), [purgedView])
+  const purgedError = describePurgedError(purgedResult)
+
+  /** Move one run into the area, then reload both projections (the list loses a row). */
+  const cleanRun = async (wanted: string): Promise<void> => {
+    setBusy(true)
+    const result = await writeInternal<unknown>(PURGE_CLEAN_PATH, cleanPayload('review-run', `${view.chapterId}/${wanted}`), { sessionId })
+    setMessage(result.ok ? '已搬进回收区（.inkflow/purged/）：可以还原，章节字节没动。' : describePurgedFailure(result))
+    setBusy(false)
+    setArmedClean(null)
+    void loadReview(selected, wanted, olderOpen ? view.runCount : 0)
+    void loadPurge()
+  }
+
+  const restore = async (id: string): Promise<void> => {
+    setBusy(true)
+    const result = await writeInternal<unknown>(PURGE_RESTORE_PATH, restorePayload(id), { sessionId })
+    setMessage(result.ok ? '已从回收区还原到原路径。' : describePurgedFailure(result))
+    setBusy(false)
+    void loadReview(selected, runId, olderOpen ? view.runCount : 0)
+    void loadPurge()
+  }
+
+  const onCleanClick = (wanted: string): void => {
+    if (armedClean === wanted) {
+      void cleanRun(wanted)
+      return
+    }
+    setArmedClean(wanted)
+    setMessage('再点一次「确认清理」才会把它搬进回收区（可还原）。')
   }
 
   const opinions = view.dimensions.reduce((sum, dimension) => sum + dimension.items.length, 0)
@@ -294,6 +355,7 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
         </div>
         {chapterError === null ? null : <div style={{ ...muted, fontSize: 12 }}>章节列表读取失败：{chapterError}</div>}
         {loadError === null ? null : <div style={{ ...muted, fontSize: 12 }}>{loadError}</div>}
+        {message === '' ? null : <div style={{ ...muted, fontSize: 12 }}>{message}</div>}
 
         {view.runs.length === 0 ? (
           <div style={{ ...muted, fontSize: 12 }}>
@@ -305,7 +367,17 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
           <div style={cardStyle}>
             <div style={{ fontWeight: 600 }}>运行记录</div>
             {split.recent.map((row) => (
-              <RunRowView key={row.runId} row={row} selectedRunId={view.selectedRunId} onOpen={openRun} />
+              <RunRowView
+                key={row.runId}
+                row={row}
+                selectedRunId={view.selectedRunId}
+                onOpen={openRun}
+                cleanLabel={cleanActionLabel(armedClean === row.runId)}
+                cleanDisabled={busy}
+                onClean={() => {
+                  onCleanClick(row.runId)
+                }}
+              />
             ))}
             {split.olderCount === 0 ? null : (
               <div style={{ ...rowStyle }}>
@@ -319,7 +391,17 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
             )}
             {olderOpen
               ? split.older.map((row) => (
-                  <RunRowView key={row.runId} row={row} selectedRunId={view.selectedRunId} onOpen={openRun} />
+                  <RunRowView
+                    key={row.runId}
+                    row={row}
+                    selectedRunId={view.selectedRunId}
+                    onOpen={openRun}
+                    cleanLabel={cleanActionLabel(armedClean === row.runId)}
+                    cleanDisabled={busy}
+                    onClean={() => {
+                      onCleanClick(row.runId)
+                    }}
+                  />
                 ))
               : null}
             {view.skippedFiles.length === 0 ? null : (
@@ -329,6 +411,17 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
             )}
           </div>
         )}
+
+        <PurgeCard
+          title="已清理的运行记录"
+          entries={purgedRuns}
+          error={purgedError}
+          busy={busy}
+          note="清理掉的运行记录不占列表，但没删：还原后它会重新出现在上面。"
+          onRestore={(id) => {
+            void restore(id)
+          }}
+        />
 
         {view.selectedRunId === '' ? null : (
           <div style={{ ...muted, ...mono, fontSize: 11 }}>
@@ -456,10 +549,17 @@ function RunRowView({
   row,
   selectedRunId,
   onOpen,
+  cleanLabel,
+  cleanDisabled,
+  onClean,
 }: {
   readonly row: ReviewRunRow
   readonly selectedRunId: string
   readonly onOpen: (runId: string) => void
+  /** The two-step cleanup label (#199): the second click is what moves the run. */
+  readonly cleanLabel: string
+  readonly cleanDisabled: boolean
+  readonly onClean: () => void
 }) {
   return (
     <div style={{ ...rowStyle, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
@@ -485,6 +585,9 @@ function RunRowView({
             .join(' · ')}
         </span>
       )}
+      <button type="button" style={buttonStyle} disabled={cleanDisabled} onClick={onClean}>
+        {cleanLabel}
+      </button>
     </div>
   )
 }
