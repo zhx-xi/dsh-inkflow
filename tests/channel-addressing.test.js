@@ -418,3 +418,36 @@ test('query keys: the allowlist is declared per route, so a route with no knobs 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('query keys: the hub channel carries the same declaration, so /hub/* cannot swallow a key either', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    chapterBook(root)
+    const harness = createHarness({ workspace: root })
+
+    // `book` is how a hub call names the book it means — declared, so it is read.
+    const named = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/shared/copies?book=${encodeURIComponent(root)}` }))
+    assert.equal(named.status === 400, false, 'a declared key is never refused as unknown')
+
+    // `books` (a plausible typo for `book`) used to answer the DEFAULT book with 200.
+    const stray = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/shared/copies?books=${encodeURIComponent(root)}` }))
+    assert.equal(stray.status, 400)
+    assert.equal(stray.json.error.code, 'UNKNOWN_QUERY_PARAM')
+    assert.equal(stray.json.error.route, 'hub-shared-copies')
+    assert.equal(stray.json.error.param, 'books')
+    assert.deepEqual(stray.json.error.allowed, ['book', 'sessionId'], 'the body names what this route does read')
+
+    // A hub route with no knobs says so with `[]`: any key at all is refused.
+    const noKnobs = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/books?book=${encodeURIComponent(root)}` }))
+    assert.equal(noKnobs.status, 400)
+    assert.equal(noKnobs.json.error.code, 'UNKNOWN_QUERY_PARAM')
+    assert.equal(noKnobs.json.error.route, 'hub-books')
+
+    // …and the session channel's routes are untouched by the hub's declarations.
+    const internal = await internalCall(harness, '/status')
+    assert.equal(internal.status, 200)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

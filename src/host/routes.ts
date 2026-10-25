@@ -989,6 +989,17 @@ interface HubRoute {
    * client cannot smuggle a directory or a future knob past the guards.
    */
   readonly body?: readonly string[]
+  /**
+   * The only QUERY keys this hub route reads — the same **required** declaration the
+   * session channel carries (`InternalRoute.query`, issue #200).
+   *
+   * Required here too, on purpose: `/hub/*` had the identical blind spot (a handler read
+   * `book` and silently ignored every other key, so a typo answered the default book with
+   * HTTP 200 and nothing to see). One declaration shape for both channels means the
+   * 400 `UNKNOWN_QUERY_PARAM` decision is written once (`unexpectedQueryParam`), and the
+   * third state — "nobody declared anything" — cannot come back.
+   */
+  readonly query: readonly string[]
   readonly handle: (input: HubRouteInput) => Promise<RouteReply> | RouteReply
 }
 
@@ -1004,6 +1015,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-books',
     pattern: /^\/hub\/books$/,
     methods: ['GET'],
+    query: [],
     handle: async ({ ctx, version }) => {
       const result = await buildHubBooks(ctx, { pluginVersion: version })
       if (result.ok) return { status: 200, body: ok(result.value) }
@@ -1018,6 +1030,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-plan',
     pattern: /^\/hub\/plan$/,
     methods: ['POST'],
+    query: [],
     body: HUB_PLAN_BODY_FIELDS,
     handle: ({ ctx, body }) => hubPlan(ctx, body),
   },
@@ -1027,6 +1040,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-apply',
     pattern: /^\/hub\/apply$/,
     methods: ['POST'],
+    query: [],
     body: HUB_APPLY_BODY_FIELDS,
     handle: ({ ctx, body }) => hubApply(ctx, body),
   },
@@ -1038,6 +1052,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared',
     pattern: /^\/hub\/shared$/,
     methods: ['GET'],
+    query: ['kind', 'q'],
     handle: ({ dataDir, query }) => {
       // The root comes from the settings file (#150): `dataDir/shared` unless the
       // author configured `sharedRoot`. A value the plugin refuses is reported in
@@ -1066,6 +1081,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared-copies',
     pattern: /^\/hub\/shared\/copies$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, query }) => sharedCopiesReply(ctx, dataDir, query.get('book') ?? undefined),
   },
   {
@@ -1075,6 +1091,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared-copy',
     pattern: /^\/hub\/shared\/copy$/,
     methods: ['POST'],
+    query: [],
     body: SHARED_COPY_BODY_FIELDS,
     handle: ({ ctx, dataDir, body }) => sharedCopyReply(ctx, dataDir, body),
   },
@@ -1085,6 +1102,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared-update',
     pattern: /^\/hub\/shared\/update$/,
     methods: ['POST'],
+    query: [],
     body: SHARED_UPDATE_BODY_FIELDS,
     handle: ({ ctx, dataDir, body }) => sharedUpdateReply(ctx, dataDir, body),
   },
@@ -1095,6 +1113,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-series-plan',
     pattern: /^\/hub\/series\/plan$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, query }) => seriesPlanReply(ctx, dataDir, query.get('book') ?? undefined),
   },
   {
@@ -1104,6 +1123,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-series-apply',
     pattern: /^\/hub\/series\/apply$/,
     methods: ['POST'],
+    query: [],
     body: SERIES_APPLY_BODY_FIELDS,
     handle: ({ ctx, dataDir, body }) => seriesApplyReply(ctx, dataDir, body),
   },
@@ -1114,6 +1134,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-settings',
     pattern: /^\/hub\/settings$/,
     methods: ['GET'],
+    query: [],
     handle: ({ ctx, dataDir, version }) => ({ status: 200, body: ok(buildHubSettings({ ctx, dataDir, version })) }),
   },
   {
@@ -1127,6 +1148,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-settings-update',
     pattern: /^\/hub\/settings\/update$/,
     methods: ['POST'],
+    query: [],
     body: HUB_SETTINGS_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(writeHubSettings({ ctx, dataDir, version }, body)),
   },
@@ -1136,6 +1158,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-diagnostics',
     pattern: /^\/hub\/diagnostics$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, version, query }) =>
       reply(buildHubDiagnostics({ ctx, dataDir, version }, query.get('book') ?? undefined)),
   },
@@ -1143,6 +1166,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-diagnostics-export',
     pattern: /^\/hub\/diagnostics\/export$/,
     methods: ['POST'],
+    query: [],
     body: HUB_DIAGNOSTICS_EXPORT_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(exportHubDiagnostics({ ctx, dataDir, version }, body)),
   },
@@ -1153,12 +1177,14 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-backups',
     pattern: /^\/hub\/backups$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, version, query }) => reply(buildHubBackups({ ctx, dataDir, version }, query.get('book'))),
   },
   {
     name: 'hub-backups-create',
     pattern: /^\/hub\/backups\/create$/,
     methods: ['POST'],
+    query: [],
     body: HUB_BACKUP_CREATE_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(createHubBackup({ ctx, dataDir, version }, body)),
   },
@@ -1168,12 +1194,17 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-backups-plan',
     pattern: /^\/hub\/backups\/plan$/,
     methods: ['GET'],
+    // `planHubRestore(deps, query)` reads BOTH keys: `book` (which book) and `file`
+    // (which package to preview). Declaring only `book` would refuse the call the panel
+    // actually makes — the list's own "preview" button carries the file name.
+    query: ['book', 'file'],
     handle: ({ ctx, dataDir, version, query }) => reply(planHubRestore({ ctx, dataDir, version }, query)),
   },
   {
     name: 'hub-backups-restore',
     pattern: /^\/hub\/backups\/restore$/,
     methods: ['POST'],
+    query: [],
     body: HUB_BACKUP_RESTORE_BODY_FIELDS,
     handle: async ({ ctx, dataDir, version, body }) => reply(await restoreHubBackup({ ctx, dataDir, version }, body)),
   },
@@ -1186,6 +1217,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-semantic',
     pattern: /^\/hub\/semantic$/,
     methods: ['GET'],
+    query: ['book'],
     handle: async ({ ctx, dataDir, version, query }) =>
       reply(await buildHubSemantic({ ctx, dataDir, version }, query.get('book'))),
   },
@@ -1195,6 +1227,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-semantic-rebuild',
     pattern: /^\/hub\/semantic\/rebuild$/,
     methods: ['POST'],
+    query: [],
     body: SEMANTIC_HUB_BODY_FIELDS,
     handle: async ({ ctx, dataDir, version, body }) => reply(await rebuildHubSemantic({ ctx, dataDir, version }, body)),
   },
@@ -1204,6 +1237,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-semantic-purge',
     pattern: /^\/hub\/semantic\/purge$/,
     methods: ['POST'],
+    query: [],
     body: SEMANTIC_HUB_BODY_FIELDS,
     handle: async ({ ctx, dataDir, version, body }) => reply(await purgeHubSemantic({ ctx, dataDir, version }, body)),
   },
@@ -1283,6 +1317,24 @@ async function handleHubRequest(input: {
   const method = (req.method ?? 'GET').toUpperCase()
   if (!isHttpMethod(method) || !route.methods.includes(method)) {
     sendJson(res, 405, failure('method-not-allowed', { method, route: route.name }), { allow: route.methods.join(', ') })
+    return
+  }
+
+  // The hub's half of issue #200: `book` is how a hub call names the book it means, and a
+  // misspelt key used to answer the DEFAULT book with HTTP 200. Same decision function as
+  // the session channel, same 400, same body — a caller that gets it wrong on one channel
+  // does not get a different answer on the other. Checked before any handler and any IO.
+  const strayHubQuery = unexpectedQueryParam(url.searchParams, route.query)
+  if (strayHubQuery !== undefined) {
+    sendJson(
+      res,
+      400,
+      failure('UNKNOWN_QUERY_PARAM', {
+        route: route.name,
+        param: strayHubQuery,
+        allowed: [...route.query, SESSION_ID_PARAM],
+      }),
+    )
     return
   }
 
