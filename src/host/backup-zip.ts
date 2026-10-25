@@ -280,22 +280,28 @@ function clampKeep(keep: number | undefined): number {
 }
 
 /**
- * The name a new package takes: `<slug>-<stamp>.zip`, or `-2`, `-3`… when a package
- * of the same second already exists.
+ * The name a new artifact takes: `<slug>-<stamp><ext>`, or `-2`, `-3`… when a file of the
+ * same second already exists.
  *
  * Resolved BEFORE writing rather than after a collision: D3's stamp has one-second
- * resolution, so two backups in the same second are normal (a tool call and a panel
- * click), and checking afterwards would leave the first package behind with a name
- * nobody asked for.
+ * resolution, so two artifacts in the same second are normal (a tool call and a panel
+ * click), and checking afterwards would leave the first one behind with a name nobody
+ * asked for. Exported because the exporter (#50, ADR-0024 D4) names its files by the same
+ * rule and a second copy of it would drift.
  */
-function freePackageName(dir: string, slug: string, stamp: string): string {
-  const first = `${slug}-${stamp}.zip`
+export function freeStampedName(dir: string, slug: string, stamp: string, ext: string): string {
+  const first = `${slug}-${stamp}${ext}`
   if (!existsSync(join(dir, first))) return first
   for (let attempt = 2; attempt <= 99; attempt += 1) {
-    const candidate = `${slug}-${stamp}-${String(attempt)}.zip`
+    const candidate = `${slug}-${stamp}-${String(attempt)}${ext}`
     if (!existsSync(join(dir, candidate))) return candidate
   }
-  return `${slug}-${stamp}-${String(Date.now())}.zip`
+  return `${slug}-${stamp}-${String(Date.now())}${ext}`
+}
+
+/** `freeStampedName` for the one extension this module writes. */
+function freePackageName(dir: string, slug: string, stamp: string): string {
+  return freeStampedName(dir, slug, stamp, '.zip')
 }
 
 /**

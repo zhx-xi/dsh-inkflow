@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the forty-eight built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the forty-nine built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -236,6 +236,10 @@ test('registers the forty-eight built-ins, the tools of every registered domain,
       // and re-computes the same plan). Built-ins: it writes into every content directory.
       'inkflow_etl_apply',
       'inkflow_etl_plan',
+      // #50: export — EPUB / DOCX / Markdown / TXT into `dataDir/exports/`. A built-in: it
+      // reads every content directory at once and writes the artifact outside the book
+      // (ADR-0024 D4), so no content directory owns it.
+      'inkflow_export',
       // #38: the extraction queue (ADR-0017) — propose / list / accept / reject / purge.
       // Built-ins because a candidate is not an entity and belongs to no content directory.
       'inkflow_extract_accept',

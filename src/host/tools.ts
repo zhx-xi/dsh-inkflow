@@ -49,6 +49,7 @@ import { etlTools } from './etl-tools.js'
 import { reviewTools } from './review-tools.js'
 import { proposalTools } from './proposal-tools.js'
 import { jobsTools } from './jobs-tools.js'
+import { exportTools } from './export-tools.js'
 
 export interface ToolDeps {
   ctx: HostContext
@@ -2247,6 +2248,11 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // for the same reason as the pair above — a job is not an entity, belongs to no content
     // directory, and the plugin embeds no model client to draft the chapters it queues.
     ...jobsTools(deps),
+    // Export (#50, ADR-0024, X-27): one tool, `inkflow_export`, writing an EPUB / DOCX /
+    // Markdown / TXT artifact into `dataDir/exports/` and nothing into the book. A built-in
+    // rather than a domain tool: it reads every content directory at once, so no single
+    // content directory owns it.
+    ...exportTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),

@@ -1449,3 +1449,37 @@ export {
   rollbackBlocked,
 } from '../client/proposal-model.js'
 export type { Decision, HunkRow, ProposalPage, ProposalRow } from '../client/proposal-model.js'
+
+// ---------------------------------------------------------------------------
+// issue #50 — export (ADR-0024, X-27). One writer, one container, one directory
+// outside the book. Exported because the tests assert the two properties the ADR
+// names directly: `mimetype` is the first entry and the package reads back through
+// `readZip`, and exporting changes nothing inside the book.
+// ---------------------------------------------------------------------------
+
+export {
+  EPUB_MIMETYPE,
+  EXPORTS_DIR,
+  EXPORT_FORMATS,
+  EXPORT_TARGETS,
+  escapeXml,
+  exportBook,
+  exportsDir,
+  markdownBlocks,
+} from './export.js'
+export type {
+  ExportChapterStatus,
+  ExportChapter,
+  ExportError,
+  ExportErrorCode,
+  ExportFormat,
+  ExportGroup,
+  ExportMeta,
+  ExportPlan,
+  ExportRequest,
+  ExportResult,
+  ExportTarget,
+  ExportValue,
+  MarkdownBlock,
+} from './export.js'
+export { exportTools } from './export-tools.js'
