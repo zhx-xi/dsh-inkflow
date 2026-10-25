@@ -39,7 +39,13 @@ import { chapterPositions } from './domains/foreshadowing-query.js'
 
 /** The record's own identity, so a reader can refuse a file it does not understand. */
 export const BRIEF_AUDIT_FORMAT = 'inkflow.brief-audit'
-export const BRIEF_AUDIT_SCHEMA = 1
+/**
+ * `2` since #219 added `header` (the book identity line). The key set is part of the
+ * contract, so an additive field still moves the number: a reader that only knows `1`
+ * can tell the two shapes apart instead of guessing what an unfamiliar key means.
+ * Nothing migrates — the files are private state, rewritten on the next audit.
+ */
+export const BRIEF_AUDIT_SCHEMA = 2
 
 /** The one body field the write route accepts (besides `sessionId`). */
 export const BRIEF_AUDIT_BODY_FIELDS = ['confirm'] as const
@@ -68,6 +74,13 @@ export interface BriefAuditRecord {
   readonly chapterSeq: number | null
   /** Project-relative: an absolute path would make the file machine-specific. */
   readonly chapterPath: string | null
+  /**
+   * The book identity line, recorded verbatim (issue #219). It is the ONE string the
+   * preview, the injection and this file share, so storing it — rather than a title plus
+   * two counts the reader would have to re-format — is what makes "same header" a fact
+   * about bytes instead of a claim about formatting. `''` means the brief is empty.
+   */
+  readonly header: string
   readonly budgetTokens: number
   readonly tokens: number
   readonly overBudget: boolean
@@ -111,6 +124,7 @@ export function briefAuditRecord(brief: WritingBrief): BriefAuditRecord {
     chapterId: brief.chapterId ?? 'no-chapter',
     chapterSeq: brief.chapterSeq,
     chapterPath: brief.chapterPath,
+    header: brief.header,
     budgetTokens: brief.budgetTokens,
     tokens: brief.tokens,
     overBudget: brief.overBudget,
@@ -194,6 +208,8 @@ export interface BriefWire {
   readonly chapterId: string
   readonly chapterSeq: number | null
   readonly chapterPath: string | null
+  /** The identity line, also the first line of {@link text} (issue #219). */
+  readonly header: string
   readonly budgetTokens: number
   readonly tokens: number
   readonly overBudget: boolean
@@ -212,6 +228,7 @@ export function briefWire(brief: WritingBrief): BriefWire {
     chapterId: brief.chapterId ?? 'no-chapter',
     chapterSeq: brief.chapterSeq,
     chapterPath: brief.chapterPath,
+    header: brief.header,
     budgetTokens: brief.budgetTokens,
     tokens: brief.tokens,
     overBudget: brief.overBudget,

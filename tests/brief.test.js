@@ -43,6 +43,7 @@ import {
   briefWire,
   buildIndex,
   buildWritingBrief,
+  estimateTokens,
   resetBriefRunSummary,
   serializeBriefAudit,
   writeBriefAudit,
@@ -234,7 +235,11 @@ test('brief: the ladder trims world → facts → foreshadow → prevTail and ne
 
     const reached = new Map()
     let previousCount = Number.POSITIVE_INFINITY
-    for (let budgetTokens = 20; budgetTokens <= full.tokens; budgetTokens += 10) {
+    // `+ 10` so the grid always contains a budget at or above the untrimmed cost: the last
+    // step is a fixed 10, so a `full.tokens` that is not on the grid would never be tried
+    // and "nothing is trimmed" would look unreachable (observed after #219, whose header
+    // moved `full.tokens` off the grid).
+    for (let budgetTokens = 20; budgetTokens <= full.tokens + 10; budgetTokens += 10) {
       const brief = buildWritingBrief(root, { budgetTokens })
       const trimmed = brief.trims.map((trim) => trim.segment)
       // A segment can be trimmed twice (the tail shrinks, then it is dropped), so the
@@ -340,12 +345,17 @@ test('brief: the audit file is the same bytes twice, with no clock and no absolu
     assert.equal(relative, '.inkflow/audit/brief-ch-0002.json', 'the name is the chapter, not the run (D4)')
 
     const indexBefore = readdirSync(join(root, 'index')).sort()
-    const first = writeBriefAudit(root, buildWritingBrief(root))
+    // #219: the record gained the book header, so the two briefs are kept to prove the
+    // header is a function of the tree like every other field.
+    const firstBrief = buildWritingBrief(root)
+    const first = writeBriefAudit(root, firstBrief)
     assert.equal(first.ok, true, first.ok ? '' : first.message)
     const firstBytes = readFileSync(join(root, relative), 'utf8')
-    const second = writeBriefAudit(root, buildWritingBrief(root))
+    const secondBrief = buildWritingBrief(root)
+    const second = writeBriefAudit(root, secondBrief)
     assert.equal(second.ok, true, second.ok ? '' : second.message)
     const secondBytes = readFileSync(join(root, relative), 'utf8')
+    assert.equal(secondBrief.header, firstBrief.header, 'the header carries no clock either')
 
     assert.equal(secondBytes, firstBytes, 'two runs over an unchanged book are byte-identical')
     assert.equal(second.sha256, first.sha256, 'and hash the same')
@@ -361,9 +371,15 @@ test('brief: the audit file is the same bytes twice, with no clock and no absolu
     // Parsed: the format/schema are declared, and the order is D2's.
     const parsed = JSON.parse(firstBytes)
     assert.equal(parsed.format, 'inkflow.brief-audit')
-    assert.equal(parsed.schemaVersion, 1)
+    // #219 bumped this: the record's shape gained `header` (an additive field, but the
+    // key set is the contract, so a reader must be able to tell the two shapes apart).
+    assert.equal(parsed.schemaVersion, 2)
     assert.equal(parsed.chapterId, 'ch-0002')
     assert.equal(parsed.chapterPath, 'chapters/vol-01/0002-起风.md')
+    // The book identity is recorded verbatim — the same bytes the model is handed.
+    assert.equal(parsed.header, firstBrief.header)
+    assert.equal(firstBrief.text.split('\n')[0], parsed.header, 'the header is the text\'s first line')
+    assert.deepEqual(Object.keys(parsed), ['format', 'schemaVersion', 'chapterId', 'chapterSeq', 'chapterPath', 'header', 'budgetTokens', 'tokens', 'overBudget', 'segments', 'trims'], 'top-level key order is the contract too')
     assert.deepEqual(parsed.segments.map((segment) => segment.id), ORDER)
     for (const segment of parsed.segments) {
       assert.deepEqual(Object.keys(segment), ['id', 'label', 'bytes', 'tokens', 'truncated', 'missing'], 'field order is the contract')
@@ -811,6 +827,101 @@ test('brief: the diagnostics package carries those counters and no prose', async
     assert.equal(/[A-Za-z]:[\\/]/u.test(section), false)
   } finally {
     resetBriefRunSummary()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 7. The book header (issue #219)
+// ---------------------------------------------------------------------------
+
+test('brief: the header names the book and the whole book, ahead of the chapter block', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    const brief = buildWritingBrief(root)
+
+    // The writer has to know WHICH BOOK it is writing before it reads what to write. Same
+    // job the retired six-segment `project` block did — without a tenth segment (D2).
+    const firstLine = brief.text.split('\n')[0]
+    assert.match(firstLine, /^《简报之书》· 全书 2 章 \/ \d+\.\d 万字$/u)
+    assert.equal(brief.header, firstLine, 'the field is the first line, not a second spelling of it')
+    assert.equal(brief.text.indexOf(brief.header), 0)
+    assert.ok(brief.text.indexOf('### 当前章') > 0, 'the chapter block follows the header')
+
+    // Nine segments means nine: the identity is brief-level, not a tenth one.
+    assert.deepEqual(brief.segments.map((segment) => segment.id), ORDER)
+    assert.equal(brief.segments.some((segment) => segment.id === 'project'), false, 'the retired segment stays retired')
+    for (const segment of brief.segments) {
+      assert.equal(segment.text.includes('《简报之书》'), false, `${segment.id}: the identity stays out of the segments`)
+    }
+
+    // Paid for out of the budget, not added on top of it.
+    assert.equal(brief.tokens, estimateTokens(brief.text))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: a book with no declared title is named by its directory, never invented', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, '无名之卷')
+    await book(root)
+    // The same judgement the six-segment assembly made (`loadMaterials`: declared `title`,
+    // else the directory name) — a second rule here would be a second answer to "which book".
+    writeFileSync(join(root, 'inkflow.json'), `${JSON.stringify({ schemaVersion: 1 }, null, 2)}\n`, 'utf8')
+
+    const brief = buildWritingBrief(root)
+    assert.match(brief.text.split('\n')[0], /^《无名之卷》/u)
+    assert.equal(brief.header.includes('简报之书'), false, 'the old declared title is not remembered')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: the header is never trimmed — at the floor it shortens to the title alone', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    const floor = buildWritingBrief(root, { budgetTokens: 1 })
+
+    assert.equal(floor.header, '《简报之书》', 'the counts go before the title does')
+    assert.equal(floor.text.split('\n')[0], '《简报之书》')
+    assert.equal(floor.overBudget, true, 'a header that does not fit is reported, not dropped')
+    assert.ok(floor.text.includes('### 当前章'), 'and it is not paid for by dropping the task statement')
+    assert.deepEqual([...new Set(floor.trims.map((trim) => trim.segment))], [...BRIEF_TRIM_ORDER], 'the ladder still walks its own rungs')
+
+    // The shortening is a floor-only branch: an ordinary budget keeps the whole line.
+    const normal = buildWritingBrief(root)
+    assert.match(normal.header, /· 全书 \d+ 章 \/ /u)
+    assert.ok(estimateTokens(normal.header) > estimateTokens(floor.header))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: preview, audit file and injection carry the same header bytes', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    const brief = briefFor(root)
+    const wire = briefWire(brief)
+    const written = writeBriefAudit(root, brief)
+    assert.equal(written.ok, true, written.ok ? '' : written.message)
+    const bytes = readFileSync(join(root, briefAuditPath(brief.chapterId)), 'utf8')
+    const parsed = JSON.parse(bytes)
+
+    // X-23: one call, three consumers — so there cannot be three spellings of the header.
+    assert.equal(wire.header, brief.header, 'preview')
+    assert.equal(parsed.header, brief.header, 'audit file')
+    // Injection is `briefFor().text` (pinned byte-for-byte in prompt.test.js); here the
+    // first line of that very text is checked against the two copies above.
+    assert.equal(brief.text.split('\n')[0], brief.header, 'injection')
+    assert.equal(wire.text, brief.text)
+    assert.equal(bytes, serializeBriefAudit(parsed), 'the file on disk is that record, byte for byte')
+    assert.equal(parsed.tokens, brief.tokens, 'the header is inside the recorded token count')
+  } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })

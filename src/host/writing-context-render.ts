@@ -69,6 +69,26 @@ export function renderTail(tail: TailSlice, taken: number, body: string): string
   return `### 上一章结尾（${which} · 最后 ${String(taken)} 字）\n${body}`
 }
 
+/**
+ * The book's identity line — the brief's **first line**, above every segment (issue #219).
+ *
+ * Why it is not a segment: ADR-0022 D2 fixes the nine ids and their order, and the block
+ * that used to carry the book (`project`, in the six-segment context) is exactly what #43
+ * removed. The writer still has to know *which book* it is writing — a series shares one
+ * setting library across books, and the title is where the author's expectation of tone
+ * lives — so the identity belongs to the brief itself, outside the ladder, and is never
+ * trimmed. Over budget it shortens ({@link renderBriefHeader}'s `short`): the title is the
+ * part that cannot go, the counts are.
+ *
+ * `stats === undefined` (no index yet) degrades like the six-segment assembly did: the
+ * title alone, never a fabricated chapter or word count.
+ */
+export function renderBriefHeader(title: string, stats: ProjectStats | undefined, short: boolean): string {
+  const name = `《${title}》`
+  if (short || stats === undefined) return name
+  return `${name}· 全书 ${String(stats.chapters)} 章 / ${(stats.words / 10_000).toFixed(1)} 万字`
+}
+
 export function renderWorld(world: WorldSelection): string {
   const header =
     world.matched > world.shown.length

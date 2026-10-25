@@ -3,45 +3,42 @@
  * know before its first tool call — which book, which chapter, how the previous
  * chapter ended, and which world-book entries this chapter is about.
  *
- * WHY A SYSTEM-PROMPT SECTION AND NOT A TOOL: a tool answers only after the
- * model decided to call it, and by then the first paragraph is already drafted.
- * Skills are the same story (the catalog carries names; the body loads on
- * demand). The section is the one surface rendered before the model's first
- * token.
+ * WHY A SYSTEM-PROMPT SECTION AND NOT A TOOL: a tool answers only after the model decided
+ * to call it, and by then the first paragraph is already drafted. Skills are the same
+ * story (the catalog carries names; the body loads on demand). The section is the one
+ * surface rendered before the model's first token.
  *
- * WHY THIS IS A PURE PROJECTION: `buildWritingContext(root, opts)` is the whole
- * rule set — gate, segmentation, caps, budget ladder, rendering — with no
- * session state and no cache. That makes every rule testable without a Host,
- * and it is the function the workbench's "briefing preview" will reuse. The
- * Host wiring (session directory → service registration) lives in `prompt.ts`.
+ * WHY THIS IS A PURE PROJECTION: the whole rule set — gate, segmentation, caps, budget
+ * ladder, rendering — with no session state and no cache, so every rule is testable
+ * without a Host. The Host wiring (session directory → service registration) is in
+ * `prompt.ts`.
  *
- * Degradation is the default posture: anything that is not a `usable` project
- * yields `text: ''`, and unreadable data simply removes that segment. The one
- * write this path can cause is the gate's documented `index/` self-heal in
- * `inspectProject` — the same relaxation every tool gets, so a project cannot
- * be "usable for tools but invisible to the prompt".
+ * Degradation is the default posture: anything that is not a `usable` project yields
+ * `text: ''`, and unreadable data simply removes that segment. The one write this path
+ * can cause is the gate's documented `index/` self-heal in `inspectProject` — the same
+ * relaxation every tool gets, so a project cannot be "usable for tools but invisible to
+ * the prompt".
  *
  * ## Two assemblies, one set of renderers (issue #43, ADR-0022 D1/D2)
  *
  * This module now owns **two** projections, and the difference is deliberate:
  *
  *   * {@link buildWritingContext} — the six segments #20 shipped, injected as the
- *     `inkflow:writing-context` system-prompt section. Its order, its caps and its
- *     six-rung ladder are pinned by `tests/prompt.test.js` (a byte-for-byte fence
- *     around a surface the model sees on every step), so #43 must not touch them.
+ *     `inkflow:writing-context` system-prompt section. Its order, caps and six-rung ladder
+ *     are pinned by `tests/prompt.test.js`, so #43 must not touch them.
  *   * {@link buildWritingBrief} — the **nine** segments of ADR-0022 D2
  *     (`outline → promise → characters → voice → facts → foreshadow → world →
  *     prevTail → anchors`), each reported as `{ id, bytes, tokens, truncated }`, with
  *     the four-rung ladder of D2 (`world → facts → foreshadow → prevTail`) and a trim
- *     record per rung. It is what the preview shows and what the audit file records.
+ *     record per rung. It is what the preview shows and what the audit file records, plus
+ *     one book identity line above the first segment — outside the ladder (#219).
  *
- * Why not one function with a flag: the two ladder contracts genuinely disagree —
- * D2 says the outline and the project's task statement are **never** trimmed, while the
- * injected six-segment block must keep trimming its summary first (otherwise a small
- * budget silently stops injecting the chapter). A single ladder cannot honour both, and
- * a shared ladder with a per-caller exception list is the "two spellings of one rule"
- * bug this project keeps re-learning. So: two ladders, **one** implementation of every
- * segment's text (`writing-context-render.ts`), which is what actually must not drift.
+ * Why not one function with a flag: the two ladder contracts genuinely disagree — D2 says
+ * the outline and the task statement are **never** trimmed, while the injected six-segment
+ * block must trim its summary first (else a small budget stops injecting the chapter). A
+ * shared ladder with a per-caller exception list is the "two spellings of one rule" bug
+ * this project keeps re-learning. So: two ladders, **one** implementation of every
+ * segment's text (`writing-context-render.ts`) — that is what must not drift.
  *
  * Both assemblies share {@link estimateTokens} — the budget has exactly one unit.
  */
@@ -50,7 +47,7 @@ import { Buffer } from 'node:buffer'
 import { basename } from 'node:path'
 
 import { charactersInChapter, taggedOutlineSegment, voiceInChapter } from './brief-sources.js'
-import { MAX_OUTLINE_CHARS, SECTION_HEADING, clipHead, clipTail, renderChapter, renderProject, renderTail, renderTrimMarker, renderWorld } from './writing-context-render.js'
+import { MAX_OUTLINE_CHARS, SECTION_HEADING, clipHead, clipTail, renderBriefHeader, renderChapter, renderProject, renderTail, renderTrimMarker, renderWorld } from './writing-context-render.js'
 import { factsSegment } from './domains/facts-prompt.js'
 import { foreshadowSegment } from './domains/foreshadowing-query.js'
 import type { ProjectState } from './project.js'
@@ -487,11 +484,9 @@ export const BRIEF_TRIM_ORDER = ['world', 'facts', 'foreshadow', 'prevTail'] as 
 
 /**
  * Author-facing labels. They travel in the preview, in the `[trimmed: …]` marker and in
- * the audit record, so an id never appears where a person reads.
- *
- * `facts` and `foreshadow` must equal the registered specs' labels (`tests/brief.test.js`
- * compares them): the same segment named differently in the ladder and in the marker
- * would read as two segments.
+ * the audit record, so an id never appears where a person reads. `facts`/`foreshadow` must
+ * equal the registered specs' labels (`tests/brief.test.js` compares them): one segment
+ * named two ways in the ladder and in the marker would read as two segments.
  */
 export const BRIEF_LABELS: Readonly<Record<BriefSegmentId, string>> = {
   outline: '当前章大纲',
@@ -507,25 +502,19 @@ export const BRIEF_LABELS: Readonly<Record<BriefSegmentId, string>> = {
 
 /**
  * Per-segment budget share, as a fraction of `budgetTokens` (`floor(ratio × budget)`
- * characters, the same unit the ledger and the foreshadow reminder use).
+ * characters — the unit the ledger and the foreshadow reminder already use).
  *
- * `0` means "this segment's cap is its own definition, not a share of the budget":
- * the outline keeps `MAX_OUTLINE_CHARS`, the world book keeps `MAX_WORLD_SHOWN` entries,
- * the tail keeps `tailChars`, and the two marker segments (`promise`, `anchors`) keep
- * `MAX_TAGGED_CHARS`. Those values are not 0 because the segment is unimportant — they are
- * 0 because a second cap on top of an existing one is a tuning knob nobody asked for, and
- * the audit reports the resulting sizes anyway.
- *
- * The shares do not add up to 1 and must not: a cap is a ceiling, not a reservation.
- * The ladder — not the sum — decides what is dropped.
+ * `0` means "this segment's cap is its own definition, not a share of the budget": `outline`
+ * keeps `MAX_OUTLINE_CHARS`, `world` keeps `MAX_WORLD_SHOWN`, `prevTail` keeps `tailChars`,
+ * the markers (`promise`/`anchors`) keep `MAX_TAGGED_CHARS`. The shares do not add up to 1
+ * and must not: a cap is a ceiling, not a reservation — the ladder decides what is dropped.
  */
 export const BRIEF_CAP_RATIOS: Readonly<Record<BriefSegmentId, number>> = {
   outline: 0,
   promise: 0,
   characters: 0.12,
   voice: 0.08,
-  // Kept in step with the registered specs (the registry wins at runtime; the test
-  // asserts the two agree, so a retuned cap cannot live in only one of them).
+  // The registry wins at runtime; `tests/brief.test.js` asserts the two agree.
   facts: 0.15,
   foreshadow: 0.1,
   world: 0,
@@ -572,6 +561,11 @@ export interface WritingBrief {
   readonly chapterSeq: number | null
   /** Project-relative chapter path, for a preview header. Never an absolute path. */
   readonly chapterPath: string | null
+  /**
+   * The book identity line: the FIRST line of {@link text}, recorded verbatim by the audit
+   * file so the three consumers share one string. Never trimmed; shortened at the floor.
+   */
+  readonly header: string
   readonly budgetTokens: number
   /** All nine, in {@link BRIEF_SEGMENT_ORDER}, present or not. */
   readonly segments: readonly BriefSegmentRecord[]
@@ -598,6 +592,7 @@ interface BriefRung {
 
 interface RenderedBrief {
   segments: BriefSegmentRecord[]
+  header: string
   text: string
   tokens: number
 }
@@ -605,15 +600,14 @@ interface RenderedBrief {
 /**
  * Build the nine-segment brief (ADR-0022 D1/D2, roadmap X-23).
  *
- * One function, one input, one answer: the preview route, the audit file and any future
- * injection caller run THIS, so "the preview is what the model gets" is a property of the
- * code and not of discipline. Deterministic for a given tree — no cache, no clock, no
- * random id (ADR-0022 D4), which is why the audit file can be `git diff`ed.
+ * One function, one input, one answer: preview route, audit file and injection run THIS,
+ * so "the preview is what the model gets" is a property of the code, not of discipline.
+ * Deterministic for a given tree — no cache, no clock, no random id (ADR-0022 D4), which
+ * is why the audit file can be `git diff`ed.
  *
- * Segments with no source in this book are reported as `missing: true` with an empty
- * text — never filled with placeholder prose, which would put invented instructions in
- * front of the writer. `promise` / `anchors` are the author's own marker bullets in THIS
- * chapter's outline node (#213); a chapter that wrote none is missing, not borrowed from.
+ * No-source segments are `missing: true` with empty text — never placeholder prose, which
+ * would put invented instructions in front of the writer. `promise`/`anchors` are the
+ * author's own marker bullets in THIS chapter's outline node (#213); none written = missing.
  */
 export function buildWritingBrief(root: string, options: WritingContextOptions = {}): WritingBrief {
   const budgetTokens = clampInt(options.budgetTokens, DEFAULT_BUDGET_TOKENS, 1, 200_000)
@@ -625,6 +619,7 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
     chapterId: null,
     chapterSeq: null,
     chapterPath: null,
+    header: '',
     budgetTokens,
     segments: [],
     trims: [],
@@ -640,6 +635,9 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
   const current = pair.current
   const chapterId = briefChapterId(probe.root, current)
   const haystack = `${outline?.body ?? ''}\n${tail?.body ?? ''}`
+  // Decided once from the budget alone: no rung may be the reason a book loses its name.
+  const fullHeader = renderBriefHeader(materials.title, materials.stats, false)
+  const header = estimateTokens(fullHeader) <= budgetTokens ? fullHeader : renderBriefHeader(materials.title, materials.stats, true)
 
   // Every segment's full text, built once: the ladder only decides which of these
   // survive, so a rung can never change what a segment says.
@@ -716,7 +714,7 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
   let chosen: RenderedBrief | undefined
   const trims: BriefTrimRecord[] = []
   for (const rung of rungs) {
-    const rendered = renderBrief({ rung, built, tail, tailChars })
+    const rendered = renderBrief({ rung, built, tail, tailChars, header })
     // A rung that renders exactly like the previous one dropped nothing (no previous
     // chapter, no such segment): it must not show up as a trim, and it must not count.
     if (previous !== undefined && rendered.text === previous.text) continue
@@ -737,6 +735,7 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
     chapterId,
     chapterSeq: current?.seq ?? null,
     chapterPath: current?.path ?? null,
+    header: chosen.header,
     budgetTokens,
     segments: chosen.segments,
     trims,
@@ -752,6 +751,7 @@ interface RenderBriefInput {
   readonly built: ReadonlyMap<BriefSegmentId, { text: string; truncated: boolean; missing: boolean }>
   readonly tail: TailSlice | undefined
   readonly tailChars: number
+  readonly header: string
 }
 
 function renderBrief(input: RenderBriefInput): RenderedBrief {
@@ -813,9 +813,10 @@ function renderBrief(input: RenderBriefInput): RenderedBrief {
   // Nothing to say (a brand-new book, or a book whose nine sources are all absent): no
   // heading either. The heading alone would be a section that costs tokens and injects
   // nothing — the same reason `buildWritingContext` returns `''` for a non-usable project.
-  if (rendered.length === 0) return { segments, text: '', tokens: 0 }
-  const text = [SECTION_HEADING, ...rendered, ...(marker === '' ? [] : [marker])].join('\n\n')
-  return { segments, text, tokens: estimateTokens(text) }
+  if (rendered.length === 0) return { segments, header: '', text: '', tokens: 0 }
+  // Outside `rendered`, so no rung can drop it: "which book" is read before "what to write".
+  const text = [input.header, SECTION_HEADING, ...rendered, ...(marker === '' ? [] : [marker])].join('\n\n')
+  return { segments, header: input.header, text, tokens: estimateTokens(text) }
 }
 
 /** `floor(ratio × budget)` with a floor of one header plus one line, per segment. */
@@ -843,10 +844,9 @@ function byteLength(text: string): number {
  * chapter has one, else `seq-<n>`, else `no-chapter`. Sanitised to `[A-Za-z0-9._-]` so a
  * hand-written id cannot walk out of `.inkflow/audit/`.
  *
- * The declared id is read from the file rather than taken from `ChapterHead.id`: the index
- * derives an id from the path when the frontmatter has none
- * (`chapters-vol-01-0002-起风.md`), which would make a perfectly stable audit file name
- * look like a path and change if the file were renamed.
+ * The declared id is read from the file, not taken from `ChapterHead.id`: the index derives
+ * an id from the path when the frontmatter has none, which would make a stable audit file
+ * name look like a path and change if the file were renamed.
  */
 function briefChapterId(root: string, current: ChapterHead | undefined): string | null {
   if (current === undefined) return null
