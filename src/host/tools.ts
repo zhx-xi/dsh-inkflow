@@ -45,6 +45,7 @@ import { replaceApply, replacePreview } from './replace.js'
 import { scanSharedLibrary } from './hub-shared.js'
 import { sharedRootOf } from './settings.js'
 import { buildSharedCopies, copySharedEntry, updateSharedEntry } from './shared-copy.js'
+import { etlTools } from './etl-tools.js'
 
 export interface ToolDeps {
   ctx: HostContext
@@ -2226,6 +2227,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // read the same availability verdict and the same block ledger, and the purge is the
     // only path in this plugin allowed to call OVK's physical delete (ADR-0009 P6).
     ...semanticTools(deps),
+    // The old-library migrator (#51): plan / apply / rollback. A built-in for the same
+    // reason as the pair above — it writes into every content directory, so no single
+    // domain module owns it, and its dry run must be the same computation as its apply.
+    ...etlTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),

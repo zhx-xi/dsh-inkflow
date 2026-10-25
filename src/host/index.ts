@@ -1170,3 +1170,44 @@ export { acceptCandidates, materializeCandidate } from './extract-accept.js'
 export type { AcceptOutcome, AcceptRefusal, AcceptReport } from './extract-accept.js'
 export { acceptViaChannel, buildCandidates, purgeViaChannel, rejectViaChannel } from './extract-channel.js'
 export type { CandidateReply, CandidateSource } from './extract-channel.js'
+
+// ---------------------------------------------------------------------------
+// issue #51 — the old-library migrator (X-29 / X-30). Exported for the tests and for
+// nothing else inside `src/host`: the runners are the only entry, and a second importer
+// would be a second way to start a migration without its plan.
+// ---------------------------------------------------------------------------
+
+export { ETL_DEFAULT_BATCH_SIZE, ETL_MAX_BATCH_SIZE, applyEtl, planEtl, readEtlIdMap, rollbackEtl } from './etl.js'
+export type {
+  EtlApplyInput,
+  EtlApplyResult,
+  EtlApplyValue,
+  EtlError,
+  EtlIdMapResult,
+  EtlPlanResult,
+  EtlRollbackInput,
+  EtlRollbackResult,
+  EtlRollbackValue,
+  EtlRunOptions,
+} from './etl.js'
+export { ETL_IDMAP_RELATIVE, ETL_IDMAP_VERSION, buildEtlPlan, hasFrontmatterBlock } from './etl-plan.js'
+export { ETL_TABLES } from './etl-source.js'
+export type { EtlTable } from './etl-source.js'
+export type {
+  EtlClassReport,
+  EtlComputation,
+  EtlDecision,
+  EtlDiskProbe,
+  EtlGap,
+  EtlIdMap,
+  EtlIdMapEntry,
+  EtlItem,
+  EtlItemState,
+  EtlPlan,
+  EtlPlanOptions,
+  EtlReconcile,
+  EtlWrite,
+} from './etl-plan.js'
+export { listLegacyProjects, readLegacyBook } from './etl-source.js'
+export type { EtlSourceOptions, LegacyBook, LegacyProject } from './etl-source.js'
+export { etlTools } from './etl-tools.js'
