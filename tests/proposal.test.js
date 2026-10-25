@@ -244,6 +244,10 @@ test('提案：应用只写已接受的段，被拒绝的段一个字节都不�
     assert.equal(text.includes('湿冷的松脂味'), false, 'the rejected hunk did not land — not one byte of it')
     assert.equal(text.includes('风从松林里过来。'), true, 'the rejected hunk kept its original line')
     assert.equal(text.startsWith('---\nid: ch-0001\n'), true, 'frontmatter is never part of a revision')
+    // "Applying suggests a commit" (issue #45) — a string the author pastes, never a git call:
+    // the plugin does not run git, and the suggestion names the chapter and the proposal.
+    assert.match(applied.value.commitSuggestion, /^git add "chapters\/vol-01\/0001-入山\.md" && git commit -m "/)
+    assert.equal(applied.value.commitSuggestion.includes(proposal.proposalId), true)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

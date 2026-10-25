@@ -58,6 +58,12 @@ export interface ApplyProposalOk {
   bytes: number
   catalogRebuilt: boolean
   indexRebuilt: boolean
+  /**
+   * A commit the author can paste, NOT a commit the plugin makes (the plugin never runs
+   * git — data-safety §2.5). It names the chapter and the proposal so the history says
+   * what happened even months later.
+   */
+  commitSuggestion: string
 }
 
 /**
@@ -230,6 +236,7 @@ export async function applyProposal(projectRoot: string, input: ApplyProposalInp
       bytes: after.bytes,
       catalogRebuilt: result.catalogRebuilt,
       indexRebuilt: result.indexRebuilt,
+      commitSuggestion: `git add "${meta.path}" && git commit -m "revise(${meta.chapterId}): 应用提案 ${meta.proposalId}（接受 ${String(applied.length)} 段）"`,
     },
   }
 }

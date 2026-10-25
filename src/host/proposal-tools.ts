@@ -294,6 +294,9 @@ export function proposalTools(deps: ToolDeps): ToolDefinition[] {
         lines.push(
           v['indexRebuilt'] === true ? '派生索引已重建。' : '派生索引未重建（下次读取会自行刷新）。',
         )
+        if (typeof v['commitSuggestion'] === 'string') {
+          lines.push(`建议的提交（插件不跑 git，交给你执行）：${v['commitSuggestion']}`)
+        }
         lines.push('这一步改了正文：作者若不满意，先回滚再重做，不要在上面继续改。')
         return text(lines)
       },

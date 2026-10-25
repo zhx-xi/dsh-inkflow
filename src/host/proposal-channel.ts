@@ -277,6 +277,7 @@ export async function applyViaChannel(source: ProposalSource, version: string, b
         bytes: value.bytes,
         catalogRebuilt: value.catalogRebuilt,
         indexRebuilt: value.indexRebuilt,
+        commitSuggestion: value.commitSuggestion,
       },
     },
   }
