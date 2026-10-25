@@ -117,6 +117,10 @@ const BUILT_IN_TOOLS = [
   ['inkflow_batch_take', '70f2b3be'],
   ['inkflow_batch_complete', 'a5d82c2a'],
   ['inkflow_batch_approve', '289befc4'],
+  // #50: export — one tool for EPUB / DOCX / Markdown / TXT. A built-in rather than a domain
+  // tool: it reads every content directory at once and writes the artifact outside the book
+  // (`dataDir/exports/`, ADR-0024 D4), so no content directory owns it.
+  ['inkflow_export', '84b1e806'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

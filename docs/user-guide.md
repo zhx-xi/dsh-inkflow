@@ -185,7 +185,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
-插件提供 67 个工具（48 个内置 + 19 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
+插件提供 68 个工具（49 个内置 + 19 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
 
 **项目与索引**
 
@@ -260,6 +260,12 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 候选就是 `.inkflow/candidates/<时间戳>-<kind>.json`（git 忽略、不在 `index/` 里，所以重建索引不会冲掉它）；同一个 `candidateId` 再提交一次是**更新**而不是新建。
 
 向导的两段式是刻意设计的：先看清单（`plan`），你点头之后才落盘（`init` + 确认）。修复老项目时它只补缺失项——已有的正文、设定、`inkflow.json` 一个字节都不会动；唯一例外是**坏掉的** `inkflow.json`：它会先把原文（超长会截断并标注）给你看，你确认后才重建。
+
+**导出（EPUB / DOCX / Markdown / TXT）**
+
+| 工具 | 作用 | 你可以这样说 |
+|---|---|---|
+| `inkflow_export` | 把书导成一份文件给读者/Word/自己看：`format` = `epub` / `docx` / `markdown` / `txt`，`target` = `book`（整本）/ `volume`（需 `volumeId`）/ `status`（按 `draft`·`revised`·`final` 筛，需 `status`）。落在插件自己的 `exports/` 目录，**书里一个字节都不改**（`git status` 不会有新文件） | 「把这本书导成 EPUB」/「第一卷导成 Word」/「把还没定稿的章导成 Markdown 给我改」 |
 
 ### 5.3 自己改文件后
 
@@ -643,6 +649,31 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 | `inkflow_batch_approve` | 批准被门禁拦下的草稿并写进正文（需 `confirm: true`）；`seq` 批一章，`all: true` 批全部 | 会（先有草稿） |
 
 **它不是后台任务**：插件里没有定时器、没有出站请求、没有 API key。真正的「跑」发生在会话里——AI 领一章、写一章、交一章。所以你随时可以停：不交回就是停。
+
+### 5.21 导出：EPUB / DOCX / Markdown / TXT
+
+写完了要给人看——手机阅读器、Word、或者发给朋友改。这就是 `inkflow_export` 一件事，四种格式：
+
+| `format` | 出来的是什么 | 适合 |
+|---|---|---|
+| `epub` | 一份 `.epub`：`mimetype` 第一条且不压缩（OCF 规范），卷→章两层的目录，每章一个 XHTML | 手机 / Calibre / Thorium 阅读器 |
+| `docx` | 一份 `.docx`：卷是**标题 1**、章是**标题 2**、正文一段一段 | Word 里看、打印、再排版 |
+| `markdown` | 整本一份 `.md`（`#` 书名 / `##` 卷 / `###` 章）；按状态筛时是一卷一个 `.md` 的 zip | 你自己接着改、丢进别的工具 |
+| `txt` | 纯文本（标题不带你看到的 `#`） | 微信里发、随手看 |
+
+**`target` 决定导多少**：`book` 整本；`volume` 一卷（要带 `volumeId`，比如 `vol-01`）；`status` 只导某个状态（`draft` / `revised` / `final`，跨卷筛所以打包成「一卷一个文件」的 zip）。`volumeId` 和 `status` 是两条不同的选择轴，**别混着传**——混了会被明确拒掉，而不是猜你想要哪个。
+
+**它不碰你的书**。导出物落在插件自己的目录：
+
+```
+%USERPROFILE%\.dsh\inkflow\exports\<书名>-<格式>-<UTC 时间戳>.<扩展名>
+```
+
+所以导十次也不会污染仓库：`git status` 干净、索引不用重建、`library/` 里也不会多出资料卡片。同一秒导两次不会互相覆盖，第二份带 `-2`。这些文件是**派生物**——随时可以删、随时能重算，插件不代你删，也不做保留策略。
+
+**拒绝比空文件好**：书是空的、或者筛出 0 章（比如这本书还没有 `final` 的章），它回答 `EXPORT_EMPTY` 并且**一个文件都不写**，而不是给你一个看起来正常的空包。
+
+**怎么确认导出没问题**：写盘之前插件自己用同一个 ZIP 读取器把成品读回来（条目数、EPUB 的第一条是不是 `mimetype`、是不是全部 store-only），读不回来就不写。想再稳一点就手工验一眼：`unzip -l 那份.epub`，第一行应该是 `mimetype`。
 
 ## 6. 文件格式速查
 
