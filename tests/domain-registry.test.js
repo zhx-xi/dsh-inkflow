@@ -110,6 +110,13 @@ const BUILT_IN_TOOLS = [
   ['inkflow_proposal_decide', 'a6f7a092'],
   ['inkflow_proposal_apply', '0c64fabf'],
   ['inkflow_proposal_rollback', '822d2435'],
+  // #47: the batch queue — enqueue / take / complete / approve. Built-ins for the same reason
+  // as the extraction queue and the proposals: a job is not an entity, belongs to no content
+  // directory, and the plugin embeds no model client to draft the chapters it queues (X-26).
+  ['inkflow_batch_enqueue', '606e03fb'],
+  ['inkflow_batch_take', '70f2b3be'],
+  ['inkflow_batch_complete', 'a5d82c2a'],
+  ['inkflow_batch_approve', '289befc4'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

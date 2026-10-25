@@ -47,6 +47,7 @@
 | 20 | 提案 / 修订 proposal | `.inkflow/proposals/` | JSON | **工作物，不是派生物**：删了不可再生，接受后才写正文并 git commit（[ADR-0023](../adrs/0023-proposal-job-private-placement.md)） |
 | 21 | 审计运行 audit_run | `.inkflow/audit/audit-<时间戳>.md`（可归档报告）；门禁结论 `gate-<chapterId>.json`、简报度量 `brief-<chapterId>.json`（可 diff 的事实） | MD / JSON | **`index/` 不再存任何结论**（[ADR-0023](../adrs/0023-proposal-job-private-placement.md)）：带戳的是「一次运行」，不带戳的是「此刻的结论」，两者不合并 |
 | 22 | 提取暂存 extraction_staging | `.inkflow/candidates/<stamp>-<kind>.json` | JSON | **待作者审阅的工作物**，不是派生物：重建索引不该让它消失（[ADR-0017](../adrs/0017-extraction-by-session-model.md) D3）。形状 `{schemaVersion, submittedAt, source:{chapters[]}, proposals[]}`，`candidateId` 形如 `ex-<8 位十六进制>`；每条 proposal 可带两个**可选**键（都由 `judgeCandidate()` 产出，与 accept **同一个**判定）：`willFail: {code, message, path?}` 是硬冲突（跨类 id、域不变量、无法解析），**提示不是闸门**（照样入队、照样可采纳，采纳时按同一 code 拒绝）；`duplicate: {state:"different", path, digest?, changedFields[]}` 表示「同身份、异内容」，采纳需显式 `overwrite: true` 才替换（先落 `replace` 备份包，CAS 基线是这里的 `digest`）。**同身份且内容一致**的候选**不入队**：`propose` 直接跳过并在回答里列 `skipped[]`（ADR-0021）。两个键都不写时文件与 0.4.0 逐字节相同，所以旧候选文件仍可读。只有 `inkflow_extract_accept(confirm)` 才写内容目录 |
+| 23 | 批量作业 batch_job | `.inkflow/jobs/<jobId>/{meta.json,chapters/<seq>.json}` | JSON | **作业进度是工作物，不是派生物**（[ADR-0023](../adrs/0023-proposal-job-private-placement.md)，§3.9）：删了断点就没了，重建索引不该让它消失；同样不进 `index/`、不进 git。只有 `inkflow_batch_complete`（干净判决）与 `inkflow_batch_approve`（人工批准）才写正文 |
 
 **简报注入审计（#43，`audit_run` 之外的第二份记录）**：`.inkflow/audit/brief-<chapterId>.json`，`format: "inkflow.brief-audit"`、`schemaVersion: 1`。内容是「这一章此刻的九段简报」的**确定性度量**：`chapterId` / `chapterSeq` / `chapterPath`（相对路径）/ `budgetTokens` / `tokens` / `overBudget` / `segments[{id,label,bytes,tokens,truncated,missing}]`（九个，顺序固定 `outline → promise → characters → voice → facts → foreshadow → world → prevTail → anchors`）/ `trims[{segment,before,after,ratio}]`。**不含正文、不含时间戳、不含随机 id、不含绝对路径**：同一章、同一套文件跑两次字节相同（[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D4），字段顺序即构造顺序。它和 `audit-<时间戳>.md` 不是一件事：那个是**一次运行**的可归档报告，这个是**可 diff 的事实**。文件名里的 `chapterId` 是章自己声明的 frontmatter `id`，没有则 `seq-<n>`，都没有则 `no-chapter`。
 
@@ -316,6 +317,29 @@ origin:
 1. **未确认的提案零内容目录写盘**：`create` 与 `decide` 之后 `chapters/`、`characters/`… 全部逐字节不变，`index/` 除 `.gitkeep`/`*.db*` 外无新增；越界写被 `resolveWriteTarget` 的白名单拒（ADR-0023 D4）。
 2. **`apply` 只写"已接受"的段**：被拒绝的段一个字节都不进文件——重建正文时用 `baseLines`，不写 `nextLines`。
 3. **`apply` 可回滚且逐字节一致**：`apply` 前先开 `replace` 备份包（`backup.ts`，ADR-0012 #1），回滚走 `rollbackBackup`（`verbatim: true`，BOM/CRLF 保留），并用摘要回读证明"一致"而不是"同一段话"。
+
+### 3.9 批量作业目录 `.inkflow/jobs/<jobId>/`
+
+**作业进度是工作物，不是派生物**（[ADR-0023](../adrs/0023-proposal-job-private-placement.md) D1/D5、X-25）：`index/` 删了会重建，把「跑到第几章」放在那里等于「重建索引就丢断点」。所以作业落在 `.inkflow/`，**不进索引**（没有表、没有列，`INDEX_SCHEMA_VERSION` 不因它动），也**不进 git**（`.gitignore` 的 `.inkflow/` 由首次写入追加，X-9）。
+
+```
+<book>/.inkflow/jobs/
+  bj-1a2b3c4d/                 # jobId = 'bj-' + 8 位十六进制，由插件发放
+    meta.json                  # 作业状态、并发上限、逐章汇总
+    chapters/
+      1.json                   # 一章：要写什么 + 跑到哪一步（文件名就是 seq）
+      2.json
+```
+
+`meta.json`（`schemaVersion: 1`）：`jobId` / `status`（`running` | `paused` | `done` | `failed`，由章节状态派生，不单独拍板）/ `concurrency`（默认 3）/ `batchSize`（默认 3）/ `pauseOn`（`warning` | `any`，**没有** `never`）/ `createdAt` / `updatedAt` / `pauseReason`（`{code, message, seqs[]}` 或 null）/ `chapters[]`（`{seq, chapterId, status, attempts, digest}` 的**汇总**，每次保存从 `chapters/*.json` 重算）。
+
+`chapters/<seq>.json`（`schemaVersion: 1`，**这一章的真相**）：`title` / `volumeId` / `outline` / `budgetWords`（要写什么，由 `inkflow_batch_enqueue` 登记）、`status`（`pending` | `running` | `done` | `held` | `failed` | `edited`）、`attempts` / `claimedAt` / `startedAt` / `finishedAt`、`digest`（**`complete` 写下的章文件字节的 sha256**）、`gate`（七项门禁的计数 + 至多 20 条 findings + `paused`）、`pendingBody`（被门禁拦下的草稿正文）、`lastError`。
+
+三条不变量（`tests/batch.test.js` 各断言一条）：
+
+1. **`enqueue` 零内容目录写盘**：建作业之后 `chapters/`（含 `index.json`）、九个内容目录、`index/` 全部不变，作业记录只在 `.inkflow/jobs/` 里。
+2. **续跑判据是摘要不是文件存在**：`done` 的章必须 `digest` 等于磁盘字节才跳过；不一致即 `edited`（作者的改动永不覆盖）；手工新建的空章不是「已完成」，照样被领取。
+3. **门禁不通过零写盘**：`held` 的章只有 `pendingBody` 与判决进记录，`chapters/` 一个字节不动；只有 `inkflow_batch_approve`（`confirm: true`）才把那份草稿写进正文。
 
 ## 4. 派生索引（`index/inkflow.db`）
 

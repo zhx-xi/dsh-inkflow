@@ -641,5 +641,8 @@ export const PANEL_TABS: PanelTab[] = [
   { id: 'review', label: '审稿', available: true },
   // Issue #45 landed this row live: the page is `src/client/proposal.tsx`, fed by `GET /proposal`.
   { id: 'proposal', label: '提案', available: true },
+  // Issue #47 landed this row live: the page is `src/client/batch.tsx`, fed by `GET /batch` and
+  // the one write `POST /batch/resume` (job records only — approving prose stays a tool call).
+  { id: 'batch', label: '批量', available: true },
 ]
 

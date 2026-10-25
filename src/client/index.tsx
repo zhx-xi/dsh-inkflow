@@ -56,6 +56,9 @@ import { MapView } from './map.js'
 // Issue #46: the review tab — recorded runs, opinions with their evidence, and the
 // cross-model table. One file, one line in the page map below (X-12).
 import { ReviewView } from './review.js'
+// Issue #47: the batch job tab — status, per-chapter gate counts, the pause reason and the one
+// 续跑 button. One file, one line in the page map below (X-12).
+import { BatchView } from './batch.js'
 import { PLACE_KIND } from './map-model.js'
 import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
@@ -579,6 +582,10 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // Issue #45: 提案 — the diff, the per-hunk verdicts and the two confirmed actions.
     // `GET /proposal` is read-only, so opening this tab never touches a chapter.
     proposal: () => <ProposalView sessionId={sessionId} />,
+    // Issue #47: 批量 — the job's status, every chapter's state and gate counts, the pause
+    // reason and the 续跑 button. `GET /batch` is read-only; the button writes the job records
+    // and never a chapter file (approving prose is a tool call, not a click).
+    batch: () => <BatchView sessionId={sessionId} />,
   }
 
   /**

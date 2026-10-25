@@ -157,6 +157,9 @@ import {
   buildProposals,
   decideViaChannel as decideProposalViaChannel,
   rollbackViaChannel as rollbackProposalViaChannel,
+  BATCH_RESUME_BODY_FIELDS,
+  buildBatchPage,
+  resumeViaChannel as resumeBatchViaChannel,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 import { MAX_QUERY_CHARS } from './search.js'
@@ -667,6 +670,32 @@ const ROUTES: readonly InternalRoute[] = [
     methods: ['POST'],
     body: PROPOSAL_ROLLBACK_BODY_FIELDS,
     handle: async ({ target, version, body }) => rollbackProposalViaChannel(target, version, body),
+  },
+  {
+    // The batch job of this book (#47, ADR-0023, X-30): the job list plus one job's chapters,
+    // each with its status, its gate counts and whether a draft is waiting for approval.
+    //
+    // GET-only and **read-only**, and deliberately no `ensureIndex`: a job is plain JSON under
+    // `.inkflow/jobs/`, and the tab has to open on a book whose `index/` was just deleted —
+    // that is exactly the moment the author wants to know whether the batch survived.
+    name: 'batch',
+    pattern: /^\/batch$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const jobId = (query.get('jobId') ?? '').trim()
+      return buildBatchPage(target, version, { ...(jobId === '' ? {} : { jobId }) })
+    },
+  },
+  {
+    // 续跑: re-queue failed chapters and leave the done/failed state. Writes job records only —
+    // no prose, no chapter file — so it is a write route for the guards' sake. A job paused at
+    // the gate is refused with `APPROVAL_REQUIRED` (409): approving is `inkflow_batch_approve`,
+    // and a button must not become a way around the gate.
+    name: 'batch-resume',
+    pattern: /^\/batch\/resume$/,
+    methods: ['POST'],
+    body: BATCH_RESUME_BODY_FIELDS,
+    handle: ({ target, version, body }) => resumeBatchViaChannel(target, version, body),
   },
 ]
 

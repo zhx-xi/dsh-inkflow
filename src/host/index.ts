@@ -776,6 +776,90 @@ export {
 } from './review-compare.js'
 export type { ReviewCompare, ReviewCompareColumn, ReviewCompareRow } from './review-compare.js'
 
+/**
+ * The batch job queue (#47, ADR-0023, roadmap X-26/X-30): the state machine and its records
+ * under `.inkflow/jobs/`, the panel projection, and the four tools. Re-exported for the tests
+ * and for the routes' one entry point — the same arrangement as the gate, the review and the
+ * proposals.
+ */
+export {
+  CHAPTER_STATUSES,
+  CLAIM_LEASE_MS,
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_CONCURRENCY,
+  JOB_CHAPTER_FORMAT,
+  JOB_FORMAT,
+  JOB_GATE_FINDINGS_LIMIT,
+  JOB_ID_PREFIX,
+  JOB_SCHEMA_VERSION,
+  JOB_STATUSES,
+  MAX_ATTEMPTS,
+  MAX_BATCH_SIZE,
+  MAX_CONCURRENCY,
+  PAUSE_POLICIES,
+  approveDrafts,
+  chapterDigest,
+  completeChapter,
+  enqueueJob,
+  inFlightCount,
+  isJobId,
+  jobChapterPath,
+  jobDirRelative,
+  jobMetaPath,
+  listJobs,
+  pauseWorthy,
+  readJob,
+  reconcileChapter,
+  resumeJob,
+  statusFor,
+  takeBatch,
+} from './jobs.js'
+export type {
+  ApproveInput,
+  ApproveResult,
+  ChapterStatus,
+  CompleteInput,
+  CompleteResult,
+  EnqueueInput,
+  JobChapter,
+  JobChapterInput,
+  JobChapterRef,
+  JobError,
+  JobGateVerdict,
+  JobMeta,
+  JobPause,
+  JobResult,
+  JobState,
+  JobStatus,
+  JobSummary,
+  PausePolicy,
+  TakeResult,
+  TakeTask,
+} from './jobs.js'
+export { BATCH_RESUME_BODY_FIELDS, buildBatchPage, resumeViaChannel } from './jobs-wire.js'
+export type { BatchChapterRow, BatchCounts, BatchDetail, BatchPage } from './jobs-wire.js'
+export { jobsTools } from './jobs-tools.js'
+
+/**
+ * The 批量 page's pure view model (#47). Re-exported for the same reason as `proposal-model`:
+ * the three states the page can be in, and the sentence that explains a disabled 续跑, are
+ * claims the user reads, so the tests assert them on the built artifact.
+ */
+export {
+  EMPTY_BATCH_NOTE,
+  batchPanelState,
+  describeChapter,
+  describeChapterStatus,
+  describeGate,
+  describeJobRow,
+  describeJobStatus,
+  describePause,
+  readBatchPage,
+  resumeBlockedReason,
+  resumePayload,
+} from '../client/batch-model.js'
+export type { BatchChapterView, BatchJobRow, BatchJobView, BatchPageView, BatchPanelState } from '../client/batch-model.js'
+
 /** Private state directory (`.inkflow/`) helpers — ADR-0012, roadmap X-9. */
 export {
   PRIVATE_STATE_DIR,

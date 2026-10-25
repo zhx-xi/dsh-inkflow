@@ -48,6 +48,7 @@ import { buildSharedCopies, copySharedEntry, updateSharedEntry } from './shared-
 import { etlTools } from './etl-tools.js'
 import { reviewTools } from './review-tools.js'
 import { proposalTools } from './proposal-tools.js'
+import { jobsTools } from './jobs-tools.js'
 
 export interface ToolDeps {
   ctx: HostContext
@@ -2242,6 +2243,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // than a domain tool — a proposal is not an entity, belongs to no content directory, and
     // its one write path is the chapter writer, which no domain module owns.
     ...proposalTools(deps),
+    // The batch queue (#47, ADR-0023, X-26/X-30): enqueue / take / complete / approve. Built-ins
+    // for the same reason as the pair above — a job is not an entity, belongs to no content
+    // directory, and the plugin embeds no model client to draft the chapters it queues.
+    ...jobsTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),
