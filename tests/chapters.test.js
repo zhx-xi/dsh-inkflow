@@ -1,5 +1,5 @@
 /**
- * Volume/chapter CRUD contract (issue #16, ADR-0006 D6).
+ * Volume/chapter CRUD contract (ADR-0006 D6).
  *
  * The whole point of this surface is that the **files stay the truth**: a tool
  * call moves bytes, and the two catalogs plus the derived index follow whatever
@@ -1006,12 +1006,12 @@ test('safety: a title with a comment marker or a trailing dot is quoted or refus
 })
 
 // ---------------------------------------------------------------------------
-// Line endings and BOM (issue #132, tool path)
+// Line endings and BOM (tool path)
 // ---------------------------------------------------------------------------
 
-test('eol: inkflow_chapter_write keeps a CRLF chapter CRLF (issue #132)', async () => {
+test('eol: inkflow_chapter_write keeps a CRLF chapter CRLF', async () => {
   // The tool path has no client to hand metadata back, so the style has to come
-  // from the file itself. Before #132 the write door normalised to LF and the
+  // from the file itself. The write door used to normalise to LF, and the
   // author's whole chapter showed up in the diff for a one-character edit.
   const dir = workdir()
   try {
@@ -1039,7 +1039,7 @@ test('eol: inkflow_chapter_write keeps a CRLF chapter CRLF (issue #132)', async 
   }
 })
 
-test('eol: a new chapter is written LF without a BOM (issue #132 regression)', async () => {
+test('eol: a new chapter is written LF without a BOM (regression)', async () => {
   // A file the plugin creates has no previous style to preserve: the normalised
   // form (UTF-8, no BOM, LF) stays the default for new files.
   const dir = workdir()

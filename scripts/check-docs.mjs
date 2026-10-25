@@ -62,7 +62,7 @@ for (const file of files) {
 /**
  * The user guide is the only document a first-time reader walks top to bottom, so
  * its numbering is a navigational contract: `### 5.14` twice means one of the two
- * sections is unreachable by number, and an in-page anchor `(#515-…)` silently
+ * sections is unreachable by number, and an in-page anchor that carries a number silently
  * points at the wrong one (#close-out: the semantic section shipped as a second 5.14).
  * Every `## N.` block's `### N.M` children must therefore be 1, 2, 3 … in order.
  */

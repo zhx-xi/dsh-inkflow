@@ -3,7 +3,7 @@
  *
  * `architecture.md` §6 is the entry point a new reader uses to answer "who owns
  * this?" (AGENTS.md §9). A table that silently stops at last release's modules is
- * worse than no table: it reads as complete (#146/#150 — the 0.3.0 modules were
+ * worse than no table: it reads as complete (the 0.3.0 modules were
  * missing and nobody noticed, because nothing looked).
  *
  * Two assertions, both about §6 only:

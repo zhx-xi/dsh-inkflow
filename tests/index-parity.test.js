@@ -1,5 +1,5 @@
 /**
- * Issue #8 — the derived index against the disk (ADR-0005: files are the truth,
+ * The derived index against the disk (ADR-0005: files are the truth,
  * the index is a cache).
  *
  * "The rebuild succeeded" says nothing about whether it saw everything. These
@@ -258,7 +258,7 @@ function generateBook(root) {
   }
   spot.chapterExplicitSeq = { path: byNumber(10).path, seq: 999 }
   spot.chapterExplicitVolume = { path: byNumber(61).path, volume: 'vol-09' }
-  // 112 in-volume chapters come first, so the first top-level card is #113.
+  // 112 in-volume chapters come first, so the first top-level card comes after them.
   spot.chapterTopLevel = { path: topLevelRecords[0].path, volume: null, seq: 1 }
   spot.chapterEmptyBody = { path: byNumber(17).path, wordCount: 0 }
 
@@ -319,7 +319,7 @@ function generateBook(root) {
 
   // ---- timeline / relations / facts: 6 + 5 + 5 ----
   for (let index = 1; index <= 6; index += 1) {
-    // #28 owns `timeline/`: a confirmed event needs a world time, so the fixture
+    // The timeline domain owns `timeline/`: a confirmed event needs a world time, so the fixture
     // writes a valid one (one event per chapter, so no ordering pair exists).
     markdown(
       root,
@@ -335,7 +335,7 @@ function generateBook(root) {
     )
   }
   // Relations carry the field names of data-model §3.3 (`source`/`target`/`kind`):
-  // since #27 `relations/` has its own domain, so a legacy `from`/`to` file would be
+  // The relation domain owns `relations/`, so a legacy `from`/`to` file would be
   // reported as a broken edge instead of being ignored. Every pair is distinct — one
   // (source, target, kind) edge may exist once (RELATION_DUPLICATE).
   const relationPairs = [
@@ -426,7 +426,7 @@ async function assertParity(harness, root, expected) {
     assert.equal(count(db, 'world_entries'), expected.expectedCounts.worldEntries)
     assert.equal(count(db, 'outline_nodes'), expected.expectedCounts.outlineNodes)
     assert.equal(count(db, 'library_files'), expected.expectedCounts.libraryFiles)
-    // #28: one row per `timeline/<slug>.md`; the count is not part of `counts`
+    // One row per `timeline/<slug>.md`; the count is not part of `counts`
     // (`IndexCounts` is a fixed legacy shape), so it is asserted straight off the table.
     assert.equal(count(db, 'timeline_events'), 6)
     assert.equal(count(db, 'files'), expected.expectedCounts.files)

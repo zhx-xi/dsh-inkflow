@@ -1,10 +1,10 @@
 /**
- * The "no hardcoded colours" judgement, in one place (AGENTS.md §6, issue #132/#144).
+ * The "no hardcoded colours" judgement, in one place (AGENTS.md §6).
  *
  * Two panel test files ask the same question — does a client source file draw a colour
  * from something other than a theme token — and the answer used to be the same regex in
  * both: `#[0-9a-fA-F]{3,8}`. That regex also matches an **issue reference in a comment**
- * (`// issue #132`), so the implementation that cited its issue turned the suite red,
+ * (a comment that cites an issue), so the implementation that cited one turned the suite red,
  * and the cheapest way out was rewriting the comment. A guard whose false positive edits
  * prose is worse than no guard, hence this helper.
  *
@@ -15,7 +15,7 @@
  *   * a hex token within a short run of text after a colour-ish property name —
  *     `border: 1px solid #0f0` — because CSS-in-JS also allows the bare form.
  *
- * A `#132` in a comment is neither: it is not quoted and no colour property precedes it
+ * A two-digit reference in a comment is neither: it is not quoted and no colour property precedes it
  * on that line, so it is not reported. The reverse still bites: `color: '#ff0000'` and
  * `background: "#abc"` are reported, which is the direction that protects the theme.
  *

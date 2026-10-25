@@ -1,11 +1,11 @@
 /**
- * Issue #200 — chapter addressing on the four read routes, and query keys that are
+ * Chapter addressing on the four read routes, and query keys that are
  * declared rather than guessed.
  *
  * The bug this suite pins is not "a parameter does not work": it is that
  * `GET /brief?chapterId=ch-0002` answered **the last chapter**, with HTTP 200 and a
  * complete payload. The caller's target was dropped and nothing in the response said
- * so, which is the same failure shape as #189 (a wrong answer with a legal exit).
+ * so, which is the same failure shape as the branch-protection bug (a wrong answer with a legal exit).
  *
  * Five properties, in the order they failed:
  *
@@ -321,7 +321,7 @@ test('addressedBy: the four read routes report which key answered, default inclu
     const harness = createHarness({ workspace: root })
 
     // `addressedBy` is not decoration: the payload's own `chapterId` must agree with it. The
-    // last disagreement was `/review/compare` (#205): its header came from the recorded RUNS,
+    // last disagreement was `/review/compare`: its header came from the recorded RUNS,
     // so a chapter with no runs echoed `''` while `addressedBy` said `chapterId`.
     const cases = [
       ['/brief', 'default', 'ch-0003'],

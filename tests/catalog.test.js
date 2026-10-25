@@ -1,5 +1,5 @@
 /**
- * Volume/chapter catalog contract (issue #15, ADR-0006 D6).
+ * Volume/chapter catalog contract (ADR-0006 D6).
  *
  * The catalog is a **projection**: `chapters/**\/*.md` (file name + frontmatter)
  * is the truth, `chapters/index.json` and `chapters/<vol-dir>/index.json` are a
@@ -11,7 +11,7 @@
  *     would make the panel/diagnostic surface mutate the user's repository);
  *   - rebuilding must be derived, atomic and idempotent: the same `.md` files
  *     twice produce byte-identical catalogs, and a failed write leaves the old
- *     catalog untouched (io.ts atomicity, issue #14);
+ *     catalog untouched (io.ts atomicity);
  *   - the projection must resolve ownership from `volume` (volumeId) first and
  *     from the directory name only as a fallback, so renaming a volume slug does
  *     not renumber a single chapter;
@@ -623,7 +623,7 @@ test('catalog: the catalog is not a gate requirement and the index build never w
 })
 
 // ---------------------------------------------------------------------------
-// 8. The catalog is a projection, not a chapter (#114)
+// 8. The catalog is a projection, not a chapter
 // ---------------------------------------------------------------------------
 
 test('index: the catalog JSON is never walked as a chapter', async () => {
@@ -635,7 +635,7 @@ test('index: the catalog JSON is never walked as a chapter', async () => {
     assert.equal(rebuildCatalog(root).ok, true)
 
     // The plugin writes `chapters/index.json` and `chapters/<vol>/index.json`
-    // itself; before #114 the chapter domain walked them and reported
+    // itself; before the chapter domain walked them and reported
     // CHAPTER_NOT_MARKDOWN for the root and for every volume, on every rebuild.
     assert.equal(existsSync(join(root, ROOT_CATALOG)), true)
     assert.equal(existsSync(join(root, volumeCatalogPath('vol-01-入山'))), true)

@@ -1,5 +1,5 @@
 /**
- * The analysis half of the import path (issue #37, roadmap X-17).
+ * The analysis half of the import path (roadmap X-17).
  *
  * What must FAIL when this is wired wrong:
  *   1. an encoding tier is picked wrongly — a GBK manuscript decoded as UTF-8, a

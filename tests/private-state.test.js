@@ -1,5 +1,5 @@
 /**
- * The private state directory helpers (issue #121, ADR-0012).
+ * The private state directory helpers (ADR-0012).
  *
  * What matters here is `.gitignore` discipline, because the alternative is a deleted
  * chapter reappearing as an untracked file: the line is appended **only when the
@@ -30,13 +30,13 @@ function workdir() {
 
 test('private state: the eight subdirectories are the whole vocabulary', () => {
   assert.equal(PRIVATE_STATE_DIR, '.inkflow')
-  // Six since X-25 / ADR-0023: `proposals/` (the proposal inbox, #45) and `jobs/`
-  // (batch-job progress that must survive a restart, #47) joined trash/ backup/ audit/
+  // Six since X-25 / ADR-0023: `proposals/` (the proposal inbox) and `jobs/`
+  // (batch-job progress that must survive a restart) joined trash/ backup/ audit/
   // candidates/ — the four X-18 left behind. A new name here widens the write
   // whitelist, which is why the list is asserted exactly rather than spot-checked.
-  // The seventh is `review/` (#46): one record per review run, and a run is an event —
+  // The seventh is `review/`: one record per review run, and a run is an event —
   // the reviewer is a session's model, so it cannot be recomputed the way a gate verdict can.
-  // The eighth is `purged/` (#199, ADR-0026): the holding area a cleaned-up run or a
+  // The eighth is `purged/` (ADR-0026): the holding area a cleaned-up run or a
   // closed proposal moves into, so that "clean up" is a move and not a loss.
   assert.deepEqual([...PRIVATE_STATE_SUBDIRS], ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs', 'review', 'purged'])
   assert.equal(PRIVATE_STATE_IGNORE_LINE, '.inkflow/')

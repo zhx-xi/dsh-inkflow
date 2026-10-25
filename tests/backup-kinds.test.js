@@ -1,8 +1,8 @@
 /**
- * The backup package's `kind` vocabulary (issue #146 code half).
+ * The backup package's `kind` vocabulary (the code half).
  *
  * `backup.ts` shipped with two kinds because only the repair pass and the 6→9
- * migration existed (#36). The 0.4.0 batch adds four more producers — batch import,
+ * migration existed. The 0.4.0 batch adds four more producers — batch import,
  * id replace, shared-content copy, restore — and X-17 says all of them reuse this one
  * package. So the vocabulary is widened once, here, instead of each issue adding its
  * own word and each reader having to learn about it.
@@ -44,7 +44,7 @@ function body() {
 
 test('backup: the kind vocabulary is exactly the six contract values', () => {
   // X-17 / roadmap §2.3: the four 0.4.0 producers plus the two maintenance batches
-  // #36 already shipped. B1's issues do not add a seventh.
+  // The migrator already shipped. B1's tasks do not add a seventh.
   assert.deepEqual([...BACKUP_KINDS], ['repair', 'migrate', 'import', 'replace', 'shared', 'restore'])
 })
 

@@ -1,5 +1,5 @@
 /**
- * Issue #41 — the semantic backend's shape rules, asserted without a server.
+ * The semantic backend's shape rules, asserted without a server.
  *
  * Everything here is a decision that would fail SILENTLY in production and therefore has to
  * be pinned in a test:

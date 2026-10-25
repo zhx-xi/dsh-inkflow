@@ -1,5 +1,5 @@
 /**
- * Issue #46 — the review DAG, its evidence chain, the run record and the cross-model table.
+ * The review DAG, its evidence chain, the run record and the cross-model table.
  *
  * What each block is for, so a failure names the promise that broke:
  *
@@ -462,7 +462,7 @@ test('横评：只有 1 个模型时表照样出，但明确标不可比', () =>
   }
 })
 
-test('横评 #205：表头的章身份取自解析出的那一章，记录只是回落', () => {
+test('横评：表头的章身份取自解析出的那一章，记录只是回落', () => {
   const fixture = book({
     chapters: [
       { id: 'ch-0001', seq: 1, title: '第一章 推门', body: BODY },
@@ -529,7 +529,7 @@ test('横评 #205：表头的章身份取自解析出的那一章，记录只是
   }
 })
 
-test('横评路由 #205：?chapterId= 就是那一章，未知 id 404 不回退，默认仍是最后一章', async () => {
+test('横评路由：?chapterId= 就是那一章，未知 id 404 不回退，默认仍是最后一章', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'inkflow-review-compare-205-'))
   const fixture = book({
     chapters: [
@@ -646,7 +646,7 @@ test('运行记录：落 .inkflow/review/<chapterId>/<runId>.json，可回读，
 })
 
 /**
- * #199: the run list is folded, not truncated away.
+ * The run list is folded, not truncated away.
  *
  * The author's question was "do these stay here forever?" — and the honest answer needs
  * both halves: the first screen stays readable (one page of runs) AND the older ones stay
@@ -656,7 +656,7 @@ test('运行记录：落 .inkflow/review/<chapterId>/<runId>.json，可回读，
  * Fails if: the host stops sending `foldLimit`, the default page grows past
  * `REVIEW_LIST_LIMIT`, a larger `limit` is ignored, or an old run cannot be selected.
  */
-test('运行列表：默认一页、更早的由 foldLimit 说明、limit 放大后可选中旧运行（#199）', () => {
+test('运行列表：默认一页、更早的由 foldLimit 说明、limit 放大后可选中旧运行', () => {
   const fixture = book()
   try {
     seedRuns(fixture.root, 'ch-0001', 25)
@@ -992,7 +992,7 @@ test('面板纯模型：三态、跳转形状、证据行与空值', async () =>
 })
 
 /**
- * #199: the panel's fold, as a pure decision.
+ * The panel's fold, as a pure decision.
  *
  * The list is one page plus a count of what is behind it; opening the fold must not
  * *renumber* the fold (the older rows are always the ones past the host's boundary), and a
@@ -1001,7 +1001,7 @@ test('面板纯模型：三态、跳转形状、证据行与空值', async () =>
  * Fails if: `splitRuns` is missing, the boundary is taken from `runs.length` instead of
  * `foldLimit`, or the older rows are returned in a different order than the host sent them.
  */
-test('面板纯模型：运行列表分「当前一页」与「更早的 N 次」（#199）', async () => {
+test('面板纯模型：运行列表分「当前一页」与「更早的 N 次」', async () => {
   const model = await loadClientModel('review-model.ts')
   const rows = Array.from({ length: 25 }, (_, index) => ({
     runId: `r${String(25 - index).padStart(2, '0')}`,

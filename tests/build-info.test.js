@@ -1,5 +1,5 @@
 /**
- * Build identity and stale-load detection (issue #88).
+ * Build identity and stale-load detection.
  *
  * The user-visible failure: DSH loads a plugin's `lib/` ONCE at startup. A later
  * `pnpm run build` rewrites the disk but not the running generation, so a

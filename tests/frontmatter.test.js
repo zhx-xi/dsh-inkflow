@@ -1,5 +1,5 @@
 /**
- * Frontmatter parser/writer regressions for issue #6.
+ * Frontmatter parser/writer regressions.
  *
  * The defects were seen on hand-written chapter files: trailing `#` comments
  * ended up inside ids/volumes/statuses, a body that starts with a `---` rule
@@ -60,7 +60,7 @@ function scaffold(root) {
  * Rebuild the derived index and hand back the raw tool value.
  *
  * `workspace` is the directory that plays the Session working directory: since
- * #7 that is the only trust anchor for path scope, so the fixture project must
+ * the gate made that the only trust anchor for path scope, so the fixture project must
  * live inside it or the tool refuses the path before touching the disk.
  */
 async function rebuild(root, workspace) {
@@ -388,7 +388,7 @@ test('write-back: frontmatterLine quotes a value the parser would misread', () =
 })
 
 // ---------------------------------------------------------------------------
-// List values (#25): a card's aliases / 语言基因 / 按章状态 are lists whose items
+// List values: a card's aliases / 语言基因 / 按章状态 are lists whose items
 // contain `,` and `:`, so the patch path has to write them in block form.
 // ---------------------------------------------------------------------------
 

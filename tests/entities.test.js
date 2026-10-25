@@ -1,9 +1,9 @@
 /**
- * The cross-class projection (#23, roadmap X-1/X-3): nine-directory coverage, the
+ * The cross-class projection (roadmap X-1/X-3): nine-directory coverage, the
  * `entities` table, one full-text index, and the two-character fallback.
  *
  * The chapter body FTS already covers the manuscript; what these tests pin is that
- * the *setting library* is queryable at all — before #23 the index skipped every
+ * the *setting library* is queryable at all — before the index skipped every
  * content directory except chapters/characters/world/outlines, so timeline,
  * relations and facts entities were invisible no matter what was on disk.
  */

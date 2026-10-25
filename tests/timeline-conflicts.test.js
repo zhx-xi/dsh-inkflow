@@ -1,5 +1,5 @@
 /**
- * Issue #28 — the timeline conflict rules on **both** nets: the rebuild's `validate()`
+ * The timeline conflict rules on **both** nets: the rebuild's `validate`
  * and the write planner, which share one judge (`timelineConflicts`).
  *
  * Why this file exists separately: `tests/timeline.test.js` covers the two ordering axes,
@@ -335,7 +335,7 @@ test('timeline: an illegal date is reported by a rebuild and refused by the tool
     assert.equal(existsSync(join(root, 'timeline/春天.md')), false, 'a refused write creates no file')
     assert.equal(sha256(existing), before, 'a refused write does not rewrite the existing file')
 
-    // Calendar arithmetic is real: 30 February and month 13 do not parse. Since #48 the
+    // Calendar arithmetic is real: 30 February and month 13 do not parse. Since the calendar landed, the
     // arithmetic is the calendar's, so the table is passed explicitly — the point of the
     // assertions is unchanged (a date the table cannot honour is not a date).
     assert.equal(parseWorldTime('1710-02-30', DEFAULT_CALENDAR), undefined)

@@ -1,5 +1,5 @@
 /**
- * A refused relation write must not touch the file — including the *update* case (#27).
+ * A refused relation write must not touch the file — including the *update* case.
  *
  * The reviewer pointed out the existing suite proved "no new file appears" but never
  * "an existing file is left byte-identical" when the planner refuses an edit. These

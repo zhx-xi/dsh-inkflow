@@ -1,5 +1,5 @@
 /**
- * Issue #22 — chapter full-text search over the derived index (ADR-0005).
+ * Chapter full-text search over the derived index (ADR-0005).
  *
  * The index is a cache, and `chapters_fts` is built with `tokenize='trigram'`.
  * Trigram matching needs at least three characters: a 1–2 character query

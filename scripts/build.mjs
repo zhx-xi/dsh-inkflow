@@ -28,7 +28,7 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const PLUGIN_ID = manifest.name
 
 /**
- * Build stamp (issue #88): `<git short sha>@<ISO>`.
+ * Build stamp: `<git short sha>@<ISO>`.
  *
  * DSH loads `lib/` ONCE at startup and HMR never swaps an already-loaded plugin,
  * so the process can be executing a generation that no longer exists on disk —

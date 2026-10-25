@@ -1,10 +1,10 @@
 /**
- * Issue #199 — the private state's purge area: cleaning up a review run or a finished
+ * The private state's purge area: cleaning up a review run or a finished
  * proposal is a **move**, and the author can put it back.
  *
  * What each block is for, so a failure names the promise that broke:
  *
- *   1. **`open` 的提案永不进候选** — the author ruling for #199 is "clean up only what is
+ *   1. **`open` 的提案永不进候选** — the author ruling is "clean up only what is
  *      finished": an undecided proposal cleaned up would be a decision nobody made.
  *   2. **已结束的提案/单条运行搬进 `purged/`** — the source leaves the list, the bytes stay,
  *      the manifest row and the `.inkflow/audit/purge-<stamp>.md` record both exist, and the
@@ -392,7 +392,7 @@ test('清理：单条运行记录搬进 purged/，审稿页不再列它，删的
     assert.equal(after.json.value.runCount, 1, 'the panel lists one run fewer')
     assert.deepEqual(chapterFingerprint(fixture.root), before)
 
-    // The comparison table keeps working on what is left (issue #199 acceptance).
+    // The comparison table keeps working on what is left (the acceptance case).
     const compare = await read(harness, '/review/compare?chapterId=ch-0001')
     assert.equal(compare.status, 200)
   } finally {
@@ -456,7 +456,7 @@ test('清理：手工改过的清单行（path 指向内容目录）被拒读，
 })
 
 /**
- * #199's "可还原" half, from the author's side: clean up a run, change your mind, and every byte
+ * The "可还原" half, from the author's side: clean up a run, change your mind, and every byte
  * comes back at the path it left.
  *
  * The three refusals below are the ones that make the feature safe rather than merely useful: a
@@ -638,7 +638,7 @@ function proposalEnvelope({ rows, counts, total = rows.length, limit = 50 }) {
   }
 }
 
-test('面板纯模型：提案首屏只列 open，已结束的进折叠组且计数同一口径（#199）', async () => {
+test('面板纯模型：提案首屏只列 open，已结束的进折叠组且计数同一口径', async () => {
   const model = await loadClientModel('proposal-model.ts')
   const rows = [
     proposalRow({ proposalId: 'pr-00000003' }),
@@ -668,7 +668,7 @@ test('面板纯模型：提案首屏只列 open，已结束的进折叠组且计
   assert.equal(model.describeTotals(big).includes('本页列出 3 个'), true)
 })
 
-test('面板纯模型：回收区条目按页面分拣，清理与还原的请求体是同一个形状（#199）', async () => {
+test('面板纯模型：回收区条目按页面分拣，清理与还原的请求体是同一个形状', async () => {
   const model = await loadClientModel('purge-model.ts')
   const value = model.readPurgedValue({
     manifestPath: '.inkflow/purged/index.json',

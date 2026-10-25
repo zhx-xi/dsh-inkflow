@@ -1,7 +1,7 @@
 /**
- * Issue #48 / roadmap X-28 — the multi-era calendar, wired into the index and both axes.
+ * The multi-era calendar (roadmap X-28), wired into the index and both axes.
  *
- * The arithmetic itself is `tests/calendar.test.js` (#180). What is asserted **here** is
+ * The arithmetic itself is `tests/calendar.test.js`. What is asserted **here** is
  * the wiring, and only the wiring, because that is the part nothing else can catch:
  *
  *   1. **the derived column is the same answer** — every `timeline_events.world_absolute_day`
@@ -110,7 +110,7 @@ function storedRows(root) {
   }
 }
 
-test('timeline: every stored absolute day equals toAbsolute() of that file\'s own worldTime', async () => {
+test('timeline: every stored absolute day equals toAbsolute of that file\'s own worldTime', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -248,7 +248,7 @@ test('calendar: a two-era table orders the world axis across eras, not by string
     assert.equal(bare.ok, true)
     assert.equal(bare.era, 'celestial')
 
-    // Sorting the same rows by (year, month, day) — the pre-#48 comparison — puts them in
+    // Sorting the same rows by (year, month, day) — the pre-calendar comparison — puts them in
     // a different order; that divergence is the bug this fixture exists to catch.
     const byWrittenYear = [...rows].sort((left, right) => String(left.worldTime).localeCompare(String(right.worldTime)))
     assert.notDeepEqual(

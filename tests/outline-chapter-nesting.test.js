@@ -1,5 +1,5 @@
 /**
- * Three-level outline, fourth level refused (#24, I-02).
+ * Three-level outline, fourth level refused (I-02).
  *
  * The reviewer found this by hand: `chapter` under `chapter` was accepted by both the
  * write planner and the rebuild, while the code comment and the tool description both

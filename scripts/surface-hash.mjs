@@ -2,7 +2,7 @@
 /**
  * Print the model-facing surface hashes `tests/domain-registry.test.js` pins.
  *
- * Why this exists (#114): when a description or a schema property changes, that
+ * Why this exists: when a description or a schema property changes, that
  * test fails with two 8-character hashes and no hint about what moved. The fix it
  * demands — "recompute the baseline" — used to mean hand-running the registration
  * harness in a throwaway script. This is that script, kept in the repo so the

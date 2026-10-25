@@ -1,7 +1,7 @@
 /**
- * The writing-context segment registry (issue #121, roadmap X-13).
+ * The writing-context segment registry (roadmap X-13).
  *
- * The seam exists so #31 (foreshadow reminder) and #32 (ledger facts) each add ONE
+ * The seam exists so the foreshadow reminder and the ledger facts each add ONE
  * entry from their own module instead of editing the renderer. That promise is only
  * worth anything if the machinery behind it actually works while the registry is
  * empty — which is the state B0 ships in.

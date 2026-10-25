@@ -1,5 +1,5 @@
 /**
- * The store-only ZIP container (ADR-0018 D3, issue #146 code half).
+ * The store-only ZIP container (ADR-0018 D3, code half).
  *
  * A backup is a safety net, so the container is deliberately dumb: every entry is
  * stored (method 0) and the CRC-32 is computed here, because the project has no

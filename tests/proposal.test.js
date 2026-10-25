@@ -1,5 +1,5 @@
 /**
- * Issue #45 — proposal-based revision: line diff, per-hunk verdicts, apply, rollback.
+ * Proposal-based revision: line diff, per-hunk verdicts, apply, rollback.
  *
  * Every test here fails when the implementation is wrong in a way that matters to the
  * author, which is why the assertions are about bytes and directories rather than about
@@ -104,7 +104,7 @@ function chapter(root, body, options = {}) {
  * The private state (`.inkflow/`), the derived index and the root bookkeeping files are
  * excluded on purpose: "zero content writes" is a statement about the book's data, and
  * `.gitignore` legitimately gains one `.inkflow/` line the first time the proposal
- * directory is used (ADR-0012 #2) — that gets its own assertion.
+ * directory is used (ADR-0012 decision 2) — that gets its own assertion.
  */
 function contentTree(root) {
   const out = new Map()
@@ -186,7 +186,7 @@ test('提案：建立与决定都不写内容目录，提案只落在 .inkflow/p
     assert.equal(meta.decision.baseline.sha256, meta.base.sha256)
     assert.equal(meta.hunks.length, meta.counts.total)
 
-    // `.gitignore` gained exactly the one private-state line (append-only, ADR-0012 #2).
+    // `.gitignore` gained exactly the one private-state line (append-only, ADR-0012 decision 2).
     assert.equal(readFileSync(join(root, '.gitignore'), 'utf8').includes('\n.inkflow/\n'), true)
     // Nothing of this landed in the derived index: it is a cache, the proposal is not in it.
     assert.deepEqual(indexEntries(root), [])
@@ -245,7 +245,7 @@ test('提案：应用只写已接受的段，被拒绝的段一个字节都不�
     assert.equal(text.includes('湿冷的松脂味'), false, 'the rejected hunk did not land — not one byte of it')
     assert.equal(text.includes('风从松林里过来。'), true, 'the rejected hunk kept its original line')
     assert.equal(text.startsWith('---\nid: ch-0001\n'), true, 'frontmatter is never part of a revision')
-    // "Applying suggests a commit" (issue #45) — a string the author pastes, never a git call:
+    // "Applying suggests a commit" — a string the author pastes, never a git call:
     // the plugin does not run git, and the suggestion names the chapter and the proposal.
     assert.match(applied.value.commitSuggestion, /^git add "chapters\/vol-01\/0001-入山\.md" && git commit -m "/)
     assert.equal(applied.value.commitSuggestion.includes(proposal.proposalId), true)
@@ -657,7 +657,7 @@ test('提案：counts 由段状态算出，是唯一的汇总口径', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 8. The tool surface's receipts (issue #201)
+// 8. The tool surface's receipts
 // ---------------------------------------------------------------------------
 //
 // The host calls `output.render(args, value)` on whatever `execute` returned, so a

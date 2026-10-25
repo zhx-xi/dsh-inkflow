@@ -147,7 +147,7 @@ test('allowlists are carried over verbatim, not flattened away', () => {
   assert.deepEqual(carried.value.bypass_pull_request_allowances, allow)
 })
 
-test('a 404 "Branch not protected" is its own kind of read failure (issue #99)', () => {
+test('a 404 "Branch not protected" is its own kind of read failure', () => {
   // This is the emergency exit's starting state: nothing to carry over, so apply
   // must proceed. Any other failure means "current settings unknown" and apply
   // must refuse — the two must not collapse into one.

@@ -1,5 +1,5 @@
 /**
- * The 6→9 migrator (#36) and the rollback package it leaves behind.
+ * The 6→9 migrator and the rollback package it leaves behind.
  *
  * The acceptance criteria this file pins down are all about **sets and bytes**, not
  * counts:
@@ -289,13 +289,13 @@ test('migrate: an unreadable inkflow.json is not migrated — the wizard asks fo
 })
 
 // ---------------------------------------------------------------------------
-// #138: the derived `index/` directory
+// The derived `index/` directory
 // ---------------------------------------------------------------------------
 
 /**
  * The legacy layout **without** `index/`.
  *
- * This is the shape #138 was reported on. It matters because `index/` is the one
+ * This is the shape the field report described. It matters because `index/` is the one
  * required directory the write path creates by itself: `io.ts` puts the project
  * write lock at `index/.write.lock`, so the first `stageFile` of any run materialises
  * the directory. A plan (read-only, no lock) therefore promises `create-dir index`,
@@ -309,7 +309,7 @@ function legacyBookWithoutIndex() {
   return root
 }
 
-test('migrate: plan and apply agree step for step on a book without index/ (#138)', () => {
+test('migrate: plan and apply agree step for step on a book without index/', () => {
   const root = legacyBookWithoutIndex()
   const planned = planMigration(root)
   const plannedKeys = planned.actions.map((action) => keyOf(action.op, action.path))
@@ -325,7 +325,7 @@ test('migrate: plan and apply agree step for step on a book without index/ (#138
   assert.equal(readFileSync(join(root, 'index', '.gitkeep'), 'utf8'), '')
 })
 
-test('migrate: a rollback removes the empty index/ directory the run created (#138)', () => {
+test('migrate: a rollback removes the empty index/ directory the run created', () => {
   const root = legacyBookWithoutIndex()
   const before = fileDigests(root)
   const gitignoreBefore = readFileSync(join(root, '.gitignore'), 'utf8')
@@ -341,7 +341,7 @@ test('migrate: a rollback removes the empty index/ directory the run created (#1
   assert.equal(readFileSync(join(root, '.gitignore'), 'utf8'), `${gitignoreBefore}${PRIVATE_STATE_IGNORE_LINE}`)
 })
 
-test('migrate: a rollback keeps index/ that holds the derived database, and says why (#138)', () => {
+test('migrate: a rollback keeps index/ that holds the derived database, and says why', () => {
   const root = legacyBookWithoutIndex()
   const result = applyMigration(root, { confirm: true })
   assert.equal(result.ok, true)

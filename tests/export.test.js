@@ -1,5 +1,5 @@
 /**
- * Export: EPUB / DOCX / Markdown / TXT (#50, ADR-0024, roadmap X-27).
+ * Export: EPUB / DOCX / Markdown / TXT (ADR-0024, roadmap X-27).
  *
  * Five properties, each asserted the way the ADR names it:
  *

@@ -1,14 +1,14 @@
 /**
- * World domain (#26): the world book's own fields, the keyword matcher, the tree
+ * World domain: the world book's own fields, the keyword matcher, the tree
  * shape, and the write-side half of I-08.
  *
  * What these tests exist to catch:
  *   - `keywords` / `always` / `priority` never reaching the index, so a chapter's
  *     setting cannot be looked up without reading every file;
  *   - a matcher whose answer depends on entry order or on the machine (the
- *     briefing chain in #43 must be reproducible before it can be tested);
+ *     briefing chain must be reproducible before it can be tested);
  *   - the I-08 write gate letting a second root through, or refusing a flat
- *     category book (the #8 review settled that it is legal);
+ *     category book (the review settled that it is legal);
  *   - a refused write touching the disk anyway.
  */
 
@@ -106,9 +106,9 @@ test('world-book fields land in world_entries, and the schema version says so', 
       [],
       'the fixture is a valid world tree',
     )
-    // Pinned literal on purpose: v3 added these columns, v4 was #25 (characters +
-    // character_states), v5 was #28 (timeline_events), v6 was #29 (entity_mentions), v7 is
-    // #32 (the facts table), v8 is #31 (the foreshadow table), and a later domain that adds
+    // Pinned literal on purpose: v3 added these columns, v4 characters +
+    // character_states, v5 timeline_events, v6 entity_mentions, v7 the facts table,
+    // v8 the foreshadow table, and a later domain that adds
     // its own must bump the constant again — otherwise `ensureIndex()` calls a stale file
     // fresh and every read degrades to `INDEX_UNAVAILABLE`.
     assert.equal(INDEX_SCHEMA_VERSION, 9, 'the world-book columns are a schema bump, not an ALTER')
@@ -259,7 +259,7 @@ test('a parent that resolves to nothing is refused, across kinds included', () =
 })
 
 test('a flat category book is legal and must not be refused', () => {
-  // The #8 review settled this: every entry under `world/<category>/` with no
+  // The review settled this: every entry under `world/<category>/` with no
   // parent has no root, and that is a valid book — not a missing root.
   const plan = planWorldUpsert({
     entries: [{ id: 'w-1', path: 'world/门派/白鹤门.md', title: '白鹤门', category: '门派' }],
@@ -441,7 +441,7 @@ test('the upsert tool refuses a book that is not a usable project', async () => 
 })
 
 // ---------------------------------------------------------------------------
-// 6. The write chain (#159) — the gate must be the domain module's, not the plan's
+// 6. The write chain — the gate must be the domain module's, not the plan's
 // ---------------------------------------------------------------------------
 
 test('the upsert judges the candidate with the domain module own validate', async () => {
@@ -569,7 +569,7 @@ test('a field a frontmatter line cannot carry is refused before the lock', async
   }
 })
 
-test('keywords come back as written: a YAML-reserved word is quoted, not dropped (#169)', async () => {
+test('keywords come back as written: a YAML-reserved word is quoted, not dropped', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -599,7 +599,7 @@ test('keywords come back as written: a YAML-reserved word is quoted, not dropped
   }
 })
 
-test('the tool reads a comma as a separator, so one string becomes two keywords (#169)', async () => {
+test('the tool reads a comma as a separator, so one string becomes two keywords', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')

@@ -1,5 +1,5 @@
 /**
- * Old-library ETL (issue #51, roadmap X-29 / X-30): dry run, apply, idempotency, rollback.
+ * Old-library ETL (roadmap X-29 / X-30): dry run, apply, idempotency, rollback.
  *
  * The fixture is a **hand-built legacy database**: `node:sqlite` creates the 15 real table
  * shapes (the old file has 43; these are the ones the 13 content classes live in) inside a
@@ -491,7 +491,7 @@ test('applyEtl writes the planned set: legacy numbering preserved, counts reconc
     for (const name of readdirSync(join(root, 'index'))) {
       assert.ok(name === KEEP || name.startsWith('inkflow.db') || name.startsWith('.write') || name.startsWith('.lock'), `index/ holds only derived files, got ${name}`)
     }
-    // ADR-0012 #2: the private state directory is ignored from its first use.
+    // ADR-0012 decision 2: the private state directory is ignored from its first use.
     assert.match(readFileSync(join(root, '.gitignore'), 'utf8'), /^\.inkflow\/$/mu)
 
     // The index was rebuilt from the files, and the audit ran over the new tree.

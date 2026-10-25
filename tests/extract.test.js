@@ -1,5 +1,5 @@
 /**
- * The extraction pipeline (issue #38, ADR-0017): the candidate queue, the five tools and
+ * The extraction pipeline (ADR-0017): the candidate queue, the five tools and
  * the one write path.
  *
  * What each group pins, and why it can FAIL:
@@ -468,7 +468,7 @@ test('accept writes one entity through the domain seam; before it the content tr
   }
 })
 
-test('#178: identical content is skipped at submit time — no candidate, no write, nothing to review', async () => {
+test('identical content is skipped at submit time — no candidate, no write, nothing to review', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
@@ -492,7 +492,7 @@ test('#178: identical content is skipped at submit time — no candidate, no wri
   }
 })
 
-test('#178: different content is kept and marked; accepting asks for overwrite and only then replaces', async () => {
+test('different content is kept and marked; accepting asks for overwrite and only then replaces', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
@@ -551,7 +551,7 @@ test('#178: different content is kept and marked; accepting asks for overwrite a
   }
 })
 
-test('#178: an edit made after the decision is not clobbered — the digest is the CAS baseline', async () => {
+test('an edit made after the decision is not clobbered — the digest is the CAS baseline', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
@@ -1111,7 +1111,7 @@ test('the client bundle ships the candidate tab and its two actions', () => {
   assert.equal(/setInterval/u.test(bundle), false, 'the candidate page polls nothing: one read per open + 刷新')
 })
 
-test('a world keyword the inline list cannot carry is refused at the accept door too (#169)', async () => {
+test('a world keyword the inline list cannot carry is refused at the accept door too', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
@@ -1156,10 +1156,10 @@ test('a world keyword the inline list cannot carry is refused at the accept door
 })
 
 // ---------------------------------------------------------------------------
-// #178: a second extraction meets an existing entity — skip it or ask to overwrite
+// A second extraction meets an existing entity — skip it or ask to overwrite
 // ---------------------------------------------------------------------------
 
-test('#178: a re-extraction of an unchanged entity never reaches the queue twice', async () => {
+test('a re-extraction of an unchanged entity never reaches the queue twice', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
@@ -1186,7 +1186,7 @@ test('#178: a re-extraction of an unchanged entity never reaches the queue twice
   }
 })
 
-test('#178: the panel asks before replacing, and a batch never replaces anything', async () => {
+test('the panel asks before replacing, and a batch never replaces anything', async () => {
   const dir = workdir()
   try {
     const model = await loadExtractModel()
@@ -1225,7 +1225,7 @@ test('#178: the panel asks before replacing, and a batch never replaces anything
   }
 })
 
-test('#178: an older candidate file (no duplicate / willFail keys) still reads', async () => {
+test('an older candidate file (no duplicate / willFail keys) still reads', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
@@ -1265,7 +1265,7 @@ test('#178: an older candidate file (no duplicate / willFail keys) still reads',
   }
 })
 
-test('#178: the shared judge covers other kinds too — a world candidate on an occupied path is asked about, not refused', async () => {
+test('the shared judge covers other kinds too — a world candidate on an occupied path is asked about, not refused', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))

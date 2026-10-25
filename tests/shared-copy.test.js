@@ -1,6 +1,6 @@
 /**
  * Contract tests for the plugin-level shared library's take-out direction
- * (#40, ADR-0007 C2–C6): copy snapshot, `origin` provenance, stale detection,
+ * The take-out direction (ADR-0007 C2–C6): copy snapshot, `origin` provenance, stale detection,
  * the explicit per-entry update, and the `library/`-only reference mode.
  *
  * What must FAIL when the implementation is wrong (each one is a scenario below):

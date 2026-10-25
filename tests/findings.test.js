@@ -1,12 +1,12 @@
 /**
- * The shared finding vocabulary (issue #121, roadmap X-14).
+ * The shared finding vocabulary (roadmap X-14).
  *
  * The value of this suite is entirely in the two cross-checks, not in the types:
  *
  *   1. **code ↔ spec**: every code in `FINDING_CODES` must be documented in
  *      `.agents/specs/data-model.md`, and every validation code the host's domain
  *      modules actually emit must be in `FINDING_CODES`. Without the second
- *      direction, #33's report would silently miss a code that exists; without the
+ *      direction, the audit's report would silently miss a code that exists; without the
  *      first, a code could be invented in code and never reach the invariant table.
  *   2. **order**: `compareFindings` has to be a total order, or a report of the same
  *      unchanged project reorders itself between runs and stops being diffable.
@@ -26,15 +26,15 @@ const repoRoot = join(here, '..')
 /**
  * Catalogue entries that **no host code emits today**, each for a stated reason:
  *
- *   * `ENTITIES_DRIFT` — invariant I-15, which #23 made *unrepresentable* instead of
+ *   * `ENTITIES_DRIFT` — invariant I-15, which the projection made *unrepresentable* instead of
  *     checked (rows and projection are written from one scan in one transaction), so
- *     nothing can emit it. The name stays in the vocabulary so #33's report and any
+ *     nothing can emit it. The name stays in the vocabulary so the audit's report and any
  *     future checker can use it without re-adding the code.
  *
  * Codes that left this list with their own domain: `FORESHADOW_TRANSITION_INVALID`
- * (#31, emitted from two nets — the write path's transition check and the rebuild's
- * self-contradiction check), `FACT_LINE_MALFORMED` / `FACT_CONFLICT` (#32) and
- * `ID_PATH_DIVERGED` (#34). A reservation must be dropped in the same commit that
+ * (emitted from two nets — the write path's transition check and the rebuild's
+ * self-contradiction check), `FACT_LINE_MALFORMED` / `FACT_CONFLICT` and
+ * `ID_PATH_DIVERGED`. A reservation must be dropped in the same commit that
  * starts emitting it, or the loop below fails with "emitted now: drop the reservation".
  *
  * A code listed here but absent from the catalogue is an error, not an exemption.
@@ -66,14 +66,14 @@ const WRITE_SIDE_CODES = new Set([
   'FACT_SOURCE_INVALID',
   'FACT_SUBJECT_MISMATCH',
   'FACT_VALUE_INVALID',
-  // #159: a value that cannot be one frontmatter line (`title` / `id` / `parent`), so it
+  // A value that cannot be one frontmatter line (`title` / `id` / `parent`), so it
   // is a bad request, not a problem in the book.
   'FIELD_INVALID',
-  // #31: the foreshadow write path's argument rejections and its confirm gate.
+  // The foreshadow write path's argument rejections and its confirm gate.
   'FORESHADOW_FIELD_INVALID',
   'FORESHADOW_STATUS_INVALID',
   'FORESHADOW_UPSERT_REQUIRES_CONFIRMATION',
-  // #48: the calendar is a *parameter* of the date readers, not a content invariant
+  // The calendar is a *parameter* of the date readers, not a content invariant
   // (ADR-0025 D1 spells that out: `CALENDAR_*` are refusal codes like `PATH_*`, and the
   // `CALENDAR_INVALID_SPEC` refusal names a table the caller handed in). A table the
   // book itself carries is reported as `TIMELINE_TIME_INVALID` instead, which is already
@@ -81,7 +81,7 @@ const WRITE_SIDE_CODES = new Set([
   // the timeline already owns.
   'CALENDAR_INVALID_SPEC',
   'CALENDAR_SET_REQUIRES_CONFIRMATION',
-  // #48: a `kind` outside the five-type vocabulary, refused by the relation tools.
+  // A `kind` outside the five-type vocabulary, refused by the relation tools.
   'RELATION_FIELD_INVALID',
   'ORDER_INVALID',
   'PRIORITY_INVALID',
@@ -101,7 +101,7 @@ const WRITE_SIDE_CODES = new Set([
   'INDEX_BUILD_FAILED',
   'INDEX_UNAVAILABLE',
   'NOT_AN_INKFLOW_PROJECT',
-  // #46: the review run's own refusals. A bad opinion shape (`REVIEW_DIMENSION_UNKNOWN`,
+  // The review run's own refusals. A bad opinion shape (`REVIEW_DIMENSION_UNKNOWN`,
   // `REVIEW_TEXT_REQUIRED`, `REVIEW_SEVERITY_INVALID`), a node that could not be run
   // (`REVIEW_NODE_MISSING`), a node that failed (`REVIEW_NODE_FAILED`) or a project that
   // could not be walked (`REVIEW_READ_FAILED`) describe a *call*, not the book — the book
@@ -131,20 +131,20 @@ function emittedValidationCodes() {
     join(repoRoot, 'src/host/indexer.ts'),
     join(repoRoot, 'src/host/index-build.ts'),
     join(repoRoot, 'src/host/catalog.ts'),
-    // #44: the quality gate's four halves emit `GATE_*` from the same `code: '…'` shape, so
+    // The quality gate's four halves emit `GATE_*` from the same `code: '…'` shape, so
     // the scan has to see them — otherwise the catalogue entries would read as "nobody
     // emits this" and the gate codes would have to be excused as reservations.
     join(repoRoot, 'src/host/gate.ts'),
     join(repoRoot, 'src/host/gate-rules.ts'),
-    // #214: 太碎三码的判定在 `gate-fragment.ts`，词表行在 `gate-vocabulary.ts`——两处都在扫描面里，
+    // 太碎三码的判定在 `gate-fragment.ts`，词表行在 `gate-vocabulary.ts`——两处都在扫描面里，
     // 否则「码写出来了但词表里没有」这条要等到人肉评审才发现。
     join(repoRoot, 'src/host/gate-fragment.ts'),
     join(repoRoot, 'src/host/gate-proofread.ts'),
     join(repoRoot, 'src/host/gate-vocabulary.ts'),
-    // #46: the review DAG emits `REVIEW_*` (one code per dimension) from the same
+    // The review DAG emits `REVIEW_*` (one code per dimension) from the same
     // `code: '…'` shape, so the scan has to see it for the gate's reason: otherwise the
     // five catalogue entries would read as "nobody emits this".
-    // #193: the per-dimension catalogue codes moved with the dimension table into
+    // The per-dimension catalogue codes moved with the dimension table into
     // `review-nodes.ts` while `review.ts` kept the DAG's own codes, so the scan follows the
     // literals — the file list tracks where they actually live, the assertions are unchanged.
     join(repoRoot, 'src/host/review.ts'),

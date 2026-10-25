@@ -1,5 +1,5 @@
 /**
- * Entity mentions (#29, roadmap X-1 / M18): the `entity_mentions` table, the
+ * Entity mentions (roadmap X-1 / M18): the `entity_mentions` table, the
  * body scan behind it, and the three queries the panel and the tool surface need
  * — "who is in this chapter", "which chapters mention this entity", "who dropped
  * off".
@@ -314,8 +314,8 @@ test('the chapter frontmatter is not manuscript text: a title-only name is no me
 })
 
 test('the schema version moved so every project rebuilds once', async () => {
-  // v6 was #29 (entity_mentions), v7 was #32 (the facts table), v8 was #31
-  // (foreshadowings), v9 is #48 (the derived absolute-day column).
+  // v6 added entity_mentions, v7 the facts table, v8 the foreshadow table and v9
+  // the derived absolute-day column.
   assert.equal(INDEX_SCHEMA_VERSION, 9, 'a new table is a new schema version, never an ALTER')
 })
 

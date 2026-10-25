@@ -1,5 +1,5 @@
 /**
- * Issue #89 — GBK mojibake detection (pure functions, `src/host/encoding.ts`).
+ * GBK mojibake detection (pure functions, `src/host/encoding.ts`).
  *
  * The field evidence: a hand-written `inkflow.json` whose `title` reads
  * `浜哄湪铚€灞憋紝鏄帉闂?` — UTF-8 bytes read back as GBK. The plugin never writes
@@ -26,7 +26,7 @@ const FIELD_TITLE = '浜哄湪铚€灞憋紝鏄帉闂?'
 /** `人在蜀山，我是掌门` re-read as GBK: the pristine shape of the same accident. */
 const REBUILT_TITLE = '浜哄湪铚€灞憋紝鎴戞槸鎺岄棬'
 
-test('encoding: the field title from issue #89 is suspicious', () => {
+test('encoding: the field title from the field report is suspicious', () => {
   assert.equal(looksLikeGbkMojibake(FIELD_TITLE), true)
   const verdict = describeEncodingSuspicion(FIELD_TITLE)
   assert.equal(verdict.suspicious, true)

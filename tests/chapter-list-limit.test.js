@@ -1,5 +1,5 @@
 /**
- * Issue #161 — the chapter list's 500-row cap used to be silent.
+ * The chapter list's 500-row cap used to be silent.
  *
  * `listChapters` clamped every request with `LIMIT min(max(limit,1),500)` and nothing
  * reported the cut; `inkflow_chapter_list` then read the *cut* list back as `total`, so a

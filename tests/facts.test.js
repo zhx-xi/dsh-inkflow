@@ -1,5 +1,5 @@
 /**
- * Issue #32 — the fact ledger: the line format (ADR-0013), the interval rule (I-23), the
+ * The fact ledger: the line format (ADR-0013), the interval rule (I-23), the
  * "which facts hold at chapter N" snapshot, and the writing-context segment.
  *
  * Why each group exists:
@@ -18,7 +18,7 @@
  *     the rendered block, not on the builder alone.
  *   - **the write gate**: I-23 says "拒" (X-4's double insurance). The refusal is asserted
  *     with a whole-tree hash, so "refused" means zero bytes and zero timestamps changed.
- *   - **old ledgers (#135)**: the verification copy's real files, reduced to the shapes that
+ *   - **old ledgers**: the verification copy's real files, reduced to the shapes that
  *     decided the parse — a single fact in the frontmatter (the pre-ADR-0013 field table) and
  *     prose bullets. A ledger the author wrote by hand is prose plus notes; it must produce
  *     facts, not warnings.
@@ -171,7 +171,7 @@ test('facts: round-trip holds for the escape, the unknown key and the empty unti
   assert.equal(emptyUntil.fact.until, undefined)
   assert.ok(!emptyUntil.rendered.includes('until:'), 'an empty until is dropped, and reads back the same way')
 
-  // 4) An unknown key with an **empty** value is data, not padding (rework of PR #124):
+  // 4) An unknown key with an **empty** value is data, not padding (rework after review):
   //    `备注:` has to survive a render, or anything that rewrites a ledger line silently
   //    eats a field the author wrote. `roundTrip` asserts the structural equality.
   const emptyUnknown = roundTrip('- attribute: 境界 | value: 金丹 | since: ch-0004 | 备注:')
@@ -191,7 +191,7 @@ test('facts: a line that is not a fact is refused without echoing the author’s
   assert.equal(parseFactLine('普通段落：attribute: 境界 | value: 金丹').ok, false)
   assert.equal(parseFactLine('-   ').ok, false)
 
-  // #135: "this list item is not a fact" is **not** a report to make. Only the file-level
+  // "this list item is not a fact" is **not** a report to make. Only the file-level
   // parser can tell prose from a fact line written wrong, and it asks this rule first (see
   // the §6 tests); a bare non-fact line is prose, so no finding is produced for it.
   assert.equal(classifyFactLine('- 这一行被作者写成了散文'), 'prose')
@@ -206,7 +206,7 @@ test('facts: one ledger file yields rows with 1-based file line anchors, and a b
     '',
     '- attribute: 境界 | value: 筑基后期 | since: ch-0007 | chapterId: ch-0009 | source: text',
     '- attribute: 境界 | value: 金丹初期 | since: ch-0042 | chapterId: ch-0045 | source: text',
-    // A fact line written wrong: a known key appears, but not as the first segment (#135).
+    // A fact line written wrong: a known key appears, but not as the first segment.
     '- attrbiute: 境界 | value: 金丹',
     '- attribute: 持有物 | value: 青锋剑 | since: ch-0012 | until: ch-0061 | source: manual',
     '',
@@ -236,7 +236,7 @@ test('facts: a ledger without a `subject` falls back to the file name and says s
   assert.equal(parsed.subject, '青锋剑')
   assert.equal(parsed.rows.length, 1)
   assert.equal(parsed.rows[0].subject, '青锋剑')
-  // The fallback is not silent (rework of PR #124): the subject decides which ledger
+  // The fallback is not silent (rework after review): the subject decides which ledger
   // `inkflow_facts_append` looks for, so a forgotten key must be visible — as a warning
   // that blocks nothing (I-10), because a book written before the key existed still works.
   assert.deepEqual(
@@ -480,7 +480,7 @@ test('facts segment: the fifth segment carries the facts in effect at the curren
     assert.equal(segment.text.includes('已失去的旧剑'), false, 'a fact that stopped holding is not injected')
     assert.equal(segment.text.includes('筑基'), false, 'the superseded value is not injected')
     assert.ok(context.text.includes(segment.text), 'the segment reaches the rendered block')
-    // The registry is now shared with #31's foreshadow segment (X-13 puts facts first),
+    // The registry is now shared with the foreshadow segment (X-13 puts facts first),
     // so this pins **its own** entry rather than "the whole array is mine".
     assert.equal(EXTRA_SEGMENTS[0]?.name, 'facts', 'facts is the first extra segment (X-13)')
     assert.equal(EXTRA_SEGMENTS[0]?.capRatio, 0.15, 'and it carries the X-13 cap')
@@ -717,7 +717,7 @@ test('facts: factsSnapshot and factsConflicts are pure functions of the rows and
 })
 
 // ---------------------------------------------------------------------------
-// 7. Rework of PR #124 — the blocking items, each as a regression that fails on the
+// 7. The review's blocking items, each as a regression that fails on the
 //    behaviour the independent review measured
 // ---------------------------------------------------------------------------
 
@@ -1010,7 +1010,7 @@ test('facts follow-up: appending keeps the author’s BOM and CRLF instead of re
     const text = readFileSync(join(root, 'facts', 'char-a.md'), 'utf8')
     assert.ok(text.startsWith(original), 'every existing byte — BOM and CRLF included — is kept')
     // The appended line follows the file's own ending: a "one line append" must not show up
-    // as a diff of every line (rework of PR #124).
+    // as a diff of every line (rework after review).
     assert.equal(text.slice(original.length), '- attribute: 境界 | value: 金丹 | since: ch-3 | source: manual\r\n')
     assert.equal(text.replace(/\r\n/gu, '').includes('\n'), false, 'no LF was introduced into a CRLF file')
   } finally {
@@ -1019,7 +1019,7 @@ test('facts follow-up: appending keeps the author’s BOM and CRLF instead of re
 })
 
 // ---------------------------------------------------------------------------
-// 6. Old ledgers: one fact in the frontmatter, prose in the body (#135)
+// 6. Old ledgers: one fact in the frontmatter, prose in the body
 // ---------------------------------------------------------------------------
 
 /**
@@ -1039,7 +1039,7 @@ const PROSE_BULLETS = [
   '- 大纲：`outlines/ch-0001..0137.md`（备份快照原版，节点 930-959 / 778-824 / 826-885）。',
 ]
 
-test('facts #135: a prose bullet is prose — no fact and no issue — and it hides no real line', () => {
+test('facts: a prose bullet is prose — no fact and no issue — and it hides no real line', () => {
   const parsed = parseFactsFile(
     'facts/时间口径冲突.md',
     ['---', 'subject: project', '---', '', ...PROSE_BULLETS, '- attribute: 时间口径 | value: 两套并存', ''].join('\n'),
@@ -1059,7 +1059,7 @@ test('facts #135: a prose bullet is prose — no fact and no issue — and it hi
   assert.equal(classifyFactLine('普通段落 attribute: 境界'), 'prose', 'a non-list paragraph is not a candidate')
 })
 
-test('facts #135: a fact line written wrong is still reported (misspelt key, missing colon, fullwidth colon)', () => {
+test('facts: a fact line written wrong is still reported (misspelt key, missing colon, fullwidth colon)', () => {
   const parsed = parseFactsFile(
     'facts/char-a.md',
     [
@@ -1093,7 +1093,7 @@ test('facts #135: a fact line written wrong is still reported (misspelt key, mis
   assert.match(parsed.issues[0].detail, /attribute/u)
 })
 
-test('facts #135: a legacy single-fact frontmatter reads as one fact, defaults included', () => {
+test('facts: a legacy single-fact frontmatter reads as one fact, defaults included', () => {
   // 叶知秋.md verbatim: the whole fact lives in the frontmatter, the body is a table.
   const yezhiqiu = parseFactsFile(
     'facts/叶知秋.md',
@@ -1128,7 +1128,7 @@ test('facts #135: a legacy single-fact frontmatter reads as one fact, defaults i
   // The anchor is the line that carries the fact, so a finding or a list entry can be followed.
   assert.equal(row.id, 'facts/叶知秋.md#L4')
 
-  // 时间口径冲突.md: a legacy fact *and* prose — the two causes of #135 in one file.
+  // 时间口径冲突.md: a legacy fact *and* prose — the two causes in one file.
   const caliber = parseFactsFile(
     'facts/时间口径冲突.md',
     [
@@ -1175,7 +1175,7 @@ test('facts #135: a legacy single-fact frontmatter reads as one fact, defaults i
   )
 })
 
-test('facts #135: a legacy fact and a body fact both land, and I-23 still compares them', async () => {
+test('facts: a legacy fact and a body fact both land, and I-23 still compares them', async () => {
   const dir = workdir()
   const root = join(dir, 'book')
   try {
@@ -1210,7 +1210,7 @@ test('facts #135: a legacy fact and a body fact both land, and I-23 still compar
   }
 })
 
-test('facts #135: the snapshot answers with a legacy fact that has no `since`', async () => {
+test('facts: the snapshot answers with a legacy fact that has no `since`', async () => {
   const dir = workdir()
   const root = join(dir, 'book')
   try {
@@ -1231,7 +1231,7 @@ test('facts #135: the snapshot answers with a legacy fact that has no `since`', 
   }
 })
 
-test('facts #135: appending to a legacy ledger adds a body line and leaves the frontmatter alone', async () => {
+test('facts: appending to a legacy ledger adds a body line and leaves the frontmatter alone', async () => {
   const dir = workdir()
   const root = join(dir, 'book')
   try {

@@ -1,5 +1,5 @@
 /**
- * Issue #43 — the nine-segment brief (ADR-0022 D1/D2/D4, roadmap X-23/X-25).
+ * The nine-segment brief (ADR-0022 D1/D2/D4, roadmap X-23/X-25).
  *
  * The brief is the one place where "what the model is about to be told" becomes a fact
  * instead of a claim, so this suite pins the five properties that make it worth having:
@@ -237,7 +237,7 @@ test('brief: the ladder trims world → facts → foreshadow → prevTail and ne
     let previousCount = Number.POSITIVE_INFINITY
     // `+ 10` so the grid always contains a budget at or above the untrimmed cost: the last
     // step is a fixed 10, so a `full.tokens` that is not on the grid would never be tried
-    // and "nothing is trimmed" would look unreachable (observed after #219, whose header
+    // and "nothing is trimmed" would look unreachable (observed after the book header
     // moved `full.tokens` off the grid).
     for (let budgetTokens = 20; budgetTokens <= full.tokens + 10; budgetTokens += 10) {
       const brief = buildWritingBrief(root, { budgetTokens })
@@ -345,7 +345,7 @@ test('brief: the audit file is the same bytes twice, with no clock and no absolu
     assert.equal(relative, '.inkflow/audit/brief-ch-0002.json', 'the name is the chapter, not the run (D4)')
 
     const indexBefore = readdirSync(join(root, 'index')).sort()
-    // #219: the record gained the book header, so the two briefs are kept to prove the
+    // The record gained the book header, so the two briefs are kept to prove the
     // header is a function of the tree like every other field.
     const firstBrief = buildWritingBrief(root)
     const first = writeBriefAudit(root, firstBrief)
@@ -371,7 +371,7 @@ test('brief: the audit file is the same bytes twice, with no clock and no absolu
     // Parsed: the format/schema are declared, and the order is D2's.
     const parsed = JSON.parse(firstBytes)
     assert.equal(parsed.format, 'inkflow.brief-audit')
-    // #219 bumped this: the record's shape gained `header` (an additive field, but the
+    // The book header bumped this: the record's shape gained `header` (an additive field, but the
     // key set is the contract, so a reader must be able to tell the two shapes apart).
     assert.equal(parsed.schemaVersion, 2)
     assert.equal(parsed.chapterId, 'ch-0002')
@@ -460,11 +460,11 @@ test('brief: a segment with no source is missing, never a placeholder', async ()
 })
 
 // ---------------------------------------------------------------------------
-// 5b. The two marker segments: `[承诺]` / `[锚点]` in the chapter's own outline (#213)
+// 5b. The two marker segments: `[承诺]` / `[锚点]` in the chapter's own outline
 // ---------------------------------------------------------------------------
 
 /**
- * #213 gives `promise` and `anchors` a source: two marker lines the author writes in the
+ * The marker lines give `promise` and `anchors` a source: two lines the author writes in the
  * chapter-level outline node (`outlines/ch-<seq>.md`, the same file the `outline` segment
  * renders). `[承诺]` / `[锚点]` join `[故事线]` as plot-point tags, so no frontmatter field
  * and no new file type is involved (ADR-0019's read-back contract is untouched).
@@ -472,7 +472,7 @@ test('brief: a segment with no source is missing, never a placeholder', async ()
  * The honesty rule survives the new source: lines that are not in **this** chapter's node
  * leave the segment `missing`, and the marker itself is not content.
  */
-test('brief: the chapter outline writes [承诺] / [锚点] lines and the two segments carry them (#213)', async () => {
+test('brief: the chapter outline writes [承诺] / [锚点] lines and the two segments carry them', async () => {
   const dir = workdir()
   try {
     const root = await book(join(dir, 'book'))
@@ -549,7 +549,7 @@ test('brief: the chapter outline writes [承诺] / [锚点] lines and the two se
   }
 })
 
-test('brief: markers written in another chapter do not fill this one, and a card is no fallback (#213)', async () => {
+test('brief: markers written in another chapter do not fill this one, and a card is no fallback', async () => {
   const dir = workdir()
   try {
     const root = await book(join(dir, 'book'))
@@ -593,7 +593,7 @@ test('brief: markers written in another chapter do not fill this one, and a card
   }
 })
 
-test('brief: over-long marker lines are clipped with the segment kept, never trimmed by the ladder (#213)', async () => {
+test('brief: over-long marker lines are clipped with the segment kept, never trimmed by the ladder', async () => {
   const dir = workdir()
   try {
     const root = await book(join(dir, 'book'))
@@ -832,7 +832,7 @@ test('brief: the diagnostics package carries those counters and no prose', async
 })
 
 // ---------------------------------------------------------------------------
-// 7. The book header (issue #219)
+// 7. The book header
 // ---------------------------------------------------------------------------
 
 test('brief: the header names the book and the whole book, ahead of the chapter block', async () => {

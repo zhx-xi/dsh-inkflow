@@ -1,7 +1,7 @@
 /**
- * Issue #212 — the eighth quality gate: degeneration detection.
+ * The eighth quality gate: degeneration detection.
  *
- * The seven checks of #44 judge **how well** the prose is written. They say nothing about
+ * The seven checks judge **how well** the prose is written. They say nothing about
  * whether the model wrote it *wrong*: a chapter whose third paragraph repeats the second, a
  * body cut off mid-sentence by `max_tokens`, a draft left with 「（此处继续展开）」 in it, or
  * `TODO` in a line all pass them — and in a 20-chapter batch job the author only finds out by
@@ -203,7 +203,7 @@ test('退化检测：干净正文零误报', async (t) => {
 // ---------------------------------------------------------------------------
 
 test('退化检测：第 8 项进检查表、四码都是 warning、都进共享词表与 data-model §5', () => {
-  assert.equal(GATE_CHECKS.length, 8, 'the gate has eight checks after #212')
+  assert.equal(GATE_CHECKS.length, 8, 'the gate has eight checks now')
   assert.deepEqual([...GATE_CHECK_IDS].slice(6), ['proofread', 'degeneration'])
   const eighth = GATE_CHECKS[7]
   assert.equal(eighth.id, 'degeneration')

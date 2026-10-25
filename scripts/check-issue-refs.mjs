@@ -8,7 +8,7 @@
  * commit message / PR / issue thread, where D7 already puts evidence). The user's rule
  * (2026-10-25) is absolute for code: `src/`, `scripts/`, `tests/`.
  *
- * WHAT IS NOT A VIOLATION: a hex colour (`#f143ab`, `#000`), a CSS/JS template marker
+ * WHAT IS NOT A VIOLATION: a hex colour (`#f143ab`, a three-digit one), a CSS/JS template marker
  * (`#{…}`), a fragment anchor in a URL, and a number that only *looks* like an issue id
  * because somebody wrote a colour without a letter. Those are filtered below by context so
  * the check can stay strict instead of growing an allowlist of files.

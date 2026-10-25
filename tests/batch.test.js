@@ -1,5 +1,5 @@
 /**
- * Issue #47 — the batch job queue: enqueue → take → complete → approve, resumable after a kill.
+ * The batch job queue: enqueue → take → complete → approve, resumable after a kill.
  *
  * What each block is for, so a failure names the promise that broke:
  *
@@ -287,7 +287,7 @@ test('领取 → 交回 → 落盘：章文件按 seq 建出来，记录里的 d
     const gate = done.value.state.chapters[0].gate
     assert.notEqual(gate, null)
     assert.equal(gate.counts.warning, 0, 'a clean draft has no warning')
-    // #212: the gate is eight checks now (退化检测 is the eighth). Every one reports even when
+    // The gate is eight checks now (退化检测 is the eighth). Every one reports even when
     // it found nothing — that is what makes "0" mean "clean" rather than "did not run".
     assert.equal(gate.checks.length, 8, 'all eight checks report, even with zero findings')
     assert.equal(gate.paused, false)
@@ -907,7 +907,7 @@ test('工具：take 在暂停的作业上不给任务（PAUSED），并报出暂
 })
 
 // ---------------------------------------------------------------------------
-// 11. the draft seam in gate.ts (§ #47 touched one merged file)
+// 11. the draft seam in gate.ts (one change touched a merged file)
 // ---------------------------------------------------------------------------
 
 test('gate 的 draft 通道：按草稿判定而不必先落盘，且 drafts 不许写结论文件', async () => {

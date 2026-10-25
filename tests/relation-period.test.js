@@ -1,7 +1,7 @@
 /**
- * Issue #188 — relation time-window conflicts (`since` / `until` that cannot both hold).
+ * Relation time-window conflicts (`since` / `until` that cannot both hold).
  *
- * Issue #48 left this out on purpose (data-model §3.3 said so): the two fields hold free
+ * left this out on purpose (data-model §3.3 said so): the two fields hold free
  * labels (a chapter id *or* a world-internal time), so "these two intervals cannot both
  * hold" needs the chapter-order resolution the fact ledger already uses (I-23). The claim
  * this suite pins is that the resolution is **reused**, not re-invented: the same
@@ -206,7 +206,7 @@ test('period: two windows for one pair that cannot both hold are a conflict nami
   try {
     const root = join(dir, 'book')
     sampleBook(root)
-    // Both `undirected`, so the direction rule (#48) has nothing to say: the *only*
+    // Both `undirected`, so the direction rule has nothing to say: the *only*
     // disagreement between these two files is when the relation starts.
     markdown(root, ...relationsEdge('relations/a-b.md', {
       source: 'char-qingyin',

@@ -1,5 +1,5 @@
 /**
- * Skill-number gate (zero dependencies) — #214 A 块.
+ * Skill-number gate (zero dependencies) — the 「按章计次」 rules.
  *
  * The defect this exists for: `gate-vocabulary.ts` counts a **density** (破折号 0.6/千字) while
  * both writing skills said 「一章 0–1 处」. Two phrasings of one thing, and a model reading both
@@ -39,7 +39,7 @@ const TABLES = ['GATE_DEFAULTS', 'DEGENERATION', 'FRAGMENT']
  *
  *   * `inkflow-writer` writes the chapter — the densities it is judged on while writing.
  *   * `inkflow-polisher` touches sentences — the dash limit plus the three 太碎 bounds it is
- *     the one skill able to break by chopping every long sentence (#214 B 块).
+ *     the one skill able to break by chopping every long sentence.
  *
  * A number that is required here but missing from the file is a gate that only runs after the
  * model has already read the looser instruction.
@@ -61,7 +61,7 @@ const REQUIRED = {
  * sentence twice. A range is what drifts, so a range is what is refused.
  */
 const BANNED = [
-  { pattern: /一章\s*[0-9]+\s*[–—\-~～]\s*[0-9]+\s*处/u, why: '「一章 N–M 处」是按章计次的口径，门禁按每千字密度判（#214）；改成「每千字 X 处（门禁 `键`）」' },
+  { pattern: /一章\s*[0-9]+\s*[–—\-~～]\s*[0-9]+\s*处/u, why: '「一章 N–M 处」是按章计次的口径，门禁按每千字密度判；改成「每千字 X 处（门禁 `键`）」' },
 ]
 
 const failures = []

@@ -1,5 +1,5 @@
 /**
- * Body whitelists are declared in the module that READS the body (#162).
+ * Body whitelists are declared in the module that READS the body.
  *
  * Every write route of the private channel declares which body fields it accepts, and
  * that declaration is the guard that answers 400 `UNEXPECTED_BODY_FIELD` before any
@@ -7,8 +7,8 @@
  * small mistake: the field is legal in the settings/storage layer and the panel still
  * cannot save it.
  *
- * #162 is exactly that accident, caught before it shipped: `hub-settings-update`
- * carried a hand-copied field list, and #41 added `semanticEndpoint`/`semanticApiKey`
+ * That accident is exactly what this pins, caught before it shipped: `hub-settings-update`
+ * carried a hand-copied field list, and the settings work added `semanticEndpoint`/`semanticApiKey`
  * to `SETTINGS_FIELDS` without touching the copy. Nothing failed that time — the copy
  * happened to be complete — which is precisely why the next field would have been a
  * silent 400.
@@ -46,7 +46,7 @@ function codeLines(source) {
     .filter((line) => line !== '' && !line.startsWith('//') && !line.startsWith('/*') && !line.startsWith('*'))
 }
 
-test('#162: no route declares its body whitelist as an inline array literal', () => {
+test('no route declares its body whitelist as an inline array literal', () => {
   const lines = codeLines(readFileSync(ROUTES, 'utf8'))
 
   // Sanity: the scan must be looking at the route table, not at an empty string. If
@@ -62,6 +62,6 @@ test('#162: no route declares its body whitelist as an inline array literal', ()
   assert.deepEqual(
     offenders,
     [],
-    `body 白名单必须来自 handler 模块导出的常量；行内字面量会与写入侧漂移（#162）\n${offenders.join('\n')}`,
+    `body 白名单必须来自 handler 模块导出的常量；行内字面量会与写入侧漂移\n${offenders.join('\n')}`,
   )
 })
