@@ -47,6 +47,14 @@ export const HUB_TEXTS = {
   emptyBody: '用上面的「新开书」创建，或选中一本已有书的目录把它导入',
   emptyHint: 'DSH 的工作区就是书库的一行：把已存在的小说目录打开成工作区，这里就会出现它。',
   readOnly: '书单只读：不改目录、不建索引、不修复项目；书库唯一会写盘的是「新开书」，且只在你确认之后。',
+  /**
+   * The fold's one sentence (#198). It has to say the loop is closed: the directory is not
+   * lost, it is one prompt away from becoming a book, and the prompt carries its own path.
+   */
+  othersHint: '这些目录还不是书。点「复制提示词」，把那段话发给任意会话，让 AI 走一遍初始化向导——目录不用你手动打开。',
+  initCopy: '复制提示词',
+  initCopied: '提示词已复制，发给任意会话即可',
+  initFallback: '剪贴板被拦下了：下面这段已全选，按 Ctrl+C 复制',
 } as const
 
 /** The four gate states plus the hub's own "no verdict this time". */
@@ -222,4 +230,171 @@ export function hubSummary(state: HubState): string {
 /** Whether a card should offer the "not a book yet" hint instead of counts. */
 export function isBookRow(row: HubBookRow): boolean {
   return row.notABook !== true && row.dirStatus !== 'missing-dir'
+}
+
+// ---------------------------------------------------------------------------
+// Two groups, not one list (#198)
+//
+// The hub is one row per registered workspace, so a machine with two books and five
+// ordinary directories showed seven "books". Filtering "everything that is not usable"
+// would be worse than the noise: `needs-repair` and `needs-newer-plugin` ARE books, and
+// losing them reads as "我的书不见了". So the split is:
+//
+//   main list  — the four verdicts that mean "this is a book" (including the two broken ones
+//                and `timeout`, which is merely "no verdict this time");
+//   other dirs — `needs-setup` / `notABook` / a registration whose directory is gone, folded
+//                away by default and still explained row by row.
+// ---------------------------------------------------------------------------
+
+/** The gate outcomes that are a book. `needs-setup` and the two not-a-book markers are not. */
+export const HUB_MAIN_STATES = ['usable', 'needs-repair', 'needs-newer-plugin', 'timeout'] as const
+
+/**
+ * Whether a row belongs in the main list.
+ *
+ * The directory check comes FIRST, on purpose: a registration whose directory was deleted
+ * reports whatever gate verdict the missing path produces, and none of them makes it a book
+ * the user can open. A row with an unknown state (a newer Host) folds away rather than
+ * appearing as a book nobody can act on.
+ */
+export function isMainListRow(row: HubBookRow | null | undefined): boolean {
+  if (row === null || row === undefined || typeof row !== 'object') return false
+  if (row.dirStatus === 'missing-dir') return false
+  if (row.notABook === true) return false
+  const state = typeof row.state === 'string' ? row.state : ''
+  return (HUB_MAIN_STATES as readonly string[]).includes(state)
+}
+
+export interface HubRowGroups {
+  main: HubBookRow[]
+  others: HubBookRow[]
+}
+
+/**
+ * Split the answer into what is shown and what is folded.
+ *
+ * Order is preserved on both sides (the registry order is the user's own), and the input is
+ * never mutated: the view keeps rendering `state.books` and derives the two lists from it.
+ */
+export function splitHubRows(books: HubBookRow[] | null | undefined): HubRowGroups {
+  const main: HubBookRow[] = []
+  const others: HubBookRow[] = []
+  for (const row of Array.isArray(books) ? books : []) {
+    if (row === null || typeof row !== 'object') continue
+    if (isMainListRow(row)) main.push(row)
+    else others.push(row)
+  }
+  return { main, others }
+}
+
+/** The fold's summary line: `其他目录（5）`. A count that is not a count renders as 0. */
+export function othersHeading(count: unknown): string {
+  const shown = typeof count === 'number' && Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+  return `其他目录（${String(shown)}）`
+}
+
+/** `chapters`, not `chapters/.gitkeep`: the checklist names both, the sentence needs one. */
+function missingNames(missing: string[]): string[] {
+  const names: string[] = []
+  for (const entry of missing) {
+    if (typeof entry !== 'string' || entry.trim() === '') continue
+    const base = entry.split('/')[0] ?? ''
+    if (base !== '' && !names.includes(base)) names.push(base)
+  }
+  return names
+}
+
+/**
+ * Why a folded row is not a book, in one line.
+ *
+ * "目录不在了" stays in the answer even though the row is folded: a registration the user
+ * forgot about is useful information, and deleting it silently would be the plugin deciding
+ * what the user meant.
+ */
+export function whyNotABook(row: HubBookRow | null | undefined): string {
+  if (row === null || row === undefined) return '还不是书'
+  if (row.dirStatus === 'missing-dir') return '目录不在了（注册还在，插件不会自动移除它）'
+  if (row.notABook === true) return '不是书：没有 inkflow.json，也没有内容目录'
+  const missing = Array.isArray(row.missing) ? row.missing : []
+  if (missing.length === 0) return '还不是书：门禁没说它缺什么'
+  const names = missingNames(missing)
+  const preview = names.slice(0, 3).join('、')
+  return `还不是书：缺 ${String(missing.length)} 项（${preview}${names.length > 3 ? '…' : ''}）`
+}
+
+// ---------------------------------------------------------------------------
+// The init prompt: ONE constant, filled per row (#198)
+//
+// Why a constant instead of wording in the JSX and again in the guide: two copies drift
+// within weeks (the tool count and the whitelists both did). The guide quotes the rendered
+// output of this template, and `tests/hub-groups.test.js` asserts the two stay identical.
+//
+// Why the tool name is tagged `<tool>…</tool>`: the prompt is pasted into a session where a
+// model reads it, and the tag is what tells the model "this is the call to make" instead of
+// "this is a topic" — the failure mode being a session that cheerfully explains how to
+// initialise a project without ever calling `inkflow_project_init`.
+//
+// Why the three boundaries are spelled out: the wizard's own contract (#86 / ADR-0006 D3) is
+// plan → apply with `confirm: true`, missing items only, and `git init` without commit or
+// remote. A prompt that omits them invites a session to improvise all three.
+// ---------------------------------------------------------------------------
+
+/** The placeholder the template carries until a row fills it in. */
+export const INIT_PROMPT_PATH_SLOT = '{{path}}'
+export const INIT_PROMPT_TITLE_SLOT = '{{title}}'
+
+export const INIT_PROMPT_TEMPLATE = `把下面这个目录初始化成 InkFlow 项目：
+
+目录：${INIT_PROMPT_PATH_SLOT}
+书名：${INIT_PROMPT_TITLE_SLOT}
+
+请用 <tool>inkflow_project_init</tool> 来做。书名就用目录名，作者留空，回头可以在 inkflow.json 里改。
+
+三条边界请守住：
+
+1. 先 plan 后 apply：先调 inkflow_project_init 的 plan（只读，列出将要创建什么）给我看，我确认之后再带 confirm: true 走 apply。
+2. 只补缺失项，不覆盖：目录里已经有的文件一个字节都不要改。
+3. 只做 git init：不 commit、不配远端、不改我的 git 身份。
+
+弄好之后把目录的绝对路径告诉我，我在 DSH 里把它打开成工作区。`
+
+/** The prompt for one row: the row's own absolute path and directory name, nothing typed. */
+export function buildInitPrompt(row: HubBookRow | null | undefined): string {
+  const path = typeof row?.path === 'string' && row.path.trim() !== '' ? row.path.trim() : '（这一行没有路径）'
+  const title = rowTitle(row ?? {})
+  return INIT_PROMPT_TEMPLATE.replaceAll(INIT_PROMPT_PATH_SLOT, path).replaceAll(INIT_PROMPT_TITLE_SLOT, title)
+}
+
+// ---------------------------------------------------------------------------
+// Copying: never a button that does nothing (#198)
+//
+// The hub rides in the Electron renderer, where `navigator.clipboard.writeText` can be
+// refused (permissions, a non-secure context, a policy). The decision is therefore data —
+// `copied` or `fallback` — and the view renders a read-only textarea for the second case
+// instead of pretending the copy happened.
+// ---------------------------------------------------------------------------
+
+/** The clipboard surface this module needs. `navigator.clipboard` satisfies it. */
+export interface ClipboardLike {
+  writeText?: unknown
+}
+
+export type CopyOutcome = 'copied' | 'fallback'
+
+/**
+ * Try the clipboard, report what happened.
+ *
+ * Never throws: a rejected promise, a synchronous throw and a missing/non-function
+ * `writeText` are all `fallback`, because the caller's job in every one of those cases is
+ * the same — show the text so it can still be selected.
+ */
+export async function copyPrompt(text: string, clipboard: ClipboardLike | null | undefined): Promise<CopyOutcome> {
+  const write = clipboard !== null && typeof clipboard === 'object' ? clipboard.writeText : undefined
+  if (typeof write !== 'function') return 'fallback'
+  try {
+    await (write as (value: string) => unknown).call(clipboard, text)
+    return 'copied'
+  } catch {
+    return 'fallback'
+  }
 }

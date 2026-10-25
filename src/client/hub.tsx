@@ -27,22 +27,39 @@
  * plugin settings, the diagnostics package and the local backups, in one body area.
  * Roadmap X-20 puts that entry in the 书库 (root scope) rather than in a session tab,
  * because settings are cross-book and the backups are per-book but chosen here.
+ *
+ * WHAT #198 CHANGED: the list is no longer "one row per registered workspace". Only the
+ * verdicts that mean "this is a book" stay in the main list (`usable` / `needs-repair` /
+ * `needs-newer-plugin` / `timeout` — a broken book and a too-new book are still books, and
+ * hiding them reads as "我的书不见了"); ordinary directories fold into 「其他目录（N）」,
+ * closed by default, each one still saying why it is not a book and offering the
+ * initialisation prompt.
+ *
+ * WHAT #195 ADDED: the 「导出」 entry. An export is a one-off action, not a workspace, so it is
+ * a card that opens over this list (`hub-export.tsx`) and not a fourth page — X-20's落点纪律.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { EXPORT_TEXTS } from './export-model.js'
+import { HubExportPanel } from './hub-export.js'
 import { fetchInternal } from './internal.js'
 import { SharedLibraryView } from './hub-shared.js'
 import {
   HUB_SHARED_LABEL,
   HUB_TEXTS,
   badgeOf,
+  buildInitPrompt,
+  copyPrompt,
   describeCounts,
   hubSummary,
+  othersHeading,
   readHubBooks,
   relativeToHome,
   rowMarkers,
   rowTitle,
+  splitHubRows,
+  whyNotABook,
 } from './hub-model.js'
 import type { HubBadgeTone, HubBookRow, HubBooksValue, HubState } from './hub-model.js'
 import { HubWizard } from './hub-wizard.js'
@@ -147,6 +164,91 @@ function BookCard({ row, home }: { row: HubBookRow; home: string | null }) {
 
 const INITIAL: HubState = { status: 'ready', books: [], home: null, total: 0, truncated: false, capped: false }
 
+const textareaStyle = {
+  width: '100%',
+  minHeight: 96,
+  resize: 'vertical',
+  border: '1px solid var(--dsw-alias-border-l2)',
+  borderRadius: 6,
+  background: 'var(--dsw-alias-bg-layer-2)',
+  color: 'var(--dsw-alias-label-primary)',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  fontSize: 12,
+  padding: 6,
+} as const
+
+/**
+ * 「复制提示词」 for one folded directory (#198).
+ *
+ * `navigator.clipboard` can be refused inside the Electron renderer, so the outcome is data
+ * (`copyPrompt` → `copied` / `fallback`) and both outcomes are visible: the copied note, or a
+ * read-only textarea that is already selected so Ctrl+C finishes the job. A button that
+ * silently does nothing is the one behaviour this component exists to rule out.
+ */
+function CopyPromptButton({ row }: { row: HubBookRow }) {
+  const [fallback, setFallback] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const prompt = buildInitPrompt(row)
+
+  const copy = useCallback(() => {
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard
+    void copyPrompt(prompt, clipboard).then((outcome) => {
+      setCopied(outcome === 'copied')
+      setFallback(outcome === 'copied' ? null : prompt)
+    })
+  }, [prompt])
+
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button type="button" style={buttonStyle} onClick={copy}>
+          {HUB_TEXTS.initCopy}
+        </button>
+        {copied ? <span style={{ ...muted, fontSize: 12 }}>{HUB_TEXTS.initCopied}</span> : null}
+      </div>
+      {fallback === null ? null : (
+        <>
+          <div style={{ ...muted, fontSize: 12 }}>{HUB_TEXTS.initFallback}</div>
+          <textarea
+            readOnly
+            value={fallback}
+            rows={6}
+            style={textareaStyle}
+            ref={(node) => {
+              node?.select()
+            }}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+/** One folded directory: name, path, why it is not a book, and the prompt that fixes it. */
+function OtherDirRow({ row, home }: { row: HubBookRow; home: string | null }) {
+  const badge = badgeOf(row.state)
+  const shown = relativeToHome(row.path, home)
+  const full = typeof row.path === 'string' && row.path.trim() !== '' ? row.path : '（无路径）'
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600 }}>{rowTitle(row)}</span>
+        <Badge label={badge.label} tone={badge.tone} />
+        {rowMarkers(row).map((marker) => (
+          <span key={marker} style={{ ...muted, fontSize: 12 }}>
+            {marker}
+          </span>
+        ))}
+      </div>
+      <div style={{ ...muted, ...mono }} title={full}>
+        {shown === '' ? full : shown}
+      </div>
+      <div style={{ ...muted, fontSize: 12 }}>{whyNotABook(row)}</div>
+      <CopyPromptButton row={row} />
+    </div>
+  )
+}
+
 export function HubView() {
   const [state, setState] = useState<HubState>(INITIAL)
   const [loading, setLoading] = useState(true)
@@ -156,6 +258,13 @@ export function HubView() {
   const [view, setView] = useState<'books' | 'shared' | 'settings'>('books')
   /** The wizard is a panel of its own: its confirm card does not belong in the header row. */
   const [wizardOpen, setWizardOpen] = useState(false)
+  /**
+   * #195: the export card opens over this list instead of becoming a fourth page — X-20's
+   * 落点纪律 ("an export is a one-off action, not a workspace").
+   */
+  const [exportOpen, setExportOpen] = useState(false)
+  /** #198: 「其他目录（N）」 starts CLOSED — the noisy half must not be the default. */
+  const [othersOpen, setOthersOpen] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -214,6 +323,10 @@ export function HubView() {
   }
   if (view === 'settings') return <SettingsView onClose={() => setView('books')} />
 
+  // #198: two groups, computed by the model (not by a filter written twice). A plain
+  // computation, not a hook, so it may sit after the page switch above.
+  const { main, others } = splitHubRows(state.status === 'ready' ? state.books : [])
+
   return (
     <div style={sheetStyle}>
       <div style={headerStyle}>
@@ -222,6 +335,9 @@ export function HubView() {
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
           <button type="button" style={buttonStyle} onClick={() => setWizardOpen(true)} disabled={wizardOpen}>
             {HUB_WIZARD_LABEL}
+          </button>
+          <button type="button" style={buttonStyle} onClick={() => setExportOpen(true)} disabled={exportOpen}>
+            {EXPORT_TEXTS.button}
           </button>
           <button type="button" style={buttonStyle} onClick={() => setView('shared')}>
             {HUB_SHARED_LABEL}
@@ -241,13 +357,17 @@ export function HubView() {
         </div>
       ) : null}
 
+      {exportOpen ? (
+        <HubExportPanel books={state.status === 'ready' ? state.books : []} onClose={() => setExportOpen(false)} />
+      ) : null}
+
       {state.status === 'error' ? (
         <div style={{ ...cardStyle, borderColor: 'var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)' }}>
           {state.message}
         </div>
       ) : null}
 
-      {state.status === 'ready' && state.books.length === 0 && !loading ? (
+      {state.status === 'ready' && main.length === 0 && others.length === 0 && !loading ? (
         <div style={{ ...cardStyle, borderStyle: 'dashed' }}>
           <div style={{ fontWeight: 600 }}>{HUB_TEXTS.emptyTitle}</div>
           <div>{HUB_TEXTS.emptyBody}</div>
@@ -255,9 +375,34 @@ export function HubView() {
         </div>
       ) : null}
 
-      {state.status === 'ready'
-        ? state.books.map((row) => <BookCard key={row.workspaceId ?? row.path ?? rowTitle(row)} row={row} home={state.home} />)
-        : null}
+      {main.map((row) => (
+        <BookCard key={row.workspaceId ?? row.path ?? rowTitle(row)} row={row} home={state.status === 'ready' ? state.home : null} />
+      ))}
+
+      {others.length === 0 ? null : (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <button
+            type="button"
+            style={{ ...buttonStyle, justifySelf: 'start' }}
+            onClick={() => setOthersOpen((open) => !open)}
+            aria-expanded={othersOpen}
+          >
+            {`${othersOpen ? '▾' : '▸'} ${othersHeading(others.length)}`}
+          </button>
+          {othersOpen ? (
+            <>
+              <div style={{ ...muted, fontSize: 12 }}>{HUB_TEXTS.othersHint}</div>
+              {others.map((row) => (
+                <OtherDirRow
+                  key={row.workspaceId ?? row.path ?? rowTitle(row)}
+                  row={row}
+                  home={state.status === 'ready' ? state.home : null}
+                />
+              ))}
+            </>
+          ) : null}
+        </div>
+      )}
 
       <div style={{ ...muted, marginTop: 'auto', paddingTop: 6, fontSize: 12 }}>{HUB_TEXTS.readOnly}</div>
     </div>
