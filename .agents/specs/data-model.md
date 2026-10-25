@@ -183,7 +183,7 @@
 | `narrativeOrder` | number | — | 叙事顺序：**书内出现次序（book-wide），不是章内索引**；可与 `worldTime` 不一致（倒叙/回忆是正常写法） |
 | `chapterId` | string | — | 关联章 id。frontmatter 键名 `chapterId`；读兼容旧文件里的 `chapter`；派生索引表 `timeline_events` 的列名是 `chapter`（§4.1） |
 | `participants` | string[] | — | 参与角色 id；空格连接存储、读回成列表（id 内不得含空白 `,` `[` `]`，否则读回成两个 id） |
-| `place` | string | — | 地点（世界观条目 id） |
+| `place` | string | — | 地点（世界观条目 id）。**目前只记录、不解析**：timeline 域不读它，索引 `timeline_events` 也没有 `place` 列，地图不按它挂事件（接上要再加一列，见 open-questions Q15）。写在这里是为了让手写文件不至于被判未知键 |
 | `era` | string | — | `worldTime` 写在哪个**纪元**里（历法表的 `eras[].id`）。缺省 = 本书历法的**最后一个**纪元（纪元按 `epochOffsetDays` 升序，最后一个就是书「现在」所在的纪元，也是作者只写一个年份时的意思）；写更早的纪元必须显式写（#48，ADR-0025 D3） |
 | `status` | enum | — | `confirmed`（缺省）/ `unconfirmed`（时间未定，进待确认区）；`pending` 只作**读兼容**，等同 `unconfirmed` |
 | `calendar` | string | — | 历法 id。**本书历法表本身不在事件文件里**，在 `inkflow.json` 的 `calendar` 键（§2）；这个字段只是给「同一本书里引用别的历法 id」留的读兼容位，不参与换算 |
