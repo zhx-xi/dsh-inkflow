@@ -528,6 +528,8 @@ origin:
 > **为什么全部 `fixable: false`**：`repair.ts` 是唯一修复路径且按 code 分派动作，`GATE_PROOF_*` 目前没有动作；标 `true` 会让报告说「N 项可自动修复」而一键修复什么也不做（ADR-0015 D2，同类事故见 #143）。机械校对类翻成 `true` 的那次提交必须同时让 `repair.ts` 学会改写并补用例。
 >
 > **第 8 项（退化检测）的阈值出处**：四类划分与「引号外叙述判定 + 对话行豁免」的形态参考 `oh-story` 的 `check-degeneration.js`（MIT），阈值与词表落在 [`gate-vocabulary.ts`](../../src/host/gate-vocabulary.ts) 的 `DEGENERATION`，逐项注明「沿用 oh-story 标定」或「本项目自标」，按 [ADR-0027](../adrs/0027-external-reference-tiers.md) D2/D5 办理。它们**不进** `GateThresholds`：那份表是随判决写进结论文件的可配参数（D4），这四条是代码里的固定判据、调用方不能改。
+>
+> **按书口径（[ADR-0028](../adrs/0028-gate-calibration-per-book.md)）**：上面的阈值表可以被**书**覆盖（`inkflow.json` 的 `gate` 段），具体某句还可以被 `library/gate-whitelist.txt` 的**字面片段**豁免（只对七个句级码生效、按行、命中即不报）；两条细则见 [references/gate-waivers-and-thresholds.md](references/gate-waivers-and-thresholds.md)。结论文件因此多一块 `waivers: {configured, applied[{code, locator, fragment, whitelistLine}]}`，`schemaVersion` 为 2。豁免只是**不再报那一处**，不改任何码的 `group` / `fixable` / 严重级。
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 

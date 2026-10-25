@@ -57,6 +57,18 @@ export const CHAPTERS_DIR = 'chapters' satisfies ContentDir
 export const LIBRARY_DIR = 'library' satisfies ContentDir
 
 /**
+ * The author's literal waiver list for the quality gate, inside `library/`
+ * ([ADR-0028](../../.agents/adrs/0028-gate-calibration-per-book.md) D2).
+ *
+ * It is a **convention file**, not a card and not a config: one fragment per line, `#` for a
+ * comment, no frontmatter. It lives in a content directory because it has to travel with the
+ * book (clone, diff, review) — a list of "these sentences are deliberate" is material the
+ * author wrote, so `library/` (the reference shelf) is where it belongs rather than
+ * `inkflow.json`, which only carries switches and numbers.
+ */
+export const GATE_WHITELIST_FILE = 'gate-whitelist.txt'
+
+/**
  * Volume/chapter catalog file (ADR-0006 D6): one in `chapters/` for the volume
  * list plus loose chapters, and one in every volume directory for its chapters.
  * It is a committed **projection** of the `.md` files, not a second truth.
