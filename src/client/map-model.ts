@@ -1,5 +1,5 @@
 /**
- * Pure view model for the map tab (#48, ADR-0025 D4).
+ * Pure view model for the map tab (ADR-0025 D4).
  *
  * **The map is a view, not a data source.** A place is a `world/<category>` entry — no
  * `location` kind, no `locations/` directory, no coordinate columns (ADR-0025 D4). So

@@ -1,5 +1,5 @@
 /**
- * The book hub view (ADR-0010 D1, issue #85).
+ * The book hub view (ADR-0010 D1).
  *
  * WHERE IT RIDES: `main`, addressed by the id of the `sidebar.panellist` icon.
  * The icon slot renders the glyph only and the keyed `main` slot renders this
@@ -13,29 +13,29 @@
  * when the panel opens and again when the user presses 刷新: no polling, because
  * every answer costs one judgment per book (ADR-0010 D8).
  *
- * WHAT THE WIZARD ADDS (#86): the 「新开书」 button is real. It opens
+ * WHAT THE WIZARD ADDS: the 「新开书」 button is real. It opens
  * `HubWizard`, which asks the Host to plan a directory, shows the plan, and
  * applies it after confirmation. A successful apply merges the new book into
  * this list IN PLACE — no refetch, because the host's answer already carries the
  * row (ADR-0010 D8 "apply 成功后就地更新该行").
  *
- * WHAT THE SHARED PAGE ADDS (#87): 「共享内容」 opens `SharedLibraryView`, a
+ * WHAT THE SHARED PAGE ADDS: 「共享内容」 opens `SharedLibraryView`, a
  * read-only browse of `dataDir/shared` (`hub-shared.tsx`). It owns no book, so it
- * never touches this list; copy/ref edges belong to #40.
+ * never touches this list; copy/ref edges belong to the shared page itself.
  *
- * WHAT THE SETTINGS PAGE ADDS (#42): 「设置」 opens `SettingsView` (`settings.tsx`) —
+ * WHAT THE SETTINGS PAGE ADDS: 「设置」 opens `SettingsView` (`settings.tsx`) —
  * plugin settings, the diagnostics package and the local backups, in one body area.
  * Roadmap X-20 puts that entry in the 书库 (root scope) rather than in a session tab,
  * because settings are cross-book and the backups are per-book but chosen here.
  *
- * WHAT #198 CHANGED: the list is no longer "one row per registered workspace". Only the
+ * WHAT THE FOLD CHANGED: the list is no longer "one row per registered workspace". Only the
  * verdicts that mean "this is a book" stay in the main list (`usable` / `needs-repair` /
  * `needs-newer-plugin` / `timeout` — a broken book and a too-new book are still books, and
  * hiding them reads as "我的书不见了"); ordinary directories fold into 「其他目录（N）」,
  * closed by default, each one still saying why it is not a book and offering the
  * initialisation prompt.
  *
- * WHAT #195 ADDED: the 「导出」 entry. An export is a one-off action, not a workspace, so it is
+ * WHAT THE EXPORT ENTRY ADDED: 「导出」. An export is a one-off action, not a workspace, so it is
  * a card that opens over this list (`hub-export.tsx`) and not a fourth page — X-20's落点纪律.
  */
 
@@ -178,7 +178,7 @@ const textareaStyle = {
 } as const
 
 /**
- * 「复制提示词」 for one folded directory (#198).
+ * 「复制提示词」 for one folded directory.
  *
  * `navigator.clipboard` can be refused inside the Electron renderer, so the outcome is data
  * (`copyPrompt` → `copied` / `fallback`) and both outcomes are visible: the copied note, or a
@@ -253,17 +253,17 @@ export function HubView() {
   const [state, setState] = useState<HubState>(INITIAL)
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
-  // The shared library is a page of its own (#87). A root-scoped panel has one
+  // The shared library is a page of its own. A root-scoped panel has one
   // body area, so it is a mode of this view instead of a second slot.
   const [view, setView] = useState<'books' | 'shared' | 'settings'>('books')
   /** The wizard is a panel of its own: its confirm card does not belong in the header row. */
   const [wizardOpen, setWizardOpen] = useState(false)
   /**
-   * #195: the export card opens over this list instead of becoming a fourth page — X-20's
+   * The export card opens over this list instead of becoming a fourth page — X-20's
    * 落点纪律 ("an export is a one-off action, not a workspace").
    */
   const [exportOpen, setExportOpen] = useState(false)
-  /** #198: 「其他目录（N）」 starts CLOSED — the noisy half must not be the default. */
+  /** 「其他目录（N）」 starts CLOSED — the noisy half must not be the default. */
   const [othersOpen, setOthersOpen] = useState(false)
 
   useEffect(() => {
@@ -286,12 +286,12 @@ export function HubView() {
   }, [])
 
   /**
-   * The wizard's answer, merged into the list in place (issue #86).
+   * The wizard's answer, merged into the list in place.
    *
    * No refetch: `apply` already returned everything a row needs, and asking the
    * Host to judge every book again would be exactly the cost ADR-0010 D8 caps.
    *
-   * WHY THIS HOOK STILL RUNS WHEN ANOTHER PAGE IS SHOWING (#174): the page switch below
+   * WHY THIS HOOK STILL RUNS WHEN ANOTHER PAGE IS SHOWING: the page switch below
    * returns early, and a hook declared after an early return is a hook that is *missing*
    * on that render — React throws "Rendered fewer hooks than expected" and the whole
    * panel goes white. So every hook of this component is declared before the first
@@ -310,8 +310,8 @@ export function HubView() {
     })
   }, [])
 
-  // The shared library is a page of its own (#87), and it takes the book list with
-  // it (#40): copying a shared entry INTO a book needs a target, and the only names
+  // The shared library is a page of its own, and it takes the book list with
+  // it: copying a shared entry INTO a book needs a target, and the only names
   // the Host accepts are the rows it just returned here (never a hand-typed path).
   if (view === 'shared') {
     return (
@@ -323,7 +323,7 @@ export function HubView() {
   }
   if (view === 'settings') return <SettingsView onClose={() => setView('books')} />
 
-  // #198: two groups, computed by the model (not by a filter written twice). A plain
+  // Two groups, computed by the model (not by a filter written twice). A plain
   // computation, not a hook, so it may sit after the page switch above.
   const { main, others } = splitHubRows(state.status === 'ready' ? state.books : [])
 

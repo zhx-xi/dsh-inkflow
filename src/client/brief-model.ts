@@ -1,5 +1,5 @@
 /**
- * Pure view model for the brief page (#43, ADR-0022 D1/D2).
+ * Pure view model for the brief page (ADR-0022 D1/D2).
  *
  * Everything here is a plain function over plain data, for the same reason
  * `panel-model.ts` is: `node --test` has no DOM, so the React view is only checked as a
@@ -96,7 +96,7 @@ export interface BriefView {
   text: string
   /** Project-relative audit path the write action targets. */
   auditPath: string | null
-  /** `true` when the Host rebuilt the derived index to answer (issue #5). */
+  /** `true` when the Host rebuilt the derived index to answer. */
   indexRebuilt: boolean
   /** The gate verdict the Host reported (`usable` for any book that got this far). */
   state: string | null

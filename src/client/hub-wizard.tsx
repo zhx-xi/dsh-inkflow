@@ -1,5 +1,5 @@
 /**
- * The book hub's new-book wizard (ADR-0010 D4, issue #86): the UI half.
+ * The book hub's new-book wizard (ADR-0010 D4): the UI half.
  *
  * THE FLOW IS THE ADR'S FLOW, minus the parts a browser cannot do:
  *

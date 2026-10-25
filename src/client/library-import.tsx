@@ -1,8 +1,8 @@
 /**
- * The import dialog (issue #37, roadmap X-17 / X-20): 选择文件 → 预览 → 确认.
+ * The import dialog (roadmap X-17 / X-20): 选择文件 → 预览 → 确认.
  *
  * WHERE IT LIVES: inside the setting library's 资料 group, not in a tab of its own
- * (X-20 reserves new tabs for #38's candidates). The library tab is where an author looks
+ * (X-20 reserves new tabs for the candidates queue). The library tab is where an author looks
  * for reference material, and importing an old draft is how material gets there.
  *
  * WHAT IT DOES NOT DO: it never touches the filesystem and never guesses a path. The

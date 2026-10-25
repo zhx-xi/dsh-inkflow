@@ -1,5 +1,5 @@
 /**
- * Pure view model for the series sync section of the shared-content page (#49).
+ * Pure view model for the series sync section of the shared-content page.
  *
  * Same reason as `hub-shared-model.ts`: `node --test` has no DOM, so every wording
  * decision and every "may I press that" rule lives here as a plain function over plain

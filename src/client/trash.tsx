@@ -1,5 +1,5 @@
 /**
- * The recovery bin tab (#35, roadmap X-9/X-10).
+ * The recovery bin tab (roadmap X-9/X-10).
  *
  * One list, two actions, and the smallest possible amount of state. The page
  * shows what `GET /trash` reports and nothing else: an entry's size, when it was
@@ -12,7 +12,7 @@
  *   * **恢复** is one click; it restores the bytes that were deleted, byte for
  *     byte, or refuses.
  *   * **彻底删除** is two clicks. The first only arms the row (`purgeStage`), the
- *     second sends `confirm: true` — the panel's half of ADR-0012 #4, with the
+ *     second sends `confirm: true` — the panel's half of ADR-0012 decision 4, with the
  *     route's own `CONFIRM_REQUIRED` as the net under it.
  *
  * The client half never touches the filesystem (ADR-0008 D4) and the request

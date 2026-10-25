@@ -1,5 +1,5 @@
 /**
- * The series sync section of the shared-content page (#49).
+ * The series sync section of the shared-content page.
  *
  * WHERE IT LIVES, AND WHY: roadmap §2.4 puts the entry on the 共享内容 page ("no new
  * permanent tab") — a sync is a one-off action over the shared library, not a place the

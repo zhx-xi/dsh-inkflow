@@ -1,5 +1,5 @@
 /**
- * The setting-library tab (issue #30): eight-kind tree, one entry's detail, the
+ * The setting-library tab: eight-kind tree, one entry's detail, the
  * editor, and the problem panel.
  *
  * Scope of THIS build, stated where the code lives: the tree, one entry's
@@ -307,7 +307,7 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
   const [editing, setEditing] = useState(false)
   const [draftDirty, setDraftDirty] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
-  /** The import dialog (#37) is open — it renders inside the 资料 group (X-20). */
+  /** The import dialog is open — it renders inside the 资料 group (X-20). */
   const [importing, setImporting] = useState(false)
   // Same measured height as the chapters tab (issue 116): the tab row above this
   // grid is the harness chrome, so the grid has to state its own height or the
@@ -392,7 +392,7 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
   }, [mayLeaveDraft])
 
   /**
-   * Open the entry another page asked for (#33's audit rows).
+   * Open the entry another page asked for (the audit rows).
    *
    * Keyed on `focus.nonce` rather than on the object so a second click on the same finding
    * re-selects the same row instead of being swallowed as an equal prop. It waits for the

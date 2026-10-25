@@ -1,5 +1,5 @@
 /**
- * The candidate tab (#38, X-20): what the session model proposed, and the author's
+ * The candidate tab (X-20): what the session model proposed, and the author's
  * decision on each one.
  *
  * The page is a queue, not an editor. Every row shows the four things a reviewer needs
@@ -57,7 +57,7 @@ import {
 } from './extract-model.js'
 import type { CandidateListValue, CandidateRow, EvidenceJump } from './extract-model.js'
 
-// Same shape as the other pages: the height comes from the shared measurement (#116),
+// Same shape as the other pages: the height comes from the shared measurement,
 // the colours from the host theme (AGENTS.md §6). This module keeps its own small style
 // set rather than importing `index.tsx`'s, which would make the two import each other.
 const bodyStyle = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', minHeight: 0 } as const

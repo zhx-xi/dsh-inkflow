@@ -1,5 +1,5 @@
 /**
- * Pure view model for the recovery-bin page (#35).
+ * Pure view model for the recovery-bin page.
  *
  * Same split as every other page in this plugin: the wording, the formatting and
  * the two-click purge decision are plain functions over plain data, so

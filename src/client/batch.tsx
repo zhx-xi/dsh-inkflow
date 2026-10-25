@@ -1,5 +1,5 @@
 /**
- * The 批量 page (#47, roadmap X-12/X-30): one batch job, its chapters, and the one button.
+ * The 批量 page (roadmap X-12/X-30): one batch job, its chapters, and the one button.
  *
  * What the author needs to see, in this order:
  *

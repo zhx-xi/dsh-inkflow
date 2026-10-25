@@ -1,5 +1,5 @@
 /**
- * The consistency-audit tab (#33, roadmap X-14, DoD D3-3).
+ * The consistency-audit tab (roadmap X-14, DoD D3-3).
  *
  * One screen, three jobs, and no state beyond "what did the Host say":
  *

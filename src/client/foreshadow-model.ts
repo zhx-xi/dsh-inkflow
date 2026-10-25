@@ -1,5 +1,5 @@
 /**
- * Pure view model for the foreshadow board (#31, data-model §3.2).
+ * Pure view model for the foreshadow board (data-model §3.2).
  *
  * Everything here is a plain function over plain data, for the same reason
  * `panel-model.ts` is: `node --test` has no DOM, so the React View is only checked as

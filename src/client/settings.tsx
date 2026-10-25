@@ -1,5 +1,5 @@
 /**
- * The settings page of the book hub (#42, ADR-0018): 设置 / 诊断包 / 备份, one body area.
+ * The settings page of the book hub (ADR-0018): 设置 / 诊断包 / 备份, one body area.
  *
  * WHERE IT RIDES: the hub's `main` panel (root scope), as a mode of `hub.tsx` — the
  * same choice `hub-shared.tsx` made, because a root-scoped panel has exactly one body
@@ -179,7 +179,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   const [backups, setBackups] = useState<Loadable<HubBackupsValue>>({ status: 'loading' })
   const [plan, setPlan] = useState<RestorePlanValue | null>(null)
   const [done, setDone] = useState<string[] | null>(null)
-  // The semantic section (#41): status + the estimate the rebuild button shows. Loaded for the
+  // The semantic section: status + the estimate the rebuild button shows. Loaded for the
   // same book the backup section names, so the page has one book in focus.
   const [semantic, setSemantic] = useState<Loadable<SemanticSectionValue>>({ status: 'loading' })
   const [pending, setPending] = useState<Pending | null>(null)
@@ -499,7 +499,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
         ) : null}
       </Section>
 
-      {/* -------- 语义检索（#41） -------- */}
+      {/* -------- 语义检索 -------- */}
       <Section
         title="语义检索"
         hint="可选能力：需要你自己起一个 OpenViking 并在这里填端点。没配或连不上时，检索自动用关键词（不会报错）；删章不会物理删除语义条目，只有「清理占位」才会。"

@@ -1,5 +1,5 @@
 /**
- * The review tab (#46, roadmap X-12, ADR-0022 D3).
+ * The review tab (roadmap X-12, ADR-0022 D3).
  *
  * One screen, three questions in order:
  *
@@ -130,7 +130,7 @@ function severityLabel(severity: string): string {
 export interface ReviewViewProps {
   /** The session this panel is attached to; the Host resolves the book from it. */
   readonly sessionId: string
-  /** Take the reader to a chapter (the workbench's own jump, #38's path). */
+  /** Take the reader to a chapter (the workbench's own jump, as on the candidate page). */
   readonly onOpenEvidence?: (jump: EvidenceJump) => void
 }
 
@@ -144,10 +144,10 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
   const [compareLoading, setCompareLoading] = useState(true)
   const [chapterError, setChapterError] = useState<string | null>(null)
   const [showCompare, setShowCompare] = useState(false)
-  // #199: whether the run list's "更早的 N 次运行" row is open. The page it needs is fetched,
+  // Whether the run list's "更早的 N 次运行" row is open. The page it needs is fetched,
   // not hidden: folding is about what the first screen shows, never about dropping history.
   const [olderOpen, setOlderOpen] = useState(false)
-  /** #199: the cleanup the author is confirming, and the purge area as it stands. */
+  /** The cleanup the author is confirming, and the purge area as it stands. */
   const [armedClean, setArmedClean] = useState<string | null>(null)
   const [purgedResult, setPurgedResult] = useState<InternalResult<unknown> | null>(null)
   const [busy, setBusy] = useState(false)
@@ -180,7 +180,7 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
       }
       setLoading(true)
       const runQuery = wantedRun === '' ? '' : `&runId=${encodeURIComponent(wantedRun)}`
-      // #199: `0` asks for the Host's own page (the fold's first screen); a bigger number is
+      // `0` asks for the Host's own page (the fold's first screen); a bigger number is
       // the fold opening. The fold boundary itself comes back as `foldLimit`.
       const pageQuery = pageSize > 0 ? `&limit=${String(pageSize)}` : ''
       const result = await fetchInternal<Record<string, unknown>>(
@@ -211,7 +211,7 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
     [sessionId],
   )
 
-  /** The purge area (#199): what the author cleaned up and can still put back. */
+  /** The purge area: what the author cleaned up and can still put back. */
   const loadPurge = useCallback(async () => {
     const result = await fetchInternal<unknown>(PURGED_PATH, { sessionId })
     setPurgedResult(result)
@@ -248,7 +248,7 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
   }
 
   /**
-   * Open or close the fold (#199).
+   * Open or close the fold.
    *
    * Two things must survive the toggle: the run the reader is looking at (passed back
    * through `runId`, so expanding never silently switches to the newest run) and the page
@@ -539,7 +539,7 @@ function OpinionRow({
 }
 
 /**
- * One run as a list row (#199).
+ * One run as a list row.
  *
  * Lifted out of the map body so the folded and the unfolded lists print the **same** row:
  * an older run that looked different from a recent one would read as a smaller feature, and
@@ -556,7 +556,7 @@ function RunRowView({
   readonly row: ReviewRunRow
   readonly selectedRunId: string
   readonly onOpen: (runId: string) => void
-  /** The two-step cleanup label (#199): the second click is what moves the run. */
+  /** The two-step cleanup label: the second click is what moves the run. */
   readonly cleanLabel: string
   readonly cleanDisabled: boolean
   readonly onClean: () => void

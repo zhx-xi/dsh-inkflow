@@ -1,6 +1,6 @@
 /**
- * dsh-inkflow — Client half: the writing workbench panel (`conversation.view`,
- * issue #17) and the book hub entry (`sidebar.panellist` + `main`, issue #85).
+ * dsh-inkflow — Client half: the writing workbench panel (`conversation.view`)
+ * and the book hub entry (`sidebar.panellist` + `main`).
  *
  * The build wraps this module in `window.__ModuleLoader__.load({id, factory})`
  * (see scripts/build.mjs); this file therefore exports the standard Client
@@ -23,10 +23,10 @@
  * `/hub/*` so no session route can lose its session requirement. No `root`,
  * `path` or `cwd` is ever built here.
  *
- * WHAT IS STILL NOT HERE: the hub's new-book wizard (#86) and shared-content page
- * (#87) are disabled placeholders with their release note; the workbench's
- * setting/outline/foreshadowing tabs are the same. The wizard button in the
- * workbench only re-reads the read-only plan (`GET /status`), never applies it
+ * WHAT IS STILL NOT HERE: 大纲 stays a disabled placeholder with its release note,
+ * exactly like the other rows that waited for their page (see `PANEL_TABS` in
+ * `panel-model.ts`). The wizard button in the workbench only re-reads the
+ * read-only plan (`GET /status`), never applies it
  * (D5 / ADR-0006 D3).
  */
 
@@ -44,19 +44,19 @@ import type { LibraryFocus } from './library-model.js'
 import { TrashView } from './trash.js'
 import { ForeshadowView } from './foreshadow.js'
 import { AuditView } from './audit.js'
-// Issue #44: the seven quality gates for one chapter (ADR-0022 D4). Its own file, so the
+// The seven quality gates for one chapter (ADR-0022 D4). Its own file, so the
 // workbench's renderer map stays one line per page (X-12).
 import { GateQualityView } from './gate.js'
-// Issue #45: proposals — one chapter's revision cut into hunks, decided piece by piece,
+// Proposals — one chapter's revision cut into hunks, decided piece by piece,
 // then applied (with a backup package) or rolled back. Its own four routes.
 import { ProposalView } from './proposal.js'
 import { ExtractView } from './extract.js'
 import { BriefView } from './brief.js'
 import { MapView } from './map.js'
-// Issue #46: the review tab — recorded runs, opinions with their evidence, and the
+// The review tab — recorded runs, opinions with their evidence, and the
 // cross-model table. One file, one line in the page map below (X-12).
 import { ReviewView } from './review.js'
-// Issue #47: the batch job tab — status, per-chapter gate counts, the pause reason and the one
+// The batch job tab — status, per-chapter gate counts, the pause reason and the one
 // 续跑 button. One file, one line in the page map below (X-12).
 import { BatchView } from './batch.js'
 import { PLACE_KIND } from './map-model.js'
@@ -164,7 +164,7 @@ const cardStyle = {
 const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 /**
- * The "title looks garbled" marker (issue #89): theme warning colour, no badge —
+ * The "title looks garbled" marker: theme warning colour, no badge —
  * it annotates the title next to it and must not compete with the state badge.
  */
 const titleWarningStyle = {
@@ -222,7 +222,7 @@ function EmptyCard({ kind }: { kind: 'no-session' | 'no-chapters' | 'no-selectio
 }
 
 /**
- * The stamp baked into THIS bundle (`scripts/build.mjs`, issue #88).
+ * The stamp baked into THIS bundle (`scripts/build.mjs`).
  *
  * A fallback only: `/status` is authoritative, because the Host half is the code
  * that actually carries the tools and routes (and the one that can see the disk).
@@ -254,7 +254,7 @@ function BuildStamp({ build }: { build: PanelBuild | null }) {
 }
 
 /**
- * The stale-build banner (issue #88): the one thing an old generation can never
+ * The stale-build banner: the one thing an old generation can never
  * do for itself is announce that it is old — so this renders from the HOST's
  * verdict, above the tabs, on every state including the gate refusal.
  *
@@ -326,13 +326,13 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const [loading, setLoading] = useState(true)
   const [planVisible, setPlanVisible] = useState(false)
   // Which declared tab is open. Only `available` tabs are switchable, so this
-  // never names a page that does not exist (issue #30 added 设定库).
+  // never names a page that does not exist: only `available` tabs are switchable.
   const [tab, setTab] = useState('chapters')
-  // One entry the current tab wants the setting library to open (#33's audit rows). The
+  // One entry another tab wants the setting library to open (the audit rows). The
   // nonce makes a repeated request for the same entry a *new* prop, so the library re-selects
   // it instead of ignoring an equal value.
   const [libraryFocus, setLibraryFocus] = useState<LibraryFocus | null>(null)
-  // New-chapter form (issue #19): title + volume, nothing else.
+  // New-chapter form: title + volume, nothing else.
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newVolume, setNewVolume] = useState('')
@@ -349,7 +349,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     setLoading(true)
     // The session id is the ONLY thing the panel tells the Host (ADR-0008 D4).
     setActiveSessionId(sessionId)
-    // Issue #88: 重新检测 re-reads `/status`, which recomputes the stale verdict
+    // 重新检测 re-reads `/status`, which recomputes the stale verdict
     // from the disk mtime. It therefore cannot CLEAR the banner: a rebuilt
     // `lib/` is still newer than this process, and only a restart fixes that.
     // Nothing here may pretend the refresh made the old generation new.
@@ -371,7 +371,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   }, [refresh])
 
   // One chapter, with its CAS baseline (`fingerprint`): the editor saves against
-  // exactly the bytes the Host handed over (issue #19).
+  // exactly the bytes the Host handed over, never a re-serialised copy.
   useEffect(() => {
     if (selected === null) {
       setDetail(null)
@@ -396,7 +396,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   }, [selected, sessionId])
 
   const gate: PanelGate = useMemo(() => readGate(status), [status])
-  // Issue #88: which generation answered, read from `value` or `error` — the
+  // Which generation answered, read from `value` or `error` — the
   // refusal screen is exactly where a stale build hides a healthy book.
   const build = useMemo(() => readBuild(status), [status])
   const tree = useMemo(() => buildChapterTree(chapters), [chapters])
@@ -405,7 +405,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const empty = emptyKindOf(gate, tree.total, selected !== null)
 
   // -------------------------------------------------------------------------
-  // Search (#39, X-16/X-20). One box in the 章节 tab and a 「全部类型」 switch
+  // Search (X-16/X-20). One box in the 章节 tab and a 「全部类型」 switch
   // beside it — no seventh tab: searching the book is a way to read this page.
   // The switch changes the SCOPE (chapters only vs the whole book), never the
   // result shape, so the list below renders one kind of row either way.
@@ -454,8 +454,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
 
   /**
    * A click on a hit: chapter prose opens in this page's editor, anything from the
-   * setting library jumps to that tab with the entry selected (the same hand-off the
-   * audit report uses, #33). The search text is left alone so the list survives.
+   * setting library jumps to that tab with the entry selected (the same hand-off an
+   * audit finding uses). The search text is left alone so the list survives.
    */
   const openSearchHit = useCallback((hit: SearchHit): void => {
     const target = searchHitTarget(hit)
@@ -477,7 +477,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   // absolute path, the workspace came from the Client store.
   const rootLabel = relativeProjectRoot(gate.root, workspace?.path ?? sessionCwd)
   const projectTitle = gate.projectTitle ?? workspace?.title ?? null
-  // Issue #89: a hand-written meta can carry a GBK-misread title. One marker and
+  // A hand-written meta can carry a GBK-misread title. One marker and
   // one tooltip — the panel has no way to fix the file itself, so it says so.
   const titleWarning = describeTitleSuspicion(gate)
   const routeHint = status !== null && !status.ok ? describeRouteError(status.error) : null
@@ -495,7 +495,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
    * meant to be changed in the same commit.
    */
   /**
-   * Take the reader to an audit finding's target (#33): a chapter opens in this page's own
+   * Take the reader to an audit finding's target: a chapter opens in this page's own
    * editor, an entity opens in the setting library.
    *
    * Lives here rather than in the audit page because the two destinations are *this*
@@ -516,7 +516,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   }, [])
 
   /**
-   * Take the reader to a candidate's evidence (#38): the same rule as an audit finding —
+   * Take the reader to a candidate's evidence: the same rule as an audit finding —
    * an address is resolved by the workbench, because "which chapter is this?" is this
    * component's own state (the chapter tree) and not the queue's.
    */
@@ -534,7 +534,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   )
 
   /**
-   * Take the reader from a map pin to the entry it stands for (#48).
+   * Take the reader from a map pin to the entry it stands for.
    *
    * Same rule as an audit row: the pin carries `(kind, id)` and the **workbench** decides
    * what that means — for a place it always means "open it in 设定库", because the map is a
@@ -547,42 +547,42 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   }, [])
 
   const pageRenderers: Readonly<Record<string, () => ReactNode>> = {
-    // Issue #30: the setting library — eight-kind tree, one entry's detail, the
+    // The setting library — eight-kind tree, one entry's detail, the
     // editor and the problem panel. It talks to its own three routes, so this tab
     // costs the chapter tree nothing.
     library: () => <LibraryView sessionId={sessionId} focus={libraryFocus} />,
-    // Issue #35: the recovery bin — what a delete moved into `.inkflow/trash/`,
+    // The recovery bin — what a delete moved into `.inkflow/trash/`,
     // with restore (one click) and purge (two). One route pair of its own.
     trash: () => <TrashView sessionId={sessionId} />,
-    // Issue #31: the read-only foreshadow board (超期 / 未回收 / 按角色).
+    // The read-only foreshadow board (超期 / 未回收 / 按角色).
     foreshadowing: () => <ForeshadowView sessionId={sessionId} />,
-    // Issue #33: the five-family consistency audit — counts, findings with their
+    // The five-family consistency audit — counts, findings with their
     // addresses, and the Markdown export into `.inkflow/audit/`.
     audit: () => <AuditView sessionId={sessionId} onOpen={openFromAudit} />,
-    // Issue #38 (X-20): the extraction queue — accept or reject what the session model
+    // The extraction queue (X-20) — accept or reject what the session model
     // proposed. Its own four routes, so it costs the other pages nothing.
     candidates: () => <ExtractView sessionId={sessionId} onOpenEvidence={openFromEvidence} />,
-    // Issue #43 (X-12/X-23): the nine-segment brief — every segment with its size, share
+    // The nine-segment brief (X-12/X-23) — every segment with its size, share
     // and trim state, the trim ladder's record, the rendered block, and the one write that
     // records it into `.inkflow/audit/brief-<chapterId>.json`.
     brief: () => <BriefView sessionId={sessionId} />,
-    // #48: 地图 — places grouped by the world book's own categories, one click to the
+    // 地图 — places grouped by the world book's own categories, one click to the
     // entry. It reuses 设定库's projection (a place IS a world entry, ADR-0025 D4) and
     // jumps the way an audit row does, so it adds no route and no second truth.
     map: () => <MapView sessionId={sessionId} onOpen={openFromMap} />,
-    // Issue #44: the seven quality gates for one chapter — counts per check, every finding
+    // The seven quality gates for one chapter — counts per check, every finding
     // with its address and hint, filtered by severity. `GET /gate` is read-only, so this tab
     // cannot change the book or the conclusion file.
     gate: () => <GateQualityView sessionId={sessionId} />,
-    // Issue #46: the review runs of one chapter — which passes exist, what each dimension
+    // The review runs of one chapter — which passes exist, what each dimension
     // said with its evidence, and the cross-model table. Read-only (`GET /review`), and it
     // jumps through the same `openFromEvidence` an extracted candidate uses, because an
     // address is resolved by the workbench and never by the page that printed it.
     review: () => <ReviewView sessionId={sessionId} onOpenEvidence={openFromEvidence} />,
-    // Issue #45: 提案 — the diff, the per-hunk verdicts and the two confirmed actions.
+    // 提案 — the diff, the per-hunk verdicts and the two confirmed actions.
     // `GET /proposal` is read-only, so opening this tab never touches a chapter.
     proposal: () => <ProposalView sessionId={sessionId} />,
-    // Issue #47: 批量 — the job's status, every chapter's state and gate counts, the pause
+    // 批量 — the job's status, every chapter's state and gate counts, the pause
     // reason and the 续跑 button. `GET /batch` is read-only; the button writes the job records
     // and never a chapter file (approving prose is a tool call, not a click).
     batch: () => <BatchView sessionId={sessionId} />,
@@ -759,7 +759,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       ) : (
         <div ref={scrollBox.ref} style={{ ...bodyStyle, ...SCROLL_BOX_STYLE, ...scrollBox.style }}>
           <div style={columnStyle}>
-            {/* Search box (#39): the 「全部类型」 switch sits beside it and only widens
+            {/* Search box: the 「全部类型」 switch sits beside it and only widens
                 the scope. Typing replaces the tree below with the hit list — the page
                 stays one page (X-20), which is why there is no new tab. */}
             <div style={{ display: 'grid', gap: 4 }}>
@@ -1026,12 +1026,12 @@ export const inject = ['slots']
  *     0.2.1-rc.2 — selecting a missing `main` key throws "main panel … is not
  *     registered"). The hub carries no content view and no write action: it lists
  *     books and their gate state, and every write stays in the workbench or the
- *     wizard (#86/#87).
+ *     wizard.
  */
 export function apply(ctx: ClientContext): void {
   // The hub's wizard is the only Client surface that needs a SERVICE (the
   // directory picker), not a slot: hand it over before either hub entry
-  // registers, so the first click already has it (issue #86 / ADR-0010 E6).
+  // registers, so the first click already has it (ADR-0010 E6).
   setHubDirectoryPicker(createDirectoryPicker((name) => ctx.get?.(name)))
 
   ctx.effect(() =>

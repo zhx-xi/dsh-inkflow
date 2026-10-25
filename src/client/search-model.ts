@@ -1,5 +1,5 @@
 /**
- * Pure view model for the panel's search box (issue #39, roadmap X-16/X-20).
+ * Pure view model for the panel's search box (roadmap X-16/X-20).
  *
  * The panel gets **one** search box in the 章节 tab and a 「全部类型」 switch beside it,
  * not a new tab (X-20): searching the book is a way to read the chapter tab, not a
@@ -161,13 +161,13 @@ export function describeSearchPage(page: SearchPage, query: string, allKinds: bo
   return `「${query}」命中 ${page.total} 条（${scope}${backend}${range}${more}）。`
 }
 
-/** The backend's own name, for the mode indicator (#41: `ovk` when semantic recall answered). */
+/** The backend's own name, for the mode indicator (`ovk` when semantic recall answered). */
 export function searchBackendLabel(page: SearchPage): string {
   return page.backend === 'ovk' ? '语义检索' : '关键词检索'
 }
 
 /**
- * Why the semantic backend is not answering, in the author's terms (#41, ADR-0020 E5).
+ * Why the semantic backend is not answering, in the author's terms (ADR-0020 E5).
  *
  * The Host's `degradedReason` is a FIXED vocabulary of six values (plus the free-text reason
  * `internal.ts` uses when the index itself is the problem), so each one can name the one

@@ -1,5 +1,5 @@
 /**
- * The chapter editor (issue #19): a native `textarea` + a title field + a status
+ * The chapter editor: a native `textarea` + a title field + a status
  * picker, wired to the four chapter write routes.
  *
  * WHY NO EDITOR LIBRARY (AGENTS.md §2, hard constraint "zero runtime

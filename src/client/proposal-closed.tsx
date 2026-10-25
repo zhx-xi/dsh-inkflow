@@ -1,5 +1,5 @@
 /**
- * The proposals the author has finished with (#199), behind one fold row.
+ * The proposals the author has finished with, behind one fold row.
  *
  * Its own file for two reasons: `proposal.tsx` is at the 600-line cap (`check-guards` item 10),
  * and this block is a self-contained decision — which finished proposals exist, which one is

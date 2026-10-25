@@ -1,5 +1,5 @@
 /**
- * Pure view model for the book hub (ADR-0010 D1/D8, issue #85).
+ * Pure view model for the book hub (ADR-0010 D1/D8).
  *
  * Same reason as `panel-model.ts`: `node --test` has no DOM, so every wording
  * decision and every fallback lives here as a plain function over plain data and
@@ -9,7 +9,7 @@
  * TWO RULES THAT SHAPE THIS FILE:
  *
  *   1. The hub is a LIST, so "unknown" must be representable per row and per
- *      field (issue #85 review focus 3): a timed-out book, a directory that is
+ *      field: a timed-out book, a directory that is
  *      gone, an unreadable catalog. A single "loading/error" state would hide
  *      the books that ARE answerable behind the one that is not.
  *   2. Paths are display data. The Host sends the canonical path and the home
@@ -30,8 +30,8 @@ export const HUB_PANEL_LABEL = 'InkFlow 书库'
 export const HUB_PANEL_ORDER = 35
 
 /**
- * The one entry this issue only reserves: the shared-content page (#87). The
- * new-book wizard (#86) is a real button now, so only this one stays disabled
+ * The shared-content page was the one entry reserved here before it existed. The
+ * new-book wizard became a real button first, so this one stayed disabled
  * with its release note — a button that looks clickable and does nothing is
  * worse than a disabled one.
  */
@@ -48,7 +48,7 @@ export const HUB_TEXTS = {
   emptyHint: 'DSH 的工作区就是书库的一行：把已存在的小说目录打开成工作区，这里就会出现它。',
   readOnly: '书单只读：不改目录、不建索引、不修复项目；书库唯一会写盘的是「新开书」，且只在你确认之后。',
   /**
-   * The fold's one sentence (#198). It has to say the loop is closed: the directory is not
+   * The fold's one sentence. It has to say the loop is closed: the directory is not
    * lost, it is one prompt away from becoming a book, and the prompt carries its own path.
    */
   othersHint: '这些目录还不是书。点「复制提示词」，把那段话发给任意会话，让 AI 走一遍初始化向导——目录不用你手动打开。',
@@ -233,7 +233,7 @@ export function isBookRow(row: HubBookRow): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Two groups, not one list (#198)
+// Two groups, not one list: "still a book" vs "other directories"
 //
 // The hub is one row per registered workspace, so a machine with two books and five
 // ordinary directories showed seven "books". Filtering "everything that is not usable"
@@ -323,7 +323,7 @@ export function whyNotABook(row: HubBookRow | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// The init prompt: ONE constant, filled per row (#198)
+// The init prompt: ONE constant, filled per row
 //
 // Why a constant instead of wording in the JSX and again in the guide: two copies drift
 // within weeks (the tool count and the whitelists both did). The guide quotes the rendered
@@ -334,7 +334,7 @@ export function whyNotABook(row: HubBookRow | null | undefined): string {
 // "this is a topic" — the failure mode being a session that cheerfully explains how to
 // initialise a project without ever calling `inkflow_project_init`.
 //
-// Why the three boundaries are spelled out: the wizard's own contract (#86 / ADR-0006 D3) is
+// Why the three boundaries are spelled out: the wizard's own contract (ADR-0006 D3) is
 // plan → apply with `confirm: true`, missing items only, and `git init` without commit or
 // remote. A prompt that omits them invites a session to improvise all three.
 // ---------------------------------------------------------------------------
@@ -366,7 +366,7 @@ export function buildInitPrompt(row: HubBookRow | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// Copying: never a button that does nothing (#198)
+// Copying: never a button that does nothing
 //
 // The hub rides in the Electron renderer, where `navigator.clipboard.writeText` can be
 // refused (permissions, a non-secure context, a policy). The decision is therefore data —

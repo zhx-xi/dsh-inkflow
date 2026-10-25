@@ -1,5 +1,5 @@
 /**
- * The review page's pure model (#46) — no React, no network, no IO, so the panel's
+ * The review page's pure model — no React, no network, no IO, so the panel's
  * decisions are unit-testable (the rule `architecture.md` §6.2 states for every
  * `*-model.ts`).
  *
@@ -10,7 +10,7 @@
  *     chapter selector and the explanation of what a run is. A dedicated empty state would
  *     hide the very control the reader needs to get out of it.
  *   * **`located` and `locator` are one fact** — the jump is offered exactly when the Host
- *     said the opinion has a locator, and the jump reuses `EvidenceJump`, the shape #38's
+ *     said the opinion has a locator, and the jump reuses `EvidenceJump`, the shape the
  *     candidate page already sends through `openFromEvidence`. No second jump protocol: an
  *     address is resolved by the workbench, which is the only component that knows which
  *     chapter is which.
@@ -78,7 +78,7 @@ export interface ReviewValue {
   readonly runCount: number
   readonly runs: readonly ReviewRunRow[]
   /**
-   * How many runs the page shows before folding (#199), as the Host declared it.
+   * How many runs the page shows before folding, as the Host declared it.
    *
    * It is a field rather than a constant here on purpose: `REVIEW_LIST_LIMIT` is the Host's
    * number, and a second copy in the panel is how the two drift into disagreeing about what
@@ -357,7 +357,7 @@ export function statusLabel(status: string): string {
   return '完成'
 }
 
-/** The run list split at the fold (#199). */
+/** The run list split at the fold. */
 export interface ReviewRunSplit {
   /** The rows the first screen shows — the last `foldLimit` runs, newest first. */
   readonly recent: readonly ReviewRunRow[]
@@ -372,7 +372,7 @@ export interface ReviewRunSplit {
 }
 
 /**
- * Split the run list at the fold the Host declared (#199).
+ * Split the run list at the fold the Host declared.
  *
  * Why the boundary is `foldLimit` and not `runs.length`: when the fold opens the panel asks
  * for a bigger page, so `runs.length` grows and would move its own boundary — the fold row

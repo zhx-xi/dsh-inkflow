@@ -1,5 +1,5 @@
 /**
- * The purge area's card (#199), rendered by both panels that own a kind of cleanable state.
+ * The purge area's card, rendered by both panels that own a kind of cleanable state.
  *
  * ONE card rather than two: the review page offers the runs, the proposal page offers the
  * proposals, and the only difference is which entries arrive and what the empty line says. A
