@@ -21,17 +21,12 @@
 import type { ContentBlock, HostContext, JsonSchemaNode, ToolDefinition, ToolRunContext } from './context.js'
 import { gateFailure, resolveProject } from './domains/tool-project.js'
 import { compareReviewRuns, reviewCompareWire } from './review-compare.js'
-import {
-  REVIEW_DEFAULT_CONTEXT_CHARS,
-  REVIEW_DIMENSIONS,
-  REVIEW_DIMENSION_LABELS,
-  REVIEW_LIST_LIMIT,
-  buildReviewContext,
-  listReviewRuns,
-  reviewRunWire,
-  runReview,
-} from './review.js'
-import type { ReviewOpinionInput, ReviewRunRecord } from './review.js'
+import { REVIEW_DEFAULT_CONTEXT_CHARS } from './review-locate.js'
+import type { ReviewOpinionInput } from './review-locate.js'
+import { REVIEW_DIMENSIONS, REVIEW_DIMENSION_LABELS } from './review-nodes.js'
+import { buildReviewContext, runReview } from './review.js'
+import { REVIEW_LIST_LIMIT, listReviewRuns, reviewRunWire } from './review-store.js'
+import type { ReviewRunRecord } from './review-store.js'
 
 type Json = Record<string, unknown>
 

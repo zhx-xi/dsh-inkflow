@@ -1220,7 +1220,8 @@ export type { GateReport, GateResult } from './gate.js'
 
 export { buildReviewList } from './review.js'
 export { buildReviewCompare } from './review-compare.js'
-export type { ReviewOpinion, ReviewRunRecord } from './review.js'
+export type { ReviewOpinion } from './review-locate.js'
+export type { ReviewRunRecord } from './review-store.js'
 // ---------------------------------------------------------------------------
 // issue #45 — the proposal tab (ADR-0023 D5). The store and its four actions live in
 // `proposal.ts` / the wire in `proposal-channel.ts`. Re-exported here so `routes.ts` keeps

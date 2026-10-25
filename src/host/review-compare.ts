@@ -31,8 +31,11 @@
  *   * `density` is `null` when the chapter has no countable characters.
  */
 
-import type { ReviewDimension, ReviewRunRecord } from './review.js'
-import { REVIEW_DIMENSIONS, REVIEW_DIMENSION_LABELS, REVIEW_LIST_LIMIT, buildReviewContext, listReviewRuns } from './review.js'
+import { REVIEW_DIMENSIONS, REVIEW_DIMENSION_LABELS } from './review-nodes.js'
+import type { ReviewDimension } from './review-nodes.js'
+import { buildReviewContext } from './review.js'
+import { REVIEW_LIST_LIMIT, listReviewRuns } from './review-store.js'
+import type { ReviewRunRecord } from './review-store.js'
 
 /** The table's columns, in print order. Every row carries every one of them. */
 export const REVIEW_COMPARE_COLUMNS = [

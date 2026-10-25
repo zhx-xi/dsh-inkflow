@@ -714,24 +714,49 @@ export type { GateCounts, GateError, GateFileResult, GateReport, GateRequest, Ga
  * nodes over one chapter, the locator/evidence chain, the `.inkflow/review/<chapterId>/
  * <runId>.json` run record, and the cross-model table. Exported together so the tool
  * surface, the panel route and the tests read the same definitions.
+ *
+ * The engine is four files since #193 (#46's own split): `review.ts` orchestrates and
+ * answers the callers, `review-nodes.ts` owns the dimensions and the node table,
+ * `review-locate.ts` owns the addressing protocol, `review-store.ts` owns the record file.
  */
 export {
-  REVIEW_CONTEXT_CHARS,
-  REVIEW_DEFAULT_CONTEXT_CHARS,
   REVIEW_DIMENSIONS,
   REVIEW_DIMENSION_CODES,
   REVIEW_DIMENSION_LABELS,
   REVIEW_DIMENSION_SPECS,
   REVIEW_DIMENSION_TASKS,
-  REVIEW_FILE_SCHEMA_VERSION,
-  REVIEW_LIST_LIMIT,
   REVIEW_NODES,
-  buildReviewContext,
-  buildReviewList,
+} from './review-nodes.js'
+export type {
+  ReviewAnchorValue,
+  ReviewDimension,
+  ReviewDimensionSpec,
+  ReviewNode,
+  ReviewNodeInput,
+  ReviewNodeOutput,
+  ReviewNodeResult,
+} from './review-nodes.js'
+export {
+  REVIEW_CONTEXT_CHARS,
+  REVIEW_DEFAULT_CONTEXT_CHARS,
   frontmatterLineCount,
-  listReviewRuns,
   locateOpinion,
   paragraphsOf,
+} from './review-locate.js'
+export type {
+  ReviewChapter,
+  ReviewError,
+  ReviewEvidence,
+  ReviewHintSource,
+  ReviewOpinion,
+  ReviewOpinionInput,
+  ReviewParagraph,
+  ReviewRejection,
+} from './review-locate.js'
+export {
+  REVIEW_FILE_SCHEMA_VERSION,
+  REVIEW_LIST_LIMIT,
+  listReviewRuns,
   renderReviewRunFile,
   reviewDirOf,
   reviewOpinionRecord,
@@ -739,33 +764,20 @@ export {
   reviewRunPath,
   reviewRunSummary,
   reviewRunWire,
-  runReview,
-} from './review.js'
+} from './review-store.js'
 export type {
-  ReviewAnchorValue,
-  ReviewChapter,
+  ReviewDimensionSummary,
+  ReviewFileResult,
+  ReviewRunList,
+  ReviewRunRecord,
+} from './review-store.js'
+export { buildReviewContext, buildReviewList, runReview } from './review.js'
+export type {
   ReviewContextResult,
   ReviewContextValue,
-  ReviewDimension,
-  ReviewDimensionSpec,
-  ReviewDimensionSummary,
-  ReviewError,
-  ReviewEvidence,
-  ReviewFileResult,
-  ReviewHintSource,
-  ReviewNode,
-  ReviewNodeInput,
-  ReviewNodeOutput,
-  ReviewNodeResult,
-  ReviewOpinion,
-  ReviewOpinionInput,
-  ReviewParagraph,
-  ReviewRejection,
   ReviewRequest,
   ReviewResult,
-  ReviewRunList,
   ReviewRunOptions,
-  ReviewRunRecord,
 } from './review.js'
 export {
   REVIEW_COMPARE_COLUMNS,
