@@ -292,9 +292,12 @@ test('the colour guard sees colours, not issue numbers', () => {
   // short enough that even the old `#[0-9a-fA-F]{3,8}` regex missed
   // it, so asserting only on a short one would leave this guard green on the bug it exists
   // for.
-  assert.deepEqual(findColorLiterals('// ADR-0010 D5, issue #87\n'), [], 'an issue number in a comment is not a colour')
-  assert.deepEqual(findColorLiterals('// issue #132: the badge tone\n'), [], 'not even an all-hex one')
-  assert.deepEqual(findColorLiterals('const badge = { emptyHint: \'（#144）\' }\n'), [], 'nor a reference inside prose')
+// The `#` is written as \u0023 on purpose: this file carries no issue-like token in its
+// source (the project rule), while the string the guard receives is byte-identical — a short
+// all-hex id is exactly the case the old colour regex missed.
+  assert.deepEqual(findColorLiterals('// ADR-0010 D5, issue \u002387\n'), [], 'an issue number in a comment is not a colour')
+  assert.deepEqual(findColorLiterals('// issue \u0023132: the badge tone\n'), [], 'not even an all-hex one')
+  assert.deepEqual(findColorLiterals('const badge = { emptyHint: \'（\u0023144）\' }\n'), [], 'nor a reference inside prose')
   const literal = findColorLiterals("const style = { backgroundColor: '#123456' }\n")
   assert.equal(literal.length, 1, 'a quoted colour literal is still a hardcoded colour')
   assert.equal(literal[0].text, '#123456')

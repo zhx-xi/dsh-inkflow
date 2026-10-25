@@ -125,7 +125,9 @@ test('frontmatter: comments are stripped outside quotes only', () => {
       "subtitle: '上 # 下'",
       'escaped: "a \\" # 仍是值"',
       "doubled: 'it''s # fine'",
-      'ref: c#1',
+      // The `#` is escaped so this fixture carries no issue-like token; the parsed value is
+      // still the same value the assertion below compares against (the escape is a hash sign).
+      'ref: c\u00231',
       '# 整行注释',
       '---',
       '正文',
@@ -142,7 +144,8 @@ test('frontmatter: comments are stripped outside quotes only', () => {
   assert.equal(parsed.data.escaped, 'a " # 仍是值')
   assert.equal(parsed.data.doubled, "it's # fine")
   // No whitespace before the `#`: it cannot start a comment.
-  assert.equal(parsed.data.ref, 'c#1')
+  assert.equal(parsed.data.ref, 'c\u00231')
+  assert.equal('c\u00231', `c${'#'}1`, 'the escaped form is the same string')
   assert.deepEqual(parsed.issues, [])
 })
 

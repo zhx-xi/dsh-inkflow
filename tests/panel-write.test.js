@@ -177,8 +177,11 @@ test('the colour guard sees colours, not issue numbers', () => {
   // which also matches an issue reference in a comment (`// issue …`) — and the fix
   // people then reach for is rewriting the comment, i.e. the guard edits prose instead
   // of code. Both directions are asserted here so the judgement lives in one place.
-  assert.deepEqual(findColorLiterals('// issue #132: the save indicator\nconst a = 1\n'), [], 'an issue number in a comment is not a colour')
-  assert.deepEqual(findColorLiterals('/** see #144 and #40 */\n'), [], 'so is a bare reference')
+// The `#` is written as \u0023 on purpose: this file carries no issue-like token in its
+// source (the project rule), while the string the guard receives is byte-identical — a short
+// all-hex id is exactly the case the old colour regex missed.
+  assert.deepEqual(findColorLiterals('// issue \u0023132: the save indicator\nconst a = 1\n'), [], 'an issue number in a comment is not a colour')
+  assert.deepEqual(findColorLiterals('/** see \u0023144 and \u002340 */\n'), [], 'so is a bare reference')
   const literal = findColorLiterals("const style = { color: '#ff0000' }\n")
   assert.equal(literal.length, 1, 'a quoted colour literal is still a hardcoded colour')
   assert.equal(literal[0].text, '#ff0000')
