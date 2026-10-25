@@ -520,22 +520,24 @@ test('PANEL_TABS leaves unimplemented pages disabled with their release note', (
   const available = PANEL_TABS.filter((tab) => tab.available)
   // Issue #30 added 设定库 (the eight-kind setting library), issue #35 回收站 (the
   // recovery bin), issue #31 伏笔 (the read-only board), issue #33 体检 (the five-family
-  // audit) and issue #38 候选 (the extraction queue — X-20's one new tab). This list is
-  // the build's own claim about what a user can click, so it is spelled out rather than
-  // derived.
+  // audit), issue #38 候选 (the extraction queue — X-20's one new tab) and issue #43 简报
+  // (the nine-segment brief, X-23). This list is the build's own claim about what a user
+  // can click, so it is spelled out rather than derived.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates'],
-    '章节, 设定库, 伏笔, 回收站, 体检 and 候选 exist in this build',
+    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'brief'],
+    '章节, 设定库, 伏笔, 回收站, 体检, 候选 and 简报 exist in this build',
   )
   // Issue #180 registers the four 0.5.0 pages as placeholders (roadmap §2.4): a
   // registered row with `available: false` and a note, so the four B1/B2 issues add a
   // page instead of inserting a line into this array four times over. A placeholder
-  // that quietly becomes clickable without a page is the failure this pins.
+  // that quietly becomes clickable without a page is the failure this pins — and #43 is
+  // the first of the four to arrive, which is why `brief` moved into `available` above
+  // and out of this list (it kept its row; only the flag changed).
   const disabled = PANEL_TABS.filter((tab) => !tab.available)
   assert.deepEqual(
     disabled.map((tab) => tab.id),
-    ['outline', 'brief', 'gate', 'review', 'proposal'],
+    ['outline', 'gate', 'review', 'proposal'],
     'only the unimplemented pages are disabled',
   )
   assert.equal(disabled[0].note, '0.2.0 起', 'tab outline must say when it arrives')

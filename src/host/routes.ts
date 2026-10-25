@@ -143,6 +143,10 @@ import {
   exportAudit,
   IMPORT_BODY_FIELDS,
   importViaChannel,
+  BRIEF_AUDIT_BODY_FIELDS,
+  briefOptionsFromQuery,
+  buildBrief,
+  exportBriefAudit,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 import { MAX_QUERY_CHARS } from './search.js'
@@ -512,6 +516,40 @@ const ROUTES: readonly InternalRoute[] = [
     methods: ['POST'],
     body: CANDIDATES_PURGE_BODY_FIELDS,
     handle: ({ target, version, body }) => purgeViaChannel(target, version, body),
+  },
+  {
+    // The nine-segment brief (#43, ADR-0022 D1/D2, X-23): every segment as
+    // `{id,label,bytes,tokens,truncated,missing}` in the one fixed order
+    // (`outline → promise → characters → voice → facts → foreshadow → world → prevTail →
+    // anchors`), plus the trim records and the totals.
+    //
+    // It is the SAME `buildWritingBrief()` the audit writes from — the preview is not a
+    // second assembly, which is the whole point of D1. GET-only: the read path may refresh
+    // the derived index (issue #5, like `/chapters` and `/foreshadow`) but writes no file.
+    name: 'brief',
+    pattern: /^\/brief$/,
+    methods: ['GET'],
+    handle: async ({ target, query, version }) => {
+      const reply = await buildBrief(
+        { sessionId: target.sessionId, root: target.root },
+        version,
+        briefOptionsFromQuery(query),
+      )
+      return { status: reply.status, body: reply.body }
+    },
+  },
+  {
+    // The injection audit (#43, ADR-0022 D4): `.inkflow/audit/brief-<chapterId>.json`,
+    // same input → same bytes (no clock, no random id, no absolute path). A write route, so
+    // it carries every write guard plus `confirm: true`, and it rebuilds the brief here
+    // instead of trusting a body: a client-supplied segment list would be a second
+    // assembly, and the record must describe the book as it is now.
+    name: 'brief-audit',
+    pattern: /^\/brief\/audit$/,
+    methods: ['POST'],
+    body: BRIEF_AUDIT_BODY_FIELDS,
+    handle: ({ target, version, body }) =>
+      exportBriefAudit({ sessionId: target.sessionId, root: target.root }, version, {}, body),
   },
 ]
 

@@ -45,6 +45,7 @@ import { TrashView } from './trash.js'
 import { ForeshadowView } from './foreshadow.js'
 import { AuditView } from './audit.js'
 import { ExtractView } from './extract.js'
+import { BriefView } from './brief.js'
 import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
 import { HubIcon, HubView } from './hub.js'
@@ -534,6 +535,10 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // Issue #38 (X-20): the extraction queue — accept or reject what the session model
     // proposed. Its own four routes, so it costs the other pages nothing.
     candidates: () => <ExtractView sessionId={sessionId} onOpenEvidence={openFromEvidence} />,
+    // Issue #43 (X-12/X-23): the nine-segment brief — every segment with its size, share
+    // and trim state, the trim ladder's record, the rendered block, and the one write that
+    // records it into `.inkflow/audit/brief-<chapterId>.json`.
+    brief: () => <BriefView sessionId={sessionId} />,
   }
 
   /**

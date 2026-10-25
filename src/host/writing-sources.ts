@@ -44,6 +44,14 @@ export interface ProjectStats {
 
 export interface ChapterHead {
   path: string
+  /**
+   * The chapter's stable id (frontmatter `id`, else the id the index derived).
+   *
+   * Added by #43: the brief's audit file is named after the chapter (`brief-<id>.json`,
+   * ADR-0022 D4), and a name built from `seq` alone would collide across volumes — `seq`
+   * is volume-local (data-model §3.2.2).
+   */
+  id?: string
   seq?: number
   title?: string
   volume?: string
@@ -142,7 +150,7 @@ function readChapterPairFromIndex(root: string, chapterSeq: number | undefined):
     if (readSchemaVersion(db) !== INDEX_SCHEMA_VERSION) return undefined
     const rows = db
       .prepare(
-        'SELECT path, seq, title, volume, status FROM chapters' +
+        'SELECT id, path, seq, title, volume, status FROM chapters' +
           ' WHERE (? IS NULL OR seq <= ?)' +
           // Chapter order is (volume order, volume-local seq) — data-model §3.2.2.
           // `seq` is **volume-local** (chapter creation takes the volume's max seq + 1),
@@ -173,6 +181,7 @@ function readChapterPairFromIndex(root: string, chapterSeq: number | undefined):
 
 function chapterHeadFromRow(row: Record<string, unknown>): ChapterHead {
   const head: ChapterHead = { path: String(row['path']) }
+  if (typeof row['id'] === 'string' && row['id'] !== '') head.id = row['id']
   if (typeof row['seq'] === 'number') head.seq = row['seq']
   if (typeof row['title'] === 'string') head.title = row['title']
   if (typeof row['volume'] === 'string') head.volume = row['volume']
@@ -198,6 +207,8 @@ function readChapterPairFromFiles(root: string): ChapterPair {
 function withFrontmatter(root: string, path: string): ChapterHead {
   const head: ChapterHead = { path }
   const parsed = parseMarkdown(readText(join(root, path)))
+  const id = stringField(parsed.data, 'id')
+  if (id !== undefined && id !== '') head.id = id
   const seq = intField(parsed.data, 'seq') ?? leadingNumber(path)
   if (seq !== undefined) head.seq = seq
   const title = stringField(parsed.data, 'title') ?? slugOf(path)
@@ -237,6 +248,21 @@ export function readTail(root: string, previous: ChapterHead | undefined): TailS
     ...(previous.seq === undefined ? {} : { seq: previous.seq }),
     body,
   }
+}
+
+/**
+ * The chapter's own frontmatter `id`, or `undefined` when the file declares none.
+ *
+ * Why a separate read: the index derives an id from the path when the frontmatter has no
+ * `id` (`chapters-vol-01-0002-起风.md`), which is stable but unreadable — and #43 names the
+ * brief's audit file after it (ADR-0022 D4). So the *declared* id is read from the file,
+ * and a chapter without one falls back to `seq-<n>` instead of to a path slug.
+ */
+export function readDeclaredChapterId(root: string, current: ChapterHead | undefined): string | undefined {
+  if (current === undefined) return undefined
+  const parsed = parseMarkdown(readText(join(root, current.path)))
+  const id = stringField(parsed.data, 'id')
+  return id === undefined || id.trim() === '' ? undefined : id.trim()
 }
 
 // ---------------------------------------------------------------------------

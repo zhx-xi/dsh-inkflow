@@ -68,6 +68,46 @@ export { PROMPT_SECTION_NAME, PROMPT_SECTION_ORDER, registerWritingContext } fro
 export type { WritingContextRegistration } from './prompt.js'
 
 /**
+ * The nine-segment brief (issue #43, ADR-0022 D1/D2, roadmap X-23/X-25).
+ *
+ * `buildWritingBrief` is the whole brief as a pure function of the tree (order, caps,
+ * ladder, `{id,bytes,tokens,truncated,missing}` per segment), and `briefFor` is the same
+ * call plus the process counters the diagnostics package reports. Exporting both — and the
+ * audit record/serialiser — is what lets the acceptance tests assert "preview = audit" and
+ * "two runs, same bytes" against the artifact users install instead of against internals.
+ */
+export {
+  BRIEF_CAP_RATIOS,
+  BRIEF_LABELS,
+  BRIEF_SEGMENT_ORDER,
+  BRIEF_TRIM_ORDER,
+  buildWritingBrief,
+} from './writing-context.js'
+export type {
+  BriefSegmentId,
+  BriefSegmentRecord,
+  BriefTrimRecord,
+  WritingBrief,
+} from './writing-context.js'
+export { charactersInChapter, voiceInChapter } from './brief-sources.js'
+export type { BriefCastSource, BriefPackedText } from './brief-sources.js'
+export {
+  BRIEF_AUDIT_FORMAT,
+  BRIEF_AUDIT_SCHEMA,
+  briefAuditName,
+  briefAuditPath,
+  briefAuditRecord,
+  briefFor,
+  briefRunSummary,
+  briefWire,
+  resetBriefRunSummary,
+  serializeBriefAudit,
+  writeBriefAudit,
+  writeBriefAuditFor,
+} from './brief.js'
+export type { BriefAuditRecord, BriefAuditSegment, BriefAuditWrite, BriefRunSummary, BriefWire } from './brief.js'
+
+/**
  * The calendar table and its one conversion (issue #180, roadmap X-28).
  *
  * Exported because the round trip that makes this module worth having —

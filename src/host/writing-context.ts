@@ -20,10 +20,37 @@
  * write this path can cause is the gate's documented `index/` self-heal in
  * `inspectProject` — the same relaxation every tool gets, so a project cannot
  * be "usable for tools but invisible to the prompt".
+ *
+ * ## Two assemblies, one set of renderers (issue #43, ADR-0022 D1/D2)
+ *
+ * This module now owns **two** projections, and the difference is deliberate:
+ *
+ *   * {@link buildWritingContext} — the six segments #20 shipped, injected as the
+ *     `inkflow:writing-context` system-prompt section. Its order, its caps and its
+ *     six-rung ladder are pinned by `tests/prompt.test.js` (a byte-for-byte fence
+ *     around a surface the model sees on every step), so #43 must not touch them.
+ *   * {@link buildWritingBrief} — the **nine** segments of ADR-0022 D2
+ *     (`outline → promise → characters → voice → facts → foreshadow → world →
+ *     prevTail → anchors`), each reported as `{ id, bytes, tokens, truncated }`, with
+ *     the four-rung ladder of D2 (`world → facts → foreshadow → prevTail`) and a trim
+ *     record per rung. It is what the preview shows and what the audit file records.
+ *
+ * Why not one function with a flag: the two ladder contracts genuinely disagree —
+ * D2 says the outline and the project's task statement are **never** trimmed, while the
+ * injected six-segment block must keep trimming its summary first (otherwise a small
+ * budget silently stops injecting the chapter). A single ladder cannot honour both, and
+ * a shared ladder with a per-caller exception list is the "two spellings of one rule"
+ * bug this project keeps re-learning. So: two ladders, **one** implementation of every
+ * segment's text (`writing-context-render.ts`), which is what actually must not drift.
+ *
+ * Both assemblies share {@link estimateTokens} — the budget has exactly one unit.
  */
 
+import { Buffer } from 'node:buffer'
 import { basename } from 'node:path'
 
+import { charactersInChapter, voiceInChapter } from './brief-sources.js'
+import { MAX_OUTLINE_CHARS, SECTION_HEADING, clipHead, clipTail, renderChapter, renderProject, renderTail, renderTrimMarker, renderWorld } from './writing-context-render.js'
 import { factsSegment } from './domains/facts-prompt.js'
 import { foreshadowSegment } from './domains/foreshadowing-query.js'
 import type { ProjectState } from './project.js'
@@ -34,6 +61,7 @@ import {
   matchWorldEntries,
   readChapterOutline,
   readChapterPair,
+  readDeclaredChapterId,
   readProjectStats,
   readTail,
 } from './writing-sources.js'
@@ -45,24 +73,22 @@ export const DEFAULT_TAIL_CHARS = 300
 const SHRUNK_TAIL_CHARS = 120
 
 /**
- * Per-segment caps, applied before the budget is measured.
+ * Floor for a share-based segment cap, in characters (one header plus one line).
  *
- * Why a cap on top of the budget: the trim ladder is coarse (a segment is
- * either there or gone), so one 3000-character outline would push the whole
- * context straight to "outline dropped". Clipping keeps the head of the real
- * thing, which is what the model needs to write the chapter.
+ * A share of a tiny budget is a fraction of a sentence: at 20 tokens the ledger's 15% is
+ * three characters, so its own builder (which packs whole lines, `facts-prompt.ts`)
+ * correctly refuses to emit anything — and the brief would then report a book **with**
+ * ledger entries as "no source", which is a lie about the book rather than a fact about
+ * the budget. The floor keeps the segment visible; the trim ladder, not the cap, is what
+ * decides it does not fit, and `overBudget` says so.
  */
-const MAX_OUTLINE_CHARS = 800
+const BRIEF_MIN_CAP_CHARS = 80
+
 /** A recovery hint must name a line count small enough to beat a full read. */
 const TAIL_RECOVERY_LINES = 40
 
-const CLIP_TAIL_MARK = '…（截断）'
-const CLIP_HEAD_MARK = '…（前文截断）'
-
 /** CJK letters/punctuation: one token per character is the safe direction. */
 const CJK = /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/u
-
-const SECTION_HEADING = '## 写作上下文（InkFlow · 当前作品的快照，不是新的作者指令）'
 
 /** Ladder labels, in the documented drop order. */
 const TRIM_SUMMARY = '项目摘要'
@@ -242,16 +268,8 @@ export function buildWritingContext(root: string, options: WritingContextOptions
   }
   if (!probe.usable) return empty
 
-  const declared = probe.meta?.title
-  const title = declared !== undefined && declared.trim() !== '' ? declared.trim() : basename(probe.root)
-  const stats = readProjectStats(probe.root)
-  const pair = readChapterPair(probe.root, options.chapterSeq)
-  const outline = pair.current === undefined ? undefined : readChapterOutline(probe.root, pair.current)
-  const tail = readTail(probe.root, pair.previous)
-
-  // Matching happens against the FULL outline and tail, even when the budget
-  // later drops or shrinks them: the hits describe the chapter, not the slice.
-  const world = matchWorldEntries(loadWorldEntries(probe.root), `${outline?.body ?? ''}\n${tail?.body ?? ''}`)
+  const materials = loadMaterials(probe.root, options)
+  const { title, stats, pair, outline, tail, world } = materials
 
   // Registered segments are built once, before the ladder: their content depends on
   // the chapter, never on a rung. An empty registry (B0's state) produces no extra,
@@ -330,6 +348,30 @@ export function buildWritingContext(root: string, options: WritingContextOptions
   }
 }
 
+/** Everything both assemblies read from the book, loaded once per call. */
+interface Materials {
+  title: string
+  stats: ProjectStats | undefined
+  pair: ChapterPair
+  outline: OutlinedChapter | undefined
+  tail: TailSlice | undefined
+  world: WorldSelection
+}
+
+function loadMaterials(root: string, options: WritingContextOptions): Materials {
+  const declared = inspectProject(root).meta?.title
+  const title = declared !== undefined && declared.trim() !== '' ? declared.trim() : basename(root)
+  const stats = readProjectStats(root)
+  const pair = readChapterPair(root, options.chapterSeq)
+  const outline = pair.current === undefined ? undefined : readChapterOutline(root, pair.current)
+  const tail = readTail(root, pair.previous)
+
+  // Matching happens against the FULL outline and tail, even when the budget
+  // later drops or shrinks them: the hits describe the chapter, not the slice.
+  const world = matchWorldEntries(loadWorldEntries(root), `${outline?.body ?? ''}\n${tail?.body ?? ''}`)
+  return { title, stats, pair, outline, tail, world }
+}
+
 function renderWritingContext(input: RenderInput): RenderedContext {
   const segments: WritingContextSegment[] = []
   const trimmed: string[] = []
@@ -393,65 +435,414 @@ function renderWritingContext(input: RenderInput): RenderedContext {
   return { segments, trimmed, text, tokens: estimateTokens(text) }
 }
 
-function renderProject(title: string, stats: ProjectStats | undefined): string {
-  const head = '### 项目'
-  if (stats === undefined) {
-    return `${head}\n《${title}》（索引未建立：调用 inkflow_index_rebuild 后补上卷/章/字数）`
-  }
-  const parts = [`《${title}》`]
-  if (stats.volumes > 0) parts.push(`${String(stats.volumes)} 卷`)
-  parts.push(`${String(stats.chapters)} 章`, `${String(stats.words)} 字`)
-  return `${head}\n${parts.join(' · ')}`
-}
+// ---------------------------------------------------------------------------
+// The nine-segment brief (issue #43, ADR-0022 D1/D2)
+// ---------------------------------------------------------------------------
 
-function renderChapter(current: ChapterHead, outline: OutlinedChapter | undefined): string {
-  const facts: string[] = []
-  if (current.title !== undefined && current.title !== '') facts.push(`标题：${current.title}`)
-  if (current.volume !== undefined && current.volume !== '') facts.push(`卷：${current.volume}`)
-  if (current.seq !== undefined) facts.push(`seq：${String(current.seq)}`)
-  if (current.status !== undefined && current.status !== '') facts.push(`状态：${current.status}`)
-  const lines = ['### 当前章', facts.length === 0 ? `文件：${current.path}` : facts.join('｜')]
-  if (outline !== undefined && outline.body !== '') {
-    lines.push(`大纲 ${outline.path}：`, clipHead(outline.body, MAX_OUTLINE_CHARS))
-  }
-  return lines.join('\n')
-}
+/**
+ * The nine segments, in the ONE order any caller may rely on (ADR-0022 D2).
+ *
+ * This is the constant table X-23 held back until its first consumer (#43). It is the
+ * single source of the brief's order, its labels, its caps and — through
+ * {@link BRIEF_TRIM_ORDER} — its ladder. A caller that renders a brief in another order
+ * is not "slightly different": #46's review pipeline addresses segments by `id`, and the
+ * audit file's field order is this order, so a reordering would silently rewrite what a
+ * stored audit says.
+ */
+export const BRIEF_SEGMENT_ORDER = [
+  'outline',
+  'promise',
+  'characters',
+  'voice',
+  'facts',
+  'foreshadow',
+  'world',
+  'prevTail',
+  'anchors',
+] as const
 
-function renderTail(tail: TailSlice, taken: number, body: string): string {
-  const which = tail.seq === undefined ? '上一章' : `第 ${String(tail.seq)} 章`
-  return `### 上一章结尾（${which} · 最后 ${String(taken)} 字）\n${body}`
-}
+export type BriefSegmentId = (typeof BRIEF_SEGMENT_ORDER)[number]
 
-function renderWorld(world: WorldSelection): string {
-  const header =
-    world.matched > world.shown.length
-      ? `### 世界书（命中 ${String(world.matched)} 条，展开前 ${String(world.shown.length)} 条）`
-      : `### 世界书（命中 ${String(world.matched)} 条）`
-  const lines = world.shown.map((entry) => `- ${entry.title}（${entry.path}）：${entry.excerpt}`)
-  return [header, ...lines].join('\n')
-}
+/**
+ * The only droppable segments, first to go first (ADR-0022 D2).
+ *
+ * `outline` / `promise` / `characters` are **never** in this list: they are "what this
+ * chapter is", and a brief that silently drops the task statement makes the model write
+ * something unrelated to the author's plan. Over budget is the honest answer there, and
+ * `overBudget` reports it.
+ */
+export const BRIEF_TRIM_ORDER = ['world', 'facts', 'foreshadow', 'prevTail'] as const
 
-function renderTrimMarker(trimmed: readonly string[], notes: readonly string[]): string {
-  const detail = notes.length === 0 ? '' : `（${notes.join('；')}）`
-  return `[trimmed: ${trimmed.join('、')}]${detail}`
-}
-
-/** Keep the head; the marker is part of the cap so the budget still balances. */
-function clipHead(text: string, max: number): string {
-  if (text.length <= max) return text
-  return `${text.slice(0, Math.max(1, max - CLIP_TAIL_MARK.length))}${CLIP_TAIL_MARK}`
+/**
+ * Author-facing labels. They travel in the preview, in the `[trimmed: …]` marker and in
+ * the audit record, so an id never appears where a person reads.
+ *
+ * `facts` and `foreshadow` must equal the registered specs' labels (`tests/brief.test.js`
+ * compares them): the same segment named differently in the ladder and in the marker
+ * would read as two segments.
+ */
+export const BRIEF_LABELS: Readonly<Record<BriefSegmentId, string>> = {
+  outline: '当前章大纲',
+  promise: '承诺书',
+  characters: '本章人物',
+  voice: '语言基因',
+  facts: '账本事实',
+  foreshadow: '伏笔提示',
+  world: '世界书',
+  prevTail: '上章结尾',
+  anchors: '锚点',
 }
 
 /**
- * Keep the tail; the marker is part of the cap.
+ * Per-segment budget share, as a fraction of `budgetTokens` (`floor(ratio × budget)`
+ * characters, the same unit the ledger and the foreshadow reminder use).
  *
- * Direction matters: the value of "how the last chapter ended" is entirely in
- * its last sentences, so a head-clip would hand the model the background and
- * throw the hook away.
+ * `0` means "this segment's cap is its own definition, not a share of the budget":
+ * the outline keeps `MAX_OUTLINE_CHARS`, the world book keeps `MAX_WORLD_SHOWN` entries,
+ * the tail keeps `tailChars`, and the two segments with no source yet (`promise`,
+ * `anchors`) carry nothing at all. Those values are not 0 because the segment is
+ * unimportant — they are 0 because a second cap on top of an existing one is a tuning
+ * knob nobody asked for, and the audit reports the resulting sizes anyway.
+ *
+ * The shares do not add up to 1 and must not: a cap is a ceiling, not a reservation.
+ * The ladder — not the sum — decides what is dropped.
  */
-function clipTail(text: string, max: number): string {
-  if (text.length <= max) return text
-  return `${CLIP_HEAD_MARK}${text.slice(-Math.max(1, max - CLIP_HEAD_MARK.length))}`
+export const BRIEF_CAP_RATIOS: Readonly<Record<BriefSegmentId, number>> = {
+  outline: 0,
+  promise: 0,
+  characters: 0.12,
+  voice: 0.08,
+  // Kept in step with the registered specs (the registry wins at runtime; the test
+  // asserts the two agree, so a retuned cap cannot live in only one of them).
+  facts: 0.15,
+  foreshadow: 0.1,
+  world: 0,
+  prevTail: 0,
+  anchors: 0,
+}
+
+/** One segment of a brief, as the preview shows it and the audit file stores it. */
+export interface BriefSegmentRecord {
+  readonly id: BriefSegmentId
+  readonly label: string
+  /** The rendered text. `''` when the segment has no source or was dropped. */
+  readonly text: string
+  /** UTF-8 bytes of `text`: "why did the model not see the foreshadows?" starts here. */
+  readonly bytes: number
+  /** {@link estimateTokens} of `text` — the budget's own unit. */
+  readonly tokens: number
+  /** Shortened by this segment's cap, shrunk, or dropped by the ladder (ADR-0022 D1). */
+  readonly truncated: boolean
+  /** This book has no source for the segment. Never filled with placeholder prose. */
+  readonly missing: boolean
+}
+
+/** One rung that actually changed something: the segment, and what it cost before/after. */
+export interface BriefTrimRecord {
+  readonly segment: BriefSegmentId
+  /** Tokens this segment occupied before the rung. */
+  readonly before: number
+  /** Tokens it occupies after the rung (`0` when dropped). */
+  readonly after: number
+  /** `(before - after) / before`, rounded to three decimals; `0` when `before` was 0. */
+  readonly ratio: number
+}
+
+export interface WritingBrief {
+  readonly state: ProjectState
+  readonly root: string
+  /**
+   * The chapter the brief is about, as the audit file names it — the frontmatter `id`,
+   * else `seq-<n>`, else `no-chapter`. Filesystem-safe, and a function of the book
+   * alone: the same chapter yields the same file name forever (ADR-0022 D4).
+   */
+  readonly chapterId: string | null
+  readonly chapterSeq: number | null
+  /** Project-relative chapter path, for a preview header. Never an absolute path. */
+  readonly chapterPath: string | null
+  readonly budgetTokens: number
+  /** All nine, in {@link BRIEF_SEGMENT_ORDER}, present or not. */
+  readonly segments: readonly BriefSegmentRecord[]
+  /** Trim rungs applied, in the order they were applied. */
+  readonly trims: readonly BriefTrimRecord[]
+  readonly text: string
+  readonly tokens: number
+  /** `tokens > budgetTokens` after the ladder ran out of rungs. The caller reports it. */
+  readonly overBudget: boolean
+  /** How many trim rungs were applied (0 = the brief fit). Diagnostics counts this. */
+  readonly rungs: number
+}
+
+/** One rung of the brief's ladder: what it drops, and (for the tail) how short it gets. */
+interface BriefRung {
+  /** The segment this rung is about; `undefined` for the untrimmed rung. */
+  readonly target?: BriefSegmentId
+  readonly dropWorld: boolean
+  readonly dropFacts: boolean
+  readonly dropForeshadow: boolean
+  readonly tailLimit: number
+  readonly dropPrevTail: boolean
+}
+
+interface RenderedBrief {
+  segments: BriefSegmentRecord[]
+  text: string
+  tokens: number
+}
+
+/**
+ * Build the nine-segment brief (ADR-0022 D1/D2, roadmap X-23).
+ *
+ * One function, one input, one answer: the preview route, the audit file and any future
+ * injection caller run THIS, so "the preview is what the model gets" is a property of the
+ * code and not of discipline. Deterministic for a given tree — no cache, no clock, no
+ * random id (ADR-0022 D4), which is why the audit file can be `git diff`ed.
+ *
+ * Segments with no source in this book are reported as `missing: true` with an empty
+ * text. Deliberate: `promise` (the chapter's commitment) and `anchors` (the scene's fixed
+ * points) are produced by the **session's model** under X-26 and have no file to read yet;
+ * filling them with a placeholder would put invented instructions in front of the writer,
+ * which is worse than an honest gap.
+ */
+export function buildWritingBrief(root: string, options: WritingContextOptions = {}): WritingBrief {
+  const budgetTokens = clampInt(options.budgetTokens, DEFAULT_BUDGET_TOKENS, 1, 200_000)
+  const tailChars = clampInt(options.tailChars, DEFAULT_TAIL_CHARS, 1, 20_000)
+  const probe = inspectProject(root)
+  const empty: WritingBrief = {
+    state: probe.state,
+    root: probe.root,
+    chapterId: null,
+    chapterSeq: null,
+    chapterPath: null,
+    budgetTokens,
+    segments: [],
+    trims: [],
+    text: '',
+    tokens: 0,
+    overBudget: false,
+    rungs: 0,
+  }
+  if (!probe.usable) return empty
+
+  const materials = loadMaterials(probe.root, options)
+  const { pair, outline, tail, world } = materials
+  const current = pair.current
+  const chapterId = briefChapterId(probe.root, current)
+  const haystack = `${outline?.body ?? ''}\n${tail?.body ?? ''}`
+
+  // Every segment's full text, built once: the ladder only decides which of these
+  // survive, so a rung can never change what a segment says.
+  const built = new Map<BriefSegmentId, { text: string; truncated: boolean; missing: boolean }>()
+  if (current !== undefined) {
+    built.set('outline', {
+      text: renderChapter(current, outline),
+      truncated: outline !== undefined && outline.body.length > MAX_OUTLINE_CHARS,
+      missing: false,
+    })
+  } else {
+    built.set('outline', { text: '', truncated: false, missing: true })
+  }
+  // No source yet (X-26: the session's model produces these; the plugin only assembles).
+  built.set('promise', { text: '', truncated: false, missing: true })
+  built.set('anchors', { text: '', truncated: false, missing: true })
+
+  const cast = charactersInChapter({
+    root: probe.root,
+    seq: current?.seq,
+    haystack,
+    capChars: briefCapChars(budgetTokens, 'characters'),
+  })
+  built.set('characters', cast === undefined ? { text: '', truncated: false, missing: true } : { text: cast.text, truncated: cast.truncated, missing: false })
+
+  const voices = voiceInChapter({
+    root: probe.root,
+    seq: current?.seq,
+    haystack,
+    capChars: briefCapChars(budgetTokens, 'voice'),
+  })
+  built.set('voice', voices === undefined ? { text: '', truncated: false, missing: true } : { text: voices.text, truncated: voices.truncated, missing: false })
+
+  // The two registered extras keep their own builders and their own caps (X-13): the
+  // brief does not get a second opinion about what a ledger line looks like.
+  for (const id of ['facts', 'foreshadow'] as const) {
+    const spec = EXTRA_SEGMENTS.find((entry) => entry.name === id)
+    if (spec === undefined) {
+      built.set(id, { text: '', truncated: false, missing: true })
+      continue
+    }
+    const capChars = briefCapChars(budgetTokens, id)
+    const text = spec.build({ root: probe.root, current, outlineBody: outline?.body ?? '', capChars })
+    if (text === undefined || text.trim() === '') {
+      built.set(id, { text: '', truncated: false, missing: true })
+      continue
+    }
+    built.set(id, { text: clipHead(text, capChars), truncated: text.length > capChars, missing: false })
+  }
+
+  built.set('world', world.shown.length === 0
+    ? { text: '', truncated: false, missing: true }
+    : { text: renderWorld(world), truncated: false, missing: false })
+  // The tail's text depends on the rung (it shrinks before it is dropped), so it is
+  // rendered inside `renderBrief`; only its presence is decided here.
+  built.set('prevTail', tail === undefined
+    ? { text: '', truncated: false, missing: true }
+    : { text: '', truncated: false, missing: false })
+
+  const shrunk = Math.min(SHRUNK_TAIL_CHARS, tailChars)
+  const rungs: BriefRung[] = [
+    { dropWorld: false, dropFacts: false, dropForeshadow: false, tailLimit: tailChars, dropPrevTail: false },
+    { target: 'world', dropWorld: true, dropFacts: false, dropForeshadow: false, tailLimit: tailChars, dropPrevTail: false },
+    { target: 'facts', dropWorld: true, dropFacts: true, dropForeshadow: false, tailLimit: tailChars, dropPrevTail: false },
+    { target: 'foreshadow', dropWorld: true, dropFacts: true, dropForeshadow: true, tailLimit: tailChars, dropPrevTail: false },
+    ...(shrunk < tailChars
+      ? [{ target: 'prevTail', dropWorld: true, dropFacts: true, dropForeshadow: true, tailLimit: shrunk, dropPrevTail: false } as const]
+      : []),
+    { target: 'prevTail', dropWorld: true, dropFacts: true, dropForeshadow: true, tailLimit: shrunk, dropPrevTail: true },
+  ]
+
+  let previous: RenderedBrief | undefined
+  let chosen: RenderedBrief | undefined
+  const trims: BriefTrimRecord[] = []
+  for (const rung of rungs) {
+    const rendered = renderBrief({ rung, built, tail, tailChars })
+    // A rung that renders exactly like the previous one dropped nothing (no previous
+    // chapter, no such segment): it must not show up as a trim, and it must not count.
+    if (previous !== undefined && rendered.text === previous.text) continue
+    if (rung.target !== undefined && previous !== undefined) {
+      const before = tokenOf(previous.segments, rung.target)
+      const after = tokenOf(rendered.segments, rung.target)
+      if (before !== after) trims.push({ segment: rung.target, before, after, ratio: ratioOf(before, after) })
+    }
+    previous = rendered
+    chosen = rendered
+    if (rendered.tokens <= budgetTokens) break
+  }
+
+  if (chosen === undefined) return empty
+  return {
+    state: probe.state,
+    root: probe.root,
+    chapterId,
+    chapterSeq: current?.seq ?? null,
+    chapterPath: current?.path ?? null,
+    budgetTokens,
+    segments: chosen.segments,
+    trims,
+    text: chosen.text,
+    tokens: chosen.tokens,
+    overBudget: chosen.tokens > budgetTokens,
+    rungs: trims.length,
+  }
+}
+
+interface RenderBriefInput {
+  readonly rung: BriefRung
+  readonly built: ReadonlyMap<BriefSegmentId, { text: string; truncated: boolean; missing: boolean }>
+  readonly tail: TailSlice | undefined
+  readonly tailChars: number
+}
+
+function renderBrief(input: RenderBriefInput): RenderedBrief {
+  const segments: BriefSegmentRecord[] = []
+  const notes: string[] = []
+  const dropped: string[] = []
+
+  for (const id of BRIEF_SEGMENT_ORDER) {
+    const source = input.built.get(id) ?? { text: '', truncated: false, missing: true }
+    const label = BRIEF_LABELS[id]
+    const isDropped =
+      (id === 'world' && input.rung.dropWorld) ||
+      (id === 'facts' && input.rung.dropFacts) ||
+      (id === 'foreshadow' && input.rung.dropForeshadow) ||
+      (id === 'prevTail' && input.rung.dropPrevTail)
+    if (isDropped) {
+      if (!source.missing) dropped.push(label)
+      segments.push({ id, label, text: '', bytes: 0, tokens: 0, truncated: !source.missing, missing: source.missing })
+      continue
+    }
+    if (id === 'prevTail') {
+      if (input.tail === undefined) {
+        segments.push({ id, label, text: '', bytes: 0, tokens: 0, truncated: false, missing: true })
+        continue
+      }
+      const body = clipTail(input.tail.body, input.rung.tailLimit)
+      const text = renderTail(input.tail, body.length, body)
+      const shrunk = input.rung.tailLimit < input.tailChars
+      if (shrunk) {
+        // A shrunk tail is trimmed exactly like a dropped one: the marker names it and
+        // the note says how to get the rest back (mirrors the injected context, #20).
+        dropped.push(label)
+        notes.push(`找回：读 ${input.tail.path} 的最后约 ${String(TAIL_RECOVERY_LINES)} 行`)
+      }
+      segments.push({
+        id,
+        label,
+        text,
+        bytes: byteLength(text),
+        tokens: estimateTokens(text),
+        truncated: shrunk,
+        missing: false,
+      })
+      continue
+    }
+    segments.push({
+      id,
+      label,
+      text: source.text,
+      bytes: byteLength(source.text),
+      tokens: estimateTokens(source.text),
+      truncated: source.missing ? false : source.truncated,
+      missing: source.missing,
+    })
+  }
+
+  const marker = dropped.length === 0 ? '' : renderTrimMarker(dropped, notes)
+  const rendered = segments.filter((segment) => segment.text !== '').map((segment) => segment.text)
+  // Nothing to say (a brand-new book, or a book whose nine sources are all absent): no
+  // heading either. The heading alone would be a section that costs tokens and injects
+  // nothing — the same reason `buildWritingContext` returns `''` for a non-usable project.
+  if (rendered.length === 0) return { segments, text: '', tokens: 0 }
+  const text = [SECTION_HEADING, ...rendered, ...(marker === '' ? [] : [marker])].join('\n\n')
+  return { segments, text, tokens: estimateTokens(text) }
+}
+
+/** `floor(ratio × budget)` with a floor of one header plus one line, per segment. */
+function briefCapChars(budgetTokens: number, id: BriefSegmentId): number {
+  const registered = EXTRA_SEGMENTS.find((entry) => entry.name === id)?.capRatio
+  const ratio = registered ?? BRIEF_CAP_RATIOS[id]
+  return Math.max(BRIEF_MIN_CAP_CHARS, Math.floor(ratio * budgetTokens))
+}
+
+function tokenOf(segments: readonly BriefSegmentRecord[], id: BriefSegmentId): number {
+  return segments.find((segment) => segment.id === id)?.tokens ?? 0
+}
+
+function ratioOf(before: number, after: number): number {
+  if (before <= 0) return 0
+  return Math.round(((before - after) / before) * 1000) / 1000
+}
+
+function byteLength(text: string): number {
+  return Buffer.byteLength(text, 'utf8')
+}
+
+/**
+ * The chapter key that names the audit file: the **declared** frontmatter `id` when the
+ * chapter has one, else `seq-<n>`, else `no-chapter`. Sanitised to `[A-Za-z0-9._-]` so a
+ * hand-written id cannot walk out of `.inkflow/audit/`.
+ *
+ * The declared id is read from the file rather than taken from `ChapterHead.id`: the index
+ * derives an id from the path when the frontmatter has none
+ * (`chapters-vol-01-0002-起风.md`), which would make a perfectly stable audit file name
+ * look like a path and change if the file were renamed.
+ */
+function briefChapterId(root: string, current: ChapterHead | undefined): string | null {
+  if (current === undefined) return null
+  const declared = readDeclaredChapterId(root, current)
+  const raw = declared ?? (current.seq === undefined ? undefined : `seq-${String(current.seq)}`)
+  if (raw === undefined || raw.trim() === '') return null
+  const safe = raw.trim().replace(/[^A-Za-z0-9._-]/gu, '-')
+  return safe === '' ? null : safe.slice(0, 64)
 }
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {

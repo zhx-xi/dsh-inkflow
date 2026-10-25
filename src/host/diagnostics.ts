@@ -36,6 +36,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { getLoadedBuild, summarizeBuild } from './build-info.js'
 import type { BuildSummary } from './build-info.js'
+import { briefRunSummary } from './brief.js'
 import { INDEX_SCHEMA_VERSION } from './conventions.js'
 import { checkIndexFreshness } from './index-freshness.js'
 import type { IndexFreshnessState } from './index-freshness.js'
@@ -142,6 +143,25 @@ export interface DiagnosticsDocument {
     available: false
     requestedLines: number
     reason: string
+  }
+  /**
+   * The brief's run counters (issue #43, ADR-0022 D2: "超预算次数进诊断包").
+   *
+   * COUNTS AND SEGMENT IDS ONLY — no rendered text, no chapter prose, no file name: the
+   * question this answers is "when the context did not fit, which segments paid for it",
+   * and `before`/`after` are token counts. `null` means no brief was assembled in this
+   * process, which is not an error (a session outside a book assembles none).
+   */
+  brief: {
+    runs: number
+    overBudgetRuns: number
+    last: {
+      overBudget: boolean
+      rungs: number
+      trimmed: string[]
+      budgetTokens: number
+      tokens: number
+    } | null
   }
   /** The same facts as readable lines, so the file is legible in an editor. */
   summary: string[]
@@ -466,6 +486,7 @@ export function buildDiagnostics(input: DiagnosticsInput): DiagnosticsDocument {
       reason:
         'the Host exposes no log file to plugins, and tailing its own logs would ship other plugins output; ask for the DSH log separately if a crash needs one',
     },
+    brief: briefSection(),
     summary: [],
   }
 
@@ -478,6 +499,31 @@ export function buildDiagnostics(input: DiagnosticsInput): DiagnosticsDocument {
   const masked = maskDocument(document, roots)
   masked.summary = maskDocument(summarizeDocument(masked), roots)
   return masked
+}
+
+/**
+ * The brief's run counters, narrowed to the whitelist (ADR-0022 D2 + ADR-0018 D5).
+ *
+ * A copy rather than the live object: the package must not be able to grow a field the
+ * whitelist never named, and `trimmed` is copied to a plain array so a future caller
+ * cannot push prose into it.
+ */
+function briefSection(): DiagnosticsDocument['brief'] {
+  const summary = briefRunSummary()
+  return {
+    runs: summary.runs,
+    overBudgetRuns: summary.overBudgetRuns,
+    last:
+      summary.last === null
+        ? null
+        : {
+            overBudget: summary.last.overBudget,
+            rungs: summary.last.rungs,
+            trimmed: [...summary.last.trimmed],
+            budgetTokens: summary.last.budgetTokens,
+            tokens: summary.last.tokens,
+          },
+  }
 }
 
 /** The readable half: the same facts as lines, for a human opening the file. */
@@ -505,6 +551,12 @@ function summarizeDocument(document: DiagnosticsDocument): string[] {
     }
   }
   lines.push(`tools: ${String(document.tools.count)} registered`)
+  const brief = document.brief
+  lines.push(
+    brief.last === null
+      ? `brief: none assembled in this process (${String(brief.runs)} run(s))`
+      : `brief: ${String(brief.runs)} run(s), ${String(brief.overBudgetRuns)} over budget; last ${String(brief.last.tokens)}/${String(brief.last.budgetTokens)} tokens${brief.last.trimmed.length === 0 ? '' : `, trimmed ${brief.last.trimmed.join('/')}`}`,
+  )
   lines.push('logs: unavailable (see the logs.reason field)')
   return lines
 }

@@ -16,7 +16,9 @@
 
 ## 决策
 
-### D1 一个装配点：`buildWritingContext()` 是简报的唯一入口
+### D1 一个装配点：简报与注入共用一个装配、一份段渲染器
+
+> **修订（2026-10-25，#43）**：本节标题原写 `buildWritingContext()` 是「简报的唯一入口」，落地后函数名分开、纪律不变——简报的装配是 `buildWritingBrief()`，旧六段注入仍是 `buildWritingContext()`，两者**共用** `writing-context-render.ts` 的同一份段渲染器。**注入面本轮未切换**（生成路径仍用六段装配）：`tests/prompt.test.js:516` 钉死 `section.text === buildWritingContext(root).text`、同文件 286–357 钉死六段阶梯，迁移要一次性改这三处断言，已在 **#183** 立单专门做。因此本 ADR 的「预览＝注入」目前只对**简报自身**成立（预览与审计同源），对生成路径要等 #183。
 
 预览与真实注入调用**同一个函数、同一份入参**（`{ root, budgetTokens?, tailChars?, chapterSeq? }`），差别只在调用方拿返回值做什么：
 
@@ -55,6 +57,8 @@ world → facts → foreshadow → prevTail
 每次裁剪都要**埋点**：`{ segment: id, before, after, ratio }`（段 id + 裁掉的比例），同一章的超预算次数进诊断包（[ADR-0018](0018-settings-backup-diagnostics.md) D5 的白名单字段里加一项，不含正文）。
 
 > 现行实现仍是 X-13 的六段 + `EXTRA_SEGMENTS` 注册表；本 ADR 定的是 #43 落地时必须满足的形状。这是一次**扩容**（六段 → 九段），不是重写：`EXTRA_SEGMENTS` 的「只声明不排序」纪律继续有效。
+>
+> **修订（2026-10-25，#43）**：九段是**简报**的段集，**不包括 `project`**——既有六段注入里的「项目摘要」不进简报，项目信息仍在系统提示的其他段里。两套装配共用同一份段渲染器（`writing-context-render.ts`），因此同一个段在两处不可能渲染成两种文字；简报的段集与顺序由 `BRIEF_SEGMENT_ORDER` 与 `BRIEF_TRIM_ORDER` 两个常量表定死（`src/host/writing-context.ts`），本表与它们由用例对拍。
 
 ### D3 门禁/审稿/校对一律用 `findings.ts` 的既有形状
 
