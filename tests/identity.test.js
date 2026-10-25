@@ -1,5 +1,5 @@
 /**
- * Entity rename = **id pinning** (#34, ADR-0014, conventions §5.6).
+ * Entity rename = **id pinning** (ADR-0014, conventions §5.6).
  *
  * The decision this file pins down, in one sentence: a rename moves the file and
  * writes the OLD id into the new file's `id:`, and **not one referencing file is
@@ -380,7 +380,7 @@ test('identity: a title-only edit writes no `id:` — only a move pins', async (
 
     // ADR-0014 §4 / §5.6: "只有「改名」写 `id`". A file whose name did not change has
     // nothing for the id to hold on to, so writing one would make the file claim it had
-    // been renamed — and #33's audit would then list `ID_PATH_DIVERGED` for a rename
+    // been renamed — and the audit would then list `ID_PATH_DIVERGED` for a rename
     // that never happened.
     const value = okBody(
       await renameEntity({

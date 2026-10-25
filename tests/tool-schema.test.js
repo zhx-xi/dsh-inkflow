@@ -1,5 +1,5 @@
 /**
- * Tool schemas must stay inside the JSON Schema subset the Host accepts (#114).
+ * Tool schemas must stay inside the JSON Schema subset the Host accepts.
  *
  * Why this file exists: a single unsupported keyword does not make one tool fail —
  * `dsh-tools` throws while the plugin registers, cordis reports
@@ -264,13 +264,13 @@ test('the guard itself catches the two shapes that killed the plugin', () => {
 test('every shipped tool schema stays inside the Host-supported subset', () => {
   const tools = registeredTools()
   // Exact, not `>=`: dropping a tool would otherwise stay green, and the baseline below only
-  // names the 36 built-ins (#33 audit, #36 repair/migrate, #37 import, #38 the five extraction
-  // tools, #39 the unified search and the search-replace batch, #40 shared list/copy/update,
-  // #41 semantic status / rebuild / purge, #42 settings get/update + diagnostics + backup
-  // create/restore), #44 the quality gate, #48's two calendar tools and the relation clue
-  // view, #51 the ETL plan/apply pair, #46 the review run/context/compare trio, #45 the four
-  // view, #51 the ETL pair, #46 review's trio, #45 the four proposal tools, #50 the export and
-  // #49 the series plan/apply pair. 70 = those 53 plus the seventeen 0.5.0 tools.
+  // names the 36 built-ins (audit, repair/migrate, import, the five extraction
+  // tools, the unified search and the search-replace batch, shared list/copy/update,
+  // semantic status / rebuild / purge, settings get/update + diagnostics + backup
+  // create/restore), the quality gate, the two calendar tools and the relation clue
+  // view, the ETL plan/apply pair, the review run/context/compare trio, the four
+  // view, the ETL pair, review's trio, the four proposal tools, the export and
+  // the series plan/apply pair. 70 = those 53 plus the seventeen 0.5.0 tools.
   assert.equal(tools.size, 70, `expected the full tool surface, got ${tools.size}`)
   const failures = []
   for (const [name, tool] of tools) {
@@ -289,7 +289,7 @@ test('every shipped tool schema stays inside the Host-supported subset', () => {
 
 test('the domain tools the registry contributes are covered by the same guard', () => {
   // `domainTools()` is what `apply()` registers beyond the built-ins; asserting the
-  // count keeps this file honest when a new domain lands. 19 = 16 before #48 plus the
+  // count keeps this file honest when a new domain lands. 19 = 16 before the calendar plus the
   // timeline domain's two calendar tools (`inkflow_calendar_get` / `_set`) and the
   // relation domain's clue view (`inkflow_relation_clues`).
   const domain = domainTools({ ctx: {}, dataDir: tmpdir(), version: 'test' })

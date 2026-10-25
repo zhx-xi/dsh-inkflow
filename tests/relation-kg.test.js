@@ -1,5 +1,5 @@
 /**
- * Issue #48 — the knowledge graph: five relation types, the contradictory-edge rule and
+ * The knowledge graph: five relation types, the contradictory-edge rule and
  * the clue view.
  *
  * Three claims are pinned here, and each one is worth its own group because each can fail

@@ -1,5 +1,5 @@
 /**
- * Issue #41 — the semantic backend end to end, against a stub OpenViking.
+ * The semantic backend end to end, against a stub OpenViking.
  *
  * WHY A STUB. No OVK server is running on this machine, and the acceptance criteria are about
  * *this plugin's* behaviour on every answer shape: 200, 401, hang, and a port nobody listens
@@ -260,7 +260,7 @@ function deleteCalls(stub) {
 }
 
 /**
- * The book's ledger file, addressed the way the plugin addresses it (issue #207).
+ * The book's ledger file, addressed the way the plugin addresses it.
  *
  * `semanticSlugOf` + "exactly one file" instead of `readdirSync(...)[0]`: the listing order
  * of a directory is not part of any contract, and a leftover `.tmp-` file from an
@@ -295,7 +295,7 @@ function assertFullyRead(outcome, expected) {
  * how fast the runner happened to be: in `unauthorized` mode the stub answers 401
  * immediately, but on a loaded Windows CI box the 200 ms budget could expire first and the
  * answer became `timeout` — a red build for a correct implementation (see the 401 case in
- * the CI log of PR #164). Only the case that *tests* the timeout wants a small budget, and
+ * that build's log). Only the case that *tests* the timeout wants a small budget, and
  * it passes one (`{ timeoutMs: 200 }`); every other case is timing-independent.
  */
 async function degradedCase(name, prepare, expectedReason, options = {}) {
@@ -374,7 +374,7 @@ test('degrades with `unauthorized` when the endpoint answers 401', async () => {
   }
 })
 
-// The regression case for the CI failure on PR #164. The stub answers 401 *late* (400 ms —
+// The regression case for that CI failure. The stub answers 401 *late* (400 ms —
 // a stand-in for a loaded runner) and the case must still say `unauthorized`: with the old
 // hard-coded 200 ms budget the probe gave up first and reported `timeout`, which is a red
 // build for a correct implementation. The budget now comes from the case, not from a
@@ -614,7 +614,7 @@ test('a ledger record marked deleted is never recalled, even while the chapter f
   try {
     const { root, dataDir } = await wired(dir, stub)
     const rebuilt = await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
-    // The precondition of everything below, stated instead of assumed (issue #207): the
+    // The precondition of everything below, stated instead of assumed: the
     // ledger this test is about to edit must be the complete one. A rebuild that could not
     // read a chapter says so in `staleChapters`; reading the missing record anyway is what
     // turned that into `Cannot read properties of undefined (reading 'deleted')`.
@@ -645,7 +645,7 @@ test('a first build that cannot read a chapter names it stale instead of leaving
   const stub = await startStub()
   try {
     const { root, dataDir } = await wired(dir, stub)
-    // The shape issue #207 caught: the index lists three chapters, and for one of them the
+    // The shape caught: the index lists three chapters, and for one of them the
     // disk answers "no" this instant (a transient EPERM/EBUSY under a loaded runner, an
     // antivirus holding the freshly written file, a cloud placeholder). Removing the file
     // makes that read fail deterministically — same code path, no sleep, no load needed.
@@ -687,7 +687,7 @@ test('a chapter the disk will not read back is not a tombstone: its blocks keep 
 
     // The chapter is in the ledger AND in the book; only this run's read fails. A tombstone
     // here would overwrite the live blocks with a deleted marker and drop a chapter the
-    // author never deleted out of recall (the worse half of issue #207).
+    // author never deleted out of recall (the worse half of the recall bug).
     rmSync(join(root, 'chapters/vol-01/0002-长街.md'))
     const outcome = await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
     assert.deepEqual(outcome.staleChapters, ['ch-0002'])

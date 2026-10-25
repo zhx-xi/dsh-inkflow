@@ -1,5 +1,5 @@
 /**
- * The import dialog's pure view model (issue #37): `src/client/library-import-model.ts`.
+ * The import dialog's pure view model: `src/client/library-import-model.ts`.
  *
  * Why a separate file from `import-write.test.js`: that one owns the Host (bytes, files,
  * the backup package). This one owns the words the author reads and the body the panel

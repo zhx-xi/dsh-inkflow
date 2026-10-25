@@ -1,5 +1,5 @@
 /**
- * Contract tests for the private panel channel (`/inkflow/internal/*`, issue #18).
+ * Contract tests for the private panel channel (`/inkflow/internal/*`).
  *
  * These run against the BUILT artifact (`lib/index.js`) with no DSH process: a
  * fake Cordis context records the `/inkflow` prefix route and fakes the three
@@ -215,8 +215,8 @@ test('internal channel: each route declares its method, so an undeclared verb is
     bookProject(root)
     const harness = createHarness({ workspace: root })
 
-    // Read-only routes: GET is the only declared verb (issue #19 added POST
-    // only where a chapter is written, so these two stay 405 on POST).
+    // Read-only routes: GET is the only declared verb. A POST exists
+    // only where a chapter is written, so these two stay 405 on POST.
     for (const path of ['/status', '/search?q=雨']) {
       const post = await internalCall(harness, path, { method: 'POST' })
       assert.equal(post.status, 405, `${path} must not accept POST`)
@@ -488,7 +488,7 @@ test('internal channel: /status projects the session workspace, gate and index s
     assert.equal(value.index.dbExists, false, 'reading the panel must not build the index')
     assert.equal(value.index.schemaMatches, false)
     assert.equal(value.catalog.chapters, 2)
-    assert.equal(value.search.available, true, 'the search box covers every kind since #39 (X-16)')
+    assert.equal(value.search.available, true, 'the search box covers every kind (X-16)')
     assert.equal(value.search.scope, 'all-kinds')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -496,7 +496,7 @@ test('internal channel: /status projects the session workspace, gate and index s
 })
 
 // ---------------------------------------------------------------------------
-// 9b. Build identity and the stale-load verdict (issue #88)
+// 9b. Build identity and the stale-load verdict
 // ---------------------------------------------------------------------------
 
 test('internal channel: /status carries the loaded build stamp', async () => {
@@ -614,7 +614,7 @@ test('internal channel: /chapters/:id returns frontmatter and body without writi
 })
 
 // ---------------------------------------------------------------------------
-// 12. Search: index LIKE today, honest about missing body search (#22)
+// 12. Search: index LIKE today, honest about missing body search
 // ---------------------------------------------------------------------------
 
 test('internal channel: /search answers X-16 entries over body prose and titles', async () => {
@@ -624,7 +624,7 @@ test('internal channel: /search answers X-16 entries over body prose and titles'
     bookProject(root)
     const harness = createHarness({ workspace: root })
 
-    // Issue #5: the read path makes the derived index fresh first (it is a
+    // The read path makes the derived index fresh first (it is a
     // cache, not the truth), so the first search fills it and answers from it.
     const empty = await internalCall(harness, '/search?q=雨')
     assert.equal(empty.status, 200)
@@ -632,10 +632,10 @@ test('internal channel: /search answers X-16 entries over body prose and titles'
     assert.equal(empty.json.value.indexState, 'missing')
     assert.equal(empty.json.value.indexRebuilt, true)
     assert.equal(existsSync(join(root, 'index', 'inkflow.db')), true, 'the panel read filled the cache')
-    // #39: the panel's search is the one X-16 entry — body prose included, no
+    // The panel's search is the one X-16 entry — body prose included, no
     // placeholder about "body search arrives later".
     assert.equal(empty.json.value.searchBackend, 'fts5')
-    // #41: the semantic backend is behind this same entry, and an install that has not
+    // The semantic backend is behind this same entry, and an install that has not
     // configured one says so instead of staying silent — `disabled` is the first of the six
     // fixed reasons (ADR-0020 E5), and the keyword answer is still the answer.
     assert.equal(empty.json.value.degradedReason, 'disabled')
@@ -729,7 +729,6 @@ test('internal channel: a session id resolves with or without the `session-` pre
 
 // ---------------------------------------------------------------------------
 // 15. A hand-written meta with a mojibake title: hint only, never a state change
-// (issue #89)
 // ---------------------------------------------------------------------------
 
 test('internal channel: /status flags a mojibake title without changing the gate', async () => {
@@ -816,8 +815,8 @@ test('internal channel: the hub route needs no session while the session routes 
       const gone = await callRoute(harness, fakeRequest({ url }))
       assert.equal(gone.status, 404, `${url} must stay gone`)
     }
-    // The wizard's routes exist since #86 (POST only, so a GET is 405); the
-    // shared page exists since #87 (GET only). A hub path no build declares is
+    // The wizard's routes exist (POST only, so a GET is 405); the
+    // shared page exists (GET only). A hub path no build declares is
     // still 404 rather than a generic 405.
     const planVerb = await callRoute(harness, fakeRequest({ url: `${INTERNAL}/hub/plan` }))
     assert.equal(planVerb.status, 405, 'the hub plan route is declared and POST-only')

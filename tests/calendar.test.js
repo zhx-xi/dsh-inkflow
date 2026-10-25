@@ -1,5 +1,5 @@
 /**
- * The calendar conversion (issue #180, roadmap X-28).
+ * The calendar conversion (roadmap X-28).
  *
  * The property under test is the round trip: `toAbsolute(fromAbsolute(n)) === n`
  * for every day, with **zero** tolerance. Everything else here supports that —

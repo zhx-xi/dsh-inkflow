@@ -1,5 +1,5 @@
 /**
- * Rebuild-side I-08 (#26): the index must *report* the world-tree violations, not just
+ * Rebuild-side I-08: the index must *report* the world-tree violations, not just
  * refuse them on the write path.
  *
  * Why this file exists separately: `tests/world.test.js` covers the write-side planner
@@ -68,7 +68,7 @@ test('a rebuild reports a child without a category as WORLD_CATEGORY_REQUIRED', 
 test('a flat category book is still legal on a rebuild', async () => {
   const { dir, root } = scaffold()
   try {
-    // Every entry under world/<category>/, nobody declares a parent: valid (#8).
+    // Every entry under world/<category>/ nobody declares a parent: valid.
     write(root, 'world/门派/白鹤门.md', ['id: w-1', 'title: 白鹤门'])
     write(root, 'world/门派/静水观.md', ['id: w-2', 'title: 静水观'])
     const build = await buildIndex(root)

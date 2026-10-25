@@ -1,5 +1,5 @@
 /**
- * The write half of the import path (issue #37, roadmap X-17): plan → confirm → apply.
+ * The write half of the import path (roadmap X-17): plan → confirm → apply.
  *
  * What must FAIL when this is wired wrong:
  *   1. **the preview writes.** `planImport` is the dialog's first two steps; a single

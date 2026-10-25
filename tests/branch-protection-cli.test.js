@@ -64,7 +64,7 @@ function fakeGhSaying(message, status = 1) {
   return { env: { INKFLOW_GH: process.execPath }, cwd: dir }
 }
 
-test('an unprotected branch read through the real gh path lets apply proceed (issue #99)', () => {
+test('an unprotected branch read through the real gh path lets apply proceed', () => {
   const fake = fakeGhSaying('gh: Branch not protected (HTTP 404)')
   const { code, out } = run(['apply', '--repo', 'owner/repo', '--dry-run'], fake.env, fake.cwd)
   assert.equal(code, 0, out)
@@ -140,7 +140,7 @@ test('apply refuses to PUT when the current protection cannot be read', () => {
   assert.match(out, /refusing to apply: could not read the current protection/)
 })
 
-test('apply installs the gate on an unprotected branch (the emergency exit, issue #99)', () => {
+test('apply installs the gate on an unprotected branch (the emergency exit)', () => {
   // DELETE protection → apply → check is the documented exit. The first state is
   // "not protected at all", so apply must treat it as a normal input instead of
   // refusing (which made the exit reachable only by hand).

@@ -1,5 +1,5 @@
 /**
- * Issue #5, part 2 — write-time compare-and-swap (CAS) on project files.
+ * Write-time compare-and-swap (CAS) on project files, part 2.
  *
  * The hole: a tool wrote whatever it had in memory over whatever was on disk.
  * Between "the model read the chapter" and "the tool wrote it", a human can save

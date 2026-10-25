@@ -198,22 +198,22 @@ test('registers the fifty-one built-ins, the tools of every registered domain, a
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
     // Built-ins first (imported by `tools.ts`), then whatever `DOMAIN_MODULES`
-    // declares (roadmap §2.1 X-5): #26 adds the two world tools, #27 the two
+    // declares (roadmap §2.1 X-5): the world domain adds the two world tools, the two
     // relation tools. An unexpected entry here means a domain was wired without
     // extending this baseline.
     assert.deepEqual([...harness.tools.keys()].sort(), [
-      // #42: the plugin's own state — local backups (list/create/restore live on the
+      // The plugin's own state — local backups (list/create/restore live on the
       // tools `settings-tools.ts` contributes, because none of them belongs to one
       // content directory).
       'inkflow_backup_create',
       'inkflow_backup_restore',
-      // #47: the batch queue — enqueue / take / complete / approve. Built-ins: a job belongs
+      // The batch queue — enqueue / take / complete / approve. Built-ins: a job belongs
       // to no content directory, and the plugin embeds no model client to draft its chapters.
       'inkflow_batch_approve',
       'inkflow_batch_complete',
       'inkflow_batch_enqueue',
       'inkflow_batch_take',
-      // #48: the book's calendar, read and written through the timeline domain (it is a
+      // The book's calendar, read and written through the timeline domain (it is a
       // key in `inkflow.json`, not a content directory).
       'inkflow_calendar_get',
       'inkflow_calendar_set',
@@ -224,57 +224,57 @@ test('registers the fifty-one built-ins, the tools of every registered domain, a
       'inkflow_chapter_move',
       'inkflow_chapter_search',
       'inkflow_chapter_write',
-      // …plus the tools a domain module publishes through `tools()` (#25). A new
+      // …plus the tools a domain module publishes through `tools`. A new
       // domain adds its names here, which is the point: the shipped surface stays
       // an explicit list instead of whatever happens to be registered.
       'inkflow_character_list',
       'inkflow_character_upsert',
-      // #42: the diagnostics package — a built-in, and the one tool here that writes a
+      // The diagnostics package — a built-in, and the one tool here that writes a
       // file meant to leave the machine (ADR-0018 D5).
       'inkflow_diagnostics_export',
-      // #51: the old-library migrator's two entries (plan is read-only; apply needs confirm
+      // The old-library migrator's two entries (plan is read-only; apply needs confirm
       // and re-computes the same plan). Built-ins: it writes into every content directory.
       'inkflow_etl_apply',
       'inkflow_etl_plan',
-      // #50: export — EPUB / DOCX / Markdown / TXT into `dataDir/exports/`. A built-in: it
+      // Export — EPUB / DOCX / Markdown / TXT into `dataDir/exports/`. A built-in: it
       // reads every content directory at once and writes the artifact outside the book
       // (ADR-0024 D4), so no content directory owns it.
       'inkflow_export',
-      // #38: the extraction queue (ADR-0017) — propose / list / accept / reject / purge.
+      // The extraction queue (ADR-0017) — propose / list / accept / reject / purge.
       // Built-ins because a candidate is not an entity and belongs to no content directory.
       'inkflow_extract_accept',
       'inkflow_extract_list',
       'inkflow_extract_propose',
       'inkflow_extract_purge',
       'inkflow_extract_reject',
-      // #32: the fact ledger's three tools (append / snapshot / list).
+      // The fact ledger's three tools (append / snapshot / list).
       'inkflow_facts_append',
       'inkflow_facts_list',
       'inkflow_facts_snapshot',
-      // #31: the foreshadowing domain's own tools, contributed through `domainTools()`.
+      // The foreshadowing domain's own tools, contributed through `domainTools`.
       'inkflow_foreshadow_list',
       'inkflow_foreshadow_upsert',
-      // #44: the quality gate — seven checks over one chapter (ADR-0022 D4). A built-in: it
+      // The quality gate — seven checks over one chapter (ADR-0022 D4). A built-in: it
       // reads the chapter plus two setting directories and owns no content directory.
       'inkflow_gate_check',
       'inkflow_index_rebuild',
-      // #37: importing an old manuscript, built-in for the same reason as the audit — it
+      // Importing an old manuscript, built-in for the same reason as the audit — it
       // writes chapters *and* a `library/` copy, so no single content directory owns it.
       'inkflow_library_import',
-      // #24: the outline domain's own tools, contributed through `domainTools()`.
+      // The outline domain's own tools, contributed through `domainTools`.
       'inkflow_outline_move',
       'inkflow_outline_tree',
       'inkflow_outline_upsert',
-      // #33: the consistency audit. A built-in and not a domain tool: it aggregates all five
+      // The consistency audit. A built-in and not a domain tool: it aggregates all five
       // families and owns no content directory (roadmap X-14).
       'inkflow_project_audit',
       'inkflow_project_init',
-      // #36: the maintenance pair (repair / migrate), built-ins in tools.ts.
+      // The maintenance pair (repair / migrate), built-ins in tools.ts.
       'inkflow_project_migrate',
       'inkflow_project_plan',
       'inkflow_project_repair',
       'inkflow_project_status',
-      // #45: proposals — create / decide / apply / rollback. Built-ins: a proposal belongs to
+      // Proposals — create / decide / apply / rollback. Built-ins: a proposal belongs to
       // no content directory and its only write path is the chapter writer.
       'inkflow_proposal_apply',
       'inkflow_proposal_create',
@@ -283,32 +283,32 @@ test('registers the fifty-one built-ins, the tools of every registered domain, a
       'inkflow_relation_clues',
       'inkflow_relation_list',
       'inkflow_relation_upsert',
-      // #46: the review DAG. Built-ins for the same reason as the shared library above — a
+      // The review DAG. Built-ins for the same reason as the shared library above — a
       // review reads one chapter plus two setting directories and writes a run record under
       // `.inkflow/review/`, so no content directory owns it.
       'inkflow_review_compare',
       'inkflow_review_context',
       'inkflow_review_run',
-      // #39: the single search entry (X-16) and the search-replace batch (X-17), both
+      // The single search entry (X-16) and the search-replace batch (X-17), both
       // built-ins — they span every kind and own no content directory.
       'inkflow_search',
       'inkflow_search_replace',
-      // #41: semantic retrieval (OVK). Three built-ins: status is read-only, rebuild writes
+      // Semantic retrieval (OVK). Three built-ins: status is read-only, rebuild writes
       // blocks into OpenViking, purge is the only tool in the plugin that physically deletes
       // there (ADR-0009 P6).
       'inkflow_semantic_purge',
       'inkflow_semantic_rebuild',
       'inkflow_semantic_status',
-      // #49: the series sync — plan (read-only) and apply (the four-row plan with a decision
+      // The series sync — plan (read-only) and apply (the four-row plan with a decision
       // per conflict). Built-ins: they read the plugin-level library and write into
       // `world/`/`library/`, so no content directory owns them.
       'inkflow_series_apply',
       'inkflow_series_plan',
-      // #42: settings. Built-ins that touch no book at all — they read and write
+      // Settings. Built-ins that touch no book at all — they read and write
       // `$DSH_HOME/inkflow/settings.json` (ADR-0018 D1).
       'inkflow_settings_get',
       'inkflow_settings_update',
-      // #40: the shared library's one read and two writes. Built-ins, not domain
+      // The shared library's one read and two writes. Built-ins, not domain
       // tools — the library lives OUTSIDE every book, so no content directory owns
       // it and `domainTools()` cannot contribute it.
       'inkflow_shared_copy',
@@ -615,7 +615,7 @@ test('frontmatter parsing survives the awkward forms used by hand-written files'
 })
 
 /**
- * Regression for issue #3: a chapter id collision aborted the rebuild with a
+ * Regression: a chapter id collision aborted the rebuild with a
  * UNIQUE constraint error, so the index was left half-built and every later
  * read (and every retry) failed. Duplicate ids are a *data* problem: the
  * rebuild must keep the first file, report DUPLICATE_ID, and stay usable.
@@ -718,7 +718,7 @@ test('a UTF-8 BOM in inkflow.json does not break the gate', async () => {
 })
 
 // ---------------------------------------------------------------------------
-// Issue #7 — identity and scope hardening
+// Identity and scope hardening
 // ---------------------------------------------------------------------------
 
 test('identity: a session outside a project never answers for a remembered book', async () => {
@@ -728,7 +728,7 @@ test('identity: a session outside a project never answers for a remembered book'
     sampleProject(bookA)
     // The session sits in book-a's PARENT directory, which is not itself a
     // project: this used to fall back to state.lastProjectRoot and return
-    // book-a with ok:true (issue #7).
+    // book-a with ok:true.
     const stateDir = join(dir, 'state')
 
     const first = makeTools(stateDir, dir)

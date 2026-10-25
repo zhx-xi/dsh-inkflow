@@ -79,7 +79,7 @@ check('cordis.patch.yml uses insert rows', () => {
 })
 
 /**
- * Conflict markers must never be committed (#189).
+ * Conflict markers must never be committed.
  *
  * WHY this exists: a rebase resolution left `<<<<<<< HEAD` / `=======` / `>>>>>>>` inside
  * `architecture.md` and `docs/user-guide.md`, those files were `git add -A`-ed, and every
@@ -127,7 +127,7 @@ check('no UTF-8 BOM in tracked text files', () => {
 })
 
 /**
- * React's rules of hooks, as a mechanism (#174).
+ * React's rules of hooks, as a mechanism.
  *
  * The settings page rendered as a blank panel because `HubView` called a `useCallback`
  * *below* the `if (view === …) return` switch: the render that switched pages had one
@@ -144,12 +144,12 @@ check('no hook is called after an early return (client components)', () => {
 })
 
 /**
- * Every test file owns its stub server, its port and its lifetime (#207).
+ * Every test file owns its stub server, its port and its lifetime.
  *
  * WHY this is a mechanism: the full suite runs ~32 test files at once, each in its own
  * process, so a stub that shares a port or outlives its test fails *some other* test — at
  * random, on a loaded machine, never on the machine of whoever wrote it. That is exactly
- * how issue #207 presented ("first full run in a fresh worktree goes red, ten reruns are
+ * how the fresh-worktree red presented ("first full run in a fresh worktree goes red, ten reruns are
  * green"). The stub in `tests/ovk.stub.test.js` turned out to be innocent — it already
  * listens on port 0 and keeps its state in a local `const` — but the two facts that make it
  * innocent are greppable, so they are checked here instead of trusted to the next copy-paste.
@@ -184,12 +184,12 @@ check('test files bind port 0 and declare no module-level server', () => {
 })
 
 /**
- * No source file may grow past 600 lines (#193).
+ * No source file may grow past 600 lines.
  *
  * WHY this is a mechanism and not a style note: `AGENTS.md` §10.5 has said "单文件 >600 行先
  * 考虑拆分" for the whole project, and three files reached 2269 / 1688 / 1374 lines anyway —
  * because a rule nobody checks is a preference. Every one of them still "worked"; the cost
- * was paid by the next person who had to find the write path inside it (#199 wants to add a
+ * was paid by the next person who had to find the write path inside it (a later task wants to add a
  * fold to `review.ts` and a cleanup tool to `tools.ts`).
  *
  * WHY a budget list rather than a flat cap: when the guard landed, 42 tracked source files

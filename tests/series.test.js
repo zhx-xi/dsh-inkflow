@@ -1,5 +1,5 @@
 /**
- * Contract tests for the series sync (#49, ADR-0007 C2/C5, X-17/X-25/X-26).
+ * Contract tests for the series sync (ADR-0007 C2/C5, X-17/X-25/X-26).
  *
  * What must FAIL when the implementation is wrong (each one is a scenario below):
  *

@@ -1,5 +1,5 @@
 /**
- * Regression tests for issue #4 — the index build is a cache rebuild, and a
+ * Regression tests for the index: the build is a cache rebuild, and a
  * cache rebuild must never be able to destroy the previous good cache:
  *
  *   - the build writes `.inkflow.db.build-<pid>-<rand>` and renames it in;
@@ -7,7 +7,7 @@
  *   - `index/.lock` makes concurrent processes fail fast with INDEX_BUSY;
  *   - failures surface as structured `{ ok:false, error:{ code, errno } }`,
  *     never as a raw exception/stack for the model. The HTTP route is covered
- *     too, but it fails closed with NO_SESSION_CONTEXT since issue #7 stopped
+ *     too, but it fails closed with NO_SESSION_CONTEXT since the route stopped
  *     resolving a project there — it never reaches the build at all.
  *
  * They run against the built artifacts (lib/index.js), like the contract tests.
@@ -90,7 +90,7 @@ function createHarness(workspace) {
       callback(ctx)
     },
     get(name) {
-      // Issue #7 made the session workspace the only trust anchor for an explicit
+      // The gate made the session workspace the only trust anchor for an explicit
       // projectRoot, so tests must fake it rather than mutate process.cwd().
       if (name === 'workingDirectory' && typeof workspace === 'string') {
         return { ensure: async () => workspace }
@@ -315,7 +315,7 @@ test('index build: a replace failure after the scan keeps the previous index rea
 })
 
 // ---------------------------------------------------------------------------
-// 5. Tools never leak the exception; the HTTP route fails closed (#7)
+// 5. Tools never leak the exception; the HTTP route fails closed
 // ---------------------------------------------------------------------------
 
 test('index build: tools return structured errors, never a stack', async () => {
@@ -349,9 +349,9 @@ test('index build: tools return structured errors, never a stack', async () => {
     assert.equal(listFailure.error.code, 'INDEX_BUSY')
     assert.equal(listFailure.error.errno, 'EBUSY')
 
-    // The HTTP route no longer resolves a project at all (issue #7): it answers a
+    // The HTTP route no longer resolves a project at all: it answers a
     // structured refusal with HTTP 200 rather than throwing, which would 500.
-    // Issue #4's remaining guarantee on this surface is "never a stack trace".
+    // The route's remaining guarantee on this surface is "never a stack trace".
     const routeRefusal = await callChaptersRoute(harness)
     assert.equal(routeRefusal.status, 200)
     assert.equal(routeRefusal.json.ok, false)

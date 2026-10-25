@@ -1,5 +1,5 @@
 /**
- * The settings page's pure view model (#42): form ↔ wire conversion, the confirm
+ * The settings page's pure view model: form ↔ wire conversion, the confirm
  * card's change list, and the per-file baselines a restore hands back.
  *
  * `node --test` has no DOM, so the `.tsx` view cannot be rendered; the *decisions*
@@ -57,7 +57,7 @@ test('formFromSettings keeps unset fields empty rather than inventing text', asy
   assert.equal(draft.excludeDirs, 'drafts')
   assert.equal(draft.backupKeep, '5')
   assert.equal(draft.semanticSearch, false)
-  // #41: the endpoint is a plain value, the key never comes back (ADR-0020 E6) — so the box
+  // The endpoint is a plain value, the key never comes back (ADR-0020 E6) — so the box
   // starts empty even when a key IS stored, and empty means "keep it".
   assert.equal(draft.semanticEndpoint, '')
   assert.equal(draft.semanticApiKey, '')

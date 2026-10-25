@@ -1,5 +1,5 @@
 /**
- * The book hub's *information architecture* (#198, ADR-0010 D1/D2).
+ * The book hub's *information architecture* (ADR-0010 D1/D2).
  *
  * The hub is one line per registered workspace, so a machine with seven workspaces and two
  * books shows seven lines. The author's words were 「书库中，不是 inkflow 项目的不要显示出来」,
@@ -11,7 +11,7 @@
  *
  *   1. MAIN LIST — `usable` / `needs-repair` / `needs-newer-plugin` / `timeout`, and the two
  *      broken-but-real states are asserted one by one (they are the easy ones to drop by
- *      accident, and #198 calls that the hard acceptance item).
+ *      accident, and that is the hard acceptance item).
  *   2. OTHER DIRECTORIES — `needs-setup` / `notABook` / `missing-dir`, folded away by
  *      default, each one still explaining WHY it is not a book ("directory is gone" is
  *      useful information, not something to delete silently).
@@ -73,22 +73,22 @@ const pathsOf = (rows) => rows.map((row) => row.path)
 // 1. The split: books stay, directories fold away
 // ---------------------------------------------------------------------------
 
-test('#198: the measured machine lists 2 books and folds the other 5 directories', () => {
+test('the measured machine lists 2 books and folds the other 5 directories', () => {
   const { main, others } = hub.splitHubRows(MEASURED)
   assert.deepEqual(pathsOf(main), [MEASURED[0].path, MEASURED[1].path])
   assert.deepEqual(pathsOf(others), MEASURED.slice(2).map((row) => row.path))
   assert.equal(hub.othersHeading(others.length), '其他目录（5）')
 })
 
-test('#198 hard acceptance: a broken book and a too-new book are never filtered out', () => {
+test('hard acceptance: a broken book and a too-new book are never filtered out', () => {
   // Both are BOOKS: the gate says something is wrong with them, not that they are absent.
   // Hiding them is the failure this test exists for ("我的书不见了").
   const repairing = { workspaceId: 'ws-r', path: 'D:\\小说\\修补中', title: '修补中', state: 'needs-repair', usable: false, missing: ['chapters/.gitkeep'], dirStatus: 'ok' }
   const tooNew = { workspaceId: 'ws-n', path: 'D:\\小说\\未来版', title: '未来版', state: 'needs-newer-plugin', usable: false, missing: [], dirStatus: 'ok' }
   const timedOut = { workspaceId: 'ws-t', path: 'D:\\小说\\慢书', title: '慢书', state: 'timeout', usable: false, missing: [], dirStatus: 'ok' }
 
-  assert.equal(hub.isMainListRow(repairing), true, 'needs-repair must stay in the main list (#198)')
-  assert.equal(hub.isMainListRow(tooNew), true, 'needs-newer-plugin must stay in the main list (#198)')
+  assert.equal(hub.isMainListRow(repairing), true, 'needs-repair must stay in the main list')
+  assert.equal(hub.isMainListRow(tooNew), true, 'needs-newer-plugin must stay in the main list')
   assert.equal(hub.isMainListRow(timedOut), true, 'timeout is "no verdict yet", it is still a book')
 
   const { main, others } = hub.splitHubRows([repairing, tooNew, timedOut])
@@ -96,7 +96,7 @@ test('#198 hard acceptance: a broken book and a too-new book are never filtered 
   assert.deepEqual(others, [])
 })
 
-test('#198: a directory that is gone, a plain directory and needs-setup all fold away', () => {
+test('a directory that is gone, a plain directory and needs-setup all fold away', () => {
   const gone = { workspaceId: 'ws-g', path: 'D:\\小说\\已删', title: '已删', state: 'needs-repair', usable: false, missing: [], dirStatus: 'missing-dir' }
   const plain = { workspaceId: 'ws-p', path: 'D:\\tools', title: 'tools', state: 'needs-setup', usable: false, missing: [], dirStatus: 'ok', notABook: true }
   const setup = { workspaceId: 'ws-s', path: 'D:\\小说', title: '小说', state: 'needs-setup', usable: false, missing: ['chapters'], dirStatus: 'ok' }
@@ -109,7 +109,7 @@ test('#198: a directory that is gone, a plain directory and needs-setup all fold
   assert.equal(hub.isMainListRow({ ...gone, state: 'usable' }), false)
 })
 
-test('#198: the split keeps the registry order and does not touch its input', () => {
+test('the split keeps the registry order and does not touch its input', () => {
   const input = MEASURED.map((row) => ({ ...row }))
   const snapshot = JSON.stringify(input)
   const { main, others } = hub.splitHubRows(input)
@@ -120,7 +120,7 @@ test('#198: the split keeps the registry order and does not touch its input', ()
   assert.deepEqual(pathsOf(hub.splitHubRows(interleaved).main), [MEASURED[0].path, MEASURED[1].path])
 })
 
-test('#198: a newer Host sending an unknown state folds away instead of crashing', () => {
+test('a newer Host sending an unknown state folds away instead of crashing', () => {
   const future = { workspaceId: 'ws-f', path: 'D:\\小说\\未来态', title: '未来态', state: 'some-new-state', usable: false, missing: [], dirStatus: 'ok' }
   assert.equal(hub.isMainListRow(future), false)
   assert.equal(hub.splitHubRows([future]).main.length, 0)
@@ -133,7 +133,7 @@ test('#198: a newer Host sending an unknown state folds away instead of crashing
 // 2. The fold's texts
 // ---------------------------------------------------------------------------
 
-test('#198: the fold header counts 0 / 1 / N and never prints a fraction', () => {
+test('the fold header counts 0 / 1 / N and never prints a fraction', () => {
   assert.equal(hub.othersHeading(0), '其他目录（0）')
   assert.equal(hub.othersHeading(1), '其他目录（1）')
   assert.equal(hub.othersHeading(12), '其他目录（12）')
@@ -142,7 +142,7 @@ test('#198: the fold header counts 0 / 1 / N and never prints a fraction', () =>
   assert.equal(hub.othersHeading('7'), '其他目录（0）', 'a string is not a count')
 })
 
-test('#198: every folded row says WHY it is not a book, in one line', () => {
+test('every folded row says WHY it is not a book, in one line', () => {
   const gone = { path: 'D:\\小说\\已删', title: '已删', state: 'needs-repair', dirStatus: 'missing-dir' }
   assert.match(hub.whyNotABook(gone), /目录不在了/u)
 
@@ -165,7 +165,7 @@ test('#198: every folded row says WHY it is not a book, in one line', () => {
 // 3. The init prompt: one constant, path filled in, tool named, three boundaries
 // ---------------------------------------------------------------------------
 
-test('#198: the init prompt names the absolute path and the tool, and states the three boundaries', () => {
+test('the init prompt names the absolute path and the tool, and states the three boundaries', () => {
   const row = { path: 'D:\\小说\\项目库\\蜀山，我是掌门', title: '蜀山，我是掌门' }
   const prompt = hub.buildInitPrompt(row)
 
@@ -182,7 +182,7 @@ test('#198: the init prompt names the absolute path and the tool, and states the
   assert.equal(prompt.includes('{{'), false, 'no placeholder may survive: the button copies a finished prompt')
 })
 
-test('#198: the prompt is ONE constant, rendered — not a second copy inside the view', () => {
+test('the prompt is ONE constant, rendered — not a second copy inside the view', () => {
   assert.ok(typeof hub.INIT_PROMPT_TEMPLATE === 'string' && hub.INIT_PROMPT_TEMPLATE.length > 0)
   const prompt = hub.buildInitPrompt({ path: 'D:\\a\\我的书', title: '我的书' })
   assert.equal(prompt.includes(hub.INIT_PROMPT_TEMPLATE), false, 'the template is a template: its placeholders are filled')
@@ -196,7 +196,7 @@ test('#198: the prompt is ONE constant, rendered — not a second copy inside th
   assert.match(hub.buildInitPrompt({ path: 'D:\\a\\我的书' }), /我的书/u)
 })
 
-test('#198: the prompt carries no credential and no machine secret', () => {
+test('the prompt carries no credential and no machine secret', () => {
   const prompt = hub.buildInitPrompt({ path: 'D:\\小说\\我的书', title: '我的书' })
   assert.doesNotMatch(prompt, /apiKey|api_key|token|password|secret|Authorization/iu)
 })
@@ -205,14 +205,14 @@ test('#198: the prompt carries no credential and no machine secret', () => {
 // 4. The copy fallback: never a button that silently does nothing
 // ---------------------------------------------------------------------------
 
-test('#198: copying uses the clipboard when it works', async () => {
+test('copying uses the clipboard when it works', async () => {
   const written = []
   const outcome = await hub.copyPrompt('hello', { writeText: async (text) => void written.push(text) })
   assert.equal(outcome, 'copied')
   assert.deepEqual(written, ['hello'])
 })
 
-test('#198: a refused or missing clipboard degrades to the selectable textarea', async () => {
+test('a refused or missing clipboard degrades to the selectable textarea', async () => {
   const rejecting = { writeText: async () => Promise.reject(new Error('NotAllowedError: clipboard is blocked')) }
   assert.equal(await hub.copyPrompt('hello', rejecting), 'fallback')
 
@@ -231,12 +231,12 @@ test('#198: a refused or missing clipboard degrades to the selectable textarea',
   assert.equal(await hub.copyPrompt('hello', { writeText: 'nope' }), 'fallback')
 })
 
-test('#198: the guide quotes the SAME template, so the button and the manual cannot drift', () => {
+test('the guide quotes the SAME template, so the button and the manual cannot drift', () => {
   const guide = readFileSync(join(ROOT, 'docs/user-guide.md'), 'utf8')
   const sample = hub.buildInitPrompt({ path: ['D:', '小说', '我的书'].join('\\') })
   assert.ok(
     guide.includes(sample),
-    'docs/user-guide.md must quote buildInitPrompt() verbatim: one template, no second copy (#198)',
+    'docs/user-guide.md must quote buildInitPrompt() verbatim: one template, no second copy',
   )
 })
 
@@ -244,7 +244,7 @@ test('#198: the guide quotes the SAME template, so the button and the manual can
 // 5. The view consumes the split (no second copy of the rule in JSX)
 // ---------------------------------------------------------------------------
 
-test('#198: the hub view draws the fold from the model, and the textarea fallback is real', () => {
+test('the hub view draws the fold from the model, and the textarea fallback is real', () => {
   const source = readFileSync(join(ROOT, 'src/client/hub.tsx'), 'utf8')
   assert.match(source, /splitHubRows/u, 'the page must use the model function, not its own filter')
   assert.match(source, /othersHeading/u, 'the fold header comes from the model')

@@ -1,5 +1,5 @@
 /**
- * Contract tests for the setting-library tab (issue #30, roadmap X-7 / X-8).
+ * Contract tests for the setting-library tab (roadmap X-7 / X-8).
  *
  * Two halves, both of which must FAIL when the panel is wired wrong:
  *
@@ -401,7 +401,7 @@ test('library: GET /library/issues answers validation_issues with a per-code cou
 // ---------------------------------------------------------------------------
 // 4. The inherited guards apply to the three read routes
 //
-// `/library/item` is also the save route since the second batch of #30 (`POST`
+// `/library/item` is also the save route since the second batch (`POST`
 // with `frontmatter`/`body`/`expected`), so the "no verb but GET" claim below is
 // checked on the two read-only routes, and the item route's write verbs are
 // covered by `tests/library-write.test.js` (415/403/405 + the body allowlist).

@@ -1,5 +1,5 @@
 /**
- * Issue #31 — the foreshadowing domain: the state machine, the computed `overdue`
+ * The foreshadowing domain: the state machine, the computed `overdue`
  * board state, the panel projection and the writing-context reminder.
  *
  * Why each group exists:

@@ -1,5 +1,5 @@
 /**
- * Domain-module seam (#101) — roadmap §2.1 X-5.
+ * Domain-module seam — roadmap §2.1 X-5.
  *
  * Two things are asserted here and nothing else:
  *   1. Refactoring `buildTools()` into "built-ins + registered modules" changed
@@ -31,8 +31,8 @@ import { CONTENT_DIRS, DOMAIN_MODULES, apply, applyCandidate, buildTools, domain
  * hash, which is exactly the regression this guards. Recorded from the pre-seam
  * build; an empty registry must reproduce it exactly.
  *
- * Appended since: `inkflow_project_audit` (#33), the maintenance pair (#36) and
- * `inkflow_library_import` (#37) — each a new built-in, not a change to an existing one,
+ * Appended since: `inkflow_project_audit`, the maintenance pair and
+ * `inkflow_library_import` — each a new built-in, not a change to an existing one,
  * which is why the twelve recorded hashes above still hold.
  */
 const BUILT_IN_TOOLS = [
@@ -40,19 +40,19 @@ const BUILT_IN_TOOLS = [
   ['inkflow_index_rebuild', '51a5555a'],
   ['inkflow_chapter_list', 'ad6e5a93'],
   ['inkflow_chapter_search', 'd10a9b63'],
-  // #39: the one search entry (X-16) and the search-replace batch (X-17). Built-ins
+  // The one search entry (X-16) and the search-replace batch (X-17). Built-ins
   // because they span every kind and own no content directory.
   ['inkflow_search', '46e8ca64'],
   ['inkflow_search_replace', '1c309b8e'],
   ['inkflow_project_audit', 'fbf1ebf5'],
-  // #44: the quality gate — eight checks over one chapter plus the verdict file under
+  // The quality gate — eight checks over one chapter plus the verdict file under
   // `.inkflow/audit/` (ADR-0022 D4). A built-in, not a domain tool: it reads the chapter
   // and two setting directories and judges the prose, so no content directory owns it.
-  // #212 改了 description（七项→八项，补退化检测）：基线由 `node scripts/surface-hash.mjs` 重算。
-  // #214 又补了一句：去 AI 味这一项多了三类「太碎」判据，description 不跟着说，模型就会以为
+  // 改了 description（七项→八项，补退化检测）：基线由 `node scripts/surface-hash.mjs` 重算。
+  // 又补了一句：去 AI 味这一项多了三类「太碎」判据，description 不跟着说，模型就会以为
   // 那一项只管「长而匀」。项数仍是八（`GATE_CHECK_IDS` 是已发布顺序，不新增 check）。
   ['inkflow_gate_check', '166a6048'],
-  // #37: importing an old manuscript. A built-in rather than a domain tool: it writes
+  // Importing an old manuscript. A built-in rather than a domain tool: it writes
   // chapters *and* a `library/` copy, so no single content directory owns it.
   ['inkflow_library_import', '39f228ea'],
   ['inkflow_project_plan', '52c0ddec'],
@@ -63,26 +63,26 @@ const BUILT_IN_TOOLS = [
   ['inkflow_chapter_write', '4e531ce4'],
   ['inkflow_chapter_move', '8fb67189'],
   ['inkflow_chapter_delete', 'a2b2198a'],
-  // #36: the maintenance pair (repair + 6→9 migration). Built-ins, not domain tools:
+  // The maintenance pair (repair + 6→9 migration). Built-ins, not domain tools:
   // they judge the book's *layout*, not one content directory.
   ['inkflow_project_repair', 'e9825bce'],
   ['inkflow_project_migrate', '2a0f5b4b'],
-  // #40: the shared library (list / copy / update). Built-ins, not domain tools:
+  // The shared library (list / copy / update). Built-ins, not domain tools:
   // `dataDir/shared` belongs to no book, so no content directory owns them.
   ['inkflow_shared_list', 'e4280396'],
   ['inkflow_shared_copy', 'f2d81abe'],
   ['inkflow_shared_update', '17ae972a'],
-  // #42: the plugin's own state — settings, the diagnostics package and the local
+  // The plugin's own state — settings, the diagnostics package and the local
   // backups. Built-ins for the same reason as the pair above: none of them belongs to
   // one content directory, and two of them touch no book at all.
   ['inkflow_settings_get', 'd41c07e7'],
-  // #41 added `semanticEndpoint` / `semanticApiKey` to this schema (ADR-0020 决策), and
-  // #157 wired `sharedRoot`; the recorded hash follows both.
+  // added `semanticEndpoint` / `semanticApiKey` to this schema (ADR-0020 决策), and
+  // wired `sharedRoot`; the recorded hash follows both.
   ['inkflow_settings_update', 'e7622d6a'],
   ['inkflow_diagnostics_export', '81804879'],
   ['inkflow_backup_create', '375f1aa7'],
   ['inkflow_backup_restore', '830aaf3b'],
-  // #38: the extraction queue (ADR-0017). Built-ins, not domain tools: a candidate is not
+  // The extraction queue (ADR-0017). Built-ins, not domain tools: a candidate is not
   // an entity, belongs to no content directory, and its one write path lives in
   // `extract-accept.ts` instead of inside a domain module.
   ['inkflow_extract_propose', '9a66e773'],
@@ -90,41 +90,41 @@ const BUILT_IN_TOOLS = [
   ['inkflow_extract_accept', '1631899a'],
   ['inkflow_extract_reject', '483c26c2'],
   ['inkflow_extract_purge', '4d5d5d6e'],
-  // #41: semantic retrieval — status (read-only), rebuild (writes blocks into OVK) and
+  // Semantic retrieval — status (read-only), rebuild (writes blocks into OVK) and
   // purge (the one tool allowed to delete there, ADR-0009 P6).
   ['inkflow_semantic_status', '019ec003'],
   ['inkflow_semantic_rebuild', 'b5d3bb95'],
   ['inkflow_semantic_purge', 'e65e1a31'],
-  // #51: the old-library migrator (plan / apply / rollback). Built-ins for the same reason as
+  // The old-library migrator (plan / apply / rollback). Built-ins for the same reason as
   // the extraction queue — it writes into every content directory, so no domain module owns
   // it, and its dry run must be the same computation as its apply (X-29).
   ['inkflow_etl_plan', 'd0268bd8'],
   ['inkflow_etl_apply', '1c605cc2'],
-  // #46: the review DAG — run (locate + record), context (the text handed to the model) and
+  // The review DAG — run (locate + record), context (the text handed to the model) and
   // compare (the cross-model table). Built-ins: a review reads one chapter plus two setting
   // directories and writes , so no content directory owns it.
   ['inkflow_review_run', 'ee5e8185'],
   ['inkflow_review_context', 'f85b27ee'],
   ['inkflow_review_compare', '770ed3a2'],
-  // #45: proposals — create / decide / apply / rollback. Built-ins for the same reason as the
+  // Proposals — create / decide / apply / rollback. Built-ins for the same reason as the
   // extraction queue: a proposal is not an entity, belongs to no content directory, and its one
   // write path is the chapter writer, which no domain module owns.
   ['inkflow_proposal_create', '9d647000'],
   ['inkflow_proposal_decide', 'a6f7a092'],
   ['inkflow_proposal_apply', '0c64fabf'],
   ['inkflow_proposal_rollback', '822d2435'],
-  // #47: the batch queue — enqueue / take / complete / approve. Built-ins for the same reason
+  // The batch queue — enqueue / take / complete / approve. Built-ins for the same reason
   // as the extraction queue and the proposals: a job is not an entity, belongs to no content
   // directory, and the plugin embeds no model client to draft the chapters it queues (X-26).
   ['inkflow_batch_enqueue', '606e03fb'],
   ['inkflow_batch_take', '70f2b3be'],
   ['inkflow_batch_complete', 'a5d82c2a'],
   ['inkflow_batch_approve', '289befc4'],
-  // #50: export — one tool for EPUB / DOCX / Markdown / TXT. A built-in rather than a domain
+  // Export — one tool for EPUB / DOCX / Markdown / TXT. A built-in rather than a domain
   // tool: it reads every content directory at once and writes the artifact outside the book
   // (`dataDir/exports/`, ADR-0024 D4), so no content directory owns it.
   ['inkflow_export', '84b1e806'],
-  // #49: the series sync — plan (read-only) and apply (the four-row plan, one decision per
+  // The series sync — plan (read-only) and apply (the four-row plan, one decision per
   // conflict). Built-ins for the same reason as the shared library they extend: they read the
   // plugin-level library and write into `world/`/`library/`, so no content directory owns them.
   ['inkflow_series_plan', 'ccf384d0'],
@@ -146,7 +146,7 @@ function surfaceHash(value) {
 }
 
 /**
- * Why a mismatch also prints three part hashes (#114): "two 8-char hex strings
+ * Why a mismatch also prints three part hashes: "two 8-char hex strings
  * differ" says nothing about *what* moved. The baseline stores one merged hash, so
  * this can only report the CURRENT per-part hashes — compare them with the recorded
  * commit (`scripts/surface-hash.mjs --tool <name>` against `git show <rev>`) to see
@@ -273,7 +273,7 @@ test('a registered module contributes its own tools, in registry order', () => {
   )
 })
 
-test('buildTools() actually consults the registry', () => {
+test('buildTools actually consults the registry', () => {
   // The empty-registry tests above cannot catch a `buildTools()` that forgot to
   // call `domainTools()`: with no modules, both surfaces are identical. This one
   // passes a throwaway module list and fails the moment the aggregate stops being

@@ -1,5 +1,5 @@
 /**
- * Contract tests for the book hub (ADR-0010, issue #85).
+ * Contract tests for the book hub (ADR-0010).
  *
  * The hub is the **no-session** half of the private channel: a root-scoped panel
  * has no `sessionId`, so the book list is read from the Host `workspaceRegistry`
@@ -289,7 +289,7 @@ test('a registered directory that is not a book is marked notABook and left alon
   assert.equal(hashTree(plain), before, 'a non-book directory is never initialised by the hub')
 })
 
-test('Workspace.status() decides dirStatus when the registry exposes it', async () => {
+test('Workspace.status decides dirStatus when the registry exposes it', async () => {
   const base = workdir()
   const first = join(base, 'first')
   const second = join(base, 'second')
@@ -419,8 +419,8 @@ test('the hub guards fail closed and never alias the removed /inkflow/api/* pref
   assert.equal(wrongMethod.json.error.code, 'method-not-allowed')
   assert.equal(wrongMethod.headers.allow, 'GET')
 
-  // `/hub/plan` and `/hub/apply` exist since #86 (POST only); `/hub/shared`
-  // exists since #87 (GET only). A path no build declares is still 404.
+  // `/hub/plan` and `/hub/apply` exist (POST only); `/hub/shared`
+  // exists (GET only). A path no build declares is still 404.
   const planVerb = await hubCall(harness, '/plan')
   assert.equal(planVerb.status, 405, '/hub/plan is declared and POST-only')
   assert.equal(planVerb.json.error.code, 'method-not-allowed')

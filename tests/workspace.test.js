@@ -1,5 +1,5 @@
 /**
- * Issue #13 — the four-state workspace gate and the setup/repair wizard
+ * The four-state workspace gate and the setup/repair wizard
  * (ADR-0006 D2/D3/D4).
  *
  * These run against the BUILT artifacts (lib/index.js), like the contract tests.
@@ -213,7 +213,7 @@ test('gate: an empty directory is needs-setup and the plan lists every action wi
     const status = await callTool(harness, 'inkflow_project_status', { projectRoot: root })
     assert.equal(status.ok, false)
     assert.equal(status.error.state, 'needs-setup')
-    // Issue #7 compatibility: needs-setup keeps the old code and flag.
+    // Compatibility: needs-setup keeps the old code and flag.
     assert.equal(status.error.code, 'NOT_AN_INKFLOW_PROJECT')
     assert.equal(status.error.needsSetup, true)
     assert.equal(status.error.readOnly, false)
@@ -617,7 +617,7 @@ test('wizard: an existing .gitignore only gains the missing derived-index rules'
 })
 
 // ---------------------------------------------------------------------------
-// 13. Write-back verification of inkflow.json (issue #89)
+// 13. Write-back verification of inkflow.json
 //
 // "Written" is not "readable as written": a hand-written or foreign-encoding meta
 // used to be discovered only when the next tool call refused the directory. The
@@ -682,7 +682,7 @@ test('wizard: a title that is itself GBK mojibake is flagged, written as asked, 
     const root = join(dir, '乱码书')
     mkdirSync(root)
     const harness = makeTools(join(dir, 'state'), dir)
-    // The exact shape from the field report (issue #89).
+    // The exact shape from the field report.
     const garbled = '浜哄湪铚€灞憋紝鏄帉闂?'
 
     const applied = await callTool(harness, 'inkflow_project_init', { root, title: garbled, confirm: true })

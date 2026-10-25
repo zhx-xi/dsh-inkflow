@@ -1,8 +1,8 @@
 /**
  * Contract tests for the four chapter WRITE routes of the private channel
- * (`/inkflow/internal/chapters*`, issue #19).
+ * (`/inkflow/internal/chapters*`).
  *
- * Same harness style as `tests/internal-channel.test.js` (issue #18): the built
+ * Same harness style as `tests/internal-channel.test.js`: the built
  * artifact `lib/index.js` is driven through a fake Cordis context, a fake
  * request/response pair and a throwaway book on disk. No DSH process, no socket.
  *
@@ -36,7 +36,7 @@ const INTERNAL = '/inkflow/internal'
 const JSON_TYPE = 'application/json'
 
 // ---------------------------------------------------------------------------
-// Harness: registrations recorded, Host services faked (same shape as #18)
+// Harness: registrations recorded, Host services faked (same shape as the channel test)
 // ---------------------------------------------------------------------------
 
 function createHarness({ sessionId = 'session-1', workspace, sessions, workspaces } = {}) {
@@ -289,7 +289,7 @@ test('write routes: a cross-site write is refused, an origin-less one is not (is
     const harness = createHarness({ workspace: root })
     const before = hashTree(root)
 
-    // Measured in #115: a real panel save arrived with NO Origin header and every
+    // Measured in the field: a real panel save arrived with NO Origin header and every
     // other guard satisfied, and the Host answered `forbidden-origin /
     // origin-required` -- which the author saw as a dead Save button. A browser
     // always sets Origin on a POST, so an absent header means "not a web page".
@@ -712,7 +712,7 @@ test('write route: an oversized body is a 413 and an undeclared verb is a 405', 
 })
 
 // ---------------------------------------------------------------------------
-// 9. The file's own line endings and BOM survive a panel save (issue #132)
+// 9. The file's own line endings and BOM survive a panel save
 // ---------------------------------------------------------------------------
 
 /**
@@ -740,7 +740,7 @@ function writeRaw(root, relativePath, text) {
   writeFileSync(absolute, text, 'utf8')
 }
 
-test('eol: a CRLF+BOM chapter saved from the panel keeps both (issue #132)', async () => {
+test('eol: a CRLF+BOM chapter saved from the panel keeps both', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')
@@ -774,7 +774,7 @@ test('eol: a CRLF+BOM chapter saved from the panel keeps both (issue #132)', asy
   }
 })
 
-test('eol: an LF chapter saved from the panel stays LF and gains no BOM (issue #132)', async () => {
+test('eol: an LF chapter saved from the panel stays LF and gains no BOM', async () => {
   const dir = workdir()
   try {
     const root = join(dir, 'book')

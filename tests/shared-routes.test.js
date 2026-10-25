@@ -1,5 +1,5 @@
 /**
- * Contract tests for the shared library's HUB ROUTES and TOOLS (#40).
+ * Contract tests for the shared library's HUB ROUTES and TOOLS.
  *
  * `tests/shared-copy.test.js` proves what a copy IS. This file proves the two
  * surfaces that reach it are wired the way the channel requires:
@@ -8,7 +8,7 @@
  *      target book must be named. `/hub/shared/copy` accepts `book` and nothing
  *      else, and only a path the Host's own registry listed; an unregistered path
  *      is refused before any write (proved with a whole-tree hash).
- *   2. GUARDS — a hub write requires a same-origin `Origin` (ADR-0010 D6 #6), the
+ *   2. GUARDS — a hub write requires a same-origin `Origin` (ADR-0010 D6 rule 6), the
  *      body field allowlist holds (`root`/`path` are refused as path parameters),
  *      and a wrong verb is a 405 before any handler runs.
  *   3. READ SIDE — `GET /hub/shared/copies?book=…` answers the stale list, and it

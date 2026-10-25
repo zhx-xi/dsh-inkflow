@@ -5,7 +5,7 @@
  * returns early — `if (view === 'settings') return <SettingsView/>` — and then calls
  * `useCallback` below it renders fine in the first mode and throws
  * "Rendered fewer hooks than expected" in the second, which blanks the whole panel
- * (issue #174: the settings page went white and nothing was logged where the author
+ * (the blank panel: the settings page went white and nothing was logged where the author
  * could see it).
  *
  * This walks the real AST (TypeScript is already a devDependency), so it is precise:

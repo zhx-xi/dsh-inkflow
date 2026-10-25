@@ -1,5 +1,5 @@
 /**
- * Issue #28 — the timeline domain: two independent axes, the pending area and the write
+ * The timeline domain: two independent axes, the pending area and the write
  * surface. The conflict rules have their own suite (`timeline-conflicts.test.js`).
  *
  * Why each group exists:
@@ -10,7 +10,7 @@
  *   - the pending area: `status: unconfirmed` must never be ordered. If it slipped into
  *     either axis the author would read an invented order as canon.
  *   - the projection and the confirmation gate: an event has to be reachable through
- *     `entities` + `searchEntities` (#29/#30 read through them), and a write must not
+ *     `entities` + `searchEntities` (read through them), and a write must not
  *     land before the user has seen the path.
  *
  * They run against the BUILT artifacts (lib/index.js), like every other suite.

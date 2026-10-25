@@ -1,5 +1,5 @@
 /**
- * Issue #48 — the map tab (第一版：地点清单 + 跳转), ADR-0025 D4.
+ * The map tab (第一版：地点清单 + 跳转), ADR-0025 D4.
  *
  * The page itself is only checked as a built bundle (`tests/panel-bundle.test.js`); what is
  * pinned **here** is the three things that could go wrong silently:

@@ -1,5 +1,5 @@
 /**
- * Contract tests for the setting library's SAVE path (issue #30, second batch):
+ * Contract tests for the setting library's SAVE path (second batch):
  * `POST /inkflow/internal/library/item`.
  *
  * Same harness style as `tests/internal-write.test.js` / `tests/library-panel.test.js`:
@@ -481,7 +481,7 @@ test('library save: a non-POST verb, a missing or cross-site Origin and a non-JS
     assert.equal(getWithoutAddress.status, 400)
     assert.equal(getWithoutAddress.json.error.code, 'KIND_REQUIRED', 'a GET reads, it never writes with a body')
 
-    // An ABSENT Origin is no longer a refusal (issue #115): a browser always sets
+    // An ABSENT Origin is no longer a refusal: a browser always sets
     // it on a POST, so the absence means the caller is not a web page — and a page
     // that arrived cross-site still declares `Sec-Fetch-Site: cross-site`.
     const noOrigin = await saveCall(harness, payload, { origin: undefined })

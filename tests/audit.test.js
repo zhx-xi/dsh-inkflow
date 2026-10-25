@@ -1,5 +1,5 @@
 /**
- * The consistency audit (#33, roadmap X-14, DoD D3-3).
+ * The consistency audit (roadmap X-14, DoD D3-3).
  *
  * What this suite has to prove — each half is a way the report could be useless:
  *
@@ -15,7 +15,7 @@
  *      fingerprint around it — with the index already built, so a careless "open the cache"
  *      cannot slip by unnoticed.
  *   4. **Lateness reads the files, not the cache.** A stale index must not make a late
- *      foreshadow look settled: that is exactly the failure #31 fixed for the reminder.
+ *      foreshadow look settled: that is exactly the failure the foreshadow reminder had to fix.
  *   5. **Export is the only write**, it lands in `.inkflow/audit/` (ADR-0012), and it refuses
  *      without `confirm: true`.
  *
@@ -446,7 +446,7 @@ test('audit: export writes under .inkflow/audit, ignores it in git, and needs co
     assert.equal(existsSync(file), true)
     assert.equal(readFileSync(file, 'utf8'), renderAuditReport(report), 'the file is the report body')
 
-    // `.gitignore` gained exactly one line, append-only (ADR-0012 #2).
+    // `.gitignore` gained exactly one line, append-only (ADR-0012 decision 2).
     assert.equal(readFileSync(join(root, '.gitignore'), 'utf8'), '.inkflow/\n')
     assert.equal(value.exported.ignoreLineAdded, true)
 

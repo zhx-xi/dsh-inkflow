@@ -1,11 +1,11 @@
 /**
- * The impact report (#34, conventions §5.6, roadmap X-15).
+ * The impact report (conventions §5.6, roadmap X-15).
  *
  * What this suite has to prove, and why each half matters:
  *
  *   1. **Five reference sites, one answer.** 改设定 is the most dangerous action a
  *      long-form author takes, so "which chapters would this touch" must not be a
- *      guess: the report reads `entity_mentions` (#29) for the manuscript,
+ *      guess: the report reads `entity_mentions` for the manuscript,
  *      `relations` for the graph, and — because the index has no table yet for
  *      them — the timeline / ledger / foreshadowing files for the other three.
  *   2. **Read-only, provably.** The report is the thing the author looks at
@@ -360,7 +360,7 @@ test('impact: every code the writer refuses is already a blocker in the preview'
     )
     assert.deepEqual(multiline.rename.blockers, ['TITLE_INVALID'])
 
-    // The ledger's file name IS its subject: renaming it is a ledger decision (#32).
+    // The ledger's file name IS its subject: renaming it is a ledger decision.
     const ledger = readReport(await buildImpact(sourceFor(root), '1.0.0', { kind: 'facts', id: 'facts/白云观.md', slug: '白云观-旧' }))
     assert.deepEqual(ledger.rename.blockers, ['KIND_NOT_RENAMEABLE'])
 

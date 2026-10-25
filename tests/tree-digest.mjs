@@ -1,5 +1,5 @@
 /**
- * Per-file sha256 map of a project tree, shared by the #36 acceptance tests.
+ * Per-file sha256 map of a project tree, shared by the acceptance tests.
  *
  * `hashTree()` (in `hash-tree.mjs`) answers "did *anything* change" and is the right
  * tool for a zero-write assertion. This helper answers the other question a repair

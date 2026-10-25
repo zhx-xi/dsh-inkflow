@@ -1,5 +1,5 @@
 /**
- * Contract tests for the book hub's new-book wizard (ADR-0010 D4/D6, issue #86).
+ * Contract tests for the book hub's new-book wizard (ADR-0010 D4/D6).
  *
  * The wizard is the ONLY write path on the no-session hub channel, so these
  * tests pin the whole chain a browser cannot be trusted with:
@@ -25,7 +25,7 @@
  *   5. GUARDS — same-origin `Origin` (not merely loopback), JSON body, 1 MiB
  *      cap, per-route verbs (`GET /hub/plan` is 405), and the path-parameter ban
  *      (`root`/`path`/`cwd`/`workspace`/`projectRoot` in query or body) before
- *      any filesystem access (ADR-0010 D6 #4–#8).
+ *      any filesystem access (ADR-0010 D6 rules 4–8).
  *
  * `git init` is the only git write and it must not commit, configure a remote or
  * touch the user's identity (ADR-0006 D4) — asserted from `.git/config`.
@@ -278,7 +278,7 @@ test('a registry path spelled through a junction still anchors its contents (and
   // Windows CI runners keep the temp directory behind a junction, so the
   // registry says one spelling while the picker answers another (resolved) one.
   // Comparing only one side canonicalised both `in-workspace` and `registered`
-  // into `ANCHOR_REQUIRED` on windows-latest while passing locally (PR #97).
+  // into `ANCHOR_REQUIRED` on windows-latest while passing locally.
   const base = workdir()
   const real = book(join(base, 'real-book'))
   const link = join(base, 'link-book')
@@ -430,7 +430,7 @@ test('the hub write guards refuse path parameters, a cross-origin page, a plain 
   const { base, fresh, workspaces } = fixture()
   const harness = createHarness({ workspaces: workspaces.map((workspace) => ({ ...workspace })) })
 
-  // ADR-0010 D6 #5: the ban is checked before the route even matches.
+  // ADR-0010 D6 rule 5: the ban is checked before the route even matches.
   const queryParam = await refused(base, () => get(harness, '/plan?root=somewhere'))
   assert.equal(queryParam.status, 400)
   assert.equal(queryParam.json.error.code, 'ROOT_PARAM_NOT_ALLOWED')
@@ -443,8 +443,8 @@ test('the hub write guards refuse path parameters, a cross-origin page, a plain 
     assert.equal(inBody.json.error.in, 'body')
   }
 
-  // #6: same-origin, NOT merely loopback. A different loopback port is a
-  // different page and must not be able to drive a write.
+  // The write guard demands same-origin, NOT merely loopback. A different
+  // loopback port is a different page and must not be able to drive a write.
   const missingOrigin = await refused(base, () => post(harness, '/plan', { candidate: fresh, outsideRegistry: true }, { origin: null }))
   assert.equal(missingOrigin.status, 403)
   assert.equal(missingOrigin.json.error.code, 'forbidden-origin')
@@ -474,7 +474,7 @@ test('the hub write guards refuse path parameters, a cross-origin page, a plain 
   assert.equal(huge.status, 413)
   assert.equal(huge.json.error.code, 'payload-too-large')
 
-  // #4: the verbs are declared per route.
+  // The verbs are declared per route.
   const wrongVerb = await refused(base, () => get(harness, '/plan'))
   assert.equal(wrongVerb.status, 405)
   assert.equal(wrongVerb.headers.allow, 'POST')

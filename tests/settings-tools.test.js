@@ -1,5 +1,5 @@
 /**
- * The #42 tools as the model reaches them: five tools, their confirm gates, and the
+ * The tools as the model reaches them: five tools, their confirm gates, and the
  * renderer called on every shape `execute` returns.
  *
  * The module-level tests (`settings.test.js`, `diagnostics.test.js`,

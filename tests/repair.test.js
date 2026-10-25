@@ -1,5 +1,5 @@
 /**
- * The repair pass (#36): detect → preview → fix, and the proof that a fix landed.
+ * The repair pass: detect → preview → fix, and the proof that a fix landed.
  *
  * The suite builds ONE book that carries an instance of every finding class the
  * issue names, then asserts the three-stage contract on it:
@@ -344,7 +344,7 @@ test('repair: an audit report is a derivative under .inkflow/audit', () => {
 })
 
 /**
- * A code the catalogue no longer calls fixable must not appear in the plan (#143).
+ * A code the catalogue no longer calls fixable must not appear in the plan.
  *
  * `FORESHADOW_RESOLVED_WITHOUT_CHAPTER` was listed as `fixable: true` while no repair
  * action existed for it, so the report said "1 fixable" and the repair pass answered
@@ -373,14 +373,14 @@ test('repair: a code the catalogue calls unfixable never reaches the plan (issue
 })
 
 /**
- * A backup opened over an unwritable `.gitignore` must say so (#149).
+ * A backup opened over an unwritable `.gitignore` must say so.
  *
  * Both branches of `openBackup` used to return the same object, so "the ignore rule
  * is in place" and "it is not" were indistinguishable — the package's files would
  * appear as untracked and nothing in the caller could tell. The batch still runs
  * (a backup is more important than one ignore line), but the handle carries it.
  */
-test('repair: a backup opened without the .gitignore line reports it (#149)', () => {
+test('repair: a backup opened without the .gitignore line reports it', () => {
   const root = sampleBook()
   // A directory where the file should be: reading it throws, so the append cannot happen.
   rmSync(join(root, '.gitignore'), { force: true })

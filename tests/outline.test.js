@@ -1,5 +1,5 @@
 /**
- * Issue #24 — the outline domain's write side: three-level tree, the three
+ * The outline domain's write side: three-level tree, the three
  * invariants that already existed only on the rebuild side (I-01/I-02/I-05), the
  * plot-point syntax of conventions.md §3.5, and the model-facing tool surface.
  *
@@ -444,8 +444,8 @@ test('outline: the rebuilt index stores plot points per outline node', async () 
       const version = { ...db.prepare('PRAGMA user_version').get() }
       // v3 introduced these two columns; the current version is pinned as a literal so
       // an added column without a bump fails here instead of silently reading a stale
-      // database (`AGENTS.md` §8 trap 5). v4 is #25's character-card schema, v6 #29's
-      // mentions, v7 #32's fact ledger, v8 #31's foreshadow table, v9 #48's derived
+      // database (`AGENTS.md` §8 trap 5). v4 added the character-card schema, v6 entity
+      // mentions, v7 the fact ledger, v8 the foreshadow table, v9 the derived
       // absolute-day column.
       assert.equal(version.user_version, 9)
       const row = { ...db.prepare('SELECT id, kind, plot_point_count, plot_points FROM outline_nodes WHERE id = ?').get('ov') }

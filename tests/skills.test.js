@@ -1,5 +1,5 @@
 /**
- * The writing surface (issue #21): five craft skills + the writing agent preset.
+ * The writing surface: five craft skills + the writing agent preset.
  *
  * Two things are being pinned here:
  *
@@ -125,7 +125,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve))
 
 // ── capability probes ───────────────────────────────────────────────────────
 
-test('apply() without skills or agentPresets services logs one line each and keeps the tools', () => {
+test('apply without skills or agentPresets services logs one line each and keeps the tools', () => {
   const root = workdir()
   try {
     scaffold(root)
@@ -283,7 +283,7 @@ test('every packaged SKILL.md has a unique kebab-case name and a real body', () 
   }
 })
 
-test('no skill teaches CLI or HTTP usage (issue #21 acceptance)', () => {
+test('no skill teaches CLI or HTTP usage (acceptance)', () => {
   const dir = fileURLToDirOfRepo()
   const { skills } = loadBundledSkills(dir)
   const forbidden = ['http://', 'https://', 'curl ', 'X-InkFlow-Token', 'inkflow-ctl', 'POST /api', 'Authorization:']
@@ -322,7 +322,7 @@ test('a broken skill file is reported as a problem, not thrown', () => {
 
 // ── preset ──────────────────────────────────────────────────────────────────
 
-test('apply() registers one writing preset that names all five skills', async () => {
+test('apply registers one writing preset that names all five skills', async () => {
   const root = workdir()
   try {
     scaffold(root)

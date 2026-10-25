@@ -1,5 +1,5 @@
 /**
- * Contract tests for the panel's search box (#39, roadmap X-16 / X-20).
+ * Contract tests for the panel's search box (roadmap X-16 / X-20).
  *
  * `node --test` has no DOM, so — exactly like `tests/panel-bundle.test.js` — the contract
  * has two halves:
@@ -121,7 +121,7 @@ test('search model: labels, target routing, summary and degraded note', async ()
 
   assert.equal(model.describeSearchDegradation(page), null)
   // An unknown reason is printed as-is: a code the panel does not translate is still more
-  // useful than silence (#41 keeps the vocabulary fixed, the free-text path is the index's).
+  // useful than silence (the backend keeps the vocabulary fixed, the free-text path is the index's).
   assert.equal(
     model.describeSearchDegradation({ ...page, degradedReason: 'index unavailable' }),
     '关键词结果：index unavailable',

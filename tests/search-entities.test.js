@@ -1,5 +1,5 @@
 /**
- * Issue #39 — the unified search entry (roadmap X-16) and the search-replace batch (X-17).
+ * The unified search entry (roadmap X-16) and the search-replace batch (X-17).
  *
  * Two DoDs live here, so the file is in two halves:
  *

@@ -1,5 +1,5 @@
 /**
- * Issue #5, part 1 — index freshness and the single rebuild trigger.
+ * Index freshness and the single rebuild trigger (part 1).
  *
  * The bug: the index was only rebuilt when it was *absent* or built by another
  * schema version. Editing a chapter in an editor, or adding a chapter file,
@@ -437,7 +437,7 @@ test('ensureIndex: a failed rebuild is structured data, never a stack', async ()
   const dir = workdir()
   try {
     const root = project(dir)
-    // A live foreign lock: the build fails fast with INDEX_BUSY (issue #4).
+    // A live foreign lock: the build fails fast with INDEX_BUSY.
     writeFileSync(join(root, 'index', '.lock'), JSON.stringify({ pid: process.ppid, token: 'live', startedAt: Date.now() }), 'utf8')
 
     const result = await ensureIndex(root)
@@ -527,7 +527,7 @@ test('read paths: /chapters and /search agree with the files after an external e
     assert.equal(search.value.indexState, 'stale')
     assert.equal(search.value.indexRebuilt, true)
     assert.equal(search.value.total, 1)
-    // #39 (X-16): one entry shape for every kind — no chapter-only `results` list.
+    // The unified search (X-16): one entry shape for every kind — no chapter-only `results` list.
     assert.equal(search.value.items[0].title, '第1章 改过的标题')
     assert.equal(search.value.items[0].kind, 'chapters')
     assert.equal(search.value.items[0].path, 'chapters/0001-章.md')

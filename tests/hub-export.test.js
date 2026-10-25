@@ -1,7 +1,7 @@
 /**
- * The export entry on the book hub (#195, ADR-0024 D4 / 入口归属).
+ * The export entry on the book hub (ADR-0024 D4 / 入口归属).
  *
- * #50 shipped the capability (`inkflow_export` → `exportBook()`); #195 is about the *entry*,
+ * The export tool shipped the capability (`inkflow_export` → `exportBook`); this file is about the *entry*,
  * because a capability a person can only reach by talking to an AI is not delivered. The
  * decision that shapes everything here: the panel gets the **same computation**, not a second
  * implementation. So the route is a thin forwarder and these tests prove it by comparing the
@@ -160,7 +160,7 @@ function exportNames(dataDir) {
 // 1. The read half: what CAN be exported from this book
 // ---------------------------------------------------------------------------
 
-test('#195: GET /hub/export/options lists the volumes, the axes and nothing else', async () => {
+test('GET /hub/export/options lists the volumes, the axes and nothing else', async () => {
   const h = harness()
   try {
     const response = await get(h, `/export/options?book=${encodeURIComponent(h.bookA)}`)
@@ -186,7 +186,7 @@ test('#195: GET /hub/export/options lists the volumes, the axes and nothing else
   }
 })
 
-test('#195: the preview refuses an unregistered book, an unready book and a misspelt book', async () => {
+test('the preview refuses an unregistered book, an unready book and a misspelt book', async () => {
   const h = harness()
   try {
     const missing = await get(h, '/export/options')
@@ -204,7 +204,7 @@ test('#195: the preview refuses an unregistered book, an unready book and a miss
     assert.equal(unready.json.error.code, 'BOOK_NOT_USABLE')
     assert.ok(Array.isArray(unready.json.error.missing) && unready.json.error.missing.length > 0)
 
-    // A misspelt query key answers 400 instead of silently exporting the default book (#200).
+    // A misspelt query key answers 400 instead of silently exporting the default book.
     const stray = await get(h, `/export/options?books=${encodeURIComponent(h.bookA)}`)
     assert.equal(stray.status, 400)
     assert.equal(stray.json.error.code, 'UNKNOWN_QUERY_PARAM')
@@ -221,7 +221,7 @@ test('#195: the preview refuses an unregistered book, an unready book and a miss
 // 2. Same computation as `inkflow_export` — not a second exporter
 // ---------------------------------------------------------------------------
 
-test('#195: the route writes the SAME bytes as exportBook for the same request (markdown)', async () => {
+test('the route writes the SAME bytes as exportBook for the same request (markdown)', async () => {
   const h = harness()
   try {
     const before = hashTree(h.bookA)
@@ -236,7 +236,7 @@ test('#195: the route writes the SAME bytes as exportBook for the same request (
     assert.equal(hashTree(h.bookA), before, 'an export must not change one byte inside the book')
 
     // The tool's own path, same request: Markdown carries no timestamp, so the two artifacts
-    // are comparable byte for byte. This is the "one computation" assertion (#195).
+    // are comparable byte for byte. This is the "one computation" assertion.
     const viaTool = exportBook(h.bookA, h.dataDir, { format: 'markdown', target: 'book' })
     assert.equal(viaTool.ok, true, JSON.stringify(viaTool.error ?? {}))
     assert.equal(readFileSync(viaTool.value.path, 'utf8'), readFileSync(value.path, 'utf8'))
@@ -247,7 +247,7 @@ test('#195: the route writes the SAME bytes as exportBook for the same request (
   }
 })
 
-test('#195: EPUB goes through the same builder — same entries, same chapter count', async () => {
+test('EPUB goes through the same builder — same entries, same chapter count', async () => {
   const h = harness()
   try {
     const response = await post(h, '/export', { book: h.bookA, format: 'epub', target: 'volume', volumeId: 'vol-01' })
@@ -269,7 +269,7 @@ test('#195: EPUB goes through the same builder — same entries, same chapter co
   }
 })
 
-test('#195: no confirm is required — a stamped name never overwrites anything (ADR-0024 判据)', async () => {
+test('no confirm is required — a stamped name never overwrites anything (ADR-0024 判据)', async () => {
   const h = harness()
   try {
     const first = await post(h, '/export', { book: h.bookA, format: 'txt', target: 'status', status: 'draft' })
@@ -289,7 +289,7 @@ test('#195: no confirm is required — a stamped name never overwrites anything 
 // 3. Refusals: a sentence, and not one byte written
 // ---------------------------------------------------------------------------
 
-test('#195: an empty book, a bad format and a mixed selection write nothing at all', async () => {
+test('an empty book, a bad format and a mixed selection write nothing at all', async () => {
   const h = harness()
   try {
     const empty = await post(h, '/export', { book: h.emptyBook, format: 'epub', target: 'book' })
@@ -301,7 +301,7 @@ test('#195: an empty book, a bad format and a mixed selection write nothing at a
     assert.equal(badFormat.json.ok, false)
     assert.equal(badFormat.json.error.code, 'EXPORT_FORMAT_INVALID')
 
-    // The two selection axes are not combinable (#50): reflecting that instead of guessing
+    // The two selection axes are not combinable: reflecting that instead of guessing
     // which one the user meant is the whole point of EXPORT_SELECTION_UNUSED.
     const mixed = await post(h, '/export', { book: h.bookA, format: 'epub', target: 'book', status: 'draft' })
     assert.equal(mixed.json.ok, false)
@@ -322,7 +322,7 @@ test('#195: an empty book, a bad format and a mixed selection write nothing at a
 // 4. The write guards the hub channel already applies
 // ---------------------------------------------------------------------------
 
-test('#195: the export POST is a hub write — same-origin Origin, JSON body, field whitelist', async () => {
+test('the export POST is a hub write — same-origin Origin, JSON body, field whitelist', async () => {
   const h = harness()
   try {
     const crossOrigin = await call(
@@ -380,7 +380,7 @@ async function loadExportModel() {
 
 const exportModel = await loadExportModel()
 
-test('#195: the page offers exactly the axes the Host accepts (no second list to drift)', () => {
+test('the page offers exactly the axes the Host accepts (no second list to drift)', () => {
   assert.deepEqual([...exportModel.EXPORT_FORMATS], [...EXPORT_FORMATS])
   assert.deepEqual([...exportModel.EXPORT_TARGETS], [...EXPORT_TARGETS])
   assert.deepEqual([...exportModel.EXPORT_STATUSES], STATUSES)
@@ -393,7 +393,7 @@ test('#195: the page offers exactly the axes the Host accepts (no second list to
   }
 })
 
-test('#195: the request body carries the book and the axes, and drops nothing silently', () => {
+test('the request body carries the book and the axes, and drops nothing silently', () => {
   assert.deepEqual(exportModel.buildExportBody('D:\\小说\\我的书', { format: 'epub', target: 'book' }), {
     book: 'D:\\小说\\我的书',
     format: 'epub',
@@ -424,7 +424,7 @@ test('#195: the request body carries the book and the axes, and drops nothing si
   assert.equal(exportModel.buildExportBody('', { format: 'txt', target: 'book' }), null)
 })
 
-test('#195: every Host refusal becomes a sentence the author can act on', () => {
+test('every Host refusal becomes a sentence the author can act on', () => {
   const codes = [
     'EXPORT_EMPTY',
     'EXPORT_FORMAT_INVALID',
@@ -451,7 +451,7 @@ test('#195: every Host refusal becomes a sentence the author can act on', () => 
   assert.match(exportModel.describeExportError(undefined), /没有|未知/u)
 })
 
-test('#195: the finished export is reported as a place, a name and a size', () => {
+test('the finished export is reported as a place, a name and a size', () => {
   const line = exportModel.describeExportValue({
     file: '我的书-epub-20261025-102030.epub',
     path: 'C:\\Users\\x\\.dsh\\inkflow\\exports\\我的书-epub-20261025-102030.epub',
@@ -467,7 +467,7 @@ test('#195: the finished export is reported as a place, a name and a size', () =
   assert.match(line, /3 章/u)
 })
 
-test('#195: the page folds the channel answer into ready / error like every other page', () => {
+test('the page folds the channel answer into ready / error like every other page', () => {
   const ready = exportModel.readExportOptions({
     ok: true,
     status: 200,

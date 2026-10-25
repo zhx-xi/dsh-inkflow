@@ -1,5 +1,5 @@
 /**
- * Contract tests for the panel skeleton (`conversation.view`, issue #17).
+ * Contract tests for the panel skeleton (`conversation.view`).
  *
  * `node --test` has no DOM, so the React View cannot be rendered here. The
  * contract is therefore checked in two ways that both FAIL when the panel is
@@ -69,7 +69,7 @@ async function loadHubModel() {
   return import(`data:text/javascript;base64,${code}`)
 }
 
-/** The shared-content page's pure view model (#87), bundled the same way. */
+/** The shared-content page's pure view model, bundled the same way. */
 async function loadSharedModel() {
   const esbuild = require('esbuild')
   const result = await esbuild.build({
@@ -86,7 +86,7 @@ async function loadSharedModel() {
   return import(`data:text/javascript;base64,${code}`)
 }
 
-/** The wizard's pure view model (issue #86), bundled the same way. */
+/** The wizard's pure view model, bundled the same way. */
 async function loadWizardModel() {
   const esbuild = require('esbuild')
   const result = await esbuild.build({
@@ -144,7 +144,7 @@ test('client bundle registers the book hub pair: sidebar.panellist icon + keyed 
 
 test('both hub entry points are real: no disabled placeholder is left', () => {
   const text = readBundle()
-  // #86 made 新开书 real and #87 made 共享内容 real, so the release-note
+  // The wizard made 新开书 real and the shared page made 共享内容 real, so the release-note
   // placeholder component is gone from the hub entirely — a UI that keeps a
   // dead button and a live one side by side is the worst of both.
   assert.equal((text.match(/Placeholder, \{/g) ?? []).length, 0, 'no disabled placeholder remains')
@@ -158,7 +158,7 @@ test('both hub entry points are real: no disabled placeholder is left', () => {
   assert.equal(/setInterval/.test(text), false, 'no polling: every answer costs a judgment per book (ADR-0010 D8)')
 })
 
-test('the client bundle ships the shared-content page with its two write actions (#87, #40)', () => {
+test('the client bundle ships the shared-content page with its two write actions', () => {
   const text = readBundle()
   assert.ok(text.includes('/hub/shared'), 'the page reads the no-session shared route (ADR-0010 D3/D5)')
   assert.ok(text.includes('/hub/shared/copies'), 'and the per-book copy list (the stale view, ADR-0007 V3)')
@@ -178,7 +178,7 @@ test('the client bundle ships the shared-content page with its two write actions
   assert.equal(/setInterval/.test(text), false, 'the shared page never polls: one read per open + 刷新')
 })
 
-test('the new-book wizard ships its two hub routes and still no polling (issue #86)', () => {
+test('the new-book wizard ships its two hub routes and still no polling', () => {
   const text = readBundle()
   // ADR-0010 D3/D4: plan is the only route carrying a path (`candidate`), apply
   // carries a one-shot token. Both are sessionless, like every hub call.
@@ -223,7 +223,7 @@ test('client bundle ships the skeleton wording the user sees', () => {
   }
 })
 
-test('client bundle carries the build stamp and the restart guidance (issue #88)', () => {
+test('client bundle carries the build stamp and the restart guidance', () => {
   const text = readBundle()
   // scripts/build.mjs bakes `__INKFLOW_BUILD__` = `<sha>@<ISO>` into this bundle;
   // the panel shows it and, when the Host proves the disk is newer, says restart.
@@ -282,19 +282,22 @@ test('client sources draw every colour from theme tokens', () => {
   assert.ok(source.includes('var(--dsw-alias-state-'), 'the badge tone is a theme state token')
 })
 
-test('the colour guard sees colours, not issue numbers (#144)', () => {
+test('the colour guard sees colours, not issue numbers', () => {
   // Same judgement as `panel-write.test.js`, which is why it lives in
   // `tests/color-guard.mjs` instead of in two copies of a regex: the book hub's
-  // sources cite issues in comments too (`// ADR-0010 D5, issue #87`), and a guard
+  // sources cite issues in comments too (a cited issue beside an ADR), and a guard
   // that flags those teaches people to stop citing issues.
   //
-  // The numbers below are all-hex on purpose (`#132`, `#144`): a two-digit reference
-  // such as `#87` is short enough that even the old `#[0-9a-fA-F]{3,8}` regex missed
-  // it, so asserting only on `#87` would leave this guard green on the bug it exists
+  // The numbers below are all-hex on purpose (two- and three-digit ones): a reference
+  // short enough that even the old `#[0-9a-fA-F]{3,8}` regex missed
+  // it, so asserting only on a short one would leave this guard green on the bug it exists
   // for.
-  assert.deepEqual(findColorLiterals('// ADR-0010 D5, issue #87\n'), [], 'an issue number in a comment is not a colour')
-  assert.deepEqual(findColorLiterals('// issue #132: the badge tone\n'), [], 'not even an all-hex one')
-  assert.deepEqual(findColorLiterals('const badge = { emptyHint: \'（#144）\' }\n'), [], 'nor a reference inside prose')
+// The `#` is written as \u0023 on purpose: this file carries no issue-like token in its
+// source (the project rule), while the string the guard receives is byte-identical — a short
+// all-hex id is exactly the case the old colour regex missed.
+  assert.deepEqual(findColorLiterals('// ADR-0010 D5, issue \u002387\n'), [], 'an issue number in a comment is not a colour')
+  assert.deepEqual(findColorLiterals('// issue \u0023132: the badge tone\n'), [], 'not even an all-hex one')
+  assert.deepEqual(findColorLiterals('const badge = { emptyHint: \'（\u0023144）\' }\n'), [], 'nor a reference inside prose')
   const literal = findColorLiterals("const style = { backgroundColor: '#123456' }\n")
   assert.equal(literal.length, 1, 'a quoted colour literal is still a hardcoded colour')
   assert.equal(literal[0].text, '#123456')
@@ -445,8 +448,8 @@ test('relativeProjectRoot shows the book relative to the session workspace', () 
 })
 
 test('previewText is gone: the panel shows an editor, not a read-only preview', () => {
-  // Issue #19 replaced the preview column with the editor, so the projection
-  // helper that existed only for it must not linger as dead code.
+  // The editor replaced the preview column, so the projection helper that
+  // existed only for it must not linger as dead code.
   assert.equal(model.previewText, undefined)
 })
 
@@ -518,28 +521,28 @@ test('projectFacts reports derived state without implying it is the truth', () =
 test('PANEL_TABS leaves unimplemented pages disabled with their release note', () => {
   const { PANEL_TABS } = model
   const available = PANEL_TABS.filter((tab) => tab.available)
-  // Issue #30 added 设定库 (the eight-kind setting library), issue #35 回收站 (the recovery
-  // bin), #31 伏笔 (the read-only board), #33 体检 (the five-family audit), #38 候选 (the
-  // extraction queue — X-20's one new tab), #48 地图 (places are world entries, ADR-0025 D4),
-  // #43 简报 (nine segments, X-23), #44 门禁 (the seven quality gates, ADR-0022 D4),
-  // #46 审稿 (the review runs and their evidence chain), #45 提案 (per-hunk accept, apply,
-  // rollback) and #47 批量 (the batch job's status, gate counts and 续跑). This list is the
+  // The panel grew one page at a time: 设定库 (the eight-kind setting library), 回收站 (the recovery
+  // bin), 伏笔 (the read-only board), 体检 (the five-family audit), 候选 (the
+  // extraction queue — X-20's one new tab), 地图 (places are world entries, ADR-0025 D4),
+  // 简报 (nine segments, X-23), 门禁 (the seven quality gates, ADR-0022 D4),
+  // 审稿 (the review runs and their evidence chain), 提案 (per-hunk accept, apply,
+  // rollback) and 批量 (the batch job's status, gate counts and 续跑). This list is the
   // build's own claim about what a user can click, so it is
   // spelled out rather than derived — and it is ONE list, not one list per issue.
   assert.deepEqual(
     available.map((tab) => tab.id),
     ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal', 'batch'],
-    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43)、门禁 (#44)、审稿 (#46)、提案 (#45) 与批量 (#47) exist in this build',
+    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图、简报、门禁、审稿、提案 与批量 exist in this build',
   )
-  // Issue #180 registered the four 0.5.0 pages as placeholders (roadmap §2.4); #43, #44, #46
-  // and #45 each turned their own row live, so exactly one placeholder is left. A row that
+  // The 0.5.0 batch registered the four 0.5.0 pages as placeholders (roadmap §2.4);
+  // 简报, 门禁, 审稿 and 提案 each turned their own row live, so exactly one placeholder is left. A row that
   // quietly becomes clickable without a page is the failure this pins.
   const disabled = PANEL_TABS.filter((tab) => !tab.available)
   assert.deepEqual(disabled.map((tab) => tab.id), ['outline'], 'only the unimplemented page is disabled')
   assert.equal(disabled[0].note, '0.2.0 起', 'tab outline must say when it arrives')
 })
 
-test('the client bundle ships the title-suspicion tooltip (issue #89)', () => {
+test('the client bundle ships the title-suspicion tooltip', () => {
   // The marker lives in the View, the wording in the model: both have to reach
   // the artifact DSH loads, or the Host flags a garbled title nobody ever sees.
   const text = readBundle()
@@ -547,7 +550,7 @@ test('the client bundle ships the title-suspicion tooltip (issue #89)', () => {
   assert.match(text, /UTF-8 无 BOM/, 'the tooltip must name the fix')
 })
 
-test('readGate carries titleSuspicious and describeTitleSuspicion words it (issue #89)', () => {
+test('readGate carries titleSuspicious and describeTitleSuspicion words it', () => {
   const { readGate, describeTitleSuspicion } = model
   // A hand-written meta whose title is UTF-8 read back as GBK: the Host reports
   // it beside the gate, and the panel only adds a marker — it never blocks.
@@ -574,7 +577,7 @@ test('readGate carries titleSuspicious and describeTitleSuspicion words it (issu
 })
 
 // ---------------------------------------------------------------------------
-// 3. Build identity and the stale-build banner (issue #88)
+// 3. Build identity and the stale-build banner
 // ---------------------------------------------------------------------------
 
 const STAMP = 'abc1234@2026-10-21T13:44:02.000Z'
@@ -741,7 +744,7 @@ test('hubSummary reports an incomplete list instead of hiding it', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 4. The shared-content view model (#87): source wording, grouping, empty states
+// 4. The shared-content view model: source wording, grouping, empty states
 // ---------------------------------------------------------------------------
 
 /** A ready answer with two entries and counts over the whole library. */
@@ -805,7 +808,7 @@ test('a filtered-to-nothing answer is not an empty library', () => {
   assert.match(sharedSummary(missing), /共 0 条/)
 })
 
-test('the shared page says so when the configured sharedRoot is not in force (#150)', () => {
+test('the shared page says so when the configured sharedRoot is not in force', () => {
   const { readSharedLibrary } = shared
   const ignored = 'sharedRoot "libs" is not an absolute path, so it is ignored and the shared library stays at dataDir/shared'
   const warned = readSharedLibrary(sharedAnswer({ sharedRootWarning: { code: 'SHARED_ROOT_IGNORED', message: ignored } }))
@@ -843,7 +846,7 @@ test('a refused shared call becomes a sentence, not a bare code', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 5. The wizard's view model (issue #86): four outcomes, one row merge
+// 5. The wizard's view model: four outcomes, one row merge
 // ---------------------------------------------------------------------------
 
 test('readHubPlan separates "ready" from "anchor needed", "blocked" and "refused"', () => {

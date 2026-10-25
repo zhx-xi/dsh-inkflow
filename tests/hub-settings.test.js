@@ -1,6 +1,6 @@
 /**
  * The settings page's channel (`/inkflow/internal/hub/settings|diagnostics|backups`,
- * #42 / ADR-0018).
+ * ADR-0018).
  *
  * A root-scoped page has no session, so these routes take their anchor from the Host's
  * workspace registry. Five things this file pins, each of them a way the page could
@@ -11,7 +11,7 @@
  *   2. SETTINGS — read answers with the defaults, a write needs `confirm: true`, and a
  *      save touches no book (whole-tree hash before/after).
  *   3. BODY WHITELIST — a `path`/`root` in the body is a 400 before any handler runs.
- *   4. WRITE GUARDS — every POST needs a same-origin `Origin` (ADR-0010 D6 #6).
+ *   4. WRITE GUARDS — every POST needs a same-origin `Origin` (ADR-0010 D6 rule 6).
  *   5. BACKUPS — list → preview (no writes) → confirm (restores, reports the index).
  *
  * Runs against the built artifact (`../lib/index.js`).
@@ -206,22 +206,22 @@ test('a path in the body is refused before any handler runs (the browser names n
 })
 
 /**
- * #162: the save route's whitelist is DERIVED from `SETTINGS_FIELDS`, never copied.
+ * The save route's whitelist is DERIVED from `SETTINGS_FIELDS`, never copied.
  *
  * The failure this pins is quiet by construction: a hand-copied list that misses one
  * field still answers 200 for every OTHER field, and only the missing one is a 400
- * `UNEXPECTED_BODY_FIELD` — on a field the settings layer stores happily. #41 added
+ * `UNEXPECTED_BODY_FIELD` — on a field the settings layer stores happily. The settings work added
  * `semanticEndpoint`/`semanticApiKey` and the copy survived by luck.
  */
-test('the settings save whitelist is SETTINGS_FIELDS + confirm, derived not copied (#162)', () => {
+test('the settings save whitelist is SETTINGS_FIELDS + confirm, derived not copied', () => {
   assert.ok(Array.isArray(SETTINGS_FIELDS), 'SETTINGS_FIELDS must be exported')
   assert.ok(Array.isArray(HUB_SETTINGS_BODY_FIELDS), 'hub-settings.ts must export HUB_SETTINGS_BODY_FIELDS')
 
-  // No omission: every stored setting can travel. A missing one is the #162 400.
+  // No omission: every stored setting can travel. A missing one is the 400.
   for (const field of SETTINGS_FIELDS) {
     assert.ok(
       HUB_SETTINGS_BODY_FIELDS.includes(field),
-      `HUB_SETTINGS_BODY_FIELDS must accept the setting \`${field}\` (#162)`,
+      `HUB_SETTINGS_BODY_FIELDS must accept the setting \`${field}\``,
     )
   }
 
@@ -238,7 +238,7 @@ test('the settings save whitelist is SETTINGS_FIELDS + confirm, derived not copi
   assert.deepEqual([...HUB_SETTINGS_BODY_FIELDS], [...SETTINGS_FIELDS, 'confirm'])
 })
 
-test('every settings field passes the save route body whitelist (#162)', async () => {
+test('every settings field passes the save route body whitelist', async () => {
   const h = harness()
   try {
     // One legal sample per field, so a field cannot pass merely because it was absent.
@@ -261,7 +261,7 @@ test('every settings field passes the save route body whitelist (#162)', async (
       assert.notEqual(
         reply.json.error?.code,
         'UNEXPECTED_BODY_FIELD',
-        `\`${field}\` is a legal setting but the route refused it (#162): ${JSON.stringify(reply.json)}`,
+        `\`${field}\` is a legal setting but the route refused it: ${JSON.stringify(reply.json)}`,
       )
       assert.equal(reply.status, 200)
       assert.equal(reply.json.error.code, 'CONFIRM_REQUIRED', `${field} should stop at the confirm net`)
@@ -288,7 +288,7 @@ test('the backup anchor is a registry id or a directory name; an unknown or ambi
     assert.equal(byName.json.value.book.workspaceId, 'ws-2')
 
     // The third spelling is the one the shared-content routes on this same channel use
-    // (#40): the book's exact registered PATH. Accepted because the registry is the only
+    // the book's exact registered PATH. Accepted because the registry is the only
     // authority — a path outside it is still refused below.
     const byPath = await get(h, `/backups?book=${encodeURIComponent(h.bookA)}`)
     assert.equal(byPath.json.ok, true, JSON.stringify(byPath.json))

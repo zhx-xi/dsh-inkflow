@@ -141,7 +141,7 @@ function checkCommand() {
     if (current.unprotected) {
       // A valid answer, and the one the exit starts from: there is no protection
       // to compare against. Tolerant mode must not swallow it — "no gate at all"
-      // is a configuration error, not a missing verdict (issue #99).
+      // is a configuration error, not a missing verdict.
       if (asJson) {
         console.log(JSON.stringify({ repo, branch, ok: false, unprotected: true, problems: ['branch is not protected'] }, null, 2))
       } else {
@@ -174,7 +174,7 @@ function applyCommand() {
   // The one exception is "not protected at all" (404 `Branch not protected`):
   // that IS the emergency exit's starting state, and there is nothing to carry
   // over. Refusing it made the documented exit unreachable — the only way back
-  // was a manual `gh api -X PUT` (issue #99).
+  // was a manual `gh api -X PUT`.
   const current = readProtectionApi(repo)
   if (!current.ok && !current.unprotected) {
     console.error(`✗ refusing to apply: could not read the current protection (${current.reason})`)

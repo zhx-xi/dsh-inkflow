@@ -1,5 +1,5 @@
 /**
- * Relation domain (#27) — data-model §3.3, §5 (I-08), roadmap X-3a.
+ * Relation domain — data-model §3.3, §5 (I-08), roadmap X-3a.
  *
  * What these tests pin, in the order the issue's acceptance criteria list it:
  *   1. an edge is one file under `relations/`, and creating it makes both of its ends
@@ -10,7 +10,7 @@
  *   3. deleting the file removes the edge and its entity again;
  *   4. one entity's edges come back in a single call, in both roles;
  *   5. a character file that still carries an old relation field is warned about on a
- *      rebuild and never blocks an edit (the #34/#36 migration, not this issue);
+ *      rebuild and never blocks an edit (the migration, not this domain);
  *   6. the index schema version moved, because `relations` is a new table (no ALTER).
  *
  * Runs against the BUILT artifact, like every other contract test.
@@ -127,7 +127,7 @@ function withBook(body) {
 
 test('the index schema version moved past 2 for the relations table', () => {
   // New table, no ALTER (ADR-0005): the version is the whole migration. Asserted as a
-  // floor, not as `=== 3`, because the next data domain (#28 timeline, #31, #32) bumps
+  // floor, not as `=== 3`, because the next data domain (timeline) bumps
   // it again and this line must not become the rebase conflict of the batch.
   assert.ok(INDEX_SCHEMA_VERSION > 2, `expected a bump past v2, got v${String(INDEX_SCHEMA_VERSION)}`)
 })
@@ -407,7 +407,7 @@ test(
 test(
   'a legacy relation field in a character file only warns, and never blocks a write',
   withBook(async (root) => {
-    // #34/#36 migrate existing books; #27 only stops reading the field. So the file is
+    // The migrators fix existing books; this domain only stops reading the field. So the file is
     // reported once per rebuild, and an edit to *another* file still goes through.
     markdown(root, 'characters/旧卡.md', ['id: c-4', 'name: 旧卡', 'relations: [c-1]'], '旧格式。')
 

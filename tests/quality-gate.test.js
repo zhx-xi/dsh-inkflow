@@ -1,7 +1,7 @@
 /**
- * Issue #44 — the seven quality gates (roadmap X-24/X-26, ADR-0022 D3/D4).
+ * The seven quality gates (roadmap X-24/X-26, ADR-0022 D3/D4).
  *
- * `tests/gate.test.js` is already taken: it is #8's four-state *workspace* gate, a different
+ * `tests/gate.test.js` is already taken: it is 's four-state *workspace* gate, a different
  * subject with the same word in it. This file is the *quality* gate — seven checks over one
  * chapter, and one deterministic conclusion file per chapter.
  *
@@ -172,7 +172,7 @@ const LONG_SCENE = [
   '「带的东西不多。」她说，「够用。你要试试吗？」',
 ].join('\n\n')
 
-// --- 太碎（#214 B 块）的夹具 -------------------------------------------------
+// --- 太碎（反方向的三种毛病）的夹具 -------------------------------------
 //
 // 六维只抓「长而匀」，反方向的三种毛病（电报体、一句连接词都没有、一段砌成墙）
 // 此前零覆盖。下面每组都是**一对**：一份确实有毛病，一份是同样写法下的正常正文。
@@ -358,7 +358,7 @@ test('质量门禁：干净正文不报（负例，逐项）', async (t) => {
 })
 
 // ---------------------------------------------------------------------------
-// 2b. 太碎（#214 B 块）—— 六维只抓「长而匀」，这一组抓反方向
+// 2b. 太碎（反方向的三种毛病）—— 六维只抓「长而匀」，这一组抓反方向
 // ---------------------------------------------------------------------------
 
 test('质量门禁：太碎三码各自拦得住（正例）', async (t) => {
@@ -530,7 +530,7 @@ test('质量门禁：同一章跑两次，结论文件字节相同、无时间�
       assert.equal(cause.status, 0, `git diff --no-index must be empty: ${String(cause.stdout ?? '')}`)
     }
 
-    // No timestamp, no absolute path anywhere in the conclusion (ADR-0022 D4 #3).
+    // No timestamp, no absolute path anywhere in the conclusion (ADR-0022 D4 rule 3).
     assert.equal(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/u.test(after), false, 'the file must not carry a timestamp')
     assert.equal(after.includes(fixture.root.replaceAll('\\', '\\\\')), false, 'the file must not carry the absolute root')
     assert.equal(after.includes(fixture.root), false, 'the file must not carry the absolute root')
@@ -704,7 +704,7 @@ test('质量门禁：工具 inkflow_gate_check 回八项、落一个文件，wri
     const value = await callTool(harness, 'inkflow_gate_check', { projectRoot: fixture.root })
     assert.equal(value.ok, true)
     assert.deepEqual(value.checks.map((check) => check.id), [...GATE_CHECK_IDS])
-    // #212 的预期变更：门禁从七项变八项（新增 degeneration）。这条断言是本次唯一按「七→八」
+    // 本次改动的预期变更：门禁从七项变八项（新增 degeneration）。这条断言是唯一按「七→八」
     // 显式更新的项数断言，不是放宽 —— 上一条 `deepEqual(GATE_CHECK_IDS)` 仍然钉住顺序。
     assert.equal(value.checks.length, 8)
     assert.ok(value.counts.total > 0)

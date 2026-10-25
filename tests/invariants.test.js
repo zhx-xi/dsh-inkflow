@@ -1,5 +1,5 @@
 /**
- * Issue #8 — one failing fixture per invariant (data-model.md §5, I-01…I-10).
+ * One failing fixture per invariant (data-model.md §5, I-01…I-10).
  *
  * The index is a cache (ADR-0005) and invariant findings never block it
  * (conventions.md §4): a rebuild reports every problem as a machine-readable

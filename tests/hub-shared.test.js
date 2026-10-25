@@ -1,5 +1,5 @@
 /**
- * Contract tests for the shared-content (只读) route (ADR-0010 D5, issue #87).
+ * Contract tests for the shared-content (只读) route (ADR-0010 D5).
  *
  * The shared library is a **plugin-level** directory (`dataDir/shared`, ADR-0007
  * C1), not part of any book, and the book hub only ever BROWNS it. These tests
@@ -11,7 +11,7 @@
  *   2. SOURCE — the derived manifest `shared/index.json` is used when it agrees
  *      with the directory, and an in-memory rescan answers `indexSource:'scan'`
  *      when it is missing or disagrees. The manifest is **never written back**
- *      (writes belong to #40).
+ *      (writes belong to the copy/update tools).
  *   3. EMPTY IS NOT AN ERROR — a missing library answers `created:false`, and
  *      neither the library nor any file is created.
  *   4. PATH DISCIPLINE — entries must stay inside the four kind directories:
@@ -280,7 +280,7 @@ test('a missing manifest is rebuilt in memory, and the rebuilt answer is not wri
   const value = response.json.value
   assert.equal(value.indexSource, 'scan', 'no manifest means the directory is scanned')
   assert.equal(value.entries.length, 5)
-  assert.equal(existsSync(indexFile), false, 'the hub does not create shared/index.json (that is #40)')
+  assert.equal(existsSync(indexFile), false, 'the hub does not create shared/index.json (that is the copy/update tools\' job)')
 
   const world = byPath(value, 'world/门派/白鹤门.md')
   assert.equal(world.sha256, sha256OfFile(join(root, 'world', '门派', '白鹤门.md')), 'the scan computes the real hash')
@@ -565,10 +565,10 @@ test('an unusable data directory answers SHARED_UNAVAILABLE instead of an empty 
 })
 
 // ---------------------------------------------------------------------------
-// 6. The root comes from the settings file (#150)
+// 6. The root comes from the settings file
 // ---------------------------------------------------------------------------
 //
-// `settings.json` has carried `sharedRoot` since #42, and until #150 nothing read
+// `settings.json` has carried `sharedRoot` from the start and until now nothing read
 // it: the library was always `dataDir/shared`, so a configured directory silently
 // did nothing. These three cases pin the wiring (setting wins, a bad value falls
 // back with a warning, an unset field is silent) and, in each one, that answering

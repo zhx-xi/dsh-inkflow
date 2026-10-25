@@ -1,5 +1,5 @@
 /**
- * Writing context (issue #20): the four facts injected into a writing session's
+ * Writing context: the four facts injected into a writing session's
  * system prompt — project summary, current chapter, previous chapter's tail,
  * and the world-book entries this chapter triggers.
  *
@@ -20,11 +20,11 @@
  * Everything imports the BUILT bundle (`lib/index.js`), like the rest of the
  * suite: the tests exercise what users install.
  *
- * Since #183 the injected text is the **nine-segment brief** (`buildWritingBrief`,
+ * The injected text is now the **nine-segment brief** (`buildWritingBrief`,
  * ADR-0022 D2) rather than the six-segment context; `buildWritingContext` stays
  * exported and tested because it is the other projection of the same renderers and
  * because the equivalence test below compares the two byte for byte. The three
- * assertions that used to pin the six-segment shape are marked `MIGRATED (#183)`
+ * assertions that used to pin the six-segment shape are marked `MIGRATED`
  * where they stand.
  */
 
@@ -296,7 +296,7 @@ test('an explicit chapterSeq overrides "the newest chapter"', async (t) => {
 })
 
 /**
- * #183 — MIGRATED, not deleted. This test used to pin the six-rung ladder of
+ * MIGRATED, not deleted. This test used to pin the six-rung ladder of
  * `buildWritingContext` (`项目摘要 → 当前章大纲 → 世界书 → 上章结尾`, reported as
  * the `trimmed` label list). The generation path now injects the nine-segment
  * brief, so the ladder the model is subject to is ADR-0022 D2's
@@ -323,7 +323,7 @@ test('the brief trims in the documented order and never drops the task statement
 
   const ladder = [...BRIEF_TRIM_ORDER]
   const labels = ladder.map((id) => BRIEF_LABELS[id])
-  // The six-segment labels the injection used to report (#20): they must be gone from
+  // The six-segment labels the injection used to report: they must be gone from
   // the wire marker, otherwise a reader cannot tell which assembly produced the text.
   const retired = ['项目摘要', '当前章大纲']
   const reached = new Set()
@@ -340,7 +340,7 @@ test('the brief trims in the documented order and never drops the task statement
     const trimmed = brief.trims.map((trim) => trim.segment)
     // A segment may be trimmed twice (the tail shrinks, then drops), so order is
     // asserted on the distinct sequence: it can only ever walk the ladder forward.
-    // NOTE (#183): this fixture has no `facts/` or `foreshadowing/` sources, so those
+    // NOTE: this fixture has no `facts/` or `foreshadowing/` sources, so those
     // rungs render exactly like the rung above them and are skipped by the builder —
     // hence "a subsequence of the ladder", not "a prefix of it" (the prefix form holds
     // for a book with all four sources; `tests/brief.test.js` sweeps that one).
@@ -372,7 +372,7 @@ test('the brief trims in the documented order and never drops the task statement
       const order = named.map((label) => labels.indexOf(label))
       assert.deepEqual(order, [...order].sort((left, right) => left - right), 'the marker follows the ladder')
       for (const label of retired) {
-        assert.ok(!named.includes(label), `the retired label "${label}" is off the wire (#183)`)
+        assert.ok(!named.includes(label), `the retired label "${label}" is off the wire`)
       }
     }
     // The undroppable three never spend a trim, whatever the budget.
@@ -412,7 +412,7 @@ test('the brief trims in the documented order and never drops the task statement
     'a dropped tail carries a recovery path',
   )
 
-  // Squeezed to the floor. MIGRATED ANSWER (#183): the six-segment context dropped the
+  // Squeezed to the floor. MIGRATED ANSWER: the six-segment context dropped the
   // chapter outline here; the brief may not, so it goes over budget and says so.
   const squeezed = buildWritingBrief(root, { budgetTokens: 20 })
   assert.equal(squeezed.overBudget, true, 'over budget rather than dropping the task statement')
@@ -423,7 +423,7 @@ test('the brief trims in the documented order and never drops the task statement
 })
 
 // ---------------------------------------------------------------------------
-// #183: the injection assembly IS the brief
+// The injection assembly IS the brief
 // ---------------------------------------------------------------------------
 
 /**
@@ -433,7 +433,7 @@ test('the brief trims in the documented order and never drops the task statement
  * brief" would also mean "and the chapter block reads differently now" — an
  * invisible edit to what the model is told.
  */
-test('the shared segments come out byte-identical through both assemblies (#183)', async (t) => {
+test('the shared segments come out byte-identical through both assemblies', async (t) => {
   const root = workdir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
@@ -461,13 +461,13 @@ test('the shared segments come out byte-identical through both assemblies (#183)
 })
 
 /**
- * #213 gave `promise` / `anchors` a source (the chapter outline's own `- [承诺]` /
+ * The marker lines gave `promise` / `anchors` a source (the chapter outline's own `- [承诺]` /
  * `- [锚点]` bullets). This fixture's outline writes neither, so the honest gap must
  * still be a gap: absent, never invented instructions in front of the writer. Pinned
  * through the injected text, because that is where a placeholder would hurt. The other
  * direction — a node that DOES write them — is pinned in `tests/brief.test.js`.
  */
-test('promise and anchors stay honestly missing when the outline writes no marker (#213)', async (t) => {
+test('promise and anchors stay honestly missing when the outline writes no marker', async (t) => {
   const root = workdir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
@@ -493,7 +493,7 @@ test('promise and anchors stay honestly missing when the outline writes no marke
  * volume, sequence, status and the outline path — losing that would leave the model
  * writing into an unnamed chapter. Pinned here so the switch cannot quietly drop it.
  */
-test('the injected text still addresses the chapter it is for (#183)', async (t) => {
+test('the injected text still addresses the chapter it is for', async (t) => {
   const root = workdir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
@@ -664,7 +664,7 @@ test('the section is registered once and its text is the nine-segment brief', as
   assert.equal(sections[0].order, PROMPT_SECTION_ORDER)
 
   const text = sections[0].text({ agent: { session: { id: 'session-1' } } })
-  // MIGRATED (#183): this used to pin `=== buildWritingContext(root).text` — the
+  // MIGRATED: this used to pin `=== buildWritingContext(root).text` — the
   // six-segment assembly. The generation path now injects the brief, and the pin
   // moves with it: byte-for-byte the brief's own `text`, so the preview, the audit
   // record and the model keep reading one computation (ADR-0022 D1, X-23).
@@ -735,7 +735,7 @@ test('a duplicate registration is survivable', () => {
   assert.ok(logs.some((entry) => entry.level === 'warn' && entry.text.includes('already registered')))
 })
 
-test('apply() assembles the section and honours the configured budget', async (t) => {
+test('apply assembles the section and honours the configured budget', async (t) => {
   const root = workdir()
   const dataDir = workdir()
   t.after(() => {
@@ -762,7 +762,7 @@ test('apply() assembles the section and honours the configured budget', async (t
 })
 
 /**
- * #183 / ADR-0022 D2: "每次裁剪都要埋点……同一章的超预算次数进诊断包". The counter
+ * ADR-0022 D2: "每次裁剪都要埋点……同一章的超预算次数进诊断包". The counter
  * lives on `briefFor`, and `briefFor` is what the injection calls now — so a
  * squeezed injection has to show up in `briefRunSummary()` (which is what
  * `inkflow_diagnostics_export` reads). Before the switch the injected text came

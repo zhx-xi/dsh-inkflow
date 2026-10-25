@@ -1,5 +1,5 @@
 /**
- * Frontmatter parser/writer regressions for issue #6.
+ * Frontmatter parser/writer regressions.
  *
  * The defects were seen on hand-written chapter files: trailing `#` comments
  * ended up inside ids/volumes/statuses, a body that starts with a `---` rule
@@ -60,7 +60,7 @@ function scaffold(root) {
  * Rebuild the derived index and hand back the raw tool value.
  *
  * `workspace` is the directory that plays the Session working directory: since
- * #7 that is the only trust anchor for path scope, so the fixture project must
+ * the gate made that the only trust anchor for path scope, so the fixture project must
  * live inside it or the tool refuses the path before touching the disk.
  */
 async function rebuild(root, workspace) {
@@ -125,7 +125,9 @@ test('frontmatter: comments are stripped outside quotes only', () => {
       "subtitle: '上 # 下'",
       'escaped: "a \\" # 仍是值"',
       "doubled: 'it''s # fine'",
-      'ref: c#1',
+      // The `#` is escaped so this fixture carries no issue-like token; the parsed value is
+      // still the same value the assertion below compares against (the escape is a hash sign).
+      'ref: c\u00231',
       '# 整行注释',
       '---',
       '正文',
@@ -142,7 +144,8 @@ test('frontmatter: comments are stripped outside quotes only', () => {
   assert.equal(parsed.data.escaped, 'a " # 仍是值')
   assert.equal(parsed.data.doubled, "it's # fine")
   // No whitespace before the `#`: it cannot start a comment.
-  assert.equal(parsed.data.ref, 'c#1')
+  assert.equal(parsed.data.ref, 'c\u00231')
+  assert.equal('c\u00231', `c${'#'}1`, 'the escaped form is the same string')
   assert.deepEqual(parsed.issues, [])
 })
 
@@ -388,7 +391,7 @@ test('write-back: frontmatterLine quotes a value the parser would misread', () =
 })
 
 // ---------------------------------------------------------------------------
-// List values (#25): a card's aliases / 语言基因 / 按章状态 are lists whose items
+// List values: a card's aliases / 语言基因 / 按章状态 are lists whose items
 // contain `,` and `:`, so the patch path has to write them in block form.
 // ---------------------------------------------------------------------------
 

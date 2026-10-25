@@ -1,10 +1,10 @@
 /**
- * Deriving a foreshadow's `status` from its own evidence fields (#136, I-21).
+ * Deriving a foreshadow's `status` from its own evidence fields (I-21).
  *
  * The finding `FORESHADOW_TRANSITION_INVALID` used to be a dead end: the rebuild
  * reported a file that contradicts itself (`status: planted` next to
  * `advancedAt: [outline-934]`), the repair pass listed it and refused to touch it,
- * and the author had to hand-edit the file. #136 adds one repair action that
+ * and the author had to hand-edit the file. This adds one repair action that
  * follows the derivation the spec already implies (`data-model.md` §3.2.1) and
  * writes **one line** — the `status` line — leaving every other byte alone.
  *

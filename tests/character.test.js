@@ -1,5 +1,5 @@
 /**
- * Character cards (issue #25) — the character domain's write side, card fields and
+ * Character cards — the character domain's write side, card fields and
  * the project-wide name rule (data-model.md §3, §5 I-03).
  *
  * What is pinned here, and why each row can FAIL:

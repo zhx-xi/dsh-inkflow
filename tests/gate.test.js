@@ -1,5 +1,5 @@
 /**
- * Issue #8 — the four-state gate, item by item (conventions.md §1, ADR-0006 D2).
+ * The four-state gate, item by item (conventions.md §1, ADR-0006 D2).
  *
  * The gate is the plugin's only identity check, so "ten directories" has to mean
  * ten *individually reported* items, not one aggregate boolean. Every fixture
@@ -7,11 +7,11 @@
  * names the item that is not wired up.
  *
  * Existing coverage this file deliberately builds on (not repeats):
- *   - workspace.test.js #1  empty directory → needs-setup, plan is read-only
- *   - workspace.test.js #4  newer meta, complete tree → read-only, zero writes
- *   - workspace.test.js #5  ten directories → usable
- *   - workspace.test.js #7  one missing .gitkeep → repair recreates only that file
- *   - workspace.test.js #10 only index/ missing → usable, gate recreates it
+ *   - workspace.test.js: empty directory → needs-setup, plan is read-only
+ *   - workspace.test.js: newer meta, complete tree → read-only, zero writes
+ *   - workspace.test.js: ten directories → usable
+ *   - workspace.test.js: one missing .gitkeep → repair recreates only that file
+ *   - workspace.test.js: only index/ missing → usable, gate recreates it
  *
  * New here: one subtest per required directory, one subtest per `.gitkeep`,
  * the ten-item identity of `checks.dirs`, the exact single-gap repair, and the

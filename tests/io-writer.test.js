@@ -1,5 +1,5 @@
 /**
- * Write-layer contract (issue #14): one atomic writer, one project write lock,
+ * Write-layer contract: one atomic writer, one project write lock,
  * one path resolver.
  *
  * The plugin runs un-sandboxed in the host process (hard-constraints H7), so
@@ -512,7 +512,7 @@ test('io: the private state directory is writable only inside its eight subdirec
 
     // ADR-0012 / roadmap X-9, X-18, X-25: exactly trash/ backup/ audit/ candidates/
     // proposals/ jobs/ review/ purged/ — one segment deeper than a content directory
-    // because the file lives inside the subdirectory. `purged/` is #199's holding area
+    // because the file lives inside the subdirectory. `purged/` is the private purge area
     // (ADR-0026): a closed list, and widening it stays an explicit decision.
     for (const sub of ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs', 'review', 'purged']) {
       const resolved = resolveWriteTarget(root, `.inkflow/${sub}/chapters/vol-01/0001-a.md`)
@@ -825,7 +825,7 @@ test('io: a verbatim write restores the previous bytes exactly (rollback path)',
 })
 
 // ---------------------------------------------------------------------------
-// 8. The capability layer stays off the tool registry (issue #14 is capability
-// only; the tool wiring belongs to #16). The exact tool list is asserted in
+// 8. The capability layer stays off the tool registry (that module is capability
+// only; the tool wiring belongs to the chapter domain). The exact tool list is asserted in
 // contract.test.js, which would fail if a tool were registered here.
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 /**
- * The maintenance tools as the model actually reaches them (#36).
+ * The maintenance tools as the model actually reaches them.
  *
  * `repair.test.js` and `migrate.test.js` call the modules directly; this file drives
  * the registered tool surface instead, because three failure modes only exist there:

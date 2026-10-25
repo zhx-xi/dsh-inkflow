@@ -1,5 +1,5 @@
 /**
- * The recovery bin (#35, roadmap X-9 / X-10, ADR-0012): a delete keeps a copy
+ * The recovery bin (roadmap X-9 / X-10, ADR-0012): a delete keeps a copy
  * under `<book>/.inkflow/trash/<the original relative path>` plus one manifest
  * entry, and nothing in the bin is ever more than a copy — the chapter tree, the
  * search index and `entities` must stop seeing what was deleted.
@@ -221,7 +221,7 @@ function manifestOf(root) {
 
 function trunkChanges(root) {
   // `git status --porcelain -uall`: the only acceptable mention of `.inkflow/`
-  // is none at all (it is ignored from the first write, ADR-0012 #2).
+  // is none at all (it is ignored from the first write, ADR-0012 decision 2).
   //
   // `core.quotepath=false` is not cosmetic: with the default, git escapes every
   // non-ASCII byte (`"\345\274\200\347\257\207"`), so a Chinese file name matches
@@ -435,7 +435,7 @@ test('purging needs confirm: true, then empties the bin', async () => {
 })
 
 // ---------------------------------------------------------------------------
-// 4b. One slot per original path (PR #123 review B1)
+// 4b. One slot per original path (review B1)
 //
 // The copy is keyed by the ORIGINAL path, so two deletions of that path would
 // share one location: the second `writeTextAtomic` would silently replace the
@@ -805,7 +805,7 @@ test('the deleted chapter leaves the tree, the search and entities; the bin neve
     assert.equal(before.json.value.total, 1)
     // Two different searches on purpose. The channel's `/search` route answers
     // chapter METADATA only in this build (`searchUnavailable: true`, reason
-    // quoted from issue #22), so a hit there proves the catalog; the prose answer
+    // quoted from the acceptance case), so a hit there proves the catalog; the prose answer
     // comes from `searchChapters`, which reads `chapters_fts` in the derived
     // index. "Gone from retrieval" has to hold for both.
     const metadataBefore = await read(harness, '/search?q=开篇')
