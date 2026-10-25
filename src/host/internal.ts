@@ -1194,7 +1194,6 @@ export {
 } from './extract-channel.js'
 export type { CandidateReply, CandidateSource } from './extract-channel.js'
 // ---------------------------------------------------------------------------
-<<<<<<< HEAD
 // issue #43 — the nine-segment brief (ADR-0022 D1/D2, X-23). The assembly lives in
 // `writing-context.ts` (`buildWritingBrief`, beside the six-segment context it must not
 // disturb), the two new sources in `brief-sources.ts`, the audit record and both channel
@@ -1205,7 +1204,6 @@ export type { CandidateReply, CandidateSource } from './extract-channel.js'
 
 export { BRIEF_AUDIT_BODY_FIELDS, briefOptionsFromQuery, buildBrief, exportBriefAudit } from './brief.js'
 export type { BriefChannelSource, BriefReply } from './brief.js'
-=======
 // issue #44 — the quality gate (ADR-0022 D4, X-24/X-26). The engine is `gate.ts`
 // (files → seven checks → the deterministic conclusion file under `.inkflow/audit/`),
 // the rules in `gate-rules.ts`. Re-exported here so `routes.ts` keeps ONE entry point for
@@ -1214,4 +1212,3 @@ export type { BriefChannelSource, BriefReply } from './brief.js'
 
 export { GATE_CHECK_IDS, GATE_LIST_LIMIT, buildGate } from './gate.js'
 export type { GateReport, GateResult } from './gate.js'
->>>>>>> cea52c8 (feat(gate): 质量门禁七项与确定性结论文件（含机械校对）(#44))
