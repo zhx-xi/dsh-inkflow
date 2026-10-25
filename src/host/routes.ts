@@ -80,6 +80,9 @@ import {
   sharedCopyReply,
   sharedUpdateReply,
 } from './shared-channel.js'
+// The series sync (#49) reuses #40's anchor rule (`registeredBook`/`usableBook`) rather than
+// restating "which directory may I write into" — one guard, one place.
+import { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'
 import {
   HUB_BACKUP_CREATE_BODY_FIELDS,
   HUB_BACKUP_RESTORE_BODY_FIELDS,
@@ -985,6 +988,25 @@ const HUB_ROUTES: readonly HubRoute[] = [
     methods: ['POST'],
     body: SHARED_UPDATE_BODY_FIELDS,
     handle: ({ ctx, dataDir, body }) => sharedUpdateReply(ctx, dataDir, body),
+  },
+  {
+    // The series sync (#49): what a sync would do to ONE registered book. A GET because it
+    // writes nothing at all — previewing a diff must not need the write guards, and the
+    // plan is exactly what `apply` compares against (X-17).
+    name: 'hub-series-plan',
+    pattern: /^\/hub\/series\/plan$/,
+    methods: ['GET'],
+    handle: ({ ctx, dataDir, query }) => seriesPlanReply(ctx, dataDir, query.get('book') ?? undefined),
+  },
+  {
+    // Performing the approved plan. A hub write, so every guard above applies; `confirm`
+    // is the net under the panel's armed button, and every conflict needs a decision or
+    // the answer is SERIES_CONFLICT_UNRESOLVED with zero writes.
+    name: 'hub-series-apply',
+    pattern: /^\/hub\/series\/apply$/,
+    methods: ['POST'],
+    body: SERIES_APPLY_BODY_FIELDS,
+    handle: ({ ctx, dataDir, body }) => seriesApplyReply(ctx, dataDir, body),
   },
   {
     // The settings page (#42, ADR-0018 D1): settings live OUTSIDE every book, so this

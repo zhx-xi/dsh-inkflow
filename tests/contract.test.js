@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the forty-nine built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the fifty-one built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -299,6 +299,11 @@ test('registers the forty-nine built-ins, the tools of every registered domain, 
       'inkflow_semantic_purge',
       'inkflow_semantic_rebuild',
       'inkflow_semantic_status',
+      // #49: the series sync — plan (read-only) and apply (the four-row plan with a decision
+      // per conflict). Built-ins: they read the plugin-level library and write into
+      // `world/`/`library/`, so no content directory owns them.
+      'inkflow_series_apply',
+      'inkflow_series_plan',
       // #42: settings. Built-ins that touch no book at all — they read and write
       // `$DSH_HOME/inkflow/settings.json` (ADR-0018 D1).
       'inkflow_settings_get',

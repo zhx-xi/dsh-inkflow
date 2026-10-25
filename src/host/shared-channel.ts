@@ -64,7 +64,7 @@ function text(value: unknown): string {
  * panel may echo the path it was handed with different casing or a trailing
  * separator on Windows.
  */
-function registeredBook(ctx: HostContext, book: unknown): { ok: true; root: string } | { ok: false; reply: SharedChannelReply } {
+export function registeredBook(ctx: HostContext, book: unknown): { ok: true; root: string } | { ok: false; reply: SharedChannelReply } {
   const wanted = text(book)
   if (wanted === '') {
     return {
@@ -108,7 +108,7 @@ function registeredBook(ctx: HostContext, book: unknown): { ok: true; root: stri
 }
 
 /** A book the gate allows to be written: the checklist travels on refusal. */
-function usableBook(root: string): SharedChannelReply | undefined {
+export function usableBook(root: string): SharedChannelReply | undefined {
   const probe = inspectProject(root, { recreateIndexDir: false })
   if (probe.usable) return undefined
   return {

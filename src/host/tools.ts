@@ -50,6 +50,7 @@ import { reviewTools } from './review-tools.js'
 import { proposalTools } from './proposal-tools.js'
 import { jobsTools } from './jobs-tools.js'
 import { exportTools } from './export-tools.js'
+import { seriesTools } from './series-tools.js'
 
 export interface ToolDeps {
   ctx: HostContext
@@ -2253,6 +2254,11 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // rather than a domain tool: it reads every content directory at once, so no single
     // content directory owns it.
     ...exportTools(deps),
+    // The series sync (#49, ADR-0007 C2/C5, X-17): plan / apply. Built-ins for the same reason
+    // as the shared library they extend — they read the plugin-level library and write into
+    // `world/`/`library/`, so no content directory owns them; and `apply` recomputes the plan
+    // so it can only write the rows a preview produced.
+    ...seriesTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),

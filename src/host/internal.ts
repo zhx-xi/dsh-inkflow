@@ -1248,3 +1248,13 @@ export type { ProposalReply, ProposalSource } from './proposal-channel.js'
 
 export { BATCH_RESUME_BODY_FIELDS, buildBatchPage, resumeViaChannel } from './jobs-wire.js'
 export type { BatchChapterRow, BatchCounts, BatchDetail, BatchPage } from './jobs-wire.js'
+// ---------------------------------------------------------------------------
+// issue #49 — the series sync (ADR-0007 C2/C5, X-17). The engine is `series.ts` (plan and apply
+// on ONE computation, a decision per conflict, the run record under `.inkflow/audit/`), the two
+// hub replies in `series-channel.ts`, the tool surface in `series-tools.ts`. Re-exported here so
+// `routes.ts` keeps ONE entry point for the channel — the same arrangement as the gate (#44),
+// the review (#46), the proposals (#45) and the batch queue (#47).
+// ---------------------------------------------------------------------------
+
+export { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'
+

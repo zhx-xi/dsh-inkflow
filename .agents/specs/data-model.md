@@ -341,6 +341,39 @@ origin:
 2. **续跑判据是摘要不是文件存在**：`done` 的章必须 `digest` 等于磁盘字节才跳过；不一致即 `edited`（作者的改动永不覆盖）；手工新建的空章不是「已完成」，照样被领取。
 3. **门禁不通过零写盘**：`held` 的章只有 `pendingBody` 与判决进记录，`chapters/` 一个字节不动；只有 `inkflow_batch_approve`（`confirm: true`）才把那份草稿写进正文。
 
+### 3.10 系列同步的计划与运行记录
+
+系列同步（#49）不新增任何**内容文件**：目标文件仍是 `world/<category>/<slug>.md` 与 `library/<slug>.md`（与 [ADR-0007](../adrs/0007-plugin-shared-library.md) C2 的复制落位同一套映射，由 `sharedDestinationOf` 一处产出），`origin` 仍是 §3.7 那三字段。它新增的是两样**过程产物**。
+
+**计划（`plan` 的返回值，不落盘）**：一行一条共享条目。
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `entryId` | string | 共享条目 id（`sh-…`）；apply 的集合比较键 |
+| `kind` | `world` \| `library` | 本次同步只覆盖这两类 |
+| `sourcePath` / `targetPath` | string | 共享库侧 / 书内相对路径 |
+| `action` | `create` \| `update` \| `conflict` \| `unchanged` | 四类判定 |
+| `sharedDigest` / `bookDigest` | string（后者 `create` 时缺省） | 两侧**原始字节**的 sha256 |
+| `changedFields` | string[] | 按**读者意义**比较出的差异字段名（忽略 `id`/簿记键/`origin`/`mode`，正文归一 EOL，列表按集合） |
+| `conflict` | `book-diverged` \| `unrelated-file` \| `source-unreadable` | 仅 `conflict` 行：为什么需要人裁决 |
+
+判定规则（`update` 与 `conflict` 的分界线）用 [ADR-0007](../adrs/0007-plugin-shared-library.md) C3 既有的 stale 结论：副本记录的 `origin.contentHash` ≠ 共享库当前 sha256 = 源侧动过 → `update`；相等而内容仍不同 = 差异来自本书侧 → `conflict`（`book-diverged`）；书里的同名文件没有指向这条的 `origin` → `conflict`（`unrelated-file`）。**已知边界**：`origin` 存的是哈希不是原文，所以"源侧动过 + 本书也改过"无法证明，这类只能判 `update`；每次写入都先开备份包，且计划里带着 `changedFields`，作者看得到将被覆盖什么。
+
+**运行记录 `.inkflow/audit/series-<stamp>.json`**（`schemaVersion: 1`，每次 apply 一份）：
+
+| 字段 | 语义 |
+|---|---|
+| `runAt` | ISO 时间戳。**这份文件属于「一次运行」，与门禁结论的「同输入同字节」相反**（ADR-0022 D4.5 的区分），两次执行是两个事件 |
+| `seriesId` | 本次涉及的系列（`inkflow.json.seriesId`，可为 null） |
+| `counts` | 四类计数 |
+| `written[]` | `{entryId, path, action: create \| update \| take-shared, sharedDigest, bookDigest?, changedFields}` |
+| `kept[]` | 裁决 `keep-book` 的行（同上字段） |
+| `skipped[]` | `{entryId, path?, code: SERIES_PLAN_STALE \| SKIP}` — 预览后漂移的、或被裁决跳过的 |
+| `decisions[]` | `{entryId, decision}` |
+| `backupDir` | 本次的回滚包（`.inkflow/backup/<stamp>`，无写入时缺省） |
+
+**不记正文**：只有路径、摘要、字段名与裁决。同秒两次运行不覆盖（文件名加 `-2`…）。`index/` 零新增——运行记录与计划都不是索引内容（X-25）。
+
 ## 4. 派生索引（`index/inkflow.db`）
 
 ### 4.1 v9（现行，`PRAGMA user_version = 9`）

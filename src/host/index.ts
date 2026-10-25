@@ -1076,6 +1076,28 @@ export type {
 } from './shared-copy.js'
 export { scanSharedLibrary } from './hub-shared.js'
 export type { SharedLibraryScan } from './hub-shared.js'
+// The series sync (#49): the engine, exported so the contract tests can call `plan` and
+// `apply` with a plain book on disk — no Host context, no HTTP, no session.
+export { SERIES_SYNC_KINDS, applySeriesSync, buildSeriesPlan, compareSeriesContent, seriesRunName } from './series.js'
+export type {
+  SeriesAction,
+  SeriesApplyInput,
+  SeriesApplyValue,
+  SeriesConflictReason,
+  SeriesDecision,
+  SeriesDecisionChoice,
+  SeriesError,
+  SeriesExclusions,
+  SeriesKeptRow,
+  SeriesPlanCounts,
+  SeriesPlanEntry,
+  SeriesPlanValue,
+  SeriesResult,
+  SeriesRunRecord,
+  SeriesSkippedRow,
+  SeriesWriteRow,
+} from './series.js'
+export { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'
 
 /**
  * The ZIP container (ADR-0018 D3, issue #146): store-only by design, so a backup can

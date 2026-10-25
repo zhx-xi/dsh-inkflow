@@ -269,10 +269,9 @@ test('every shipped tool schema stays inside the Host-supported subset', () => {
   // #41 semantic status / rebuild / purge, #42 settings get/update + diagnostics + backup
   // create/restore), #44 the quality gate, #48's two calendar tools and the relation clue
   // view, #51 the ETL plan/apply pair, #46 the review run/context/compare trio, #45 the four
-  // proposal tools, #47 the four batch tools (enqueue/take/complete/approve), #50 the one
-  // export tool.
-  // 68 = those 60 plus the eight insertion points this milestone added.
-  assert.equal(tools.size, 68, `expected the full tool surface, got ${tools.size}`)
+  // view, #51 the ETL pair, #46 review's trio, #45 the four proposal tools, #50 the export and
+  // #49 the series plan/apply pair. 70 = those 53 plus the seventeen 0.5.0 tools.
+  assert.equal(tools.size, 70, `expected the full tool surface, got ${tools.size}`)
   const failures = []
   for (const [name, tool] of tools) {
     if (tool.parameters === undefined) failures.push(`${name}: no parameters schema`)

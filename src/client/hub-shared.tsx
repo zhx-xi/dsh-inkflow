@@ -51,6 +51,7 @@ import type {
   SharedState,
 } from './hub-shared-model.js'
 import { describeSharedError } from './hub-shared-model.js'
+import { SeriesSyncSection } from './series-sync.js'
 
 // Same tokens as `hub.tsx`; kept local so the two pages stay independent views.
 const sheetStyle = {
@@ -460,6 +461,9 @@ export function SharedLibraryView({
           </div>
         ) : null}
       </div>
+
+      {/* The series sync (#49): the entry lives here, not on a tab of its own (roadmap §2.4). */}
+      <SeriesSyncSection book={selected} />
     </div>
   )
 }
