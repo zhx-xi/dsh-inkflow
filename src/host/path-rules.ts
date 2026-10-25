@@ -9,7 +9,7 @@
  *   - `impact.ts` is the read-only preview (conventions §5.6: "blockers empty means
  *     it can run"). It must name the same refusal *before* the click — otherwise
  *     the dialog promises an executable plan for a name the writer refuses
- *     (`blockers: []` → `400 PATH_RESERVED`, which is what the #34 review found
+ *     (`blockers: []` → `400 PATH_RESERVED`, which is what review found
  *     with `con` / `nul` / `COM1`).
  *
  * Keeping it here also preserves a property `impact.ts` states about itself: the

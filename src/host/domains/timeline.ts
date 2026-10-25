@@ -1,5 +1,5 @@
 /**
- * Timeline domain (`timeline/`) — issue #28.
+ * Timeline domain (`timeline/`).
  *
  * Owns the event table, the two ordering axes and the conflict rules of data-model
  * §3.4: world time, narrative order, the pending area (`status: unconfirmed`), and the

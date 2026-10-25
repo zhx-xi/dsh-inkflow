@@ -1,5 +1,5 @@
 /**
- * Search built-in tools (split out of `tools.ts`, #193): chapter-prose search
+ * Search built-in tools (split out of `tools.ts`): chapter-prose search
  * (`inkflow_chapter_search`), the single all-kind entry point (`inkflow_search`,
  * roadmap X-16) and the two-phase replace batch (`inkflow_search_replace`, X-17).
  *
@@ -92,7 +92,7 @@ export function searchTools(deps: ToolDeps): ToolDefinition[] {
       const limit = typeof a['limit'] === 'number' ? a['limit'] : DEFAULT_SEARCH_LIMIT
       const options = { limit }
 
-      // Issue #5: same single trigger as `inkflow_chapter_list`. The query is
+      // Same single trigger as `inkflow_chapter_list`. The query is
       // validated above, so a rejected query still writes nothing; after that
       // the index is made fresh once and both tools read the same build.
       const ensured = await ensureIndex(probe.root)
@@ -124,12 +124,12 @@ export function searchTools(deps: ToolDeps): ToolDefinition[] {
   }
 
   /**
-   * The single search entry (issue #39, roadmap X-16).
+   * The single search entry (roadmap X-16).
    *
    * One tool for every kind instead of one per kind: the model asks "where is this
    * name" and gets the setting entries and the chapter prose in one paged answer. The
    * envelope is fixed by X-16 (`{kind,id,path,title,snippet,offset?,score?}` per entry,
-   * `{offset,limit,total}` paging, `searchBackend`), so #41 can put a semantic backend
+   * `{offset,limit,total}` paging, `searchBackend`), so a semantic backend can sit
    * behind it without changing this tool.
    */
   const searchAll: ToolDefinition = {
@@ -217,7 +217,7 @@ export function searchTools(deps: ToolDeps): ToolDefinition[] {
       const offset = typeof a['offset'] === 'number' ? a['offset'] : 0
       const limit = typeof a['limit'] === 'number' ? a['limit'] : DEFAULT_SEARCH_LIMIT
 
-      // Same single rebuild trigger as every other read tool (#5): the query is
+      // Same single rebuild trigger as every other read tool: the query is
       // validated above, so a refused query still writes nothing.
       const ensured = await ensureIndex(probe.root)
       if (!ensured.ok) return ensureFailure(ensured, probe.root)
@@ -263,7 +263,7 @@ export function searchTools(deps: ToolDeps): ToolDefinition[] {
   }
 
   /**
-   * Search-and-replace over chapter prose (issue #39, roadmap X-17).
+   * Search-and-replace over chapter prose (roadmap X-17).
    *
    * Two actions in one tool because the contract is "preview = execution": the
    * preview's `items` ARE the `expected` set an apply must carry, and putting them in

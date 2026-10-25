@@ -1,8 +1,8 @@
 /**
  * The cross-class `entities` projection (roadmap X-1) and its full-text index (X-3).
  *
- * Why a projection at all: the nine-class panel (#30), cross-class duplicate-id
- * checks (I-04) and mention resolution (#29) all need "every entity of this book"
+ * Why a projection at all: the nine-class panel, cross-class duplicate-id
+ * checks (I-04) and mention resolution all need "every entity of this book"
  * without unioning six tables. The projection is written from the same scan as the
  * domain tables, in the same transaction, which is what keeps I-15 (`ENTITIES_DRIFT`)
  * a real check rather than a hope.

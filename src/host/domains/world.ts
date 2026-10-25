@@ -6,7 +6,7 @@
  * carry a category, and a `parent` must resolve — across the whole project, not just
  * inside this directory, which is why `validate()` reads the global projection.
  *
- * It also owns the world book's own fields (#26): `keywords` (trigger words),
+ * It also owns the world book's own fields: `keywords` (trigger words),
  * `always` (an entry that is always part of the current chapter's setting) and
  * `priority` (ordering among hits). The matching rule lives in `world-match.ts`,
  * the write-side invariants and tree shape in `world-plan.ts`, and the two
@@ -136,7 +136,7 @@ export const worldDomain: DomainModule = {
   tools(deps) {
     // The domain object is passed in rather than imported by `world-tools.ts`: the write
     // chain must judge with **this** module (`parseFile`/`validate`), and a module that
-    // imports the registry that imports it would close a runtime cycle (#26).
+    // imports the registry that imports it would close a runtime cycle.
     return worldTools(deps, worldDomain)
   },
 }

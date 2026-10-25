@@ -1,5 +1,5 @@
 /**
- * Chapter and volume built-in tools (split out of `tools.ts`, #193): the read side
+ * Chapter and volume built-in tools (split out of `tools.ts`): the read side
  * (`inkflow_chapter_list`) and the write side (volume create/rename, chapter
  * create/write/move/delete). Both go through `chapters.ts` under one write lock; the
  * tools only resolve the gate, pass the arguments through and render the reply.
@@ -100,13 +100,13 @@ export function chapterReadTools(deps: ToolDeps): ToolDefinition[] {
       // The reply reports the page it actually served, so the bounds are applied once
       // here and once inside `listChapters` (which must not trust its caller).
       const page = clampChapterPage(a['limit'], a['offset'])
-      // Issue #5: the read path no longer decides anything itself. `ensureIndex`
+      // The read path no longer decides anything itself. `ensureIndex`
       // is the single trigger, so this list and `inkflow_chapter_search` below
       // can never disagree about which build they are reading.
       const ensured = await ensureIndex(probe.root)
       if (!ensured.ok) return ensureFailure(ensured, probe.root)
       const chapters = listChapters(probe.root, page.limit, page.offset) ?? []
-      // Issue #161: `total` is the book. Reading it back as `chapters.length` made the page
+      // `total` is the book. Reading it back as `chapters.length` made the page
       // cap invisible — a 520-chapter book answered "100 chapters" with no sign of a cut.
       const total = countChapters(probe.root)
       if (total === undefined) {
@@ -123,7 +123,7 @@ export function chapterReadTools(deps: ToolDeps): ToolDefinition[] {
         offset: page.offset,
         // "More chapters follow this page", not "this page is not the book": the latter is
         // already visible from `total` vs `returned`, and it stays true on the LAST page —
-        // which would tell the caller to page on into an empty reply (#161 review).
+        // which would tell the caller to page on into an empty reply (review).
         truncated: page.offset + chapters.length < total,
         indexRebuilt: ensured.rebuilt,
         indexState: ensured.state,

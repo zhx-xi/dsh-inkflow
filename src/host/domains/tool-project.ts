@@ -11,7 +11,7 @@
  * other.
  *
  * `sessionCwd()` is **not** reimplemented here: it already has one home
- * (`src/host/session-cwd.ts`, extracted in #26) and a second copy would drift the
+ * (`src/host/session-cwd.ts`) and a second copy would drift the
  * moment either side learns something new about the `workingDirectory` service.
  * It is re-exported so a caller that reaches for it through this module keeps
  * working.
@@ -64,7 +64,7 @@ export async function resolveProject(
   const found = findProjectRoot(cwd)
   if (found !== undefined) return { cwd, root: found, source: 'cwd', probe: inspectProject(found) }
 
-  // No fallback to state.lastProjectRoot (issue #7): that file records whichever
+  // No fallback to state.lastProjectRoot: that file records whichever
   // session ran last, so answering with it reports another book as this
   // session's project. A session outside a project must say exactly that.
   return { cwd, root: cwd, source: 'none', probe: inspectProject(cwd) }
@@ -79,7 +79,7 @@ export function isRefused(value: Resolution): boolean {
  * A refusal carries the whole next step (ADR-0006 D2): `state`, the per-item
  * `checks`, the `missing` checklist and the `actions` the wizard would perform.
  *
- * `NOT_AN_INKFLOW_PROJECT` keeps its issue-#7 meaning ("nothing here yet"); the
+ * `NOT_AN_INKFLOW_PROJECT` keeps its original meaning ("nothing here yet"); the
  * two actionable states get their own codes so the model cannot answer
  * "run setup" when the book actually exists and only needs repair — or, worse,
  * when it was written by a newer plugin and must not be touched at all.

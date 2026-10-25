@@ -12,8 +12,8 @@
  *     reported as `catalogStale: true` and the projection from the `.md` files
  *     is returned in memory. A read path that wrote would let a diagnostic
  *     panel, an index rebuild or a second session mutate the user's repository.
- *   - `rebuildCatalog` scans under the project write lock (`index/.write.lock`,
- *     issue #14), writes every volume list first and the top-level list last,
+ *   - `rebuildCatalog` scans under the project write lock (`index/.write.lock`)
+ *     and writes every volume list first and the top-level list last,
  *     so a failure halfway leaves the top-level catalog stale rather than
  *     claiming a structure that is only partly on disk.
  *   - `validateCatalog` reports drift and invariant violations; it never blocks
@@ -517,7 +517,7 @@ interface RebuildBody {
  * Regenerate both catalog files from the `.md` files.
  *
  * Scanning happens **inside** the project write lock so the projection cannot
- * interleave with a chapter write from another session (issue #15 acceptance:
+ * interleave with a chapter write from another session (acceptance:
  * two sessions writing the same volume must not drop entries). Files are written
  * volume lists first, top-level list last; on failure the top-level catalog is
  * left untouched, so the read path keeps reporting `catalogStale` instead of a

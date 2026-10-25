@@ -1,5 +1,5 @@
 /**
- * Revision proposals (#45, roadmap X-26): the store, the decisions, the apply and the
+ * Revision proposals (roadmap X-26): the store, the decisions, the apply and the
  * rollback.
  *
  * What a proposal is: `.inkflow/proposals/<proposalId>/` holds **one chapter body, cut

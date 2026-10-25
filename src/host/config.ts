@@ -14,7 +14,7 @@ export interface ResolvedConfig {
   dataDir: string
   /** Whether the loopback-only /inkflow/api/* routes are registered. */
   serveHttp: boolean
-  /** Estimated-token budget for the injected writing context (issue #20). */
+  /** Estimated-token budget for the injected writing context. */
   promptBudgetTokens: number
   /** Characters taken from the previous chapter into that context. */
   promptTailChars: number
@@ -46,7 +46,7 @@ export function dshHome(): string {
  *
  * NOT THE ROOT IN FORCE. A reader that is about to open the library asks
  * `settings.ts`'s `sharedRootOf(dataDir)`, which answers this path only when
- * `settings.json` configures no usable `sharedRoot` (#150). Keeping the default here
+ * `settings.json` configures no usable `sharedRoot`. Keeping the default here
  * and the decision there means one function spells the directory and one decides it.
  */
 export function sharedDir(dataDir: string): string {

@@ -1,9 +1,9 @@
 /**
- * The markdown reports a maintenance run leaves behind (#36, ADR-0012 `audit/`).
+ * The markdown reports a maintenance run leaves behind (ADR-0012 `audit/`).
  *
  * A report is a **derivative**: it can be recomputed from the book at any time and
  * deleting it loses nothing. That is why it lives in `<book>/.inkflow/audit/` (never
- * in a content directory, never in git — ADR-0012 #6) and why this module owns no
+ * in a content directory, never in git — ADR-0012 decision 6) and why this module owns no
  * judgement: it renders what the repair/migration call already decided. Keeping the
  * renderer free of business logic is also what lets both callers share one file
  * without a runtime import cycle (`repair.ts` / `migrate.ts` → here, never back).
@@ -108,7 +108,7 @@ export function repairReportMarkdown(input: RepairReportInput): string {
       input.before.findings.filter((finding) => finding.fixable).length,
     )} 个标为可自动修`,
     '',
-    '> 本报告是派生物：可随时重算，删掉不丢真相（ADR-0012 #6）。',
+    '> 本报告是派生物：可随时重算，删掉不丢真相（ADR-0012 第 6 条）。',
     '',
     '## 1. 修复前的问题（按检查族）',
     '',
@@ -264,7 +264,7 @@ export function migrationReportMarkdown(input: MigrationReportInput): string {
 /**
  * Write one report into `.inkflow/audit/`.
  *
- * The ignore line is appended here rather than at the gate (ADR-0012 #2): this is
+ * The ignore line is appended here rather than at the gate (ADR-0012 decision 2): this is
  * the first moment the directory is used in this book, and a book that never runs a
  * maintenance pass must not carry a `needs-repair` action for an optional line.
  */

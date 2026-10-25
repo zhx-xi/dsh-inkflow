@@ -67,7 +67,7 @@ function hasParent(row: WorldPlanRow): boolean {
  *
  * The flat-category book stays legal on purpose: entries that all live under
  * `world/<category>/` and never claim a parent have no root and must not be
- * reported (settled during the #8 review; see `.agents/specs/data-model.md` §5 I-08).
+ * reported (settled during the review; see `.agents/specs/data-model.md` §5 I-08).
  */
 export function worldIssues(rows: readonly WorldPlanRow[], knownIds: ReadonlySet<string>): ValidationIssue[] {
   const issues: ValidationIssue[] = []

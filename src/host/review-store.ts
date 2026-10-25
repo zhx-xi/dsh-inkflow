@@ -1,8 +1,8 @@
 /**
- * Issue #46 — the run record: its path, its bytes, reading it back, and the wire shapes
+ * The run record: its path, its bytes, reading it back, and the wire shapes
  * the tools and the panel print.
  *
- * Extracted from `review.ts` by #193. A run record is a **fact**, not a cache (ADR-0006 D2 /
+ * Extracted from `review.ts` when it was split. A run record is a **fact**, not a cache (ADR-0006 D2 /
  * ADR-0022 D4.5), so its file format is a contract: the schema version, the digest recipe,
  * the key order and every reader that refuses a file it does not understand live here, in
  * one file, so a change of shape cannot land on the write side without meeting the read
@@ -13,7 +13,7 @@
  *   * the path (`.inkflow/review/<chapterId>/<runId>.json`, ADR-0023) and the run id minted
  *     from the wall clock;
  *   * the digest the record carries: the chapter plus the two setting directories the nodes
- *     read, sorted so the walk order cannot change it (the same recipe as #44's gate,
+ *     read, sorted so the walk order cannot change it (the same recipe as the gate's,
  *     because "is this run about the text I am looking at" is a fact about the bytes);
  *   * the canonical order of the opinions in a record (`sortOpinions`: dimension, offset,
  *     text) — two runs over the same input must not reorder;
@@ -80,7 +80,7 @@ export interface ReviewRunRecord {
   readonly chapterTitle: string
   readonly seq: number | undefined
   readonly wordCount: number
-  /** The bytes the run depended on (chapter + characters/ + facts/), same recipe as #44. */
+  /** The bytes the run depended on (chapter + characters/ + facts/), same recipe as the gate. */
   readonly chapterDigest: string
   readonly reviewer: string
   /** ISO instant: a run is an event, so unlike a gate verdict this file is not clock-free. */
@@ -104,7 +104,7 @@ function sha256(text: string): string {
 
 /**
  * The digest the record carries: the chapter plus the two setting directories the nodes
- * read, sorted so the walk order cannot change it. Same recipe as #44's `chapterDigest`,
+ * read, sorted so the walk order cannot change it. Same recipe as the gate's `chapterDigest`,
  * for the same reason — "is this run about the text I am looking at" is a fact about the
  * bytes, not about the file name.
  */

@@ -1,5 +1,5 @@
 /**
- * The audit's half of the private channel (#33): one read projection and one export action.
+ * The audit's half of the private channel: one read projection and one export action.
  *
  * Scope: `GET /inkflow/internal/audit` and `POST /inkflow/internal/audit/export`. Everything
  * about *what* an audit means lives in `audit.ts`; this file only turns a report into the

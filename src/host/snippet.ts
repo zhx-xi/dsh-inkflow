@@ -1,5 +1,5 @@
 /**
- * The one hit-snippet implementation (issues #22 and #39).
+ * The one hit-snippet implementation.
  *
  * Why a module of its own: two readers need it — `search.ts` (chapter prose, both the
  * chapter-only search and the unified entry) and `domains/query.ts` (the entity

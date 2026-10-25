@@ -1,5 +1,5 @@
 /**
- * The impact report for a setting-library entry (#34, conventions §5.6, roadmap X-15).
+ * The impact report for a setting-library entry (conventions §5.6, roadmap X-15).
  *
  * 改设定 is the most expensive mistake a long-form author can make, and it is the
  * only one they cannot undo with a sentence: rename 白鹤门 and forty chapters still
@@ -9,14 +9,14 @@
  *
  *   | reference              | where it lives                        | read from |
  *   |------------------------|---------------------------------------|-----------|
- *   | chapters that name it  | `entity_mentions` (#29)               | the index |
+ *   | chapters that name it  | `entity_mentions`                       | the index |
  *   | relations at either end| `relations.source` / `target`          | the index |
  *   | timeline events        | `participants` / `place`               | the files |
  *   | ledger entries         | `facts/<subject>.md`'s `subject`      | the files |
  *   | foreshadow links       | `foreshadowing.linkedEntities`        | the files |
  *
  * Why three of the five read files rather than the index: `facts` and
- * `foreshadowing` have no table yet (data-model §4.2 reserves them for #32/#31), and
+ * `foreshadowing` have no table yet (data-model §4.2 reserves them for facts and foreshadowing), and
  * `timeline_events` deliberately does not carry `place` (X-1 fixes that column set).
  * Reading the files is also what keeps this listing honest when the cache is
  * missing — the point of a report is to be *complete*, not to be fast.
@@ -63,11 +63,11 @@ export const IMPACT_KINDS: readonly ContentDir[] = LIBRARY_KINDS
  *
  * `facts/<subject>.md`: the file name *is* the subject, and the ledger's lines are
  * about that subject. Renaming the file would silently re-subject every row, which
- * is a ledger decision (ADR-0013 / #32), not a file move. Refusing is better than
+ * is a ledger decision (ADR-0013), not a file move. Refusing is better than
  * pinning an id that makes the file name and its subject disagree forever.
  */
 const RENAME_REFUSED: Readonly<Record<string, string>> = {
-  facts: '账本的文件名就是它的主体：改名等于改「这条事实说的是谁」，那是账本口径（#32），不是移动文件',
+  facts: '账本的文件名就是它的主体：改名等于改「这条事实说的是谁」，那是账本口径，不是移动文件',
 }
 
 /**

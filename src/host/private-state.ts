@@ -7,13 +7,13 @@
  *   * Writes go through `resolveWriteTarget` + `writeTextAtomic` like every other
  *     write; the whitelist was widened by exactly these seven subdirectories
  *     (`io.ts`, `conventions.ts`; `candidates/` arrived with ADR-0017 D3 / X-18,
- *     `proposals/` and `jobs/` with ADR-0023 / X-25, `review/` with #46).
+ *     `proposals/` and `jobs/` with ADR-0023 / X-25, `review/` with ADR-0022 D3).
  *   * `.gitignore` gains `.inkflow/` **when the directory is first used**, not from
  *     the gate: an optional directory must not produce a permanent wizard action for
  *     a book that never deletes anything.
  *
- * Why a module rather than two copies: the recovery bin (#35) and the migration backup
- * (#36) both need the same path shape and the same ignore line, and a second hand-rolled
+ * Why a module rather than two copies: the recovery bin and the migration backup
+ * both need the same path shape and the same ignore line, and a second hand-rolled
  * copy of "append this line if missing" is how two writers end up disagreeing about
  * whether the file keeps its trailing newline.
  */

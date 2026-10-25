@@ -6,9 +6,9 @@
  * live here, outside `routes.ts`, for one mechanical reason and one structural one:
  *
  *   * `routes.ts` is at its recorded line budget (`scripts/check-guards.mjs`), and its job
- *     grew again in #199 (the fold's `limit`). Moving a pure type block out is the change
+ *     grew again with the purge area (the fold's `limit`). Moving a pure type block out is the change
  *     that costs nothing, whereas deleting working guards or comments to make room would;
- *   * more than one module now owns route descriptors (#199 keeps the private-state purge
+ *   * more than one module now owns route descriptors (the purge routes sit
  *     routes next to the channel that answers them), so the contract needs a home that is
  *     not "wherever the biggest file's dispatch loop happens to be".
  *
@@ -32,7 +32,7 @@ export interface RouteInput {
   version: string
   /**
    * The plugin's own data directory, for the reads that need plugin-level state rather than
-   * book content (the settings file behind the semantic backend's endpoint, #41).
+   * book content (the settings file behind the semantic backend's endpoint).
    */
   dataDir: string
   /** `pattern` capture groups, still percent-encoded. */
@@ -63,7 +63,7 @@ export interface InternalRoute {
    * The only QUERY keys this route reads (`sessionId` is always allowed, exactly as it is
    * in a body). Anything else is a 400 `UNKNOWN_QUERY_PARAM`.
    *
-   * Required, not optional (issue #200): the channel used to hand the whole query string to
+   * Required, not optional: the channel used to hand the whole query string to
    * a handler that read three keys and silently ignored the rest, so `?chapterID=` (a
    * spelling mistake) answered the DEFAULT chapter with HTTP 200 and the caller could not
    * see that its target had been dropped. A route that takes no knobs says so with `[]`,
@@ -71,7 +71,7 @@ export interface InternalRoute {
    */
   readonly query: readonly string[]
   /**
-   * Read routes may have to make the derived index fresh first (issue #5), so a
+   * Read routes may have to make the derived index fresh first, so a
    * handler is allowed to be async; the dispatcher awaits it either way.
    */
   readonly handle: (input: RouteInput) => RouteReply | Promise<RouteReply>

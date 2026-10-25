@@ -1,5 +1,5 @@
 /**
- * The two model-facing relation tools (issue #27).
+ * The two model-facing relation tools.
  *
  * Why a separate module from `relation.ts`: the domain file is about *what an edge
  * is* (parse, invariants, DDL), while these are about *how a tool writes one* —
@@ -89,7 +89,7 @@ async function projectRootOf(value: unknown, deps: DomainToolDeps, exec: ToolRun
  * The build seam, loaded on demand: `indexer.ts` imports the registry, so a static
  * import back into it would close a cycle.
  *
- * `applyCandidate` is **not** part of the seam any more: #24 moved it to `types.ts`
+ * `applyCandidate` is **not** part of the seam any more: the domain split moved it to `types.ts`
  * precisely so a domain can fold a candidate without touching the registry.
  */
 async function seam() {
@@ -114,7 +114,7 @@ function relationView(row: RelationRow): Record<string, unknown> {
 }
 
 /**
- * Time-window marks for the edges a read is about to return (#188).
+ * Time-window marks for the edges a read is about to return.
  *
  * The judgement runs on the **edges the read already has**, not on a second query: every
  * edge that can contradict one of them joins the same `(unordered pair, kind)` bucket and
@@ -287,7 +287,7 @@ const listSurface: Omit<ToolDefinition, 'execute'> = {
 const cluesSurface: Omit<ToolDefinition, 'execute'> = {
   name: 'inkflow_relation_clues',
   description:
-    'The clue view of the knowledge graph (#48): given one entity id, list the entities connected to it **grouped by relation ' +
+    'The clue view of the knowledge graph: given one entity id, list the entities connected to it **grouped by relation ' +
     `kind** (${RELATION_KINDS.join(' / ')}) with each peer's title, the direction as this entity sees it ('outgoing' / 'incoming' / 'both') and the edge file. ` +
     'Read-only, from the derived index (rebuilt first when stale). Use it to answer "who is this person connected to, and how"; ' +
     'use inkflow_relation_list when you need the flat edge list to edit one.',
@@ -457,7 +457,7 @@ async function runRelationList(args: unknown, exec: ToolRunContext, deps: Domain
 }
 
 /**
- * The clue view (#48): one entity, grouped by relation type, with the peer's **name**.
+ * The clue view: one entity, grouped by relation type, with the peer's **name**.
  *
  * Why a second read tool beside `inkflow_relation_list`: that one answers "which files
  * touch this id" — a flat, path-ordered edge list, which is what an edit needs. A clue

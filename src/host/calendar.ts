@@ -1,5 +1,5 @@
 /**
- * Calendars as pure arithmetic (issue #180, roadmap X-28).
+ * Calendars as pure arithmetic (roadmap X-28).
  *
  * WHY A DAY COUNT AND NOT A DATE STRING: `timeline/` stores `worldTime` as a flat
  * scalar (`YYYY-MM-DD`, data-model §3.4), which sorts as a string only while a book

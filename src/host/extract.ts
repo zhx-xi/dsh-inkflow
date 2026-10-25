@@ -1,5 +1,5 @@
 /**
- * The extraction queue (ADR-0017, issue #38): candidate batches under
+ * The extraction queue (ADR-0017): candidate batches under
  * `<book>/.inkflow/candidates/`, and nothing else.
  *
  * What this module is responsible for, and what it deliberately is not:
@@ -68,7 +68,7 @@ export interface CandidateProposal {
   readonly confidence: Confidence
   readonly status: CandidateStatus
   /**
-   * What `accept` would refuse, judged at submit time by the very same function (#175).
+   * What `accept` would refuse, judged at submit time by the very same function.
    *
    * Absent means "no conflict seen"; it is a **warning, not a gate** — the author may
    * still accept (or fix the candidate first), and the queue must keep working after a
@@ -78,7 +78,7 @@ export interface CandidateProposal {
   readonly willFail?: CandidateVerdict
   /**
    * The entity this candidate would replace, when the same identity already exists with
-   * **different** content (#178).
+   * **different** content.
    *
    * A candidate whose content is identical is never stored — there is nothing to review.
    * This marker is what turns the row into a question ("已存在，但内容不一致，是否覆盖？")
@@ -88,7 +88,7 @@ export interface CandidateProposal {
   readonly duplicate?: DuplicateMark
 }
 
-/** Same identity, other content: the row the author has to decide about (#178). */
+/** Same identity, other content: the row the author has to decide about. */
 export interface DuplicateMark {
   /** Always `different` — identical candidates are dropped at submit time. */
   readonly state: 'different'
@@ -753,7 +753,7 @@ export interface ProposeProposalInput {
   readonly rationale?: unknown
   readonly confidence?: unknown
   /**
-   * What the accept path would refuse, worked out by the caller (#175).
+   * What the accept path would refuse, worked out by the caller.
    *
    * The queue must not know how an entity is judged — that is the domain seam's job — so
    * `inkflow_extract_propose` runs `judgeCandidate()` and hands the answer here. Anything
@@ -926,7 +926,7 @@ export function proposeCandidates(root: string, input: ProposeInput): { ok: true
     if (!written.ok) return { ok: false, error: written.error }
     file = name
     // `.gitignore` gains `.inkflow/` the first time the directory is used (ADR-0012
-    // #3). A read-only `.gitignore` must not cost the author a batch that is already
+    // decision 2). A read-only `.gitignore` must not cost the author a batch that is already
     // on disk, so the outcome is not part of the answer.
     ensurePrivateStateIgnored(root)
   }

@@ -1,5 +1,5 @@
 /**
- * The settings / diagnostics / backup tool surface (#42, ADR-0018).
+ * The settings / diagnostics / backup tool surface (ADR-0018).
  *
  * Five tools, and each one is shaped by where its data lives:
  *
@@ -114,7 +114,7 @@ function settingsPatch(args: Json): Record<string, unknown> {
 
 /**
  * The settings as lines, with the shared library's EFFECTIVE root when the envelope
- * carried one (#150).
+ * carried one.
  *
  * The stored value and the value in force are two different facts, and the gap
  * between them is the defect this closes: a `sharedRoot` the plugin refuses looks

@@ -29,7 +29,7 @@ export function leadingNumber(file: string): number | undefined {
  *
  * Taking "the parent directory name" blindly gave every root entry
  * `category: "world"` — the container itself, not a category — which also hid the
- * "a child entry must carry a category" check (found by the #8 parity fixture).
+ * "a child entry must carry a category" check (found by the parity fixture).
  */
 export function worldCategoryOf(relPath: string): string | undefined {
   const parts = relPath.split('/')
@@ -41,7 +41,7 @@ export function worldCategoryOf(relPath: string): string | undefined {
 /**
  * `chapters/vol-01/0001-a.md` → `vol-01`; a chapter directly in `chapters/` has no
  * volume. Blindly taking the parent directory gave every top-level chapter
- * `volume: "chapters"`, which is the container, not a volume (issue #7).
+ * `volume: "chapters"`, which is the container, not a volume.
  */
 export function volumeDirOf(relPath: string): string | undefined {
   const parts = relPath.split('/')

@@ -1,12 +1,12 @@
 /**
- * The ledger's writing-context segment (issue #32, roadmap X-13).
+ * The ledger's writing-context segment (roadmap X-13).
  *
  * What it adds: the facts **in effect at the chapter being written**, one line each. This is
  * the segment that stops a model from giving a character a realm they lost twenty chapters
  * ago — the ledger already knows the interval, and the prompt had no way to see it.
  *
  * Why it is registered instead of rendered: `writing-context.ts` assembles segments from
- * `EXTRA_SEGMENTS` so two domains (facts #32, foreshadow #31) never edit the same renderer.
+ * `EXTRA_SEGMENTS` so two domains (the facts and foreshadowing domains) never edit the same renderer.
  * A contributor supplies its own text and cap and says nothing about order — the array's
  * order is the segment order, and X-13 fixes it as `… → world → facts → foreshadow`.
  *
@@ -20,7 +20,7 @@
  * Degradation: no chapter, no index, no order, no facts → `undefined`, which renders no
  * segment at all (an empty heading would cost budget and say nothing).
  *
- * ## Why the body is packed line by line (rework of PR #124)
+ * ## Why the body is packed line by line
  *
  * A count cap and a character cap are not interchangeable, and the first version applied
  * both as if they were: it took twelve facts, joined them, and let the seam clip the result

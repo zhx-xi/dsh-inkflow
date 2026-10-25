@@ -1,5 +1,5 @@
 /**
- * The recovery bin's half of the private channel (#35): one read projection and
+ * The recovery bin's half of the private channel: one read projection and
  * two write actions, nothing else.
  *
  * Scope: `GET /inkflow/internal/trash`, `POST /inkflow/internal/trash/restore`

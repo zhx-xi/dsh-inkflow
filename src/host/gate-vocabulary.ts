@@ -1,5 +1,5 @@
 /**
- * Issue #44 — the quality gate's vocabulary: the eight checks, their code table, the
+ * The quality gate's vocabulary: the eight checks, their code table, the
  * thresholds and the input types the rules read.
  *
  * Split out of `gate-rules.ts` for two reasons, both structural rather than cosmetic:
@@ -10,7 +10,7 @@
  *     second definition starts growing;
  *   * the rules file was past the project's 600-line ceiling; the words are not the rules.
  *
- * #212（退化检测，第 8 项）把它的阈值与词表也放在这里（`DEGENERATION`，见下文「出处」一
+ * 退化检测（第 8 项）把它的阈值与词表也放在这里（`DEGENERATION`，见下文「出处」一
  * 节）：ADR-0027 D5 要求凡引用的数字能在这一类单一来源文件里找到，散在规则文件里迟早漂移。
  *
  * Two contracts live here and nowhere else:
@@ -43,7 +43,7 @@ export type GateCheckId = (typeof GATE_CHECK_IDS)[number]
 export const GATE_CHECK_LABELS: Readonly<Record<GateCheckId, string>> = {
   wordCount: '字数',
   hook: '章末钩子',
-  // #214 起这一项不止六维：三个「太碎」判据（`FRAGMENT`）也归它，见 `GATE_CODES`。
+  // 这一项不止六维：三个「太碎」判据（`FRAGMENT`）也归它，见 `GATE_CODES`。
   aiFlavor: '去 AI 味',
   consistency: '一致性',
   sensitive: '敏感自查',
@@ -90,7 +90,7 @@ export const GATE_DEFAULTS: GateThresholds = {
 }
 
 // ---------------------------------------------------------------------------
-// 8 退化检测（#212）的阈值与词表
+// 8 退化检测的阈值与词表
 // ---------------------------------------------------------------------------
 
 /**
@@ -189,7 +189,7 @@ export const DEGENERATION: DegenerationVocabulary = {
 }
 
 // ---------------------------------------------------------------------------
-// 太碎（#214 B 块）的阈值与词表
+// 太碎的阈值与词表
 // ---------------------------------------------------------------------------
 
 /**
@@ -200,7 +200,7 @@ export const DEGENERATION: DegenerationVocabulary = {
  * opposite failure — a chapter of five-character sentences, a chapter with no causal or
  * adversative link anywhere, one 300-character paragraph with no place to breathe — and the
  * polisher skill explicitly tells the model not to chop every long sentence, so the gate and
- * the skill disagreed about the direction as well as about the number (#214 A 块).
+ * the skill disagreed about the direction as well as about the number.
  *
  * ## 出处（ADR-0027）
  *
@@ -217,7 +217,7 @@ export const DEGENERATION: DegenerationVocabulary = {
  *
  * 与 `DEGENERATION` 同样的两个理由让本表**不进** `GateThresholds`：①它是代码里的固定判据，
  * 调用方不能改（那份表是「判决要能复现」的落盘参数，ADR-0022 D4）；②把恒不变的键写进结论
- * 文件只会让文件多出五个噪声键。作者级的豁免与按书调参是 #226 的事（先落 ADR）。
+ * 文件只会让文件多出五个噪声键。作者级的豁免与按书调参要先落 ADR。
  */
 export interface FragmentVocabulary {
   /**
@@ -353,13 +353,13 @@ export const GATE_CODES: readonly GateCodeSpec[] = [
   // 3 六维去 AI 味 — one code per dimension (open-questions Q4), so a report row names the
   // dimension instead of "AI 味" in general.
   { code: 'GATE_AI_SENTENCE', check: 'aiFlavor', severity: 'info', hint: '动作段用短句（10–25 字），把成串的长句切开' },
-  // 数字有意不写进 hint：阈值在 `GATE_DEFAULTS`，写进提示语就是同一事实的第二份（#214 A 块）。
+  // 数字有意不写进 hint：阈值在 `GATE_DEFAULTS`，写进提示语就是同一事实的第二份。
   { code: 'GATE_AI_PUNCT', check: 'aiFlavor', severity: 'info', hint: '破折号与省略号按每千字密度判超限：删到一两处，或改成逗号与句读' },
   { code: 'GATE_AI_PARALLEL', check: 'aiFlavor', severity: 'info', hint: '「不是…而是…」与连续同构句只在真需要排比处使用' },
   { code: 'GATE_AI_NARRATION', check: 'aiFlavor', severity: 'info', hint: '删掉动作之后的情绪结论，让读者从动作里读出来' },
   { code: 'GATE_AI_MODIFIER', check: 'aiFlavor', severity: 'info', hint: '少堆「的/地」与程度副词，改写成具体动作或细节' },
   { code: 'GATE_AI_TEMPLATE', check: 'aiFlavor', severity: 'info', hint: '换掉套路句：写具体的动作、声音或触感' },
-  // 太碎（#214 B 块）—— 与上面六维同一个 check、同一个严重级：都是「写得像不像人」，
+  // 太碎 —— 与上面六维同一个 check、同一个严重级：都是「写得像不像人」，
   // 都不拦写盘。三条判据的阈值在 `FRAGMENT`，判据本身在 `gate-fragment.ts`。
   { code: 'GATE_AI_STUTTER', check: 'aiFlavor', severity: 'info', hint: '电报体：把连续短句并回一句，一段里留一处能读完的长句' },
   { code: 'GATE_AI_LOW_LINK', check: 'aiFlavor', severity: 'info', hint: '整章没有因果/转折/递进：把并列的描写用「但/因为/于是」接起来' },
@@ -379,7 +379,7 @@ export const GATE_CODES: readonly GateCodeSpec[] = [
   { code: 'GATE_PLATFORM_RESIDUE', check: 'platform', severity: 'warning', hint: '删掉分页、求票、码字工具留下的残留句' },
   { code: 'GATE_PLATFORM_PROMO', check: 'platform', severity: 'warning', hint: '删掉站外引流与广告词：平台会直接下架或限流' },
 
-  // 7 机械校对 — the six classes of issue #44 plus the number/unit pair. These are the ones a
+  // 7 机械校对 — the six classes the gate names plus the number/unit pair. These are the ones a
   // person would call "错字" rather than "写得不好".
   { code: 'GATE_PROOF_PUNCT_UNPAIRED', check: 'proofread', severity: 'warning', hint: '补齐或删掉不成对的引号、括号、书名号' },
   { code: 'GATE_PROOF_HALF_PUNCT', check: 'proofread', severity: 'info', hint: '把中文语境里的 , ; : ! ? 改成全角，或改写成中文标点' },
@@ -390,7 +390,7 @@ export const GATE_CODES: readonly GateCodeSpec[] = [
   { code: 'GATE_PROOF_ARABIC_MEASURE', check: 'proofread', severity: 'info', hint: '正文数量一般写汉字（三个、五次），年份与编号除外' },
   { code: 'GATE_PROOF_NUMBER_MIXED', check: 'proofread', severity: 'info', hint: '同一段里统一数字写法：要么全阿拉伯数字，要么全汉字' },
 
-  // 8 退化检测（#212）— 「模型是不是写坏了」，不是「写得好不好」。四码全 `warning`：判据是
+  // 8 退化检测 — 「模型是不是写坏了」，不是「写得好不好」。四码全 `warning`：判据是
   // 确定性的（重复 / 无收尾标点 / 占位语 / 工程词），误报面小，而批量作业的暂停策略读的是
   // warning —— 降成 `info` 就变成没人会处理的提示。
   { code: 'GATE_DEGEN_REPEAT', check: 'degeneration', severity: 'warning', hint: '删掉重复的那一段/那一句，保留一处；模型打转通常要重写该段' },

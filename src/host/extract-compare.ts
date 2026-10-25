@@ -1,5 +1,5 @@
 /**
- * Does a candidate say the same thing as the entity already at its address? (#178)
+ * Does a candidate say the same thing as the entity already at its address?
  *
  * The author's rule, in their words: when a second extraction produces an entity that
  * already exists,

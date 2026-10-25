@@ -1,6 +1,5 @@
 /**
- * Reading foreshadows back out of the derived index, and the board the panel shows
- * (#31).
+ * Reading foreshadows back out of the derived index, and the board the panel shows.
  *
  * Same policy as `character-query.ts` / `query.ts`: the index is a cache, so a
  * missing or foreign-schema database answers `undefined` and the caller says

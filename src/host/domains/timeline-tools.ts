@@ -1,5 +1,5 @@
 /**
- * The timeline domain's two model-facing tools (#28): `inkflow_timeline_list` and
+ * The timeline domain's two model-facing tools: `inkflow_timeline_list` and
  * `inkflow_timeline_upsert`.
  *
  * They live in the domain, not in `tools.ts` (roadmap §2.1 X-5): a domain branch adds
@@ -75,7 +75,7 @@ function eventJson(row: TimelineRow): Json {
     file: row.path,
     worldTime: row.worldTime ?? null,
     era: row.worldEra ?? null,
-    // #48: the derived day number on the calendar's shared axis. Present only when the
+    // The derived day number on the calendar's shared axis. Present only when the
     // date is readable under this book's table — that absence *is* the answer for an
     // event whose `worldTime` no era can express.
     worldAbsoluteDay: row.worldAbsoluteDay ?? null,
@@ -559,7 +559,7 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
 }
 
 /**
- * The calendar a book reads its dates in — read and write (#48, roadmap X-28).
+ * The calendar a book reads its dates in — read and write (roadmap X-28).
  *
  * They live beside the timeline tools because the timeline is the only consumer: the
  * calendar is not a content directory (it is a key in `inkflow.json`), so no domain can

@@ -1,5 +1,5 @@
 /**
- * The proposal's two bookkeeping actions (#45, roadmap X-26): create and decide.
+ * The proposal's two bookkeeping actions (roadmap X-26): create and decide.
  *
  * Split from `proposal.ts` (the on-disk shape: paths, validation, read, list) and from
  * `proposal-apply.ts` (the one module that rewrites a chapter) along the line that matters

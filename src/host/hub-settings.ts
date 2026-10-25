@@ -1,6 +1,6 @@
 /**
  * The settings page's Host half: the root-scoped channel for settings, the diagnostics
- * package and the local backups (#42, ADR-0018).
+ * package and the local backups (ADR-0018).
  *
  * WHY THIS IS A HUB MODULE AND NOT A SESSION ONE. The settings page lives in the book
  * hub (roadmap X-20: not a session tab), so its routes must answer with no session at
@@ -196,10 +196,10 @@ function bookChoices(ctx: HostContext): Array<{ workspaceId: string | null; book
 /**
  * Field names the settings save (`POST /hub/settings/update`) may carry.
  *
- * DERIVED from `SETTINGS_FIELDS`, never copied (#162). `writeHubSettings` below reads
+ * DERIVED from `SETTINGS_FIELDS`, never copied. `writeHubSettings` below reads
  * exactly the settings field list plus `confirm`, so that list is what has to travel:
  * adding a setting means editing `settings.ts` and nothing else. The hand-copied array
- * this replaces was complete only by luck — #41 added `semanticEndpoint` /
+ * this replaces was complete only by luck — the semantic backend added `semanticEndpoint` /
  * `semanticApiKey` and the copy nearly missed them — and a miss is invisible: the field
  * is legal everywhere else, and only the settings page answers 400
  * `UNEXPECTED_BODY_FIELD` for it.
@@ -208,7 +208,7 @@ export const HUB_SETTINGS_BODY_FIELDS = [...SETTINGS_FIELDS, 'confirm'] as const
 
 export function buildHubSettings(deps: HubSettingsDeps): Json {
   const read = readSettings(deps.dataDir)
-  // The root the shared page will actually read (#150). The page shows it because the
+  // The root the shared page will actually read. The page shows it because the
   // field beside it is editable: "I set it and nothing happened" needs somewhere to be
   // answered, and this path is masked like every other path in the payload.
   const shared = sharedRootOf(deps.dataDir, read.settings)

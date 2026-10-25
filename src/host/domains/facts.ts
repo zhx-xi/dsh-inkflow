@@ -1,5 +1,5 @@
 /**
- * Fact ledger domain (`facts/`) — issue #32.
+ * Fact ledger domain (`facts/`).
  *
  * Owns the ledger table, the interval rule and the findings a rebuild must report
  * (data-model §3.5, §5 I-22 / I-23, [ADR-0013](../../../.agents/adrs/0013-facts-ledger-line-format.md)):

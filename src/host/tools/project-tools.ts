@@ -1,5 +1,5 @@
 /**
- * Project-scoped built-in tools (split out of `tools.ts`, #193): the four-state gate
+ * Project-scoped built-in tools (split out of `tools.ts`): the four-state gate
  * verdict (`inkflow_project_status`), the derived-index rebuild (`inkflow_index_rebuild`)
  * and the two-phase setup wizard (`inkflow_project_plan` read-only, `inkflow_project_init`
  * with `confirm: true`).
@@ -27,7 +27,7 @@ import type { Json, ToolDeps } from './shared.js'
 import { EXPECTED_PARAM, PROJECT_ROOT_PARAM, SUCCESS_SCHEMA, asRecord, expectedParam, indexBuildFailure, text } from './shared.js'
 
 /**
- * Put the loaded-build summary on a refusal (issue #88). "needs setup" is exactly
+ * Put the loaded-build summary on a refusal. "needs setup" is exactly
  * what a STALE generation reports for a book that is in fact usable, so the model
  * must be able to see that the running code is older than the disk instead of
  * confidently telling the user to re-initialise a healthy project.
@@ -39,7 +39,7 @@ function withBuild(value: Json, version: string): Json {
 }
 
 /**
- * The non-blocking findings an init result carries (issue #89), as records.
+ * The non-blocking findings an init result carries, as records.
  *
  * Rendered rather than thrown away: a warning the model cannot see is the same
  * silence the issue is about, and the fix steps are the only actionable part.
@@ -131,7 +131,7 @@ export function projectTools(deps: ToolDeps): ToolDefinition[] {
         indexDirRecreated: probe.indexDirRecreated,
         projectSchemaVersion: probe.meta?.schemaVersion ?? FILE_SCHEMA_VERSION,
         meta: probe.meta ?? {},
-        // Issue #89: the title looks like a GBK round-trip accident (a file this
+        // The title looks like a GBK round-trip accident (a file this
         // plugin did not write). Reported so the model can relay it; it changes
         // neither `state` nor what the tools below are allowed to do.
         ...(probe.titleSuspicious === true ? { titleSuspicious: true } : {}),
@@ -144,7 +144,7 @@ export function projectTools(deps: ToolDeps): ToolDefinition[] {
           builtAt: index.builtAt ?? null,
           counts: index.counts,
         },
-        // Issue #88: informational only — it never moves the four-state verdict.
+        // Informational only — it never moves the four-state verdict.
         build: summarizeBuild(getLoadedBuild({ version: deps.version })),
       }
     },
@@ -414,7 +414,7 @@ export function projectWizardTools(deps: ToolDeps): ToolDefinition[] {
           gitInit: result.gitInit,
           missing: result.probe.missing,
           reasons: result.probe.reasons,
-          // Issue #89: the read-back verdict on the meta this call wrote, plus
+          // The read-back verdict on the meta this call wrote, plus
           // anything about it the user has to decide on. Neither is an error.
           ...(result.metaVerified === undefined ? {} : { metaVerified: result.metaVerified }),
           warnings: result.warnings,

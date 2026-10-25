@@ -64,7 +64,7 @@ export const outlineDomain: DomainModule = {
 
   schema() {
     return {
-      // v3 (#24): `plot_point_count` / `plot_points` carry the body's list items so the
+      // v3: `plot_point_count` / `plot_points` carry the body's list items so the
       // tree can be read without re-parsing prose for every query. `plot_points` is the
       // JSON form of the parsed points (`[{text, arc?}]`); the file stays the truth, so a
       // syntax change is a re-index and never a migration (ADR-0005).

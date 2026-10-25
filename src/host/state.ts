@@ -4,7 +4,7 @@
  * Under ADR-0005 the novel lives in its own git repo; the only thing the
  * plugin keeps for itself is "which project did this machine last touch".
  *
- * That value is DISPLAY-ONLY (issue #7). It is written by whichever session ran
+ * That value is DISPLAY-ONLY. It is written by whichever session ran
  * last, so using it to resolve a project answers for another book whenever the
  * user is in a different directory. Attribution has to come from the session
  * (its working directory), never from this file.

@@ -1,10 +1,10 @@
 /**
- * The repair pass (#36): detect → preview → fix, over the findings vocabulary (#121, X-14).
+ * The repair pass: detect → preview → fix, over the findings vocabulary (X-14).
  *
  * This module does **not** re-implement any check. Every problem it reports comes
  * from a check that already exists — `scanProject()` (structure, ledger, foreshadow,
  * timeline) and `validateCatalog()` (the committed catalog projection) — and is only
- * *reshaped* into the one `Finding` shape the audit report (#33) and this repairer
+ * *reshaped* into the one `Finding` shape the audit report and this repairer
  * share. What it adds is the second half of X-14: one repair action per finding, an
  * honest list of what it will not touch, and a re-run of the same checks afterwards
  * to prove the fix landed.
@@ -352,11 +352,11 @@ function catalogProjections(root: string): string[] {
 }
 
 /**
- * What a foreshadow's own evidence fields say its `status` must be (#136, data-model §3.2.1).
+ * What a foreshadow's own evidence fields say its `status` must be (data-model §3.2.1).
  *
  * `status` is the machine's truth, but a hand-written file can contradict it — `status: planted`
  * next to `advancedAt: [outline-934]`, `resolved: true` under `status: advanced`. I-21 reports
- * that, and before #136 the report was a dead end: the author had to hand-edit the file. There is
+ * that, and until the repair pass could write it the report was a dead end. There is
  * exactly one reading of the evidence, so the repair pass may write it:
  *
  *     `resolved: true` or a `resolvedChapter` → `resolved`

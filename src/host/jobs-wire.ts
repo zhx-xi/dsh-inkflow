@@ -1,5 +1,5 @@
 /**
- * The batch panel's read projection and its one write (#47, roadmap X-12/X-30).
+ * The batch panel's read projection and its one write (roadmap X-12/X-30).
  *
  * `GET /batch` answers "what is this job doing" from the job's own files and **nothing else**:
  * no index rebuild (a job must be readable on a book whose `index/` was just deleted — that is

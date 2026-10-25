@@ -1,6 +1,6 @@
 /**
  * Exporting a book as EPUB, DOCX, or one Markdown/TXT file (and a package of them) —
- * issue #50, [ADR-0024](../../.agents/adrs/0024-export-zip-reuse.md), roadmap X-27.
+ * [ADR-0024](../../.agents/adrs/0024-export-zip-reuse.md), roadmap X-27.
  *
  * **The artifact never lands in the book.** A book is a git repository whose nine content
  * directories are scanned by the index, the catalog, the gates and the backup: an export

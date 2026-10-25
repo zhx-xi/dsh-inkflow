@@ -1,5 +1,5 @@
 /**
- * The export tool surface (#50, [ADR-0024](../../.agents/adrs/0024-export-zip-reuse.md), X-27):
+ * The export tool surface ([ADR-0024](../../.agents/adrs/0024-export-zip-reuse.md), X-27):
  * one tool, `inkflow_export`.
  *
  * One tool, not four: the format and the scope are *arguments* of the same one-off action

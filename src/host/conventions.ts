@@ -51,7 +51,7 @@ export const CHAPTERS_DIR = 'chapters' satisfies ContentDir
 
 /**
  * The reference library (conventions §3.6): arbitrary files the author keeps for
- * reference. Named here because the import path (#37) copies an old manuscript into it,
+ * reference. Named here because the import path copies an old manuscript into it,
  * and a literal directory name outside this file is what breaks the contract.
  */
 export const LIBRARY_DIR = 'library' satisfies ContentDir
@@ -114,26 +114,26 @@ export type WriteDir = (typeof WRITE_DIRS)[number]
 export const PRIVATE_STATE_DIR = '.inkflow'
 /**
  * The eight writable names under `.inkflow/` (roadmap X-18 widened this from three;
- * X-25 / ADR-0023 widened it again from four; #46 added the seventh, `review`; #199 added
- * the eighth, `purged`).
+ * X-25 / ADR-0023 widened it again from four; the review tab added the seventh,
+ * `review`; the purge area added the eighth, `purged`).
  *
  * `candidates/` holds the extract pipeline's unreviewed proposals (ADR-0017 D3): they
  * are work files, not derived artefacts, so a rebuild must not be able to sweep them
  * away — which is exactly why they are here instead of under `index/`.
  *
- * `proposals/` (#45), `jobs/` (#47) and `audit/` (#43's gate records) follow the same
+ * `proposals/`, `jobs/` and `audit/` (the gates' records) follow the same
  * rule: a piece of prose awaiting the author's decision, or a progress record a long
  * task must survive a restart with, is not rebuildable. `index/` is (ADR-0006 D2:
  * delete it and it comes back empty), so anything a rebuild would erase lives here.
- * The issue texts for #43/#47 named `index/audit/` and `index/jobs/`; X-25 overrides
- * them for exactly that reason.
+ * Early drafts named `index/audit/` and `index/jobs/`; X-25 overrides them for exactly
+ * that reason.
  *
- * `review/` (#46) is the seventh: one record per review run, `.inkflow/review/<chapterId>/<runId>.json`.
+ * `review/` is the seventh: one record per review run, `.inkflow/review/<chapterId>/<runId>.json`.
  * A run is an event — the reviewer is a session's model and cannot be replayed (X-26) — so
  * the record is not rebuildable either, and the panel reads it back to answer "what did the
  * last pass say about this chapter".
  *
- * `purged/` (#199) is the eighth, and it is the only **holding area** in the list: review
+ * `purged/` is the eighth, and it is the only **holding area** in the list: review
  * runs and closed proposals the author cleaned up move here instead of vanishing, and the
  * `trash/` ban on `.inkflow/` sources stays as it is (ADR-0012/ADR-0026). It is not a second
  * recovery bin: it restores **private state only**, and its restore target is limited to
@@ -153,7 +153,7 @@ export type SharedKind = (typeof SHARED_KINDS)[number]
 /**
  * The shared library's **derived** manifest (ADR-0007 C1): a rebuildable
  * projection of the four directories. The hub only reads it — writing it back is
- * the shared-library writer's job (#40).
+ * the shared-library writer's job.
  */
 export const SHARED_INDEX_FILE = 'index.json'
 
@@ -191,34 +191,34 @@ export const FILE_SCHEMA_VERSION = 1
 /**
  * Version of the derived SQLite schema; mismatch means "delete and rebuild".
  *
- * v2 (#23): domain modules own their tables, and the cross-class `entities`
+ * v2: domain modules own their tables, and the cross-class `entities`
  * projection plus one `entities_fts` are added.
- * v3 (#24, #26, #27): `outline_nodes` gains `plot_point_count` / `plot_points` (the
+ * v3: `outline_nodes` gains `plot_point_count` / `plot_points` (the
  * parsed body list items, i.e. plot points and their optional story-line tags);
  * `world_entries` gains the world book own fields — `keywords`, `always`,
  * `priority` — so a chapter setting can be matched without reading every file;
  * and the `relations` table (one row per `relations/<slug>.md` edge) joins them,
  * so `relations/` stops being a frontmatter-only directory: it publishes entities.
  * The `entities` column set is unchanged (X-1).
- * v6 (#29): the `entity_mentions` table — every name/alias occurrence with its body
+ * v6: the `entity_mentions` table — every name/alias occurrence with its body
  * offset and its evidence source (`entity_key` = `kind:id`), plus a chapter's frontmatter
  * declaration as a negative-offset `explicit` row. One table, no new columns.
- * v5 (#28): the `timeline_events` table — one row per timeline event with both axes
+ * v5: the `timeline_events` table — one row per timeline event with both axes
  * (`world_time`, `narrative_order`) and its chapter, so the two sorts and the conflict
  * checks are queries instead of a scan.
- * v4 (#25): `characters` gains the card fields the query tool reads without parsing
+ * v4: `characters` gains the card fields the query tool reads without parsing
  * frontmatter — `pov`, `first_appearance`, `aliases`, `voice` — and a new
  * `character_states` table holds one row per recorded state, so "what was he at
  * chapter 30" is a `chapter <=` query instead of a JSON scan.
- * v7 (#32): the `facts` table — one row per ledger line (`facts/<subject>.md`), with its
+ * v7: the `facts` table — one row per ledger line (`facts/<subject>.md`), with its
  * 1-based `line` so a finding can point at it and with `since` / `until` so "which facts
  * hold at chapter N" is a range query instead of a re-parse. `facts/` stops being a
  * frontmatter-only directory: it publishes one entity per subject.
- * v8 (#31): the `foreshadowings` table — one row per `foreshadowing/<slug>.md` with the
+ * v8: the `foreshadowings` table — one row per `foreshadowing/<slug>.md` with the
  * state machine's field and its deadline inputs, so `foreshadowing/` stops being a
  * frontmatter-only directory. `overdue` is NOT a column: it is computed per read from
  * the chapter being asked about (data-model §3.2.2), and a stored mark would go stale.
- * v9 (#48): `timeline_events` gains the derived `world_absolute_day` (the day number on
+ * v9: `timeline_events` gains the derived `world_absolute_day` (the day number on
  * the one axis every era of the book's calendar shares) and `world_era` (the era the
  * file's `worldTime` is written in), plus `ix_timeline_absolute`. The content file is
  * unchanged (`worldTime` stays a flat scalar, ADR-0025 D3): this is a derived column, so
@@ -247,11 +247,11 @@ export const REQUIRED_GITIGNORE_LINES = ['index/*.db', 'index/*.db-wal', 'index/
  *
  * Deliberately **not** part of `REQUIRED_GITIGNORE_LINES`: the gate must not nag a book
  * that never uses the recovery bin about a line for a directory it does not have. The
- * writers that first create `.inkflow/` (#35 trash, #36 backup) append this line
+ * writers that first create `.inkflow/` (trash and backup) append this line
  * through `ensurePrivateStateIgnored()` — append-only, like the wizard.
  */
 export const PRIVATE_STATE_IGNORE_LINE = `${PRIVATE_STATE_DIR}/`
 
-// NOTE (#101): a `KNOWN_FRONTMATTER` list used to live here with no reader. The
+// NOTE: a `KNOWN_FRONTMATTER` list used to live here with no reader. The
 // field dictionary is spec truth ([data-model.md](../../.agents/specs/data-model.md) §3)
 // and domains own their own field validation, so a second copy in code only drifts.

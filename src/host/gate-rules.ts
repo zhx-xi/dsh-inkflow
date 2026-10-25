@@ -1,5 +1,5 @@
 /**
- * Issue #44 — the quality gates: the rules themselves (#212 added the eighth).
+ * The quality gates: the rules themselves.
  *
  * Two constraints decide the shape of this file, and both are contracts rather than
  * preferences:
@@ -38,7 +38,7 @@
  * rewrite — the rewrite would have to live in `repair.ts` (the one repair path, which
  * dispatches on the code), and no `GATE_*` action exists there. Promising `fixable: true`
  * without that action turns 「一键修复」 into a button that does nothing while the report says
- * "N 项可自动修复" — the #143 / ADR-0015 D2 accident. The classes stay detectable now; the flip
+ * "N 项可自动修复" — the ADR-0015 D2 accident. The classes stay detectable now; the flip
  * belongs to the commit that teaches `repair.ts` the rewrite, with its own tests.
  */
 
@@ -136,7 +136,7 @@ const CLICHES: readonly string[] = [
 
 /**
  * Explanatory narration: the emotion is *told* right after it was shown, or in place of
- * showing it. Three shapes cover the filed complaints (#44 / writer skill 去 AI 味):
+ * showing it. Three shapes cover the filed complaints (the writer skill's de-AI rule):
  * 「心中一沉」式, 「感到愤怒」式, and the four-character summary of a feeling.
  */
 const NARRATION: readonly RegExp[] = [
@@ -262,8 +262,8 @@ function checkAiFlavor(input: GateInput): Finding[] {
 }
 
 /**
- * Item 3 as the report walks it: the six dimensions above **plus** the three 太碎 detectors
- * (#214 B 块). They share one check id and one severity because they are one judgement — 「这段
+ * Item 3 as the report walks it: the six dimensions above **plus** the three 太碎 detectors.
+ * They share one check id and one severity because they are one judgement — 「这段
  * 读着像不像人写的」 — and keeping them in one row means the check table stays eight rows
  * (`GATE_CHECK_IDS` is a published order; a ninth would be a contract change, not a bug fix).
  */
@@ -448,6 +448,6 @@ export const GATE_CHECKS: readonly GateCheck[] = [
   { id: 'sensitive', label: GATE_CHECK_LABELS.sensitive, run: checkSensitive },
   { id: 'platform', label: GATE_CHECK_LABELS.platform, run: checkPlatform },
   { id: 'proofread', label: GATE_CHECK_LABELS.proofread, run: checkProofread },
-  // #212: 退化检测（复读 / 截断 / 占位 / 工程词）—— 判「模型是不是写坏了」，不是「写得好不好」。
+  // 退化检测（复读 / 截断 / 占位 / 工程词）—— 判「模型是不是写坏了」，不是「写得好不好」。
   { id: 'degeneration', label: GATE_CHECK_LABELS.degeneration, run: checkDegeneration },
 ]

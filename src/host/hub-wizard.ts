@@ -1,5 +1,5 @@
 /**
- * The book hub's new-book wizard (ADR-0010 D4/D6, issue #86): plan → apply.
+ * The book hub's new-book wizard (ADR-0010 D4/D6): plan → apply.
  *
  * WHY THIS FILE EXISTS. `hub.ts` is a read-only projection and must stay one;
  * "plan a directory the user picked, then write it after they confirm" is a
@@ -314,7 +314,7 @@ function planValue(plan: WorkspacePlan): Record<string, unknown> {
 }
 
 /**
- * Field names the wizard's plan step may carry (#162).
+ * Field names the wizard's plan step may carry.
  *
  * `candidate` is the ONLY path-bearing field on the whole channel (ADR-0010 D3), so
  * this list is also the answer to "what may name a directory here": exactly one thing,
@@ -362,7 +362,7 @@ export async function hubPlan(
    * that stored `D:\…` while the temp directory is a junction to `C:\…` (which
    * is what a Windows CI runner does) makes every containment test fail and
    * turns a directory inside a known workspace into `ANCHOR_REQUIRED` — the two
-   * Windows-only failures PR #97 hit. Canonicalise both sides, never just one.
+   * Windows-only failures earlier attempts hit. Canonicalise both sides, never just one.
    */
   const canonicalEntry = (path: string): string => realpathLoose(resolve(path))
   const title = text(body['title'])
@@ -527,7 +527,7 @@ function nextStepOf(title: string, path: string): Record<string, unknown> {
 }
 
 /**
- * Field names the wizard's apply step may carry (#162).
+ * Field names the wizard's apply step may carry.
  *
  * NO path-bearing field: the write route names a one-shot token instead, which is the
  * whole point of splitting plan from apply (ADR-0010 D3).

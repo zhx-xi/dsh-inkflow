@@ -113,7 +113,7 @@ export interface ProjectProbe {
   metaError?: string
   metaRaw?: MetaRaw
   /**
-   * The meta parses and its `title` carries GBK round-trip artifacts (issue #89):
+   * The meta parses and its `title` carries GBK round-trip artifacts:
    * the file was very likely written by something other than this plugin.
    *
    * A hint, never a gate input: the book stays `usable`. Absent (not `false`)
@@ -168,7 +168,7 @@ export function findProjectRoot(start: string): string | undefined {
  * workspace while looking contained.
  *
  * Exported for `io.ts`, which needs the same tolerance for write targets that
- * do not exist yet (issue #14): one implementation of "resolve through links".
+ * do not exist yet: one implementation of "resolve through links".
  */
 export function realpathLoose(input: string): string {
   const absolute = resolve(input)
@@ -195,7 +195,7 @@ export function realpathLoose(input: string): string {
  * variants of the same directory.
  *
  * Exported for `io.ts`: the write door must judge containment exactly the way
- * the gate does, or the two would disagree on the same path (issue #14).
+ * the gate does, or the two would disagree on the same path.
  */
 export function isWithin(parent: string, child: string): boolean {
   const relative = relativePath(parent, child)
@@ -230,7 +230,7 @@ const SCOPE_HINT =
   'open the novel directory as the session workspace (or scaffold it there) instead of pointing at another path'
 
 /**
- * Gate for every caller-supplied path (issue #7). The plugin runs un-sandboxed
+ * Gate for every caller-supplied path. The plugin runs un-sandboxed
  * in the host process (hard-constraints H7), so an unchecked path is an
  * arbitrary-directory read/write primitive: `inspectProject` creates `index/`
  * and the wizard creates a whole tree and runs `git init`.
@@ -404,7 +404,7 @@ export function inspectProject(root: string, options: InspectOptions = {}): Proj
   const missing: string[] = []
   const reasons: string[] = []
 
-  // Issue #89: judge the title only once it parses, and only to *say* something.
+  // Judge the title only once it parses, and only to *say* something.
   // `reasons` deliberately does not mention it: a suspicious title is not a
   // gate failure, and the checklist must keep meaning "what blocks usable".
   const metaTitle = metaResult.meta?.title
@@ -438,7 +438,7 @@ export function inspectProject(root: string, options: InspectOptions = {}): Proj
 
   // A `.git` alone is not evidence of a book: every source repository has one,
   // so treating it as "repair me" made `inkflow_project_status` shout at any
-  // git repository the session happened to sit in (found in review after #13).
+  // git repository the session happened to sit in (found in review).
   // Repair needs an InkFlow fingerprint: the meta file (even broken) or at
   // least one of the nine content directories.
   const hasInkflowLayout = REQUIRED_DIRS.some((name) => checks.dirs[name] === true)

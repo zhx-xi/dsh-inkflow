@@ -1,5 +1,5 @@
 /**
- * The request half of the setting library's save (issue #30, second batch).
+ * The request half of the setting library's save (second batch).
  *
  * `POST /inkflow/internal/library/item` accepts four things besides the entity
  * address: `frontmatter`, `body`, `expected` and the implicit `sessionId`. This

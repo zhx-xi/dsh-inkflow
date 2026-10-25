@@ -1,6 +1,6 @@
 /**
- * The old-manuscript import tool (split out of `tools.ts`, #193):
- * `inkflow_library_import` (#37, roadmap X-17). A built-in rather than a domain tool: it
+ * The old-manuscript import tool (split out of `tools.ts`):
+ * `inkflow_library_import` (roadmap X-17). A built-in rather than a domain tool: it
  * writes chapters *and* a `library/` copy, so no single content directory owns it.
  */
 
@@ -45,7 +45,7 @@ function importFailure(root: string, error: ImportError): Json {
 
 export function importTools(deps: ToolDeps): ToolDefinition[] {
   /**
-   * Importing an old manuscript (#37, roadmap X-17): `action: 'plan'` reads the source and
+   * Importing an old manuscript (roadmap X-17): `action: 'plan'` reads the source and
    * says what would happen, `action: 'apply'` writes it with `confirm: true`.
    *
    * Why one tool rather than two: the preview and the write must describe the same set of

@@ -1,5 +1,5 @@
 /**
- * The timeline model, as pure functions (issue #28): parse one event, judge the
+ * The timeline model, as pure functions: parse one event, judge the
  * three conflict rules, produce the two independent axes, render one document.
  *
  * Why the rules live here and not inside `timeline.ts`: a rebuild judges a whole
@@ -26,7 +26,7 @@
  * arrays only — a nested mapping would be read back as an opaque string — and the
  * `precision` of the object form is exactly "how many components the author wrote".
  *
- * ## Multi-era (issue #48, ADR-0025)
+ * ## Multi-era (ADR-0025)
  *
  * The scalar stays; only its **interpretation** became configurable. An event names the
  * era it is written in with `era: <id>` (data-model §3.4); without one, the date is read
@@ -181,7 +181,7 @@ export function momentOf(row: Pick<TimelineRow, 'worldTime' | 'worldAbsoluteDay'
  * Primary key is the absolute day (the only value two eras share); the written
  * granularity breaks a tie so a year-only event still sorts before the same year's
  * January 1st — "the author stated a coarser moment, and that is the earliest moment it
- * can be". Inside one era this is a refinement of the pre-#48 key `(year, month ?? 0,
+ * can be". Inside one era this is a refinement of the earlier key `(year, month ?? 0,
  * day ?? 0)` and returns exactly the same verdicts, which is what keeps
  * `TIMELINE_WORLD_TIME_REVERSED` and `TIMELINE_ORDER_CONFLICT` meaning what they meant.
  */

@@ -1,5 +1,5 @@
 /**
- * The semantic-retrieval section of the settings page (#41, root-scoped hub channel).
+ * The semantic-retrieval section of the settings page (root-scoped hub channel).
  *
  * WHY THE PANEL'S SECTION IS A HUB ROUTE AND NOT A SESSION ONE. The settings page lives in
  * the book hub (roadmap X-20), so it has no session to derive a project from — the same

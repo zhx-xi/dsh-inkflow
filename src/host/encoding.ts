@@ -1,10 +1,10 @@
 /**
- * Mojibake detection for hand-written meta files (issue #89).
+ * Mojibake detection for hand-written meta files.
  *
  * THE CASE: an author (or an agent driving a shell) creates `inkflow.json` with
  * PowerShell 5's `Set-Content`/`echo`, whose default code page is ANSI/GBK on a
  * Chinese Windows. The file ends up holding GBK-decoded UTF-8: the field report
- * in issue #89 has `"title": "浜哄湪铚€灞憋紝鏄帉闂?"` for `人在蜀山，我是掌门`.
+ * in the field report has `"title": "浜哄湪铚€灞憋紝鏄帉闂?"` for `人在蜀山，我是掌门`.
  * This plugin's own writer (`io.ts` → UTF-8, no BOM) never produces that, but a
  * file it did not write can still be *read* by it. Silently treating such a title
  * as the book name is the failure this module exists to catch.

@@ -1,5 +1,5 @@
 /**
- * Volume and chapter CRUD (issue #16, ADR-0006 D6).
+ * Volume and chapter CRUD (ADR-0006 D6).
  *
  * The rule the whole module is built around: **the `.md` files are the truth,
  * the catalog is a projection and the SQLite index is a cache.** So every
@@ -158,7 +158,7 @@ export interface ChapterCreateInput {
   /**
    * Rebuild the derived index after this call (default true).
    *
-   * A batch caller (`import-write.ts`, #37) passes `false` and rebuilds once at the end:
+   * A batch caller (`import-write.ts`) passes `false` and rebuilds once at the end:
    * one index build per chapter is O(n²) work on a 200-chapter import — measured at 64 s
    * for a 60万字 manuscript, against ~2 s with a single build — and the index is a cache,
    * so "rebuilt 200 times" and "rebuilt once" are the same answer to every reader. A
@@ -183,7 +183,7 @@ export interface ChapterWriteInput {
    */
   eol?: EolStyle
   bom?: boolean
-  /** Baseline the caller last saw (issue #5): a mismatch is `FILE_CHANGED`, zero writes. */
+  /** Baseline the caller last saw: a mismatch is `FILE_CHANGED`, zero writes. */
   expected?: FileExpectation
   /** Rebuild the derived index after this call (default true); see `ChapterCreateInput`. */
   indexCommit?: boolean
@@ -193,14 +193,14 @@ export interface ChapterMoveInput {
   chapterId?: string
   file?: string
   volumeId?: string | null
-  /** Baseline the caller last saw (issue #5). */
+  /** Baseline the caller last saw. */
   expected?: FileExpectation
 }
 
 export interface ChapterDeleteInput {
   chapterId?: string
   file?: string
-  /** Baseline the caller last saw (issue #5): a delete of an unknown edit is refused. */
+  /** Baseline the caller last saw: a delete of an unknown edit is refused. */
   expected?: FileExpectation
 }
 
@@ -253,7 +253,7 @@ export interface ChapterDeleteOk extends CommitInfo {
   ok: true
   root: string
   deleted: { chapterId: string; file: string; title: string; seq?: number; volumeId: string | null }
-  /** The recovery-bin entry this delete created (#35). */
+  /** The recovery-bin entry this delete created. */
   trashed: { id: string; trashPath: string; bytes: number }
 }
 
@@ -649,7 +649,7 @@ function readChapterText(root: string, file: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Write-time compare-and-swap (issue #5)
+// Write-time compare-and-swap
 // ---------------------------------------------------------------------------
 
 /** One chapter read plus the fingerprint of the very bytes that were parsed. */
@@ -1053,7 +1053,7 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
     if (read === undefined) return fail('CHAPTER_NOT_FOUND', `${ref.file} could not be read`, { root, path: ref.file })
     const text = read.text
     const baseline = read.fingerprint
-    // Issue #5: both baselines are checked, and both are checked *before* any
+    // Both baselines are checked, and both are checked *before* any
     // byte is written, so a refusal leaves the tree byte-identical.
     const callerRefusal = callerBaselineRefusal(root, ref.file, baseline, input.expected)
     if (callerRefusal !== undefined) return callerRefusal
@@ -1111,7 +1111,7 @@ export async function writeChapter(projectRoot: string, input: ChapterWriteInput
     let next = edits.text
     if (body !== undefined) next = withBody(next, body)
 
-    // A title change renames the file (issue #16: "改标题 = 文件名 + frontmatter +
+    // A title change renames the file ("改标题 = 文件名 + frontmatter +
     // catalog 一起改"). The numeric prefix stays, so `0001-旧名.md` becomes
     // `0001-新名.md` and the reading order never depends on a rename.
     let target = ref.file
@@ -1345,7 +1345,7 @@ export async function deleteChapter(projectRoot: string, input: ChapterDeleteInp
     const text = read.text
     const baseline = read.fingerprint
     // Deleting a file the caller has not seen the latest version of is the one
-    // mistake git cannot undo for them: refuse it before the unlink (issue #5).
+    // mistake git cannot undo for them: refuse it before the unlink.
     const callerRefusal = callerBaselineRefusal(root, ref.file, baseline, input.expected)
     if (callerRefusal !== undefined) return callerRefusal
     const data = parseMarkdown(text).data
@@ -1353,7 +1353,7 @@ export async function deleteChapter(projectRoot: string, input: ChapterDeleteInp
     const catalogs = takeCatalogSnapshot(root)
     const drifted = driftedSinceRead(root, ref.file, baseline)
     if (drifted !== undefined) return drifted
-    // A delete is reversible on purpose (#35, roadmap X-9): the file is moved
+    // A delete is reversible on purpose (roadmap X-9): the file is moved
     // into the recovery bin (`.inkflow/trash/<same relative path>`) with a
     // verified byte-identical copy before the working tree loses it. Everything
     // below still behaves as before — the catalog is the projection and the

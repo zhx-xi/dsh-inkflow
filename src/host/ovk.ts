@@ -1,6 +1,6 @@
 /**
  * OpenViking as a semantic *backend* — connection, peer, blocks, and the one HTTP path
- * (#41, ADR-0009 P1–P3/P5, ADR-0020 E1–E3/E6).
+ * (ADR-0009 P1–P3/P5, ADR-0020 E1–E3/E6).
  *
  * WHAT THIS MODULE IS NOT. It is not a retrieval engine and it is not a second index.
  * OVK owns vectorisation and ranking (ADR-0009 P1); InkFlow owns *which book's which

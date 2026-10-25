@@ -1,5 +1,5 @@
 /**
- * The extraction tool surface (#38, ADR-0017): propose, list, accept, reject, purge.
+ * The extraction tool surface (ADR-0017): propose, list, accept, reject, purge.
  *
  * Five tools, one queue. Their shape follows from where the intelligence lives (D1):
  * the **model in the session** reads the manuscript and submits candidates; the plugin
@@ -92,9 +92,9 @@ function candidateView(record: CandidateRecord): Json {
     status: proposal.status,
     file: record.file,
     submittedAt: record.submittedAt,
-    // #175: present only when accept would refuse this candidate right now.
+    // Present only when accept would refuse this candidate right now.
     ...(proposal.willFail === undefined ? {} : { willFail: { ...proposal.willFail } }),
-    // #178: present when the same identity exists with different content.
+    // Present when the same identity exists with different content.
     ...(proposal.duplicate === undefined ? {} : { duplicate: { ...proposal.duplicate } }),
   }
 }
@@ -237,14 +237,14 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
       const chapters = Array.isArray(a['chapters'])
         ? a['chapters'].filter((item): item is string => typeof item === 'string')
         : []
-      // One snapshot for the whole batch (#175): nothing is written between these
+      // One snapshot for the whole batch: nothing is written between these
       // judgements, so the same view is honest — and it keeps a 30-candidate batch at a
       // single scan instead of thirty. The documented consequence: two candidates of the
       // SAME batch can both look clean here while the second one loses on accept, because
       // accept re-scans per candidate (a write may have landed in between).
       const scan = scanProject(root)
       const view = { scan: { tables: scan.tables, entities: scan.entities, issues: scan.issues }, entities: scan.entities }
-      // #178: what the book already holds decides the fate of each candidate —
+      // What the book already holds decides the fate of each candidate —
       // identical content is dropped here (nothing to review, nothing to write), while
       // different content is kept and marked so the panel can ask about overwriting.
       const skipped: Array<{ label: string; path: string; changedFields: readonly string[] }> = []
@@ -264,7 +264,7 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
         kept.push(record)
       }
       // Every candidate was already in the book word for word: there is no batch to write,
-      // and `proposeCandidates` rightly refuses an empty one — so answer directly (#178).
+      // and `proposeCandidates` rightly refuses an empty one — so answer directly.
       if (kept.length === 0) {
         return {
           ok: true,
@@ -316,7 +316,7 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
         submittedAt: result.value.submittedAt,
         created: result.value.created.map((proposal: CandidateProposal) => ({ ...proposal })),
         updated: result.value.updated.map((proposal: CandidateProposal) => ({ ...proposal })),
-        // Content the book already had word for word: dropped on the spot (#178).
+        // Content the book already had word for word: dropped on the spot.
         skipped: skipped.map((entry) => ({ ...entry })),
         fieldNames: candidateFieldNames(kind as ExtractKind),
       }

@@ -1,9 +1,9 @@
 /**
  * The segment **renderers** shared by the two assemblies in `writing-context.ts`
- * (issue #43, ADR-0022 D1/D2).
+ * (ADR-0022 D1/D2).
  *
- * Why these moved out of `writing-context.ts`: #43 adds a second assembly (the nine
- * segment brief) beside the six segment context that #20 shipped, and both must render
+ * Why these moved out of `writing-context.ts`: the brief adds a second assembly (the nine
+ * segment brief) beside the six segment context that shipped first, and both must render
  * a given segment with **exactly** the same bytes — that is what makes "the preview is
  * what the model gets" true instead of aspirational. Leaving the renderers inside one
  * of the two owners would have made the other one copy them (which is the drift ADR-0022
@@ -70,10 +70,10 @@ export function renderTail(tail: TailSlice, taken: number, body: string): string
 }
 
 /**
- * The book's identity line — the brief's **first line**, above every segment (issue #219).
+ * The book's identity line — the brief's **first line**, above every segment.
  *
  * Why it is not a segment: ADR-0022 D2 fixes the nine ids and their order, and the block
- * that used to carry the book (`project`, in the six-segment context) is exactly what #43
+ * that used to carry the book (`project`, in the six-segment context) is exactly what the brief
  * removed. The writer still has to know *which book* it is writing — a series shares one
  * setting library across books, and the title is where the author's expectation of tone
  * lives — so the identity belongs to the brief itself, outside the ladder, and is never

@@ -1,5 +1,5 @@
 /**
- * The setting library's save path (issue #30, second batch): one entity file,
+ * The setting library's save path (second batch): one entity file,
  * frontmatter fields plus body, against a compare-and-swap baseline.
  *
  * Why a module of its own: `library-view.ts` is the read projection and states

@@ -1,10 +1,10 @@
 /**
- * The proposal tab's half of the private channel (#45, roadmap X-12/X-25).
+ * The proposal tab's half of the private channel (roadmap X-12/X-25).
  *
  * Four routes and nothing else: one read (`GET /proposal`) and three writes
  * (`POST /proposal/{decide,apply,rollback}`). The domain lives in `proposal.ts`; this
  * module only turns its results into the wire shape and an HTTP status vocabulary, the
- * same arrangement `audit-channel.ts` (#33) and `extract-channel.ts` (#38) use.
+ * same arrangement `audit-channel.ts` and `extract-channel.ts` use.
  *
  * Three request rules, stated once here so the route table stays declarative:
  *

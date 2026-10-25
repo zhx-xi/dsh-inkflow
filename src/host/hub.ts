@@ -1,6 +1,6 @@
 /**
  * The book hub's Host half: the **no-session** projection of the workspace
- * registry (ADR-0010 D2/D3/D8, issue #85).
+ * registry (ADR-0010 D2/D3/D8).
  *
  * A root-scoped panel (`sidebar.panellist`) has no session, so `internal.ts`'s
  * "browser names a session, never a directory" chain cannot answer it. The
@@ -242,7 +242,7 @@ export function listRegisteredWorkspaces(ctx: HostContext): HubWorkspaceEntry[] 
 }
 
 /**
- * One row per canonical directory (issue #85 review focus 2): a directory
+ * One row per canonical directory (review focus 2): a directory
  * registered twice — or reached through two spellings of the same path on
  * Windows — must not appear as two books. The first registration wins and the
  * extras are counted (`duplicates`), because dropping them silently would hide
@@ -401,7 +401,7 @@ async function raceProbe(root: string, settings: CollectSettings): Promise<Probe
 /**
  * A workspace with no meta and no content directory is not a broken book — it
  * is a directory the user opened in DSH (ADR-0010 D2). The row says so, and the
- * action belongs to the new-book wizard (#86), which is why nothing here
+ * action belongs to the new-book wizard, which is why nothing here
  * initialises it.
  */
 function isNotABook(probe: ProjectProbe): boolean {

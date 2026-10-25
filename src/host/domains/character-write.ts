@@ -1,5 +1,5 @@
 /**
- * Character card writing (#25) — the **pure** half.
+ * Character card writing — the **pure** half.
  *
  * Two rules from the specs shape this file:
  *

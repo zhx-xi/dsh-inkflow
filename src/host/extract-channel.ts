@@ -1,5 +1,5 @@
 /**
- * The candidate queue's half of the private channel (#38, X-20): one read, three actions.
+ * The candidate queue's half of the private channel (X-20): one read, three actions.
  *
  * Scope: `GET /inkflow/internal/candidates` plus `POST /candidates/accept`,
  * `/candidates/reject` and `/candidates/purge`. Everything about *what* a candidate
@@ -177,9 +177,9 @@ export function buildCandidates(
           status: record.proposal.status,
           file: record.file,
           submittedAt: record.submittedAt,
-          // #175: the panel shows this as a badge and keeps the row out of a batch.
+          // The panel shows this as a badge and keeps the row out of a batch.
           ...(record.proposal.willFail === undefined ? {} : { willFail: { ...record.proposal.willFail } }),
-          // #178: same identity, different content — the row asks about overwriting.
+          // Same identity, different content — the row asks about overwriting.
           ...(record.proposal.duplicate === undefined ? {} : { duplicate: { ...record.proposal.duplicate } }),
         })),
       },

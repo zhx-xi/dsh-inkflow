@@ -1,7 +1,7 @@
 /**
- * Issue #47 — the job record on disk: paths, read-back, save, and the write lock around it.
+ * The job record on disk: paths, read-back, save, and the write lock around it.
  *
- * Extracted from `jobs.ts` by #193. This is the only job module that touches the
+ * Extracted from `jobs.ts` when it was split. This is the only job module that touches the
  * filesystem, and the only one that takes the project write lock — which is why it is a
  * file of its own: every other job module composes these calls, and none of them can widen
  * the blast radius without editing this one.

@@ -1,8 +1,8 @@
 /**
- * Issue #47 — the batch job's vocabulary: the two file formats, the caps, the states, and
+ * The batch job's vocabulary: the two file formats, the caps, the states, and
  * the record shapes those states are written into.
  *
- * Extracted from `jobs.ts` by #193. Nothing here does anything: no file is opened, no lock
+ * Extracted from `jobs.ts` when it was split. Nothing here does anything: no file is opened, no lock
  * is taken, no chapter is written. It is the contract the other three job modules share,
  * which is why it is its own file — `jobs-store.ts`, `jobs-actions.ts` and
  * `jobs-drafts.ts` must agree on the same constants and the same field names, and a string

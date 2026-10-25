@@ -1,5 +1,5 @@
 /**
- * The consistency audit (#33, roadmap §2.2 X-14, DoD D3-3): five check families, one
+ * The consistency audit (roadmap §2.2 X-14, DoD D3-3): five check families, one
  * `Finding[]`, one Markdown report.
  *
  * ## What this module is for, and what it deliberately is not
@@ -23,7 +23,7 @@
  *
  * The index is a cache (ADR-0005). A report about integrity answered from a stale cache
  * would be a lie, and the audit cannot rebuild it — `GET /audit` is a read path, and a read
- * path that writes is what issue #5 spent a module preventing. `scanProject()` is a pure
+ * path that writes is what a whole module here exists to prevent. `scanProject()` is a pure
  * read producing the same rows a rebuild would, so the audit is correct on a book whose
  * index was never built and on one whose index is weeks old, at the cost of one scan.
  *
@@ -67,7 +67,7 @@ export interface AuditCounts {
   readonly total: number
   readonly byGroup: Readonly<Record<FindingGroup, number>>
   readonly severity: Readonly<Record<FindingSeverity, number>>
-  /** Findings #36 has an automatic repair for; the rest need a human decision. */
+  /** Findings the repair pass has an automatic action for; the rest need a human decision. */
   readonly fixable: number
 }
 
@@ -107,7 +107,7 @@ const INFO_CODES: ReadonlySet<string> = new Set([
   'ID_PATH_DIVERGED',
   'TIMELINE_WORLD_TIME_REVERSED',
   'FORESHADOW_DUE_NOW',
-  // #188: a relation window whose boundary this book cannot place (a free label, or a chapter
+  // A relation window whose boundary this book cannot place (a free label, or a chapter
   // id it does not have) is "cannot say", not "says the opposite" — information for the
   // author, never an accusation.
   'RELATION_PERIOD_UNCOMPARABLE',
@@ -117,7 +117,7 @@ const INFO_CODES: ReadonlySet<string> = new Set([
  * What to *do* about each code, in one sentence a person can act on.
  *
  * One per code, asserted by `tests/audit.test.js`: a code without a hint would print the
- * machine's meaning twice, and "hint = meaning" is the report #33 was written to replace.
+ * machine's meaning twice, and "hint = meaning" is the report the audit was written to replace.
  */
 const HINTS: Readonly<Record<string, string>> = {
   // structure
@@ -136,7 +136,7 @@ const HINTS: Readonly<Record<string, string>> = {
   RELATION_SELF_LOOP: '删掉自环，或把它改成两个不同实体之间的关系',
   RELATION_DUPLICATE: '删掉重复的关系文件：同 (source, target, kind) 只保留一条',
   RELATION_FIELD_DEPRECATED: '删掉废弃字段（如 direction），换成现行字段名',
-  // #188: the window rules. The hint names the one decision the tool cannot make — which of
+  // The window rules. The hint names the one decision the tool cannot make — which of
   // two windows is the true one — because "merge them" would silently move the relation in time.
   RELATION_PERIOD_CONFLICT: '把这条关系的 since/until 改成成立的一段（since 早于 until）：两条边写了两套时段时，删掉错的那条或改成同一套',
   RELATION_PERIOD_UNCOMPARABLE: '把 since/until 写成本书的章 id（世界内时间在章序里没有位置）；不打算按章算就留空，留标签只会报「无法判定」',
@@ -164,7 +164,7 @@ const HINTS: Readonly<Record<string, string>> = {
   CHAPTER_NOT_MARKDOWN: '把该文件改成 .md，或移出 chapters/（catalog 的 index.json 除外）',
   // Codes a domain emits from **both** a scan and a write plan: a hand-written file raises
   // them, and a bad tool argument reuses the same code. They are in `FINDING_CODES`
-  // (group structure, `fixable: false`) since #33 surfaced the classification gap, so the
+  // (group structure, `fixable: false`) since the classification gap surfaced on the board, so the
   // report has a real hint for each instead of printing a bare code.
   CHARACTER_NAME_REQUIRED: '给角色卡补 name（文件名只是位置，不能当名字用）',
   CHARACTER_FIRST_APPEARANCE_INVALID: '把 firstAppearance 改成正整数章号，或删掉这个字段',
@@ -238,7 +238,7 @@ function catalogVolumeOf(path: string): string | undefined {
  *
  * `OUTLINE_NO_OVERALL` and `WORLD_ROOT_MULTIPLE` are properties of the whole project (there
  * is no single file to name), and `FindingLocator` has no "the book" variant — deliberately,
- * because #36 repairs *files*. `.` is the project root, renders as `` `.` `` in the report
+ * because the repair pass only ever repairs *files*. `.` is the project root, renders as `` `.` `` in the report
  * (whose header says what it means) and reads as 「整本书」 on the panel. The alternative
  * that was rejected: calling it a catalog finding, which would be a lie about which family
  * a missing overall outline belongs to.
@@ -364,7 +364,7 @@ export function auditProject(root: string): AuditReport {
 
   // Chapter positions come from the **files**, not the index: a stale cache would answer
   // "no such chapter" for the chapter a `dueBy` names, and the lateness rule would then go
-  // quiet instead of reporting (the failure #31 fixed for the writing reminder).
+  // quiet instead of reporting (the failure the writing reminder had already had).
   const positions = chapterPositionsFromFiles(root)
   const volumes = volumeOrdersOf(root)
   const current = latestChapter(positions)
@@ -464,7 +464,7 @@ export function renderAuditReport(report: AuditReport, options: RenderOptions = 
 }
 
 // ---------------------------------------------------------------------------
-// Exporting to `<book>/.inkflow/audit/` (ADR-0012 #6: derived, deletable, never in git)
+// Exporting to `<book>/.inkflow/audit/` (ADR-0012 decision 6: derived, deletable, never in git)
 // ---------------------------------------------------------------------------
 
 export interface AuditExportOk {
@@ -505,7 +505,7 @@ export function auditReportName(now: Date): string {
  *
  * A failed `ensurePrivateStateIgnored` does not fail the export: an unwritable `.gitignore`
  * is a repository problem, and losing the report over it would be the wrong trade (the same
- * call #35 makes in front of the bin).
+ * call the bin makes before a restore).
  */
 export function exportAuditReport(root: string, report: AuditReport, now: Date = new Date()): AuditExportResult {
   const relative = privateStateRelative('audit', auditReportName(now))

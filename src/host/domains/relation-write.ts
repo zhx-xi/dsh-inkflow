@@ -1,5 +1,5 @@
 /**
- * Write-side planning for the relation domain (issue #27, data-model §3.3, I-08).
+ * Write-side planning for the relation domain (data-model §3.3, I-08).
  *
  * Why a separate module: the index rebuild and the write path have to agree about
  * what one edge means, and the only way to guarantee that is to keep the decision
@@ -28,7 +28,7 @@ import type { DomainEntityRef } from './types.js'
 /**
  * `kind` of an edge — the knowledge graph's **type** vocabulary (data-model §3.3).
  *
- * Five types, and the split is a setting, not an enum for its own sake (#48):
+ * Five types, and the split is a setting, not an enum for its own sake:
  *
  *   `character`  人物关系（师徒、旧识、仇敌）—— 0.2.0 以来的缺省值，读写都兼容
  *   `knowledge`  知识图谱关系（概念/物品/术法之间）
@@ -131,7 +131,7 @@ function clean(value: string | undefined): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// The knowledge graph's second invariant: contradictory edges (issue #48)
+// The knowledge graph's second invariant: contradictory edges
 // ---------------------------------------------------------------------------
 
 /** One contradictory pair of edges, filed against the edge that came second by path. */

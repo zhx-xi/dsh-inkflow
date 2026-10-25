@@ -1,6 +1,6 @@
 /**
  * The shared library's Host half: a **read-only** projection of the plugin-level
- * shared directory (ADR-0010 D5, issue #87; the directory layout is ADR-0007 C1).
+ * shared directory (ADR-0010 D5; the directory layout is ADR-0007 C1).
  *
  * WHY IT LIVES BESIDE `hub.ts` INSTEAD OF INSIDE IT: the book hub projects the
  * workspace registry (books, judged per directory). The shared library is the one
@@ -14,7 +14,7 @@
  * WHICH ROOT IS IN FORCE IS NOT THIS MODULE'S DECISION: it is handed a root and
  * reports the warning that came with it. Resolution lives in `settings.ts` so this
  * file cannot disagree with the copies list or `inkflow_shared_list` about where the
- * library is (the #42 "I set it and nothing happened" defect #150 closes).
+ * library is (the "I set it and nothing happened" defect).
  *
  * TWO DATA SOURCES, ONE MEANING (ADR-0010 D5, ADR-0007 C1):
  *
@@ -25,7 +25,7 @@
  *   2. Otherwise the four directories are scanned **in memory**: name, kind,
  *      relative path, a real `sha256` and the entry's tags are recomputed. The
  *      answer is `indexSource: 'scan'`, and the manifest is left alone — writing
- *      it back is #40's job, and this module has no write path at all.
+ *      it back is the shared library's job, and this module has no write path at all.
  *
  * The manifest is NOT verified byte-for-byte against the files: doing that means
  * hashing every entry on every open, which is exactly the first-paint cost
@@ -105,7 +105,7 @@ export type HubSharedValue = {
   /** True when the entry cap or the time budget cut the answer short. */
   truncated: boolean
   /**
-   * Why a configured `sharedRoot` is not the root this answer came from (#150).
+   * Why a configured `sharedRoot` is not the root this answer came from.
    *
    * Absent in the normal case. Present when `settings.json` named a directory the
    * plugin refused (not absolute, or climbing with `..`) and answered from
@@ -217,7 +217,7 @@ export function buildHubShared(sharedRoot: string | undefined, options: HubShare
 }
 
 // ---------------------------------------------------------------------------
-// The write side's reader (#40): real hashes, never the manifest
+// The write side's reader: real hashes, never the manifest
 // ---------------------------------------------------------------------------
 
 export type SharedLibraryScan =

@@ -1,5 +1,5 @@
 /**
- * The fact ledger's model, as pure functions (issue #32): parse one `facts/<subject>.md`,
+ * The fact ledger's model, as pure functions: parse one `facts/<subject>.md`,
  * judge the interval rule, and answer "which facts hold at chapter N".
  *
  * Why the rules live here and not inside `facts.ts`: a rebuild judges a whole scan while
@@ -16,7 +16,7 @@
  * * **I-22 `FACT_LINE_MALFORMED`** — a body list item that is not a fact (ADR-0013). It is
  *   a **warning** carrying a line anchor `path#L<n>`: one bad line must not hide the rest
  *   of the file, and the author usually typed it by hand. Only a line that *meant* to be a
- *   fact is reported (`classifyFactLine`, rework of #135): the author's prose in a ledger is
+ *   fact is reported (`classifyFactLine`): the author's prose in a ledger is
  *   notes, not a defect.
  * * **I-23 `FACT_CONFLICT`** — two facts of the same `subject + attribute` whose intervals
  *   overlap **and** whose values differ. Intervals are `[since, until)` and are compared
@@ -135,7 +135,7 @@ function frontmatterKeyLine(text: string, key: string): number {
 }
 
 /**
- * The single fact a **legacy** ledger keeps in its frontmatter (read-only, rework of #135).
+ * The single fact a **legacy** ledger keeps in its frontmatter (read-only).
  *
  * Before ADR-0013 the field table of this very spec (§3.5, in git history) put one fact in the
  * frontmatter: `subject` / `attribute` / `value` / `since` / `until` / `chapterId` / `source`.
@@ -186,7 +186,7 @@ function legacyFrontmatterFact(
  * the subject by convention (`facts/<subject>.md`), and a ledger that refuses to load
  * because one metadata line was forgotten would lose every fact in it.
  *
- * The fallback is **not silent** (rework of PR #124): it is reported as a
+ * The fallback is **not silent**: it is reported as a
  * `FRONTMATTER_ISSUE` warning (non-blocking, I-10 — frontmatter the format requires and the
  * file does not carry). Silent was wrong in a way that shows up later: the facts of that
  * ledger are indexed under a name nobody chose (`facts/qingyin.md` → subject `qingyin`), so
@@ -230,7 +230,7 @@ export function parseFactsFile(path: string, text: string): ParsedFacts {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] as string
     const verdict = classifyFactLine(line)
-    // Prose is the author's notebook, and a ledger *is* notes with facts in them (#135): a `- `
+    // Prose is the author's notebook, and a ledger *is* notes with facts in them: a `- `
     // bullet that carries no known key is not a defect to report. `classifyFactLine` decides.
     if (verdict === 'prose') continue
     const lineNumber = firstLine + index
@@ -403,7 +403,7 @@ function compareRows(left: FactRow, right: FactRow): number {
  * Every overlapping pair of one `subject + attribute` whose values differ (I-23).
  *
  * Deterministic order (path, line, other path, other line) so a rebuild of unchanged files
- * reports the same list, which is what makes the finding diffable and the audit (#33)
+ * reports the same list, which is what makes the finding diffable and the audit
  * comparable between runs.
  */
 export function factsConflicts(rows: readonly FactRow[], seqOf: ChapterSeq): FactConflict[] {
@@ -536,7 +536,7 @@ export function factInEffect(row: FactRow, seqOf: ChapterSeq, atSeq: number): bo
  * The facts in effect at `atSeq`, in the one stable order the snapshot promises:
  * `subject → attribute → since (by chapter order) → line`.
  *
- * Determinism is a criterion of its own (issue #32): two runs on the same book must produce
+ * Determinism is a criterion of its own: two runs on the same book must produce
  * byte-identical output, so nothing here depends on map iteration order or on the readdir
  * order the rows arrived in.
  */

@@ -3,8 +3,8 @@
  * that says what can be put back" (ADR-0012, ADR-0026).
  *
  * There are two manifests in this plugin: the recovery bin's
- * (`.inkflow/trash/index.json`, #35 — chapter files the author deleted) and the private
- * purge area's (`.inkflow/purged/index.json`, #199 — review runs and closed proposals the
+ * (`.inkflow/trash/index.json` — chapter files the author deleted) and the private
+ * purge area's (`.inkflow/purged/index.json` — review runs and closed proposals the
  * author cleaned up). They differ in what an entry means and in what a restore must refuse;
  * they do **not** differ in how a manifest is read back safely.
  *

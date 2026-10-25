@@ -1,5 +1,5 @@
 /**
- * The proposal's only write path (#45, roadmap X-26): `applyProposal` and
+ * The proposal's only write path (roadmap X-26): `applyProposal` and
  * `rollbackProposal`.
  *
  * One module for both because they are two halves of one guarantee: the backup package
@@ -163,7 +163,7 @@ export async function applyProposal(projectRoot: string, input: ApplyProposalInp
   const packageBody: BackupBody = newBackupBody()
   packageBody.steps.push(`stage ${meta.path}`)
   packageBody.files.push({ path: meta.path, change: 'modified', before })
-  // Sealed before the write (ADR-0012 #1): a crash mid-apply must leave a readable
+  // Sealed before the write (ADR-0012 decision 1): a crash mid-apply must leave a readable
   // journal whose `sealed: false` says exactly that.
   const journal = sealBackup(root, opened.value, 'replace', packageBody, false, at)
   if (!journal.ok) return { ok: false, error: { ...journal.error } }

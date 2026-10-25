@@ -1,5 +1,5 @@
 /**
- * The batch tool surface (#47): `inkflow_batch_enqueue` / `_take` / `_complete` / `_approve`.
+ * The batch tool surface: `inkflow_batch_enqueue` / `_take` / `_complete` / `_approve`.
  *
  * Four tools, one loop, and the split is the milestone's rule (roadmap X-26): the plugin owns
  * the queue, the gate and the write; **the session's model owns the prose**. There is no "write
@@ -487,7 +487,7 @@ export function jobsTools(deps: JobsToolDeps): ToolDefinition[] {
   const batchComplete: ToolDefinition = {
     name: 'inkflow_batch_complete',
     description:
-      'Hand back the prose for one claimed chapter. Before anything is written, the seven quality gates (#44) run over the draft — ' +
+      'Hand back the prose for one claimed chapter. Before anything is written, the seven quality gates run over the draft — ' +
       'word count, chapter-end hook, the six de-AI dimensions, consistency with the setting library, sensitive words, platform form and ' +
       'mechanical proofreading — and the verdict is stored in the job record for that chapter. ' +
       'If the verdict has a warning or worse (or any finding when the job was created with pauseOn "any"), the job pauses, the draft is kept ' +

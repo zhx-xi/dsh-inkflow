@@ -66,7 +66,7 @@ export interface InkflowSettings {
   /**
    * Whether the semantic (OVK) backend may be used when it is available.
    *
-   * Read by the retrieval layer (#41), never by this module: settings state the
+   * Read by the retrieval layer, never by this module: settings state the
    * author's preference, they do not implement a backend.
    */
   semanticSearch: boolean
@@ -408,7 +408,7 @@ const ABSOLUTE_SHARED_ROOT = /^([a-zA-Z]:[\\/]|[\\/])/u
  *     relative value could have is `dataDir`, and re-rooting it silently is exactly
  *     how "I set it and nothing happened" happens (`libs` would mean
  *     `$DSH_HOME/inkflow/libs`, which is not what anyone typing into a field called
- *     *path* expects). This module used to resolve it there; #150 reversed that
+ *     *path* expects). This module used to resolve it there; the shared-root setting reversed that
  *     because the surprise cost more than the portability it bought.
  *   * CLIMBS WITH `..` — an absolute path carrying a `..` segment does not name the
  *     directory the author read out of the picker, and normalising it here would
@@ -430,7 +430,7 @@ function sharedRootProblem(configured: string): string | undefined {
  * THE ONE ANSWER EVERY READER TAKES: the shared page (`hub-shared.ts`), the copies
  * list, `inkflow_shared_list` and the copy path all resolve their root here, so a
  * configured directory cannot be honoured by one surface and ignored by another
- * (the state #42 left behind: the field existed, no reader looked at it, and the
+ * (the state a write-only setting left behind: the field existed, no reader looked at it, and the
  * setting silently did nothing).
  */
 export function sharedRootOf(dataDir: string, settings: InkflowSettings = settingsOf(dataDir)): SharedRootResolution {

@@ -1,5 +1,5 @@
 /**
- * The timeline event document (`timeline/<slug>.md`), as a pure text transform (#28).
+ * The timeline event document (`timeline/<slug>.md`), as a pure text transform.
  *
  * Why this is not inside `timeline-plan.ts`: that file holds the rules (world time,
  * the three conflicts, the two axes) and this one holds the **file shape** — what an
@@ -16,7 +16,7 @@ export interface TimelineDocumentFields {
   readonly title: string
   readonly worldTime?: string
   /**
-   * The era `worldTime` is written in (data-model §3.4, #48). Written only when the
+   * The era `worldTime` is written in (data-model §3.4). Written only when the
    * caller states one: a single-era book never grows the key, and the reader's default
    * (the calendar's last era) stays the file's default too.
    */

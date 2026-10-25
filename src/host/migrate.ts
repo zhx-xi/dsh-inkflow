@@ -1,5 +1,5 @@
 /**
- * The 6→9 directory migrator (#36): a legacy six-directory book → the current
+ * The 6→9 directory migrator: a legacy six-directory book → the current
  * nine content directories plus `index/`.
  *
  * What a legacy book actually is: the same `inkflow.json`, the same `chapters/`
@@ -320,7 +320,7 @@ export function applyMigration(projectRoot: string, input: MigrationApplyInput =
 
   const now = input.now ?? new Date()
 
-  // #138: `index/` is the one required directory a run creates *by itself*. `io.ts` keeps the
+  // `index/` is the one required directory a run creates *by itself*. `io.ts` keeps the
   // project write lock at `index/.write.lock`, so the first write of the run — the package's own
   // manifest — materialises `index/` before the `create-dir index` step is reached, and that step
   // then honestly reported "already in place". That is how a 13-step plan turned into "Applied 12
@@ -460,7 +460,7 @@ function stamp(at: Date): string {
  * work already in place (plan drift never overwrites anything).
  *
  * `absentAtStart` is the set of `create-dir` targets the run measured as missing
- * *before* it touched anything — see the comment at the call site (#138).
+ * *before* it touched anything — see the comment at the call site.
  */
 function runStep(
   root: string,
@@ -546,7 +546,7 @@ function runStep(
  * conflict, not an overwrite); this wrapper adds the audit trail, because "we
  * rolled it back" is exactly the claim that needs a timestamped record.
  *
- * It also finishes the directory half of the undo (#138): `backup.ts` removes the
+ * It also finishes the directory half of the undo: `backup.ts` removes the
  * directories the package recorded as created **when they are empty**, and says
  * nothing about the ones it had to leave. Two things follow, and both are handled
  * here rather than there:

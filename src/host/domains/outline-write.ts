@@ -1,5 +1,5 @@
 /**
- * Outline write model (`outlines/`) — the pure half of the write side (issue #24).
+ * Outline write model (`outlines/`) — the pure half of the write side.
  *
  * Why a planner instead of "check inside the tool": I-01/I-02/I-05 used to exist only
  * in the rebuild validator, which runs *after* the bad file is already on disk. A

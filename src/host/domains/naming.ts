@@ -2,7 +2,7 @@
  * Name normalisation — one implementation, shared by every domain (roadmap X-1).
  *
  * A second `nameKey` would let the write path and the rebuild disagree about
- * whether two names collide, which is exactly the class of bug #101 forbids.
+ * whether two names collide, which is exactly the class of bug this module exists to forbid.
  */
 
 /** Normalise a name for uniqueness checks: NFKC, case-fold, strip whitespace. */
@@ -26,7 +26,7 @@ export interface FoldedText {
 }
 
 /**
- * The offset-preserving companion of {@link nameKey} (#29).
+ * The offset-preserving companion of {@link nameKey}.
  *
  * Same two rules — NFKC, then case folding — but applied **one code point at a
  * time**, so each folded element keeps the index of the character it came from.

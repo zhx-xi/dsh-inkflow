@@ -10,7 +10,7 @@
  *   - Nothing is written before `confirm: true`; the wizard's `plan` step is
  *     strictly read-only (ADR-0006 D3).
  *
- * Since #193 this file is the registry, not the tools. Every built-in lives in one
+ * Since the split this file is the registry, not the tools. Every built-in lives in one
  * file per domain under `./tools/` (`project-tools.ts`, `chapter-tools.ts`,
  * `search-tools.ts`, `audit-tools.ts`, `gate-tools.ts`, `shared-library-tools.ts`,
  * `import-tools.ts`), the shapes they all return live in `./tools/shared.ts`, and
@@ -45,7 +45,7 @@ export { TOOL_OUTPUT_SCHEMA } from './tools/shared.js'
 
 /**
  * The project resolution and the four-state refusal are shared with the domain-owned
- * tools, so both live in `domains/tool-project.ts` (#25 review, D-4). The copy that used
+ * tools, so both live in `domains/tool-project.ts` (review, D-4). The copy that used
  * to sit here had already drifted: the character tools answered a refusal without the
  * `build` summary this file attaches through `withBuild()` below, so the same broken
  * book read as two different situations depending on which tool asked.
@@ -70,55 +70,55 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     ...chapterReadTools(deps), // chapter_list
     ...searchTools(deps), // chapter_search, search, search_replace
     ...auditTools(deps), // project_audit
-    // The quality gate (#44): seven checks over one chapter plus the verdict file.
+    // The quality gate: seven checks over one chapter plus the verdict file.
     ...gateTools(deps), // gate_check
     ...importTools(deps), // library_import
     ...projectWizardTools(deps), // project_plan, project_init
     ...chapterTools(deps), // volume_create, volume_rename, chapter_create, chapter_write, chapter_move, chapter_delete
-    // Maintenance (#36): repair and migration own their own gate allowance (a book
+    // Maintenance: repair and migration own their own gate allowance (a book
     // that is `needs-repair` must still be repairable) and their own module.
     ...repairTools(deps),
-    // The shared library (#40): one read, two writes, all in one direction
+    // The shared library: one read, two writes, all in one direction
     // (`shared-copy.ts`). Registered after the maintenance pair because they are
     // the most recent built-ins and the surface baseline lists them in this order.
     ...sharedLibraryTools(deps), // shared_list, shared_copy, shared_update
-    // The plugin's own state (#42): settings, the diagnostics package and the local
+    // The plugin's own state: settings, the diagnostics package and the local
     // backups. They live outside any book, so they ship as one module with one gate
     // policy of their own. `toolSurface` is a provider because the diagnostics package
     // lists what this table registers, and building the table again at export time is
     // the only way to name the real surface without a module cycle.
     ...settingsTools({ ...deps, toolSurface: () => buildTools(deps, modules) }),
-    // The extraction queue (#38, ADR-0017): propose / list / accept / reject / purge.
+    // The extraction queue (ADR-0017): propose / list / accept / reject / purge.
     // Built-ins rather than domain tools: a candidate is not an entity and belongs to no
     // content directory, so no domain module owns this surface.
     ...extractTools(deps),
-    // Semantic retrieval (#41): status / rebuild / purge. One module, because all three
+    // Semantic retrieval: status / rebuild / purge. One module, because all three
     // read the same availability verdict and the same block ledger, and the purge is the
     // only path in this plugin allowed to call OVK's physical delete (ADR-0009 P6).
     ...semanticTools(deps),
-    // The old-library migrator (#51): plan / apply / rollback. A built-in for the same
+    // The old-library migrator: plan / apply / rollback. A built-in for the same
     // reason as the pair above — it writes into every content directory, so no single
     // domain module owns it, and its dry run must be the same computation as its apply.
     ...etlTools(deps),
-    // The review DAG (#46, ADR-0022 D3, X-26): run / context / compare. Built-ins for the
+    // The review DAG (ADR-0022 D3, X-26): run / context / compare. Built-ins for the
     // same reason as the pair above — a review reads one chapter plus two setting
     // directories and writes a run record under `.inkflow/review/`, so no content
     // directory owns it, and the plugin embeds no model client to produce the opinions.
     ...reviewTools(deps),
-    // Proposals (#45, ADR-0023, X-26): create / decide / apply / rollback. A built-in rather
+    // Proposals (ADR-0023, X-26): create / decide / apply / rollback. A built-in rather
     // than a domain tool — a proposal is not an entity, belongs to no content directory, and
     // its one write path is the chapter writer, which no domain module owns.
     ...proposalTools(deps),
-    // The batch queue (#47, ADR-0023, X-26/X-30): enqueue / take / complete / approve. Built-ins
+    // The batch queue (ADR-0023, X-26/X-30): enqueue / take / complete / approve. Built-ins
     // for the same reason as the pair above — a job is not an entity, belongs to no content
     // directory, and the plugin embeds no model client to draft the chapters it queues.
     ...jobsTools(deps),
-    // Export (#50, ADR-0024, X-27): one tool, `inkflow_export`, writing an EPUB / DOCX /
+    // Export (ADR-0024, X-27): one tool, `inkflow_export`, writing an EPUB / DOCX /
     // Markdown / TXT artifact into `dataDir/exports/` and nothing into the book. A built-in
     // rather than a domain tool: it reads every content directory at once, so no single
     // content directory owns it.
     ...exportTools(deps),
-    // The series sync (#49, ADR-0007 C2/C5, X-17): plan / apply. Built-ins for the same reason
+    // The series sync (ADR-0007 C2/C5, X-17): plan / apply. Built-ins for the same reason
     // as the shared library they extend — they read the plugin-level library and write into
     // `world/`/`library/`, so no content directory owns them; and `apply` recomputes the plan
     // so it can only write the rows a preview produced.

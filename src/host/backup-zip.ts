@@ -16,7 +16,7 @@
  *
  * WHY RESTORE PREVIEWS FIRST (D6). A package may be days old while the book moved on,
  * so a restore that simply writes every entry back would silently discard that work.
- * The discipline is #36's: compare, then write, then report.
+ * The discipline is the repair pass's: compare, then write, then report.
  *
  *   - `planRestore` reads the package, compares every entry with the bytes on disk
  *     now, and writes NOTHING. That plan is what the panel shows and what the tool
@@ -286,7 +286,7 @@ function clampKeep(keep: number | undefined): number {
  * Resolved BEFORE writing rather than after a collision: D3's stamp has one-second
  * resolution, so two artifacts in the same second are normal (a tool call and a panel
  * click), and checking afterwards would leave the first one behind with a name nobody
- * asked for. Exported because the exporter (#50, ADR-0024 D4) names its files by the same
+ * asked for. Exported because the exporter (ADR-0024 D4) names its files by the same
  * rule and a second copy of it would drift.
  */
 export function freeStampedName(dir: string, slug: string, stamp: string, ext: string): string {

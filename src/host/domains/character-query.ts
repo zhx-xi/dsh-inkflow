@@ -1,5 +1,5 @@
 /**
- * Reading character cards back out of the derived index (#25).
+ * Reading character cards back out of the derived index.
  *
  * Same policy as `query.ts` / `search.ts`: the index is a cache, so a missing or
  * stale-schema database answers `undefined` and the caller tells the user to
