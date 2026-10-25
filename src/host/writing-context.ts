@@ -47,7 +47,7 @@ import { Buffer } from 'node:buffer'
 import { basename } from 'node:path'
 
 import { charactersInChapter, taggedOutlineSegment, voiceInChapter } from './brief-sources.js'
-import { MAX_OUTLINE_CHARS, SECTION_HEADING, clipHead, clipTail, renderBriefHeader, renderChapter, renderProject, renderTail, renderTrimMarker, renderWorld } from './writing-context-render.js'
+import { MAX_OUTLINE_CHARS, SECTION_HEADING, clipHead, clipTail, renderBriefHeader, renderChapter, renderOutlineSegment, renderProject, renderTail, renderTrimMarker, renderWorld } from './writing-context-render.js'
 import { factsSegment } from './domains/facts-prompt.js'
 import { foreshadowSegment } from './domains/foreshadowing-query.js'
 import type { ProjectState } from './project.js'
@@ -635,21 +635,21 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
   const current = pair.current
   const chapterId = briefChapterId(probe.root, current)
   const haystack = `${outline?.body ?? ''}\n${tail?.body ?? ''}`
-  // Decided once from the budget alone: no rung may be the reason a book loses its name.
-  const fullHeader = renderBriefHeader(materials.title, materials.stats, false)
-  const header = estimateTokens(fullHeader) <= budgetTokens ? fullHeader : renderBriefHeader(materials.title, materials.stats, true)
+  // Decided once from the budget alone: no rung may be the reason a book loses its name, or
+  // the reason a chapter loses its number.
+  const fullHeader = renderBriefHeader(materials.title, materials.stats, false, current)
+  const header =
+    estimateTokens(fullHeader) <= budgetTokens ? fullHeader : renderBriefHeader(materials.title, materials.stats, true, current)
 
   // Every segment's full text, built once: the ladder only decides which of these
   // survive, so a rung can never change what a segment says.
   const built = new Map<BriefSegmentId, { text: string; truncated: boolean; missing: boolean }>()
-  if (current !== undefined && outline !== undefined) {
-    built.set('outline', { text: renderChapter(current, outline), truncated: outline.body.length > MAX_OUTLINE_CHARS, missing: false })
-  } else {
-    // No node is no segment: the heading-with-nothing-under-it this branch used to render
-    // (`renderChapter(current, undefined)`) reads like "the outline is fine" while the plot
-    // points the writer needs are gone. Silence is the failure this segment exists to break.
-    built.set('outline', { text: '', truncated: false, missing: true })
-  }
+  // The identity that rode in this block is on the header line now, so the segment depends on
+  // the node alone; an empty body is the same answer as no node (a heading over a blank line
+  // reads as "the plan is fine").
+  built.set('outline', outline === undefined || outline.body === ''
+    ? { text: '', truncated: false, missing: true }
+    : { text: renderOutlineSegment(outline), truncated: outline.body.length > MAX_OUTLINE_CHARS, missing: false })
   // The two marker bullets in THIS chapter's outline node are their only source.
   for (const id of ['promise', 'anchors'] as const) {
     const tagged = taggedOutlineSegment(outline?.body ?? '', id, BRIEF_LABELS[id])

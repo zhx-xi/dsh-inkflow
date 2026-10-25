@@ -359,7 +359,7 @@ test('the brief trims in the documented order and never drops the task statement
     )
     previousCount = brief.trims.length
     // The hard floor: the task statement is on the wire on every rung.
-    assert.ok(brief.text.includes('### 当前章'), `chapter kept at budget ${String(budgetTokens)}`)
+    assert.ok(brief.text.includes('### 剧情点'), `plot points kept at budget ${String(budgetTokens)}`)
     assert.ok(brief.text.includes('鹤鸣剑出鞘'))
     // The marker the model reads names the same segments, in the same order — and
     // none of the retired six-segment labels.
@@ -444,7 +444,22 @@ test('the shared segments come out byte-identical through both assemblies', asyn
   const fromBrief = (id) => brief.segments.find((segment) => segment.id === id)?.text ?? ''
 
   // The same four materials under two ids: current chapter, previous tail, world book.
-  assert.equal(fromBrief('outline'), fromContext('chapter'), 'the current chapter block is the same bytes')
+  // MIGRATED (chapter identity line): the brief's `outline` segment is the plot points only.
+  // The six-segment `chapter` block still opens with the identity paragraph, which now lives
+  // on the brief's header line — so the blocks are compared from the line after it, and the
+  // one heading difference is named rather than glossed over.
+  const chapterBlock = fromContext('chapter').split('\n')
+  assert.equal(
+    fromBrief('outline'),
+    ['### 剧情点', ...chapterBlock.slice(2)].join('\n'),
+    'the plot points and the outline path are the same bytes; only the heading differs',
+  )
+  assert.match(
+    chapterBlock[1],
+    /^标题：第二章 夜行｜卷：vol-01｜seq：2｜状态：draft$/u,
+    'the paragraph the brief moved out of the block is exactly the chapter identity',
+  )
+  assert.ok(brief.header.includes('本章：第二章 夜行'), 'and the brief carries it on the header line')
   assert.equal(fromBrief('prevTail'), fromContext('tail'), 'the previous tail is the same bytes')
   assert.equal(fromBrief('world'), fromContext('world'), 'the world book is the same bytes')
   // The two registered domain segments come from one builder each (X-13), so they agree too.
@@ -498,13 +513,20 @@ test('the injected text still addresses the chapter it is for', async (t) => {
   t.after(() => rmSync(root, { recursive: true, force: true }))
   await sampleProject(root)
 
-  const text = buildWritingBrief(root).text
-  assert.ok(text.includes('### 当前章'))
-  assert.ok(text.includes('标题：第二章 夜行'), 'which chapter')
-  assert.ok(text.includes('卷：vol-01'), 'which volume')
-  assert.ok(text.includes('seq：2'), 'which number')
-  assert.ok(text.includes('状态：draft'), 'its status')
+  // MIGRATED (chapter identity line): the same four facts, read off the header line instead
+  // of a `### 当前章` paragraph. The identity is brief-level now, so this is where the
+  // "the model knows which chapter it is writing" contract lives.
+  const brief = buildWritingBrief(root)
+  const text = brief.text
+  assert.match(
+    brief.header,
+    /^《测试之书》· 全书 \d+ 章 \/ \d+\.\d 万字 · 本章：第二章 夜行（vol-01 · seq 2 · draft）$/u,
+    'which book, which chapter, which volume, which number, which status',
+  )
+  assert.equal(text.split('\n')[0], brief.header, 'and it is the first line of the injection')
+  assert.ok(text.includes('### 剧情点'), 'the plan for that chapter follows')
   assert.ok(text.includes('大纲 outlines/ch-0002.md：'), 'and where its outline lives')
+  assert.equal(text.includes('标题：第二章 夜行'), false, 'named once, not twice')
 })
 
 test('a zero previous tail is a definition, not a trim', async (t) => {
@@ -713,7 +735,7 @@ test('the session directory falls back to the header, then to the process cwd', 
   registerWritingContext(ctx, { log: ctx.logger('test') })
 
   const viaHeader = sections[0].text({ agent: { session: { header: { cwd: root } } } })
-  assert.ok(viaHeader.includes('### 当前章'))
+  assert.ok(viaHeader.includes('### 剧情点'))
 })
 
 test('a missing systemPrompt service degrades to one log line', () => {
@@ -752,7 +774,7 @@ test('apply assembles the section and honours the configured budget', async (t) 
   assert.equal(sections.length, 1)
   const squeezed = sections[0].text({ agent: { session: {} } })
   assert.match(squeezed, /\[trimmed: /)
-  assert.ok(squeezed.includes('### 当前章'))
+  assert.ok(squeezed.includes('### 剧情点'))
 
   // And the default budget fits this small book: no marker at all.
   const second = createPromptService()
@@ -796,7 +818,7 @@ test('a squeezed injection is counted in the brief run summary (diagnostics)', a
   apply(ctx, { dataDir, serveHttp: false, promptBudgetTokens: 200 })
 
   const text = sections[0].text({ agent: { session: {} } })
-  assert.ok(text.includes('### 当前章'), 'the task statement is still injected')
+  assert.ok(text.includes('### 剧情点'), 'the task statement is still injected')
   assert.match(text, /\[trimmed: 世界书、上章结尾/u)
 
   const summary = briefRunSummary()
