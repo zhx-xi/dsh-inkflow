@@ -32,7 +32,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { applyCandidate, DOMAIN_MODULES } from './domains/index.js'
-import type { DomainModule } from './domains/types.js'
+import type { DomainModule, DomainWriteView } from './domains/types.js'
 import { rowsOf } from './domains/scan-helpers.js'
 import { characterFileName, planCharacterUpsert, renderCharacterCard } from './domains/character-write.js'
 import type { CharacterRow, CharacterState } from './domains/character.js'
@@ -374,6 +374,107 @@ function storeError(error: ExtractError): AcceptRefusal {
 }
 
 /**
+ * "Would this candidate land, and as what?" — the ONE judgement (#175).
+ *
+ * Accept runs it and writes when it says yes; `inkflow_extract_propose` runs the very
+ * same function and stores the refusal on the candidate as `willFail`, so the author
+ * learns that 5 of 30 candidates are doomed *before* clicking accept, and the two
+ * verdicts can never disagree (a second judge would drift the first time a domain
+ * gained an invariant).
+ *
+ * Read-only: it scans the files, parses the rendered document, folds it into the view
+ * and asks the domain's own `validate()`. The write (`writeTextAtomic`) stays in
+ * `acceptCandidates`, which is why a refusal here costs the book nothing.
+ *
+ * `view` is optional so a caller judging a whole batch can scan once: nothing is
+ * written between those calls, so one snapshot is honest — with the documented
+ * consequence that two candidates *of the same batch* are judged independently
+ * (the accept path re-scans per candidate and would refuse the second one).
+ */
+export function judgeCandidate(input: {
+  readonly root: string
+  readonly kind: ExtractKind
+  readonly fields: Readonly<Record<string, unknown>>
+  readonly modules?: readonly DomainModule[]
+  readonly view?: DomainWriteView
+}): { ok: true; path: string; text: string } | { ok: false; error: AcceptRefusal } {
+  const domain = domainFor(input.kind, input.modules ?? DOMAIN_MODULES)
+  if (domain === undefined) return refuse('CANDIDATE_KIND_INVALID', `no domain module owns "${input.kind}"`)
+
+  // A synthetic proposal: judging must not depend on an id, an evidence string or a
+  // status — those are the queue's business, not the document's.
+  const materialized = materializeCandidate({
+    candidateId: 'ex-00000000',
+    kind: input.kind,
+    fields: input.fields,
+    evidence: '',
+    rationale: '',
+    confidence: 'medium',
+    status: 'proposed',
+  })
+  if (!materialized.ok) return materialized
+  const { path, text } = materialized.value
+
+  // Scan only when the caller did not hand one in: `propose` judges a whole batch against
+  // a single snapshot (nothing is written between those calls), and rescanning per
+  // candidate there would walk the book once per candidate for no gain.
+  const view: DomainWriteView =
+    input.view ??
+    (() => {
+      const scan = scanProject(input.root)
+      return { scan: { tables: scan.tables, entities: scan.entities, issues: scan.issues }, entities: scan.entities }
+    })()
+
+  if (input.kind === 'character') {
+    // I-03 has a code of its own and a name is what a reader sees, so a taken name is
+    // reported as the name collision it is — `planCharacterUpsert` is the exact judge
+    // `inkflow_character_upsert` uses, called with no "own path" exemption: accepting
+    // never edits a card.
+    const plan = planCharacterUpsert({
+      name: textField(input.fields, 'name') ?? '',
+      aliases: listField(input.fields, 'aliases'),
+      existing: rowsOf<CharacterRow>(view.scan, 'characters'),
+    })
+    if (!plan.ok) {
+      return refuse(plan.code, plan.message, plan.conflictPath)
+    }
+  }
+
+  const parsed = domain.parseFile({ root: input.root, path, text })
+  if (parsed.issues.length > 0) {
+    const issue = parsed.issues[0]
+    return refuse(issue?.code ?? 'FRONTMATTER_ISSUE', issue?.detail ?? 'the document could not be parsed', path)
+  }
+
+  // Accept creates; it never overwrites. A new entity's id is its path for every kind
+  // but `character`, so an occupied address is I-04 `DUPLICATE_ID`.
+  const targetId = parsed.entity?.id ?? path
+  const clash =
+    view.entities.find((entity) => entity.path === path) ??
+    view.entities.find((entity) => entity.id === targetId && entity.path !== path)
+  if (clash !== undefined) {
+    return refuse(
+      'DUPLICATE_ID',
+      clash.path === path
+        ? `${path} already holds an entity; accept never overwrites one — edit it, or reject this candidate`
+        : `id "${targetId}" is already used by ${clash.path} (I-04)`,
+      clash.path,
+    )
+  }
+
+  const post = applyCandidate(view, parsed)
+  const blocking = domain
+    .validate({ root: input.root, scan: post.scan, entities: post.entities, candidate: { path } })
+    .filter((issue) => issue.path === undefined || issue.path === path)
+  if (blocking.length > 0) {
+    const issue = blocking[0]
+    return refuse(issue?.code ?? 'INVALID', issue?.detail ?? 'the entity breaks an invariant', path)
+  }
+
+  return { ok: true, path, text }
+}
+
+/**
  * Accept candidates: one document each, through the seam, then marked `accepted`.
  *
  * All of it happens under **one** project write lock: the batch is one author-visible
@@ -416,82 +517,17 @@ export function acceptCandidates(
         failed({ code: 'CANDIDATE_ALREADY_PROCESSED', message: `${candidateId} is already ${proposal.status}` })
         continue
       }
-      const domain = domainFor(proposal.kind, modules)
-      if (domain === undefined) {
-        failed({ code: 'CANDIDATE_KIND_INVALID', message: `no domain module owns "${proposal.kind}"` })
+      // The verdict comes from `judgeCandidate` — the same function `propose` calls to
+      // mark `willFail` (#175), so what the panel promised and what accept does cannot
+      // drift. A fresh scan happens inside it per candidate: the previous candidate in
+      // this batch may have added a file, and judging the next one against a stale view
+      // could let two candidates collide in the index after both were "validated".
+      const judged = judgeCandidate({ root: projectRoot, kind: proposal.kind, fields: proposal.fields, modules })
+      if (!judged.ok) {
+        failed(judged.error)
         continue
       }
-      const materialized = materializeCandidate(proposal)
-      if (!materialized.ok) {
-        failed(materialized.error)
-        continue
-      }
-      const { path, text } = materialized.value
-
-      // A fresh scan per candidate: the previous candidate in this batch may have
-      // added a file, and judging the next one against a stale view could let two
-      // candidates collide in the index after both were "validated".
-      const scan = scanProject(projectRoot)
-      const view = { scan: { tables: scan.tables, entities: scan.entities, issues: scan.issues }, entities: scan.entities }
-
-      if (proposal.kind === 'character') {
-        // I-03 has a code of its own and a name is what a reader sees, so a taken name
-        // is reported as the name collision it is — `planCharacterUpsert` is the exact
-        // judge `inkflow_character_upsert` uses, called with no "own path" exemption:
-        // accepting never edits a card.
-        const plan = planCharacterUpsert({
-          name: textField(proposal.fields, 'name') ?? '',
-          aliases: listField(proposal.fields, 'aliases'),
-          existing: rowsOf<CharacterRow>(view.scan, 'characters'),
-        })
-        if (!plan.ok) {
-          failed({ code: plan.code, message: plan.message, ...(plan.conflictPath === undefined ? {} : { path: plan.conflictPath }) })
-          continue
-        }
-      }
-
-      const parsed = domain.parseFile({ root: projectRoot, path, text })
-      if (parsed.issues.length > 0) {
-        const issue = parsed.issues[0]
-        failed({
-          code: issue?.code ?? 'FRONTMATTER_ISSUE',
-          message: issue?.detail ?? 'the document could not be parsed',
-          path,
-        })
-        continue
-      }
-
-      // Accept creates; it never overwrites. A new entity's id is its path for every
-      // kind but `character`, so an occupied address is I-04 `DUPLICATE_ID`.
-      const targetId = parsed.entity?.id ?? path
-      const clash =
-        view.entities.find((entity) => entity.path === path) ??
-        view.entities.find((entity) => entity.id === targetId && entity.path !== path)
-      if (clash !== undefined) {
-        failed({
-          code: 'DUPLICATE_ID',
-          message:
-            clash.path === path
-              ? `${path} already holds an entity; accept never overwrites one — edit it, or reject this candidate`
-              : `id "${targetId}" is already used by ${clash.path} (I-04)`,
-          path: clash.path,
-        })
-        continue
-      }
-
-      const post = applyCandidate(view, parsed)
-      const blocking = domain
-        .validate({ root: projectRoot, scan: post.scan, entities: post.entities, candidate: { path } })
-        .filter((issue) => issue.path === undefined || issue.path === path)
-      if (blocking.length > 0) {
-        const issue = blocking[0]
-        failed({
-          code: issue?.code ?? 'INVALID',
-          message: issue?.detail ?? 'the entity breaks an invariant',
-          path,
-        })
-        continue
-      }
+      const { path, text } = judged
 
       const written = writeTextAtomic(projectRoot, path, text)
       if (!written.ok) {

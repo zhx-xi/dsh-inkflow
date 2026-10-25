@@ -67,6 +67,22 @@ export interface CandidateProposal {
   readonly rationale: string
   readonly confidence: Confidence
   readonly status: CandidateStatus
+  /**
+   * What `accept` would refuse, judged at submit time by the very same function (#175).
+   *
+   * Absent means "no conflict seen"; it is a **warning, not a gate** — the author may
+   * still accept (or fix the candidate first), and the queue must keep working after a
+   * book changes underneath it, so this is recomputed on every submit rather than
+   * trusted forever.
+   */
+  readonly willFail?: CandidateVerdict
+}
+
+/** A refusal in the shape the accept path reports, so the two can be compared (D…). */
+export interface CandidateVerdict {
+  readonly code: string
+  readonly message: string
+  readonly path?: string
 }
 
 /** One submission: the batch file's whole content. */
@@ -527,6 +543,7 @@ function parseProposal(value: unknown): CandidateProposal | undefined {
   if (!(CANDIDATE_STATUSES as readonly unknown[]).includes(status)) return undefined
   if (!(CONFIDENCES as readonly unknown[]).includes(confidence)) return undefined
   const fields = isRecord(value['fields']) ? value['fields'] : {}
+  const willFail = parseVerdict(value['willFail'])
   return {
     candidateId,
     kind,
@@ -535,7 +552,25 @@ function parseProposal(value: unknown): CandidateProposal | undefined {
     rationale: typeof value['rationale'] === 'string' ? value['rationale'] : '',
     confidence: confidence as Confidence,
     status: status as CandidateStatus,
+    ...(willFail === undefined ? {} : { willFail }),
   }
+}
+
+/**
+ * A stored `willFail`, sanitized. Anything that does not look like
+ * `{code, message, path?}` is dropped rather than repaired: the field is advisory, and a
+ * half-read warning would be worse than none (it drives a greyed-out button).
+ */
+function parseVerdict(value: unknown): CandidateVerdict | undefined {
+  if (!isRecord(value)) return undefined
+  const code = value['code']
+  const message = value['message']
+  if (typeof code !== 'string' || code.trim() === '') return undefined
+  if (typeof message !== 'string' || message.trim() === '') return undefined
+  const path = value['path']
+  return typeof path === 'string' && path.trim() !== ''
+    ? { code: code.trim(), message: message.trim(), path: path.trim() }
+    : { code: code.trim(), message: message.trim() }
 }
 
 /**
@@ -610,6 +645,9 @@ function serializeBatch(batch: CandidateBatch): string {
     rationale: proposal.rationale,
     confidence: proposal.confidence,
     status: proposal.status,
+    // Written only when present: a clean candidate's file stays byte-identical to what
+    // 0.4.0 wrote, and an older plugin reading the queue sees the fields it knows.
+    ...(proposal.willFail === undefined ? {} : { willFail: proposal.willFail }),
   }))
   const text = JSON.stringify(
     { schemaVersion: batch.schemaVersion, submittedAt: batch.submittedAt, source: { chapters: [...batch.source.chapters] }, proposals },
@@ -669,6 +707,14 @@ export interface ProposeProposalInput {
   readonly evidence: unknown
   readonly rationale?: unknown
   readonly confidence?: unknown
+  /**
+   * What the accept path would refuse, worked out by the caller (#175).
+   *
+   * The queue must not know how an entity is judged — that is the domain seam's job — so
+   * `inkflow_extract_propose` runs `judgeCandidate()` and hands the answer here. Anything
+   * malformed is dropped by `parseVerdict`, exactly as a hand-edited file would be.
+   */
+  readonly willFail?: unknown
 }
 
 export interface ProposeInput {
@@ -778,6 +824,10 @@ export function proposeCandidates(root: string, input: ProposeInput): { ok: true
         rationale: typeof proposal.rationale === 'string' ? proposal.rationale.trim() : '',
         confidence,
         status: 'proposed',
+        ...(() => {
+          const verdict = parseVerdict(proposal.willFail)
+          return verdict === undefined ? {} : { willFail: verdict }
+        })(),
       },
       ...(byId.get(candidateId) === undefined ? {} : { file: byId.get(candidateId)?.file ?? '' }),
     })
