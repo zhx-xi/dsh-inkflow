@@ -25,8 +25,28 @@ import { createHash } from 'node:crypto'
 import { frontmatterLine, patchFrontmatter, splitFrontmatter } from '../frontmatter.js'
 import type { DomainEntityRef } from './types.js'
 
-/** `kind` of an edge: a person-to-person relation, or a knowledge-graph relation. */
-export const RELATION_KINDS = ['character', 'knowledge'] as const
+/**
+ * `kind` of an edge — the knowledge graph's **type** vocabulary (data-model §3.3).
+ *
+ * Five types, and the split is a setting, not an enum for its own sake (#48):
+ *
+ *   `character`  人物关系（师徒、旧识、仇敌）—— 0.2.0 以来的缺省值，读写都兼容
+ *   `knowledge`  知识图谱关系（概念/物品/术法之间）
+ *   `kinship`    血缘亲缘（父子、同族）
+ *   `faction`    阵营与隶属（门派、势力、效忠）
+ *   `geography`  地理关系（位于、通往、相邻）
+ *
+ * Why the same field carries both "what kind of edge is this" and "which family it
+ * belongs to": the column set of the `entities` projection is fixed by X-1, so a second
+ * field would have nowhere to live in the index, and two vocabularies for one axis is
+ * how a panel ends up grouping half the edges. `toEntity()` puts this value in
+ * `category`, which is what a tree groups by.
+ *
+ * Unknown values degrade to `character` **and are reported** (`FRONTMATTER_ISSUE`), the
+ * same policy a bad chapter `status` uses: a rebuild must keep the edge visible, and a
+ * write is refused with `RELATION_FIELD_INVALID` before anything lands.
+ */
+export const RELATION_KINDS = ['character', 'knowledge', 'kinship', 'faction', 'geography'] as const
 export type RelationKind = (typeof RELATION_KINDS)[number]
 
 /**
@@ -110,9 +130,91 @@ function clean(value: string | undefined): string | undefined {
   return trimmed === '' ? undefined : trimmed
 }
 
+// ---------------------------------------------------------------------------
+// The knowledge graph's second invariant: contradictory edges (issue #48)
+// ---------------------------------------------------------------------------
+
+/** One contradictory pair of edges, filed against the edge that came second by path. */
+export interface RelationConflict {
+  readonly code: 'RELATION_CONFLICT'
+  readonly path: string
+  readonly otherPath: string
+  readonly detail: string
+}
+
+/**
+ * Edges that describe **the same pair of entities, the same way, in two different
+ * ways** — the knowledge graph's version of "these two facts cannot both be true".
+ *
+ * What counts, and why each is a contradiction rather than a duplicate:
+ *
+ *   * two `directed` edges pointing **opposite** ways (A→B and B→A) — "清音 师从 白云观"
+ *     and "白云观 师从 清音" are not two facts, they are one fact claimed backwards;
+ *   * a `directed` and an `undirected` edge on the same pair — one says the relation
+ *     reads one way, the other says it reads both ways.
+ *
+ * What does **not** count: the same pair declared twice in the *same* orientation and
+ * direction. That is `RELATION_DUPLICATE` (a second file for one fact), which is a
+ * different mistake with a different fix (delete or merge the duplicate file).
+ *
+ * Time windows (`since` / `until`) are deliberately **not** compared here: they hold
+ * free labels (a chapter id *or* a world time, data-model §3.3), and deciding "these
+ * two intervals cannot both hold" needs the chapter order the ledger resolves for
+ * facts (I-23). Half-implementing that here would report contradictions between a
+ * chapter id and a world time that no one can adjudicate.
+ *
+ * Rows with an empty end are skipped: `RELATION_ENDPOINT` already reports them, and
+ * pairing two half-edges would bury the real problem under a second finding.
+ */
+export function relationConflicts(rows: readonly RelationRow[]): RelationConflict[] {
+  const groups = new Map<string, RelationRow[]>()
+  for (const row of rows) {
+    if (row.source === '' || row.target === '' || row.source === row.target) continue
+    // Unordered key: the pair `{A, B}` is one bucket whatever the writing direction is,
+    // which is the whole point — an opposite-direction pair has to meet in one bucket.
+    const ends = [row.source, row.target].sort()
+    const key = `${ends[0] ?? ''}\u0000${ends[1] ?? ''}\u0000${row.relationKind}`
+    const bucket = groups.get(key)
+    if (bucket === undefined) groups.set(key, [row])
+    else bucket.push(row)
+  }
+
+  const findings: RelationConflict[] = []
+  for (const bucket of groups.values()) {
+    if (bucket.length < 2) continue
+    const sorted = [...bucket].sort((left, right) => (left.path === right.path ? 0 : left.path < right.path ? -1 : 1))
+    const reference = sorted[0]
+    if (reference === undefined) continue
+    for (const other of sorted.slice(1)) {
+      if (other.direction !== reference.direction) {
+        findings.push({
+          code: 'RELATION_CONFLICT',
+          path: other.path,
+          otherPath: reference.path,
+          detail:
+            `${reference.source} → ${reference.target} (${reference.relationKind}) is declared ${reference.direction} by ` +
+            `${reference.path} and ${other.direction} by ${other.path}; one relation cannot read both ways and one way`,
+        })
+        continue
+      }
+      const opposite = other.source === reference.target && other.target === reference.source
+      if (other.direction === 'directed' && opposite) {
+        findings.push({
+          code: 'RELATION_CONFLICT',
+          path: other.path,
+          otherPath: reference.path,
+          detail:
+            `${reference.source} ⇄ ${reference.target} (${reference.relationKind}) is declared in both directions ` +
+            `(${reference.path} and ${other.path}); a directed relation has one direction — mark it \`dir: undirected\` if it reads both ways`,
+        })
+      }
+    }
+  }
+  return findings
+}
+
 /** `relations/<slug>.md`, or `undefined` when the caller's path leaves the directory. */
-export function normalizeRelationPath(input: string): string | undefined {
-  const value = input.trim().replaceAll('\\', '/')
+export function normalizeRelationPath(input: string): string | undefined {  const value = input.trim().replaceAll('\\', '/')
   if (value === '' || value.startsWith('/') || /^[a-zA-Z]:/u.test(value) || value.split('/').includes('..')) {
     return undefined
   }

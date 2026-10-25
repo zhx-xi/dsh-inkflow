@@ -19,7 +19,7 @@ import { writeTextAtomic } from '../io.js'
 import { findProjectRoot } from '../project.js'
 import { sessionCwd } from '../session-cwd.js'
 import { applyCandidate } from './types.js'
-import { listRelationsFor } from './query.js'
+import { listRelationsFor, titlesForIds } from './query.js'
 import { RELATION_DIRECTIONS, RELATION_KINDS, planRelationUpsert, renderRelationFile } from './relation-write.js'
 import type { RelationRow } from './relation-write.js'
 import type { DomainModule, DomainToolDeps } from './types.js'
@@ -216,6 +216,53 @@ const listSurface: Omit<ToolDefinition, 'execute'> = {
   },
 }
 
+const cluesSurface: Omit<ToolDefinition, 'execute'> = {
+  name: 'inkflow_relation_clues',
+  description:
+    'The clue view of the knowledge graph (#48): given one entity id, list the entities connected to it **grouped by relation ' +
+    `kind** (${RELATION_KINDS.join(' / ')}) with each peer's title, the direction as this entity sees it ('outgoing' / 'incoming' / 'both') and the edge file. ` +
+    'Read-only, from the derived index (rebuilt first when stale). Use it to answer "who is this person connected to, and how"; ' +
+    'use inkflow_relation_list when you need the flat edge list to edit one.',
+  parameters: {
+    type: 'object',
+    properties: {
+      projectRoot: PROJECT_ROOT_PARAM,
+      entity: { type: 'string', description: 'Entity id whose clues to group (character, world, outline, chapter or relation id).' },
+      kind: {
+        type: 'string',
+        enum: [...RELATION_KINDS],
+        description: 'Only this relation kind. Omit for every kind.',
+      },
+      limit: { type: 'integer', description: 'Maximum edges to read before grouping (1–500). Default 100.' },
+    },
+    required: ['entity'],
+    additionalProperties: false,
+  },
+  output: {
+    schema: SUCCESS_SCHEMA,
+    render: (_args, value) => {
+      const v = asRecord(value)
+      if (v['ok'] !== true) {
+        const error = asRecord(v['error'])
+        return text([`Clue view failed: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`])
+      }
+      const groups = Array.isArray(v['groups']) ? (v['groups'] as Record<string, unknown>[]) : []
+      if (groups.length === 0) return text([`No relations touch ${String(v['entity'])}.`])
+      const name = String(v['entityTitle'] ?? '') === '' ? String(v['entity']) : `${String(v['entityTitle'])} (${String(v['entity'])})`
+      const lines = [`${name} — ${String(v['total'])} clue(s) in ${String(v['kinds'])} kind(s):`]
+      for (const group of groups) {
+        lines.push(`[${String(group['kind'])}] ${String(group['count'])}`)
+        const peers = Array.isArray(group['peers']) ? (group['peers'] as Record<string, unknown>[]) : []
+        for (const peer of peers) {
+          const peerName = String(peer['title'] ?? '') === '' ? String(peer['id']) : `${String(peer['title'])} (${String(peer['id'])})`
+          lines.push(`  - ${peerName} — ${String(peer['direction'])}, ${String(peer['path'])}`)
+        }
+      }
+      return text(lines)
+    },
+  },
+}
+
 async function runRelationUpsert(
   args: unknown,
   exec: ToolRunContext,
@@ -340,6 +387,102 @@ async function runRelationList(args: unknown, exec: ToolRunContext, deps: Domain
 }
 
 /**
+ * The clue view (#48): one entity, grouped by relation type, with the peer's **name**.
+ *
+ * Why a second read tool beside `inkflow_relation_list`: that one answers "which files
+ * touch this id" — a flat, path-ordered edge list, which is what an edit needs. A clue
+ * view answers a different question ("who is this person connected to, and how"), so it
+ * groups by `kind`, resolves each peer's title from the projection, and says which way
+ * each edge reads from **this** entity's side (`outgoing` / `incoming` / `both`). Writing
+ * the panel instead was the alternative; a tool was chosen because it costs no new page,
+ * no route and no client bundle for a view a model can render in one reply.
+ */
+async function runRelationClues(args: unknown, exec: ToolRunContext, deps: DomainToolDeps): Promise<Record<string, unknown>> {
+  const a = asRecord(args)
+  const lookup = await projectRootOf(a['projectRoot'], deps, exec)
+  if (lookup.root === undefined) return { ok: false, error: lookup.error }
+
+  const entity = (optionalString(a['entity']) ?? '').trim()
+  if (entity === '') {
+    return { ok: false, error: { code: 'ENTITY_REQUIRED', message: 'pass entity: the id whose clues to group' } }
+  }
+
+  const root = lookup.root
+  const { ensureIndex } = await import('../index-freshness.js')
+  const ensured = await ensureIndex(root)
+  if (!ensured.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'INDEX_UNAVAILABLE',
+        message: `the derived index could not be built: ${ensured.failure.message}`,
+        indexState: ensured.state,
+      },
+    }
+  }
+
+  const wanted = optionalString(a['kind'])
+  const kindFilter = wanted === undefined ? undefined : RELATION_KINDS.find((kind) => kind === wanted.trim().toLowerCase())
+  if (wanted !== undefined && kindFilter === undefined) {
+    return {
+      ok: false,
+      error: { code: 'RELATION_FIELD_INVALID', message: `kind must be one of ${RELATION_KINDS.join(' / ')}` },
+    }
+  }
+
+  const limit = typeof a['limit'] === 'number' ? Math.trunc(a['limit']) : undefined
+  const edges = listRelationsFor(root, entity, limit)
+  if (edges === undefined) {
+    return {
+      ok: false,
+      error: { code: 'INDEX_UNAVAILABLE', message: 'the index is missing or was built by another schema version' },
+    }
+  }
+
+  const kept = kindFilter === undefined ? edges : edges.filter((edge) => edge.kind === kindFilter)
+  const peers = kept.map((edge) => (edge.source === entity ? edge.target : edge.source))
+  // The entity itself is asked for too, so the reply can name what it is talking about.
+  const titles = titlesForIds(root, [...new Set([entity, ...peers])])
+  if (titles === undefined) {
+    return { ok: false, error: { code: 'INDEX_UNAVAILABLE', message: 'the entity projection could not be read' } }
+  }
+  const titleOf = (id: string): string => titles[id] ?? ''
+
+  // One group per relation kind, in the vocabulary's own order (data-model §3.3), so two
+  // reads of the same book return the same shape.
+  const groups = RELATION_KINDS.filter((kind) => kindFilter === undefined || kind === kindFilter)
+    .map((kind) => {
+      const rows = kept
+        .filter((edge) => edge.kind === kind)
+        .map((edge) => {
+          const outgoing = edge.source === entity
+          const peer = outgoing ? edge.target : edge.source
+          return {
+            id: peer,
+            title: titleOf(peer),
+            direction: edge.dir === 'undirected' ? 'both' : outgoing ? 'outgoing' : 'incoming',
+            path: edge.path,
+            ...(edge.since === undefined ? {} : { since: edge.since }),
+            ...(edge.until === undefined ? {} : { until: edge.until }),
+            ...(edge.chapter === undefined ? {} : { chapter: edge.chapter }),
+          }
+        })
+        .sort((left, right) => (left.id === right.id ? 0 : left.id < right.id ? -1 : 1))
+      return { kind, count: rows.length, peers: rows }
+    })
+    .filter((group) => group.count > 0)
+
+  return {
+    ok: true,
+    entity,
+    entityTitle: titleOf(entity),
+    total: kept.length,
+    kinds: groups.length,
+    groups,
+  }
+}
+
+/**
  * The relation tool surface, bound to the domain that owns the parse and the
  * invariants — passed in rather than imported, so neither module depends on the other.
  */
@@ -347,5 +490,6 @@ export function relationTools(domain: RelationDomain, deps: DomainToolDeps): Too
   return [
     { ...upsertSurface, execute: async (args, exec) => runRelationUpsert(args, exec, deps, domain) },
     { ...listSurface, execute: async (args, exec) => runRelationList(args, exec, deps) },
+    { ...cluesSurface, execute: async (args, exec) => runRelationClues(args, exec, deps) },
   ]
 }

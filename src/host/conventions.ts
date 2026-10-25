@@ -206,6 +206,13 @@ export const FILE_SCHEMA_VERSION = 1
  * state machine's field and its deadline inputs, so `foreshadowing/` stops being a
  * frontmatter-only directory. `overdue` is NOT a column: it is computed per read from
  * the chapter being asked about (data-model §3.2.2), and a stored mark would go stale.
+ * v9 (#48): `timeline_events` gains the derived `world_absolute_day` (the day number on
+ * the one axis every era of the book's calendar shares) and `world_era` (the era the
+ * file's `worldTime` is written in), plus `ix_timeline_absolute`. The content file is
+ * unchanged (`worldTime` stays a flat scalar, ADR-0025 D3): this is a derived column, so
+ * it is also *never* written back to `timeline/*.md`. The book's calendar itself lives in
+ * `inkflow.json`, and the index stores its fingerprint in `meta` so a table edit cannot
+ * leave these numbers silently stale (see `index-freshness.ts`).
  *
  * **Bump this for every column/table a domain adds, even when the file mtime does
  * not move** (AGENTS.md §8 trap 5): a stale `user_version` makes `ensureIndex()` call
@@ -215,7 +222,7 @@ export const FILE_SCHEMA_VERSION = 1
  * The index is a cache, so a mismatch is never migrated (ADR-0005) — the old file is
  * discarded.
  */
-export const INDEX_SCHEMA_VERSION = 8
+export const INDEX_SCHEMA_VERSION = 9
 
 export const CHAPTER_STATUSES = ['draft', 'revised', 'final'] as const
 export const OUTLINE_KINDS = ['overall', 'volume', 'chapter'] as const

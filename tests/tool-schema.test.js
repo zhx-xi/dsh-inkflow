@@ -267,8 +267,8 @@ test('every shipped tool schema stays inside the Host-supported subset', () => {
   // names the 34 built-ins (#33 audit, #36 repair/migrate, #37 import, #38 the five extraction
   // tools, #39 the unified search and the search-replace batch, #40 shared list/copy/update,
   // #41 semantic status / rebuild / purge, #42 settings get/update + diagnostics + backup
-  // create/restore).
-  assert.equal(tools.size, 50, `expected the full tool surface, got ${tools.size}`)
+  // create/restore). 53 = those 50 plus #48's two calendar tools and the relation clue view.
+  assert.equal(tools.size, 53, `expected the full tool surface, got ${tools.size}`)
   const failures = []
   for (const [name, tool] of tools) {
     if (tool.parameters === undefined) failures.push(`${name}: no parameters schema`)
@@ -286,9 +286,11 @@ test('every shipped tool schema stays inside the Host-supported subset', () => {
 
 test('the domain tools the registry contributes are covered by the same guard', () => {
   // `domainTools()` is what `apply()` registers beyond the built-ins; asserting the
-  // count keeps this file honest when a new domain lands.
+  // count keeps this file honest when a new domain lands. 19 = 16 before #48 plus the
+  // timeline domain's two calendar tools (`inkflow_calendar_get` / `_set`) and the
+  // relation domain's clue view (`inkflow_relation_clues`).
   const domain = domainTools({ ctx: {}, dataDir: tmpdir(), version: 'test' })
-  assert.equal(domain.length, 16, `expected the sixteen domain tools, got ${domain.length}`)
+  assert.equal(domain.length, 19, `expected the nineteen domain tools, got ${domain.length}`)
   const failures = []
   for (const tool of domain) {
     if (tool.parameters === undefined) failures.push(`${tool.name}: no parameters schema`)

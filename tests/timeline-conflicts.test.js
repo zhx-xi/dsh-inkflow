@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildIndex, domainTools, listTimelineEvents, parseWorldTime } from '../lib/index.js'
+import { DEFAULT_CALENDAR, buildIndex, domainTools, listTimelineEvents, parseWorldTime } from '../lib/index.js'
 
 const DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library', 'index']
 
@@ -335,12 +335,14 @@ test('timeline: an illegal date is reported by a rebuild and refused by the tool
     assert.equal(existsSync(join(root, 'timeline/春天.md')), false, 'a refused write creates no file')
     assert.equal(sha256(existing), before, 'a refused write does not rewrite the existing file')
 
-    // Calendar arithmetic is real: 30 February and month 13 do not parse.
-    assert.equal(parseWorldTime('1710-02-30'), undefined)
-    assert.equal(parseWorldTime('1710-13'), undefined)
-    assert.equal(parseWorldTime('1710-02-28')?.precision, 'day')
-    assert.equal(parseWorldTime('1710-02')?.precision, 'month')
-    assert.equal(parseWorldTime('1710')?.precision, 'year')
+    // Calendar arithmetic is real: 30 February and month 13 do not parse. Since #48 the
+    // arithmetic is the calendar's, so the table is passed explicitly — the point of the
+    // assertions is unchanged (a date the table cannot honour is not a date).
+    assert.equal(parseWorldTime('1710-02-30', DEFAULT_CALENDAR), undefined)
+    assert.equal(parseWorldTime('1710-13', DEFAULT_CALENDAR), undefined)
+    assert.equal(parseWorldTime('1710-02-28', DEFAULT_CALENDAR)?.precision, 'day')
+    assert.equal(parseWorldTime('1710-02', DEFAULT_CALENDAR)?.precision, 'month')
+    assert.equal(parseWorldTime('1710', DEFAULT_CALENDAR)?.precision, 'year')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

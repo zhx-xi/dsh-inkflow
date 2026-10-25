@@ -25,7 +25,7 @@
 
 | # | 实体组 | 位置 | 形态 | 说明 |
 |---|---|---|---|---|
-| 1 | 项目（book） | `inkflow.json` | JSON | 唯一元信息文件（`schemaVersion` / `title` / `author` / `projectId` / `seriesId`，见 [conventions.md](conventions.md) §3.1） |
+| 1 | 项目（book） | `inkflow.json` | JSON | 唯一元信息文件（`schemaVersion` / `title` / `author` / `projectId` / `seriesId` / `calendar`，见 [conventions.md](conventions.md) §3.1）。`calendar` 是**本书的历法表**（#48，ADR-0025 D1/D3，形状见 [`src/host/calendar.ts`](../../src/host/calendar.ts) 的 `CalendarSpec`：`{id, eras:[{id, epochOffsetDays, months[], leap}]}`）；缺省 = `DEFAULT_CALENDAR`（单纪元格里历），**存在但不合法 → 明确报错，不回退** |
 | 2 | 卷 volume | `chapters/index.json` 的 `volumes[]` + 卷大纲节点 | JSON + MD | 卷的稳定身份是 `volumeId`（`vol-NN`）；卷标题/顺序的文学内容在大纲 `kind: volume` 节点 |
 | 3 | 章 chapter | `chapters/**/<seq>-<slug>.md` | MD + frontmatter | 正文即 body；章归属由 frontmatter `volume`（值=volumeId）决定；`id` 是建档时生成的 uuid |
 | 4 | 章版本 | git 提交历史 | git | 不建 `chapter_versions`；版本 = commit |
@@ -158,7 +158,7 @@
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| `kind` | enum | — | `character`（角色关系，缺省）/ `knowledge`（知识图谱关系）；非法值降级为 `character` 并报 `FRONTMATTER_ISSUE` |
+| `kind` | enum | — | 关系**类型**：`character`（人物关系，缺省）/ `knowledge`（知识图谱关系）/ `kinship`（血缘亲缘）/ `faction`（阵营隶属）/ `geography`（地理关系）——#48 把它从 2 类扩到 5 类；非法值降级为 `character` 并报 `FRONTMATTER_ISSUE`（写入侧直接拒 `RELATION_FIELD_INVALID`）。`kind` 同时是 `entities.category` 的取值，所以面板按它分组而不需要第二个字段 |
 | `source` / `target` | string | ✅ | 两端实体 id（各恰一个，跨 kind 解析；见 I-08 的 `RELATION_ENDPOINT`） |
 | `title` | string | — | 可读标签（如「清音 → 白鹤掌门」）；缺省时由两端推导，仅用于展示与 `entities.title` |
 | `dir` | enum | — | `directed`（缺省）/ `undirected`；读写统一用 `dir`，读时兼容旧字段 `direction` |
@@ -166,11 +166,13 @@
 | `chapter` | string | — | 该关系首次成立的章（用于按章回看） |
 
 **字段口径的三处变更是 #27 定的**（改 spec 后再改代码，S1）：
-- `relation`（关系类型，如 `师徒`）、`weight`、`evidence` **未实现**：关系类型集合在 [open-questions.md](open-questions.md) Q8 未裁决，先把未定项写进文件会制造第二套真相。在裁决之前用自由文本 `title` 承载「这层关系叫什么」。
+- `relation`（关系类型，如 `师徒`）、`weight`、`evidence` **未实现**：一层具体的「这叫什么关系」由自由文本 `title` 承载；`kind` 只回答「属于哪一类」（#48 定为 5 类枚举，见上表）。
 - `direction` → `dir`：两个字段读时都接受，写时只写 `dir`。
 - 新增 `chapter`：与 [conventions.md](conventions.md) 的 `relations/` 契约一致，`since`/`until` 只表达抽象位置。
 
-孤立 / 冲突的**校验强度**仍待定（Q8 的另一半），当前只做三件事：端点必须存在、禁止自环、同 `(source, target, kind)` 不许重复。
+**四项校验（#27 三条 + #48 一条，双侧同判）**：端点必须存在且各恰一个（`RELATION_ENDPOINT`）、禁止自环（`RELATION_SELF_LOOP`）、同 `(source, target, kind)` 不许重复（`RELATION_DUPLICATE`）、**同一对实体同类型不许方向自相矛盾**（`RELATION_CONFLICT`，#48）。
+
+`RELATION_CONFLICT` 的判据写死为两条，命中任一即报：① 同一无序实体对 + 同一 `kind` 出现两条 `directed` 边且方向相反（A→B 与 B→A）；② 同一无序实体对 + 同一 `kind` 两条边的 `dir` 不一致（一条 `directed`、一条 `undirected`）。判据**不含 `since`/`until` 的时段冲突**：那两个字段装自由标签（章 id **或** 世界内时间），判定「两个区间不能同时成立」需要 I-23 那套章序解析，把它做半套会报出无人能裁决的矛盾——时段冲突留给后续单（见 #48 的汇报）。
 
 ### 3.4 时间线事件 `timeline/<slug>.md`
 
@@ -181,17 +183,19 @@
 | `narrativeOrder` | number | — | 叙事顺序：**书内出现次序（book-wide），不是章内索引**；可与 `worldTime` 不一致（倒叙/回忆是正常写法） |
 | `chapterId` | string | — | 关联章 id。frontmatter 键名 `chapterId`；读兼容旧文件里的 `chapter`；派生索引表 `timeline_events` 的列名是 `chapter`（§4.1） |
 | `participants` | string[] | — | 参与角色 id；空格连接存储、读回成列表（id 内不得含空白 `,` `[` `]`，否则读回成两个 id） |
-| `place` | string | — | 地点（世界观条目 id） |
+| `place` | string | — | 地点（世界观条目 id）。**目前只记录、不解析**：timeline 域不读它，索引 `timeline_events` 也没有 `place` 列，地图不按它挂事件（接上要再加一列，见 open-questions Q15）。写在这里是为了让手写文件不至于被判未知键 |
+| `era` | string | — | `worldTime` 写在哪个**纪元**里（历法表的 `eras[].id`）。缺省 = 本书历法的**最后一个**纪元（纪元按 `epochOffsetDays` 升序，最后一个就是书「现在」所在的纪元，也是作者只写一个年份时的意思）；写更早的纪元必须显式写（#48，ADR-0025 D3） |
 | `status` | enum | — | `confirmed`（缺省）/ `unconfirmed`（时间未定，进待确认区）；`pending` 只作**读兼容**，等同 `unconfirmed` |
-| `calendar` | string | — | 历法 id（多纪元历法落地后使用，见 [open-questions](open-questions.md) Q7） |
+| `calendar` | string | — | 历法 id。**本书历法表本身不在事件文件里**，在 `inkflow.json` 的 `calendar` 键（§2）；这个字段只是给「同一本书里引用别的历法 id」留的读兼容位，不参与换算 |
 
 `worldTime` 与 `narrativeOrder` 是两条独立排序轴（双时间轴）；`status: unconfirmed` 的事件不参与时间轴排序，只出现在待确认区。
 
 两条轴各有一套判定口径（详见 §5 的 I-16–I-19）：
 
-- **`worldTime` 用扁平标量而不是 `{era, year, month, day, precision}` 对象**：对象里 `precision` 要表达的信息恰好是「作者写了几段日期」，因此由段数推导；扁平标量还让「按时间排序」是一次字符串比较而不是三处取字段。纪元（`era`）留给多纪元历法（Q7）。（读取器现在支持一层嵌套映射，见 [ADR-0019](../adrs/0019-one-level-nested-frontmatter.md)——这条选择与「解析器能不能读」无关。）
+- **`worldTime` 用扁平标量而不是 `{era, year, month, day, precision}` 对象**：对象里 `precision` 要表达的信息恰好是「作者写了几段日期」，因此由段数推导；扁平标量还让「按时间排序」是一次字符串比较而不是三处取字段。纪元不写进标量，而是同级的 `era` 字段（#48）：标量保持「作者写的那串字」，跨纪元可比性由**派生**的绝对日承担。（读取器现在支持一层嵌套映射，见 [ADR-0019](../adrs/0019-one-level-nested-frontmatter.md)——这条选择与「解析器能不能读」无关。）
 - **`narrativeOrder` 是书内出现次序**：叙事轴按它全局排序，槽位冲突也在全书一个桶里判（跨章同槽即矛盾）。
 - **叙事顺序与世界顺序不一致本身不是错误**：倒叙/回忆正是双时间轴要表达的东西，重建期报 `TIMELINE_WORLD_TIME_REVERSED` 作为提示，写入侧放行。
+- **跨纪元排序与相差天数只用绝对日**（#48）：`worldTime` + `era` 经 `toAbsolute()`（[`src/host/calendar.ts`](../../src/host/calendar.ts)，A→B→A 误差 0）得到绝对日，存进索引的派生列 `world_absolute_day`；两条轴、槽位冲突、倒叙判定都读这一列。**派生列不回写文件**（ADR-0025 D3：一旦回写就是同一事实两处存储）。`worldTime` 在本书历法里读不出来时该列为 NULL，并报 `TIMELINE_TIME_INVALID`（不阻断重建）。
 
 ### 3.5 事实账本 `facts/<subject>.md`
 
@@ -266,11 +270,11 @@ origin:
 
 ## 4. 派生索引（`index/inkflow.db`）
 
-### 4.1 v8（现行，`PRAGMA user_version = 8`）
+### 4.1 v9（现行，`PRAGMA user_version = 9`）
 
 | 表 | 主键 | 主要内容 | 用途 |
 |---|---|---|---|
-| `meta` | key | builtAt / root / indexSchemaVersion / fileCount / entityCount | 索引元信息（`builtAt` 只作诊断，**不作新鲜度判据**，见下） |
+| `meta` | key | builtAt / root / indexSchemaVersion / fileCount / entityCount / calendarFingerprint | 索引元信息（`builtAt` 只作诊断，**不作新鲜度判据**，见下）。`calendarFingerprint` 是本书历法表的指纹：`inkflow.json` 不在九内容目录里，没有它，改历法表之后索引不会被判陈旧（#48） |
 | `files` | path | dir / kind / size / mtime | 全量文件清单，**同时是新鲜度对拍基线** |
 | `entities` | (kind, id) | path / title / name_key / category / parent / order_index / status / keywords / aliases | 跨类统一投影：九分类树、跨类 id 冲突、提及定位（X-1） |
 | `entities_fts` | (virtual) | entity_key / title / aliases / keywords，`tokenize='trigram'` | 全实体检索（X-3）；1–2 字走 `LIKE` 兜底 |
@@ -280,7 +284,7 @@ origin:
 | `world_entries` | id | path / title / category / parent / keywords / always / priority | 世界观树、世界书关键词（#26） |
 | `outline_nodes` | id | path / kind / title / parent / order_index / plot_point_count / plot_points | 大纲树与不变量校验；`plot_points` 是解析后的正文列表项（JSON `[{text, arc?}]`） |
 | `relations` | id | path / title / relation_kind / source / target / direction / since / until / chapter | 关系图谱查询与校验（#27） |
-| `timeline_events` | id | path / title / world_time / narrative_order / chapter / participants / status | 双轴排序、待确认区、冲突检测（#28） |
+| `timeline_events` | id | path / title / world_time / world_era / world_absolute_day / narrative_order / chapter / participants / status | 双轴排序、待确认区、冲突检测（#28）。`world_era` / `world_absolute_day` 是 **#48 的派生列**（ADR-0025 D3）：绝对日由 `toAbsolute()` 按本书历法表算出，`world_era` 是那串日期所在的纪元；两列都不回写文件，跨纪元比较与「差几天」就是整数运算 |
 | `facts` | id（`= path#L<line>`） | path / line / subject / attribute / value / since / until / chapter / source | 账本「截至第 N 章生效中」快照与区间冲突校验（#32）；一条事实一行，`line` 是 1-based 行锚 |
 | `foreshadowings` | id | path / title / status / planted_at / advanced_at / due_by / resolved_chapter / linked_entities | 状态机查询、超期列表与看板（#31）。`status` 存**文件里的值**；`overdue` 是算出来的看板状态，**不进表**（§3.2.2）；`advanced_at` / `linked_entities` 空格连接（与 `participants` 同策略） |
 | `entity_mentions` | (entity_key, chapter_id, offset, source) | entity_key / chapter_id / offset / source | 正文与 frontmatter 的提及定位（#29）；`entity_key` = `kind:id`，`explicit` 行的 offset 为 -1 |
@@ -324,7 +328,9 @@ origin:
 | `chapters_catalog` | catalog 与 `.md` 一致性快照 | 未实现（#15 已交付 catalog 的读写与校验，未建快照表） |
 | `semantic_blocks` | OVK 块的本地定位副本（uri → 章/字符区间） | 未实现（#41） |
 
-**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）；**v4 = v3 + `characters` 四列**（`pov` / `first_appearance` / `aliases` / `voice`）**+ `character_states` 表**；**v5 = v4 + `timeline_events` 表**（双时间轴）；**v6 = v5 + `entity_mentions` 表**（提及定位）；**v7 = v6 + `facts` 表**（账本一行一事实，行号即锚）；**v8 = v7 + `foreshadowings` 表**（伏笔状态机与到期输入）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
+**v3 = v2 + `outline_nodes` 两列**（`plot_point_count` / `plot_points`）**+ `world_entries` 三列**（`keywords` / `always` / `priority`）；**v4 = v3 + `characters` 四列**（`pov` / `first_appearance` / `aliases` / `voice`）**+ `character_states` 表**；**v5 = v4 + `timeline_events` 表**（双时间轴）；**v6 = v5 + `entity_mentions` 表**（提及定位）；**v7 = v6 + `facts` 表**（账本一行一事实，行号即锚）；**v8 = v7 + `foreshadowings` 表**（伏笔状态机与到期输入）；**v9 = v8 + `timeline_events` 三处**（列 `world_era`、派生列 `world_absolute_day`、索引 `ix_timeline_absolute`）**+ `meta` 一行**（`calendarFingerprint`）。**新增表或列都不写 `ALTER`**：`INDEX_SCHEMA_VERSION` 递增即删库重建（ADR-0005）。每个域单在自己的 `schema()` 里声明表，索引只执行注册表（roadmap §2.1 X-2）。
+
+> **#48 尾注（派生列与书级配置）**：`world_absolute_day` 是**唯一**由内容文件之外的事实（`inkflow.json` 的 `calendar` 表）派生出来的列。因此它的正确性有两条额外判据，都在 `tests/timeline-calendar.test.js` 里：① 同一本书重建两次得到逐行相同的绝对日（派生是确定性的，不夹带时间戳或遍历顺序）；② 每一行的列值都等于对**文件里那串 `worldTime`** 调 `toAbsolute()` 的结果（索引没有在别处另算一遍）。历法表改了但索引没重建，是这一列唯一会「对而旧」的情形，所以 `checkIndexFreshness()` 额外对拍 `meta.calendarFingerprint`。
 
 ## 5. 不变量与强制手段
 
@@ -339,7 +345,7 @@ origin:
 | I-05 | `parent` 必须指向存在条目 | 拒绝 | `DANGLING_PARENT` |
 | I-06 | 章状态取值合法 | 拒绝 | 非法值降级为 `draft`（不阻断） |
 | I-07 | 正文文件必须是 `.md`。**例外**：`chapters/index.json` 与 `chapters/<vol>/index.json` 是本插件写的 catalog（结构投影，见 I-11），索引重建时不参与章节扫描，因此不报这一条 | 拒绝 | `CHAPTER_NOT_MARKDOWN` |
-| I-08 | 树/图引用完整：世界观根唯一、非根必须有 `parent` + `category`；**扁平分类书**（全部条目在 `world/<category>/` 且都不写 `parent`）允许无根；关系两端各恰一个实体且都存在 | 拒绝 | `WORLD_ROOT_MISSING` / `WORLD_ROOT_MULTIPLE` / `WORLD_CATEGORY_REQUIRED`；`RELATION_ENDPOINT` / `RELATION_SELF_LOOP` / `RELATION_DUPLICATE`（#27 落地） |
+| I-08 | 树/图引用完整：世界观根唯一、非根必须有 `parent` + `category`；**扁平分类书**（全部条目在 `world/<category>/` 且都不写 `parent`）允许无根；关系两端各恰一个实体且都存在，且同一对实体同类型的方向不自相矛盾 | 拒绝 | `WORLD_ROOT_MISSING` / `WORLD_ROOT_MULTIPLE` / `WORLD_CATEGORY_REQUIRED`；`RELATION_ENDPOINT` / `RELATION_SELF_LOOP` / `RELATION_DUPLICATE`（#27 落地）/ `RELATION_CONFLICT`（#48 落地，判据见 §3.3） |
 | I-09 | 伏笔 `resolved: true` 必须带 `resolvedChapter` | 拒绝 | `FORESHADOW_RESOLVED_WITHOUT_CHAPTER` | 修法要作者指名章（或把状态退回 advanced/planted），修复器不猜（`fixable: false`，ADR-0015 D2）。
 | I-10 | frontmatter / JSON 可解析 | 写入前序列化 | `FRONTMATTER_ISSUE` |
 | I-11 | catalog 与 `.md` 一致（结构投影不漂移） | 写入时重建受影响的 catalog | `CATALOG_STALE` |

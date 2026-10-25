@@ -138,6 +138,17 @@ export type {
 } from './calendar.js'
 
 /**
+ * Where the book's calendar lives, and what a missing/broken one means (#48).
+ *
+ * Exported beside the arithmetic because they are one contract: `calendar.ts` answers
+ * "what day is this", `calendar-book.ts` answers "which table applies to this book" —
+ * and a caller that has the first without the second has to guess, which is the failure
+ * mode ADR-0025 D1 exists to prevent.
+ */
+export { BOOK_CALENDAR_KEY, calendarFingerprint, defaultEraOf, readBookCalendar, writeBookCalendar } from './calendar-book.js'
+export type { BookCalendar } from './calendar-book.js'
+
+/**
  * The frontmatter reader/writer is re-exported from the bundle entry so the
  * contract tests can drive it directly (they import lib/index.js only). The P1
  * proposal writer uses the same pair in-process, so this is not a test-only
@@ -145,6 +156,19 @@ export type {
  */
 export { parseMarkdown, patchFrontmatter } from './frontmatter.js'
 export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
+
+/**
+ * The map tab's pure view model (#48) and the panel tab list.
+ *
+ * Exported so the two claims a user actually sees — "a place is a world entry" and "the map
+ * page is reachable" — are assertions on the built artifact rather than on a source file
+ * somebody has to keep in mind. The model itself lives in the client half; this is the same
+ * re-export the panel's other pure models get, and it stays pure (no React, no IO).
+ */
+export { MAP_NOTE, PLACE_KIND, describePin, placeGroups, readMapView } from '../client/map-model.js'
+export type { MapView, PlaceGroup, PlacePin } from '../client/map-model.js'
+export { PANEL_TABS } from '../client/panel-model.js'
+export type { PanelTab } from '../client/panel-model.js'
 
 /** Hard dependency: the tool registry. `webServer` is injected lazily. */
 export const inject = ['tools']
@@ -198,6 +222,17 @@ export type { RelationEdge } from './domains/query.js'
  * domain stays behind `DOMAIN_MODULES`, like every other module.
  */
 export { planRelationUpsert } from './domains/relation-write.js'
+
+/**
+ * The knowledge graph's type vocabulary and its contradiction rule (#48).
+ *
+ * Exported because they are the contract a test and a panel both need: `RELATION_KINDS`
+ * is what `data-model` §3.3 enumerates, and `relationConflicts` is the *one*
+ * implementation of the contradictory-edge rule that both nets call (X-4) — a second
+ * copy would be a second answer.
+ */
+export { RELATION_KINDS, relationConflicts } from './domains/relation-write.js'
+export type { RelationConflict } from './domains/relation-write.js'
 
 /** Timeline planners and views (#28): pure, so both axes are test-driven directly. */
 export {

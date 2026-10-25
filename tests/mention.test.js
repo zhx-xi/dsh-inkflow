@@ -314,8 +314,9 @@ test('the chapter frontmatter is not manuscript text: a title-only name is no me
 })
 
 test('the schema version moved so every project rebuilds once', async () => {
-  // v6 was #29 (entity_mentions), v7 was #32 (the facts table), v8 is #31 (foreshadowings).
-  assert.equal(INDEX_SCHEMA_VERSION, 8, 'a new table is a new schema version, never an ALTER')
+  // v6 was #29 (entity_mentions), v7 was #32 (the facts table), v8 was #31
+  // (foreshadowings), v9 is #48 (the derived absolute-day column).
+  assert.equal(INDEX_SCHEMA_VERSION, 9, 'a new table is a new schema version, never an ALTER')
 })
 
 test('a 590k-character / 2900-entity scan stays inside the 5 s budget', () => {

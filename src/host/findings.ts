@@ -97,6 +97,11 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'RELATION_ENDPOINT', group: 'structure', fixable: false, meaning: '关系两端不是各恰一个已存在实体' },
   { code: 'RELATION_SELF_LOOP', group: 'structure', fixable: false, meaning: '关系自环' },
   { code: 'RELATION_DUPLICATE', group: 'structure', fixable: true, meaning: '同 (source,target,kind) 的关系重复' },
+  // #48: the same unordered pair + kind claimed in contradictory directions (A→B and
+  // B→A both directed, or one directed and one undirected). Not `fixable` on purpose:
+  // which file holds the surviving claim is the author's decision, and merging toward a
+  // guessed direction is how a graph silently loses an edge.
+  { code: 'RELATION_CONFLICT', group: 'structure', fixable: false, meaning: '同一对实体同类型的关系方向互相矛盾' },
   { code: 'RELATION_FIELD_DEPRECATED', group: 'structure', fixable: true, meaning: '关系文件用了已废弃字段（如 direction）' },
   // Emitted by a domain's scan/validate as well as by a write plan (a hand-written file
   // raises them), so they belong in the report's vocabulary — #33 surfaced that

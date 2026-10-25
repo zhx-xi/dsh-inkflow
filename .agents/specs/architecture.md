@@ -452,6 +452,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError`（`/search` 自 #39 起是 X-16 的单一入口，索引不可用时降级为章元数据扫描并带 `degradedReason`；检索替换的三条路由在 `search-channel.ts`） | HTTP 加固、写作品文件、自己决定是否重建 |
 | `src/host/findings.ts` | **「问题」的唯一形状**（roadmap X-14）：`Finding` / `FindingLocator` / 五个报告分组 / `FINDING_CODES` 目录 / `compareFindings` 的稳定排序 | 任何检查实现、任何 IO（#33 产出、#36 消费） |
+| `src/host/calendar-book.ts` | **哪张历法表属于这本书**（#48，ADR-0025 D1/D3）：`readBookCalendar(root)` 从 `inkflow.json` 的 `calendar` 读表（缺省 → `DEFAULT_CALENDAR`，**存在但非法 → 结构化拒绝，绝不回退**）、`writeBookCalendar(root, spec)` 校验后临时文件+rename 原子改写（`resolveWriteTarget` 有意不管根级元数据，与 `hub-wizard`/`shared-copy` 同路）、`defaultEraOf(spec)`（裸日期读在**最新**纪元）、`calendarFingerprint(root)`（索引 `meta` 里存的那枚指纹，供新鲜度对拍） | 任何换算（`calendar.ts`）、索引列的写入（timeline 域）、私有落点 |
 | `src/host/calendar.ts` | **历法换算的唯一实现**（#180，roadmap X-28）：可配置历法表（每纪元 `epochOffsetDays` + 月长 + 三种闰规则 `none`/`every N`/`gregorian`）、`toAbsolute({era,y,m,d})` 与 `fromAbsolute(days)` 双向换算（A→B→A 误差 0，含闰日与跨纪元）、`calendarDaysBetween`、`monthLength`/`isLeapYear`/`eraAt`/`findEra`、`validateCalendarSpec` 与 `DEFAULT_CALENDAR`；结果是 `{ok,value}`/`{ok,error}`，**永不抛**。理由写在文件头（不另立 ADR：X-28 已是决策，编号不预占） | 任何 IO、任何 `Date`/时钟、解析 `timeline/*.md`（文件与字段归 timeline 域）；它只回答「这一天是第几天」 |
 | `src/host/audit.ts` | **一致性体检**（#33，X-14）：五类发现聚合成一份 `Finding[]`（只聚合 / 分组 / 排序 / 给人话 hint，判定一律调域模块）＋ Markdown 报告渲染 ＋ 唯一写动作（`exportAuditReport` → `.inkflow/audit/`） | 判任何不变量（那是 `scanProject` / `validateCatalog` / 域模块的事）、重建索引、在只读路径写盘 |
 | `src/host/audit-channel.ts` | 体检的通道半：`GET /audit` 的投影（分组计数 + 前 N 条 + 定位与地址）与 `POST /audit/export` 的信封、`CONFIRM_REQUIRED` 闸门、失败码到 HTTP 状态的映射 | 体检规则、Markdown 排版、写盘（一律调 `audit.ts` 与 `io.ts`） |
@@ -543,6 +544,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
 - `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
 - `brief-model.ts` — 简报页（#43）：九段每行的状态（`ok`/`trimmed`/`missing`，只读 Host 的两个标记，**不**从 `bytes === 0` 自行推算）、占比文案（`formatShare`）、裁剪记录文案、`readBrief` 的三态折叠（请求失败 / 答案读不懂 / 九段真的都没有来源）
+- `map-model.ts` — 地图页（#48，ADR-0025 D4）：把设定库同一份投影里的 `world` 分组重排成地点分组（`placeGroups`，保留分类存储顺序、未分类垫底）、三种空态分开（请求失败 / 索引不可读 / 这本书还没有地点）、`describePin` 与 `MAP_NOTE`；**地点就是 world 条目**，这里不定义第二套地点数据、不含任何坐标字段
 
 ### 6.1 一致性体检（#33）的取数与落点
 

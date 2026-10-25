@@ -384,6 +384,42 @@ export function listRelationsFor(root: string, entityId: string, limit?: number)
   }
 }
 
+/**
+ * Display titles for a handful of entity ids, from the cross-class projection (#48).
+ *
+ * Why not `listEntities` + a filter: the clue view asks about the peers of *one* entity,
+ * which may be a dozen ids of five different kinds, and reading the whole projection to
+ * resolve twelve names is the query this tool would then spend its budget on.
+ *
+ * "Exactly one" is not required here (unlike `RELATION_ENDPOINT`): an id two kinds share
+ * still resolves to a *name* for display, and the report says which one won by taking the
+ * first in `(kind, id)` order — deterministic on every run, which is what a stable reply
+ * needs.
+ */
+export function titlesForIds(root: string, ids: readonly string[]): Record<string, string> | undefined {
+  if (ids.length === 0) return {}
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const placeholders = ids.map(() => '?').join(', ')
+    const rows = db
+      .prepare(`SELECT id, title FROM entities WHERE id IN (${placeholders}) ORDER BY kind, id`)
+      .all(...ids) as unknown as Array<Record<string, unknown>>
+    const titles: Record<string, string> = {}
+    for (const row of rows) {
+      const id = typeof row['id'] === 'string' ? row['id'] : ''
+      const title = typeof row['title'] === 'string' ? row['title'] : ''
+      if (id === '' || id in titles) continue
+      titles[id] = title
+    }
+    return titles
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
 /** Count entities per kind — the panel's section badges, and a cheap sanity check. */
 export function entityCounts(root: string): Record<string, number> | undefined {
   const db = openIndex(root)
@@ -479,19 +515,27 @@ export function listEntityIds(root: string): Set<string> | undefined {
  * `chapter` and `participants` are timeline fields and are deliberately not columns of
  * the projection (X-1 fixes that column set), so the projection cannot answer "what
  * happened before some date".
+ *
+ * `world_era` / `world_absolute_day` come straight out of the row (#48): they were
+ * derived once at build time from the book's calendar, so a reader that gets a row back
+ * never re-derives (and cannot re-derive differently) which day the author meant.
  */
 export function listTimelineEvents(root: string): TimelineRow[] | undefined {
   const db = openIndex(root)
   if (db === undefined) return undefined
   try {
     const rows = db
-      .prepare('SELECT id, path, title, world_time, narrative_order, chapter, participants, status FROM timeline_events ORDER BY path')
+      .prepare(
+        'SELECT id, path, title, world_time, world_era, world_absolute_day, narrative_order, chapter, participants, status FROM timeline_events ORDER BY path',
+      )
       .all() as unknown as Array<Record<string, unknown>>
     return rows.map((row) => ({
       id: String(row['id'] ?? ''),
       path: String(row['path'] ?? ''),
       title: String(row['title'] ?? ''),
       ...(typeof row['world_time'] === 'string' && row['world_time'] !== '' ? { worldTime: row['world_time'] } : {}),
+      ...(typeof row['world_era'] === 'string' && row['world_era'] !== '' ? { worldEra: row['world_era'] } : {}),
+      ...(typeof row['world_absolute_day'] === 'number' ? { worldAbsoluteDay: row['world_absolute_day'] } : {}),
       ...(typeof row['narrative_order'] === 'number' ? { narrativeOrder: row['narrative_order'] } : {}),
       ...(typeof row['chapter'] === 'string' && row['chapter'] !== '' ? { chapter: row['chapter'] } : {}),
       participants: splitTerms(typeof row['participants'] === 'string' ? row['participants'] : undefined),

@@ -525,8 +525,8 @@ test('PANEL_TABS leaves unimplemented pages disabled with their release note', (
   // can click, so it is spelled out rather than derived.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'brief'],
-    '章节, 设定库, 伏笔, 回收站, 体检, 候选 and 简报 exist in this build',
+    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief'],
+    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48) 与简报 (#43) exist in this build',
   )
   // Issue #180 registers the four 0.5.0 pages as placeholders (roadmap §2.4): a
   // registered row with `available: false` and a note, so the four B1/B2 issues add a

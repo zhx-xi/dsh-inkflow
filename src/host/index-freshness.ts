@@ -34,6 +34,7 @@ import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
 import { INDEX_SCHEMA_VERSION } from './conventions.js'
+import { calendarFingerprint } from './calendar-book.js'
 import { buildIndex, describeIndexBuildFailure } from './index-build.js'
 import type { IndexBuildFailure } from './index-build.js'
 import { indexPaths, walkProjectFiles } from './indexer.js'
@@ -94,6 +95,21 @@ function schemaVersionOf(db: DatabaseSync): number {
 }
 
 /**
+ * The calendar fingerprint the index was built under, or `undefined` when the row is
+ * missing (an index from before #48, which the schema bump already rejects).
+ */
+function indexedCalendar(db: DatabaseSync): string | undefined {
+  try {
+    const row = db.prepare("SELECT value FROM meta WHERE key = 'calendarFingerprint'").get() as
+      | { value?: unknown }
+      | undefined
+    return typeof row?.value === 'string' ? row.value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Judge whether `index/inkflow.db` still describes the files on disk.
  *
  * `incompatible` is **not** an instruction to delete anything: a caller (or a
@@ -148,6 +164,10 @@ export function checkIndexFreshness(root: string): IndexFreshness {
       else if (row.mtime !== file.mtime) note(`touched ${file.path}`)
     }
     for (const path of byPath.keys()) note(`removed ${path}`)
+    // The book's calendar lives in `inkflow.json`, which is not one of the nine content
+    // directories, so no `files` row describes it. Comparing its fingerprint is what keeps
+    // a table edit from leaving every derived `world_absolute_day` describing the old one.
+    if (indexedCalendar(db) !== calendarFingerprint(root)) note('the book calendar in inkflow.json changed')
 
     if (changes === 0) return report('fresh', [], 0, disk.length)
     if (changes > FRESHNESS_REASON_LIMIT) {

@@ -15,6 +15,12 @@ export interface TimelineDocumentFields {
   readonly id: string
   readonly title: string
   readonly worldTime?: string
+  /**
+   * The era `worldTime` is written in (data-model §3.4, #48). Written only when the
+   * caller states one: a single-era book never grows the key, and the reader's default
+   * (the calendar's last era) stays the file's default too.
+   */
+  readonly era?: string
   readonly narrativeOrder?: number
   readonly chapter?: string
   readonly participants?: readonly string[]
@@ -48,6 +54,7 @@ export function renderTimelineDocument(input: {
     status: input.fields.status,
   }
   if (input.fields.worldTime !== undefined) entries['worldTime'] = input.fields.worldTime
+  if (input.fields.era !== undefined) entries['era'] = input.fields.era
   if (input.fields.narrativeOrder !== undefined) entries['narrativeOrder'] = String(input.fields.narrativeOrder)
   if (input.fields.chapter !== undefined) entries['chapterId'] = input.fields.chapter
 
@@ -68,6 +75,7 @@ function trimBody(body: string): string {
 function freshDocument(fields: TimelineDocumentFields, body: string): string {
   const lines = ['---', frontmatterLine('id', fields.id), frontmatterLine('title', fields.title)]
   if (fields.worldTime !== undefined) lines.push(frontmatterLine('worldTime', fields.worldTime))
+  if (fields.era !== undefined) lines.push(frontmatterLine('era', fields.era))
   if (fields.narrativeOrder !== undefined) lines.push(frontmatterLine('narrativeOrder', String(fields.narrativeOrder)))
   if (fields.chapter !== undefined) lines.push(frontmatterLine('chapterId', fields.chapter))
   if (fields.participants !== undefined) lines.push(`participants: [${fields.participants.join(', ')}]`)

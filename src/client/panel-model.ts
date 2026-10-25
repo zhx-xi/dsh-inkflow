@@ -624,6 +624,11 @@ export const PANEL_TABS: PanelTab[] = [
   // it is a proposal waiting for a decision, and mixing "what is true" with "what might
   // become true" in one tree is how an author approves a duplicate by accident.
   { id: 'candidates', label: '候选', available: true },
+  // #48: 地图 — places grouped by world category, one click to the entry (ADR-0025 D4).
+  // Appended at the end of the live rows rather than next to 设定库: the row order is this
+  // array's, and inserting into the middle of a four-issue shared list is a merge conflict
+  // per rebase.
+  { id: 'map', label: '地图', available: true },
   // 0.5.0 placeholders (#180). Each belongs to a page one of the B1/B2 issues lands:
   // `brief` #43 (nine segments + token share + what was trimmed), `gate` #44 (the seven
   // quality gates with evidence), `review` #46 (审稿意见 by chapter/paragraph/offset) and
