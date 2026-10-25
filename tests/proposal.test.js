@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import {
+  apply,
   applyBlocked,
   applyHunks,
   applyProposal,
@@ -653,4 +654,211 @@ test('提案：counts 由段状态算出，是唯一的汇总口径', () => {
     countsOf([{ status: 'pending' }, { status: 'accepted' }, { status: 'rejected' }, { status: 'accepted' }]),
     { total: 4, pending: 1, accepted: 2, rejected: 1 },
   )
+})
+
+// ---------------------------------------------------------------------------
+// 8. The tool surface's receipts (issue #201)
+// ---------------------------------------------------------------------------
+//
+// The host calls `output.render(args, value)` on whatever `execute` returned, so a
+// payload nested one level too deep does not throw — it renders `undefined`s, and the
+// author reads a failure that did not happen. That is how a byte-identical rollback was
+// reported as 「未能验证字节一致」 while `meta.rollback.verified` said `true`: the compute
+// was right, only the receipt was wrong. These cases drive `execute` → `render` in the
+// host's order, because the two halves are only correct together.
+
+/** Register the whole plugin surface over a temp book, so `execute` resolves like the host's. */
+function toolSurface(root) {
+  const tools = new Map()
+  const ctx = {
+    effect(setup) {
+      const dispose = setup()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    },
+    inject(_deps, callback) {
+      callback(ctx)
+    },
+    get(name) {
+      if (name === 'workingDirectory') return { ensure: async () => root }
+      return undefined
+    },
+    logger() {
+      return { debug() {}, info() {}, warn() {}, error() {} }
+    },
+    tools: {
+      register(definition) {
+        tools.set(definition.name, definition)
+        return () => {}
+      },
+    },
+    webServer: { register() { return () => {} } },
+  }
+  apply(ctx, { dataDir: join(root, '.plugin-state') })
+  return tools
+}
+
+async function callTool(tools, name, args) {
+  const tool = tools.get(name)
+  assert.ok(tool, `${name} must be registered`)
+  return tool.execute(args, { signal: AbortSignal.timeout(20_000), agent: { id: 'test-session' } })
+}
+
+/** Render through the tool's own renderer, exactly as the host does on every result. */
+function rendered(tools, name, args, value) {
+  const tool = tools.get(name)
+  const blocks = tool.output.render(args, value)
+  assert.ok(Array.isArray(blocks) && blocks.length > 0, `${name} must render blocks`)
+  const output = blocks.map((block) => String(block.text ?? '')).join('\n')
+  assert.notEqual(output.trim(), '', `${name} must render text`)
+  return output
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function readMeta(root, proposalId) {
+  return JSON.parse(readFileSync(join(root, ...`.inkflow/proposals/${proposalId}/meta.json`.split('/')), 'utf8'))
+}
+
+test('提案：回滚工具的回执说清「逐字节一致」与备份包，成功不被报成校验失败', async () => {
+  const root = project(workdir())
+  try {
+    const file = chapter(root, BASE_BODY)
+    const before = readFileSync(file)
+    const tools = toolSurface(root)
+    const proposal = openProposal(root)
+    decideAll(root, proposal.proposalId, 'accepted')
+
+    const applied = await callTool(tools, 'inkflow_proposal_apply', { proposalId: proposal.proposalId, confirm: true })
+    assert.equal(applied.ok, true, applied.ok ? '' : `${applied.error.code}: ${applied.error.message}`)
+    const backup = applied.backup
+    assert.equal(String(backup).startsWith('.inkflow/backup/'), true, 'apply names the package the rollback replays')
+
+    const args = { proposalId: proposal.proposalId, confirm: true }
+    const rolled = await callTool(tools, 'inkflow_proposal_rollback', args)
+    assert.equal(rolled.ok, true, rolled.ok ? '' : `${rolled.error.code}: ${rolled.error.message}`)
+
+    const receipt = rendered(tools, 'inkflow_proposal_rollback', args, rolled)
+    assert.match(receipt, new RegExp(`已回滚：${CHAPTER}`), 'the receipt names the file that went back')
+    assert.equal(receipt.includes(`备份包：${backup}`), true, 'and the package a human can open')
+    assert.match(receipt, /逐字节一致：sha256 [0-9a-f]{64}（\d+ 字节）/, 'a verified rollback says so, with the digest')
+    assert.equal(
+      receipt.includes('未能验证字节一致'),
+      false,
+      'a byte-identical rollback must not be reported as a failed check',
+    )
+    assert.equal(receipt.includes('undefined'), false, 'no field the renderer could not read')
+
+    const meta = readMeta(root, proposal.proposalId)
+    assert.equal(meta.rollback.verified, true, 'meta.rollback.verified keeps its meaning')
+    assert.equal(meta.rollback.backup, backup)
+    assert.deepEqual(meta.rollback.restored, [CHAPTER])
+    // The direction of `verified`: the disk NOW against the proposal baseline (the bytes
+    // the file had before the apply), never against the bytes the apply produced.
+    assert.equal(meta.apply.before.sha256, meta.base.sha256, 'the pre-apply digest IS the proposal baseline')
+    assert.notEqual(meta.apply.after.sha256, meta.apply.before.sha256, 'the apply really did change the file')
+    assert.deepEqual(readFileSync(file), before, 'and the file really is back to those bytes')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('提案：四个工具的 execute 都返回扁平载荷（内部信封不外泄，防同类再犯）', async () => {
+  const root = project(workdir())
+  try {
+    chapter(root, BASE_BODY)
+    const tools = toolSurface(root)
+
+    const created = await callTool(tools, 'inkflow_proposal_create', { chapterId: 'ch-0001', revisedBody: REVISED_BODY })
+    assert.equal(created.ok, true, created.ok ? '' : `${created.error.code}: ${created.error.message}`)
+    const proposalId = created.proposalId
+    const hunks = readProposal(root, proposalId).value.hunks.map((hunk) => ({ index: hunk.index, status: 'accepted' }))
+    const decided = await callTool(tools, 'inkflow_proposal_decide', { proposalId, decisions: hunks })
+    assert.equal(decided.ok, true, decided.ok ? '' : `${decided.error.code}: ${decided.error.message}`)
+    const applyArgs = { proposalId, confirm: true }
+    const applied = await callTool(tools, 'inkflow_proposal_apply', applyArgs)
+    assert.equal(applied.ok, true, applied.ok ? '' : `${applied.error.code}: ${applied.error.message}`)
+    const rolled = await callTool(tools, 'inkflow_proposal_rollback', applyArgs)
+    assert.equal(rolled.ok, true, rolled.ok ? '' : `${rolled.error.code}: ${rolled.error.message}`)
+
+    // The shape guard: `execute` answers the flat payload the renderers read. A nested
+    // `value` means somebody spread `{ ok, value }` instead of `value` — the exact defect
+    // that turned a successful rollback into a failure message.
+    const results = [
+      ['inkflow_proposal_create', created],
+      ['inkflow_proposal_decide', decided],
+      ['inkflow_proposal_apply', applied],
+      ['inkflow_proposal_rollback', rolled],
+    ]
+    for (const [name, result] of results) {
+      assert.equal(hasOwn(result, 'value'), false, `${name}: execute must not leak the { ok, value } envelope`)
+      assert.equal(result.ok, true)
+    }
+    // …and each one carries its own fields at the top level, where the renderers look.
+    assert.equal(created.proposalId, proposalId)
+    assert.equal(created.contentFilesWritten, 0)
+    assert.deepEqual(decided.pending, [], 'every hunk is decided')
+    assert.equal(typeof decided.decision.baseline.sha256, 'string')
+    assert.equal(String(applied.backup).startsWith('.inkflow/backup/'), true)
+    assert.deepEqual(applied.applied, [1, 2])
+    assert.equal(typeof applied.after.sha256, 'string')
+    assert.deepEqual(rolled.restored, [CHAPTER])
+    assert.equal(rolled.verified, true)
+    assert.equal(typeof rolled.before.sha256, 'string')
+
+    // Every one of the four renders real text — an envelope would have printed `undefined`s.
+    for (const [name, result] of results) {
+      const text = rendered(tools, name, {}, result)
+      assert.equal(text.includes('undefined'), false, `${name}: the renderer read every field it prints`)
+    }
+
+    // A refusal is flat too: `ok:false` plus `error`, never a nested payload.
+    const again = await callTool(tools, 'inkflow_proposal_apply', applyArgs)
+    assert.equal(again.ok, false)
+    assert.equal(again.error.code, 'PROPOSAL_STATUS')
+    assert.equal(hasOwn(again, 'value'), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('提案：失败回执仍按原样说清（状态不对 / 备份冲突）', async () => {
+  const root = project(workdir())
+  try {
+    const file = chapter(root, BASE_BODY)
+    const tools = toolSurface(root)
+    const proposal = openProposal(root)
+    const args = { proposalId: proposal.proposalId, confirm: true }
+
+    // 1. An open proposal has written nothing, so there is nothing to roll back.
+    const status = await callTool(tools, 'inkflow_proposal_rollback', args)
+    assert.equal(status.ok, false)
+    assert.equal(status.error.code, 'PROPOSAL_STATUS')
+    assert.equal(hasOwn(status, 'value'), false)
+    const statusText = rendered(tools, 'inkflow_proposal_rollback', args, status)
+    assert.equal(statusText.includes('回滚提案失败：PROPOSAL_STATUS'), true)
+    assert.equal(statusText.includes('未写入任何章节文件'), true, 'the author is told the book is untouched')
+
+    // 2. Apply, then edit the chapter by hand: the snapshot must not win over newer text.
+    decideAll(root, proposal.proposalId, 'accepted')
+    const applied = await callTool(tools, 'inkflow_proposal_apply', args)
+    assert.equal(applied.ok, true, applied.ok ? '' : `${applied.error.code}: ${applied.error.message}`)
+    writeFileSync(file, `${readFileSync(file, 'utf8')}作者后来手改的一行。\n`, 'utf8')
+    const edited = readFileSync(file)
+
+    const conflict = await callTool(tools, 'inkflow_proposal_rollback', args)
+    assert.equal(conflict.ok, false)
+    assert.equal(conflict.error.code, 'BACKUP_CONFLICT')
+    assert.equal(hasOwn(conflict, 'value'), false)
+    const conflictText = rendered(tools, 'inkflow_proposal_rollback', args, conflict)
+    assert.equal(conflictText.includes('回滚提案失败：BACKUP_CONFLICT'), true)
+    assert.equal(conflictText.includes('was changed after this batch'), true, 'the reason names the file and the cause')
+    assert.equal(conflictText.includes('run the rollback again'), true, 'and the hint says what to do next')
+    assert.deepEqual(readFileSync(file), edited, "the author's newer text is kept")
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
