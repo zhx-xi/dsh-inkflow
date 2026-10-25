@@ -652,7 +652,7 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 
 1. `Host` loopback → 403 `forbidden-host`；`Origin` 存在时必须 loopback → 403 `forbidden-origin`；对端地址非空时必须 loopback → 403 `forbidden-remote`。
 2. 路径参数禁令（`root`/`path`/`cwd`/`workspace`/`projectRoot`，query 或 body）→ 400 `ROOT_PARAM_NOT_ALLOWED`，**判定在路由匹配与任何文件 IO 之前**。`candidate` 不在禁令名单里，且只被 `plan` 接受：它是本通道唯一能携带**未注册**路径的字段，名字固定为 `candidate`（不叫 `path`/`root`）。`book` 是第二个路径形状字段（只被 `/hub/shared/copies`、`/copy`、`/update` 接受），语义更窄：它**必须是注册表里的 canonical 路径**，否则 400 `BOOK_NOT_REGISTERED`（§6.2.3）。
-3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET；`/hub/plan`、`/hub/apply`、`/hub/shared/copy`、`/hub/shared/update` 只有 POST）。
+3. 方法逐路由声明 → 未声明动词 405 + `Allow`（`/hub/books` 只有 GET；`/hub/plan`、`/hub/apply`、`/hub/shared/copy`、`/hub/shared/update` 只有 POST）。**query 键同样逐路由声明**（与 §6.2 同一判定与同一个 `unexpectedQueryParam`）：未声明的键 → 400 `UNKNOWN_QUERY_PARAM`（附 `route`/`param`/`allowed`），`sessionId` 仍按 §6.2.1 的口径被忽略而不拒绝——它只是"多余但无害"，其它多余的键则是"被丢掉的调用方意图"。
 4. 写路由（`plan`/`apply`/`shared/copy`/`shared/update`）额外要求 **`Origin` 与 `Host` 同源（含端口）**（ADR-0010 D6 #6，比会话写路由更严）→ 403 `forbidden-origin`（`reason: 'origin-required'` 或 `'origin-mismatch'`）；`Content-Type: application/json` → 415；体积 ≤1 MiB → 413；body 字段白名单（`plan` 只接受 `candidate`/`outsideRegistry`/`title`，`apply` 只接受 `planToken`/`confirm`/`title`，`shared/copy` 只接受 `book`/`entryId`/`mode`/`confirm`，`shared/update` 只接受 `book`/`entryId`/`file`/`confirm`）→ 400 `UNEXPECTED_BODY_FIELD`。
 5. 不解析会话：缺 `sessionId` **不是**错误，`NO_SESSION_CONTEXT` 在 hub 上**不适用**。
 
