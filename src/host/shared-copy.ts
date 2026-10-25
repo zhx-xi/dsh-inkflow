@@ -320,6 +320,17 @@ function kindOfProjectFile(file: string): SharedKind {
   return 'library'
 }
 
+/**
+ * Where a shared entry lands inside a book — exported for the series sync (#49).
+ *
+ * One function, so "which book path does this entry become" has exactly one answer: a
+ * copy and a series sync that disagreed about it would write the same entry to two
+ * places, or collide with a file the other one already owns.
+ */
+export function sharedDestinationOf(entry: SharedEntry): string | undefined {
+  return destinationFor(entry)
+}
+
 // ---------------------------------------------------------------------------
 // `origin`: reading and writing the block
 // ---------------------------------------------------------------------------

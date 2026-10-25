@@ -121,6 +121,11 @@ const BUILT_IN_TOOLS = [
   // tool: it reads every content directory at once and writes the artifact outside the book
   // (`dataDir/exports/`, ADR-0024 D4), so no content directory owns it.
   ['inkflow_export', '84b1e806'],
+  // #49: the series sync — plan (read-only) and apply (the four-row plan, one decision per
+  // conflict). Built-ins for the same reason as the shared library they extend: they read the
+  // plugin-level library and write into `world/`/`library/`, so no content directory owns them.
+  ['inkflow_series_plan', 'ccf384d0'],
+  ['inkflow_series_apply', '8ef6f2a2'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */
