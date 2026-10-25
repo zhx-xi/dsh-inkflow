@@ -1,5 +1,5 @@
 /**
- * The export entry's pure view model (#195, ADR-0024, roadmap X-20).
+ * The export entry's pure view model (ADR-0024, roadmap X-20).
  *
  * Same reason as `hub-model.ts`: `node --test` has no DOM, so every decision the export card
  * makes — which axes exist, what a refusal means in words, what a finished export reads like —
@@ -90,7 +90,7 @@ export interface ExportBody {
  * The request body, or `null` when there is no book to export.
  *
  * Why both axes travel even when the target does not read them: the Host refuses a mixed
- * selection with `EXPORT_SELECTION_UNUSED` and names the parameter to drop (#50). Dropping it
+ * selection with `EXPORT_SELECTION_UNUSED` and names the parameter to drop. Dropping it
  * here instead would silently answer a different question than the one the user asked, and the
  * page would look like it had "fixed" the request. The component clears the unused axis when
  * the target changes, so a person never gets there by clicking.

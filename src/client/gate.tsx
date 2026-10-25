@@ -1,5 +1,5 @@
 /**
- * The quality-gate tab (#44, ADR-0022 D4, roadmap X-12).
+ * The quality-gate tab (ADR-0022 D4, roadmap X-12).
  *
  * One screen: pick a chapter, read the eight checks, filter by severity. Nothing here
  * decides anything — the Host runs the gate (`gate.ts`) and this page prints what it said:

@@ -1,5 +1,5 @@
 /**
- * Pure view model for the panel skeleton (issue #17).
+ * Pure view model for the panel skeleton.
  *
  * Everything here is a plain function over plain data: the panel's state
  * wording, the four-state badge, the volume tree, the empty-state choice and the
@@ -54,7 +54,7 @@ export interface StatusValue {
   usable?: boolean
   readOnly?: boolean
   /**
-   * The meta parses but its title carries GBK round-trip artifacts (issue #89):
+   * The meta parses but its title carries GBK round-trip artifacts:
    * a file this plugin did not write. A hint beside the title, never a gate
    * state — the Host reports it only when the title is genuinely suspicious.
    */
@@ -71,7 +71,7 @@ export interface StatusValue {
   }
   catalog?: { stale?: boolean; volumes?: number; chapters?: number }
   /**
-   * Issue #88: which generation the Host is running and whether the disk holds a
+   * Which generation the Host is running and whether the disk holds a
    * newer one. Present in `value` when the book is usable AND in `error` when the
    * gate refuses — a stale generation refuses a healthy book as "needs setup".
    */
@@ -106,7 +106,7 @@ export interface ChapterDetailValue {
   hasFrontmatter?: boolean
   issues?: unknown[]
   /**
-   * The CAS baseline for the next save (issue #19). The Host fingerprints the
+   * The CAS baseline for the next save. The Host fingerprints the
    * bytes it just handed over; the editor sends that back so a file changed in
    * the author's own editor is never overwritten silently.
    */
@@ -115,7 +115,7 @@ export interface ChapterDetailValue {
    * The file's own format (ADR-0016): the Host reads the raw bytes and reports
    * them here, `body` stays LF. The editor sends both back on save — without
    * them the Host can only normalise, which rewrites a CRLF chapter to LF and
-   * turns a one-character edit into a whole-chapter diff (#132).
+   * turns a one-character edit into a whole-chapter diff.
    */
   eol?: 'lf' | 'crlf'
   bom?: boolean
@@ -135,7 +135,7 @@ export interface PanelGate {
   root: string | null
   usable: boolean
   readOnly: boolean
-  /** The title looks like a GBK round-trip accident (issue #89); cosmetic only. */
+  /** The title looks like a GBK round-trip accident; cosmetic only. */
   titleSuspicious: boolean
   missing: string[]
   actions: WorkspaceAction[]
@@ -197,7 +197,7 @@ export const ERROR_HINTS: Record<string, string> = {
   // Only `chapters.ts` raises this (the write route resolves a chapter by id and
   // demands uniqueness), so it belongs to the chapter mapper — putting it in the
   // library mapper made it dead code and left the chapter editor showing the Host's
-  // English sentence (caught in review of PR #118).
+  // English sentence (caught in review: the rule sat in the wrong mapper).
   CHAPTER_AMBIGUOUS: '这个 id 被两章共用，写路径无法确定改哪一章：请给其中一章换一个 id 后再保存。',
 }
 
@@ -303,7 +303,7 @@ export function readGate(result: InternalResult<StatusValue> | null): PanelGate 
 }
 
 /**
- * The tooltip behind the small marker next to a suspicious book title (issue #89).
+ * The tooltip behind the small marker next to a suspicious book title.
  *
  * Wording matters here: the panel cannot fix the file, and "your title is wrong"
  * without a way out is noise. So it names the cause (an encoding accident) and the
@@ -498,7 +498,7 @@ export function describeFacts(facts: ProjectFacts): string {
 
 
 // ---------------------------------------------------------------------------
-// Build identity and stale-load warning (issue #88). Self-contained on purpose:
+// Build identity and stale-load warning. Self-contained on purpose:
 // it is one block of additions, so a parallel change to the panel's book tree
 // merges around it instead of through it.
 // ---------------------------------------------------------------------------
@@ -528,7 +528,7 @@ export const UNKNOWN_BUILD_LABEL = '未知'
 /**
  * Read the build summary out of either envelope.
  *
- * Both halves matter (issue #88): a stale generation renders the gate REFUSAL
+ * Both halves matter: a stale generation renders the gate REFUSAL
  * for a book that is usable, so `error.build` is where the banner's evidence
  * lives exactly when the user needs it most.
  */
@@ -597,14 +597,14 @@ export interface PanelTab {
 /**
  * The tabs the workbench shows.
  *
- * Five pages exist in this build: 章节 (the chapter tree + editor, issue #19),
- * 设定库 (issue #30 — the eight-kind tree, read-only detail and the problem panel),
- * 回收站 (issue #35 — the recovery bin, restore or purge), 伏笔 (issue #31 — the
- * read-only board: late / open / by linked entity) and 体检 (issue #33 — the five-family
+ * Five pages came first: 章节 (the chapter tree + editor),
+ * 设定库 (the eight-kind tree, read-only detail and the problem panel),
+ * 回收站 (the recovery bin, restore or purge), 伏笔 (the
+ * read-only board: late / open / by linked entity) and 体检 (the five-family
  * consistency report with one-click export). 大纲 stays DISABLED with its release note:
  * a button that opens nothing is worse than a disabled one that says when it arrives.
  *
- * Four more rows are registered **disabled** by #180 (roadmap §2.4 「面板落点」): the
+ * Four more rows went in **disabled** while their page was still being written (roadmap §2.4 「面板落点」): the
  * 0.5.0 pages that two or more issues each will land. They are rows here and not later
  * additions because the row order is this file's, not the feature's: four parallel
  * issues inserting themselves into one array is a merge conflict per rebase, while a
@@ -619,29 +619,29 @@ export const PANEL_TABS: PanelTab[] = [
   { id: 'foreshadowing', label: '伏笔', available: true },
   { id: 'trash', label: '回收站', available: true },
   { id: 'audit', label: '体检', available: true },
-  // Issue #38 (X-20): the extraction queue — the ONE tab this milestone adds. It is a
+  // The extraction queue (X-20) — the ONE tab this milestone added. It is a
   // tab and not a section of the setting library because a candidate is not an entity:
   // it is a proposal waiting for a decision, and mixing "what is true" with "what might
   // become true" in one tree is how an author approves a duplicate by accident.
   { id: 'candidates', label: '候选', available: true },
-  // #48: 地图 — places grouped by world category, one click to the entry (ADR-0025 D4).
+  // 地图 — places grouped by world category, one click to the entry (ADR-0025 D4).
   // Appended at the end of the live rows rather than next to 设定库: the row order is this
   // array's, and inserting into the middle of a four-issue shared list is a merge conflict
   // per rebase.
   { id: 'map', label: '地图', available: true },
-  // 0.5.0 placeholders (#180). Each belongs to a page one of the B1/B2 issues lands:
-  // `brief` #43 (nine segments + token share + what was trimmed), `gate` #44 (the seven
-  // quality gates with evidence), `review` #46 (审稿意见 by chapter/paragraph/offset) and
-  // `proposal` #45 (diff accepted or rejected piece by piece, then apply/roll back).
+  // 0.5.0 placeholders, one row per page a B1/B2 batch was landing:
+  // `brief` (nine segments + token share + what was trimmed), `gate` (the seven
+  // quality gates with evidence), `review` (审稿意见 by chapter/paragraph/offset) and
+  // `proposal` (diff accepted or rejected piece by piece, then apply/roll back).
   { id: 'brief', label: '简报', available: true },
-  // Issue #44 landed this row live: the page is `src/client/gate.tsx`, fed by `GET /gate`.
+  // The page is `src/client/gate.tsx`, fed by `GET /gate`.
   { id: 'gate', label: '门禁', available: true },
-  // Issue #46 landed this row live: the page is `src/client/review.tsx`, fed by `GET /review`
+  // The page is `src/client/review.tsx`, fed by `GET /review`
   // (the recorded runs) and `GET /review/compare` (the cross-model table).
   { id: 'review', label: '审稿', available: true },
-  // Issue #45 landed this row live: the page is `src/client/proposal.tsx`, fed by `GET /proposal`.
+  // The page is `src/client/proposal.tsx`, fed by `GET /proposal`.
   { id: 'proposal', label: '提案', available: true },
-  // Issue #47 landed this row live: the page is `src/client/batch.tsx`, fed by `GET /batch` and
+  // The page is `src/client/batch.tsx`, fed by `GET /batch` and
   // the one write `POST /batch/resume` (job records only — approving prose stays a tool call).
   { id: 'batch', label: '批量', available: true },
 ]

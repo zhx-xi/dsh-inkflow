@@ -1,5 +1,5 @@
 /**
- * Pure view model for the book hub's new-book wizard (ADR-0010 D4/D6, issue #86).
+ * Pure view model for the book hub's new-book wizard (ADR-0010 D4/D6).
  *
  * Same split as `hub-model.ts`: `node --test` has no DOM, so every wording
  * decision and every fallback is a plain function over plain data (asserted in
@@ -22,7 +22,7 @@
 import type { InternalResult } from './internal.js'
 import type { HubBookRow } from './hub-model.js'
 
-/** The one button that opens the wizard (the shared-content page is #87's). */
+/** The one button that opens the wizard (the shared-content page has its own). */
 export const HUB_WIZARD_LABEL = '新开书'
 
 /** What the button does for a book the user already has on disk. */

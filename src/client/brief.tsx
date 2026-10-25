@@ -1,5 +1,5 @@
 /**
- * The brief page (#43, ADR-0022 D1/D2, roadmap X-23/X-25): nine segments, what each one
+ * The brief page (ADR-0022 D1/D2, roadmap X-23/X-25): nine segments, what each one
  * cost, what the ladder dropped, and the text they add up to.
  *
  * WHY THE PAGE SHOWS THE RENDERED TEXT: the whole point of a preview is that it is the

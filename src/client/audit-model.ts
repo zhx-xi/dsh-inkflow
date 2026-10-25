@@ -1,5 +1,5 @@
 /**
- * Pure view model for the audit page (#33, roadmap X-14).
+ * Pure view model for the audit page (roadmap X-14).
  *
  * Same split as every other page in this plugin: the wording, the grouping and the
  * "can this be jumped to?" decision are plain functions over plain data, so `node --test`
@@ -261,7 +261,7 @@ export function jumpTargetOf(locator: AuditLocator): AuditJumpTarget | null {
   return null
 }
 
-/** What the export button says it will do (the label is the confirmation, ADR-0012 #4). */
+/** What the export button says it will do (the label is the confirmation, ADR-0012 decision 4). */
 export function exportLabel(exportPath: string): string {
   return exportPath === '' ? '导出 Markdown' : `导出到 ${exportPath}`
 }

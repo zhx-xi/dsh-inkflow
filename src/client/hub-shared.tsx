@@ -1,5 +1,5 @@
 /**
- * The shared-content page of the book hub (ADR-0010 D5, issues #87 + #40).
+ * The shared-content page of the book hub (ADR-0010 D5).
  *
  * WHAT IT ASKS FOR: `GET /inkflow/internal/hub/shared` (the library itself) and,
  * once a book is picked, `GET /inkflow/internal/hub/shared/copies?book=…` (what
@@ -291,7 +291,7 @@ export function SharedLibraryView({
           )}
         </div>
         {state.status === 'ready' ? <div style={muted}>{describeSharedSource(state.indexSource)}</div> : null}
-        {/* A configured-but-refused `sharedRoot` (#150): the list below comes from the
+        {/* A configured-but-refused `sharedRoot`: the list below comes from the
             default directory, and the author is standing here looking for entries that
             are somewhere else. Warn tone, no action — the fix is on the settings page. */}
         {state.status === 'ready' && state.rootWarning !== null ? (
@@ -462,7 +462,7 @@ export function SharedLibraryView({
         ) : null}
       </div>
 
-      {/* The series sync (#49): the entry lives here, not on a tab of its own (roadmap §2.4). */}
+      {/* The series sync: the entry lives here, not on a tab of its own (roadmap §2.4). */}
       <SeriesSyncSection book={selected} />
     </div>
   )

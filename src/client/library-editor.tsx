@@ -1,5 +1,5 @@
 /**
- * The setting library's entry editor (issue #30, second batch).
+ * The setting library's entry editor (the second batch of that work).
  *
  * Scope: one entry at a time — the common frontmatter fields of its kind as a
  * form, the Markdown body as plain text, and a save that carries the CAS
@@ -110,7 +110,7 @@ export interface LibraryItemEditorProps {
 }
 
 /**
- * 改名 + 影响面 (#34, conventions §5.6, ADR-0014).
+ * 改名 + 影响面 (conventions §5.6, ADR-0014).
  *
  * The dialog is inside the editor because that is where the author already stands
  * when they decide a name is wrong — and it does exactly two things:

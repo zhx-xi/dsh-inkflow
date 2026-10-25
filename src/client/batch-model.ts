@@ -1,5 +1,5 @@
 /**
- * The 批量 page's decisions (#47, roadmap X-12).
+ * The 批量 page's decisions (roadmap X-12).
  *
  * Pure by construction: no React, no network, no IO — the same shape as the other
  * `*-model.ts` files, so the panel's wording and its three states are unit-tested against the

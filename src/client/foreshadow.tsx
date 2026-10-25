@@ -1,5 +1,5 @@
 /**
- * The foreshadow board tab (#31): read-only.
+ * The foreshadow board tab: read-only.
  *
  * This build shows the three groupings `GET /inkflow/internal/foreshadow` already
  * decided — 超期 / 未回收 / 按角色 — and nothing else. There is deliberately **no

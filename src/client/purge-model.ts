@@ -1,5 +1,5 @@
 /**
- * The purge area's pure view model (#199) — no React, no network, no IO, so the three
+ * The purge area's pure view model — no React, no network, no IO, so the three
  * decisions the two panels make with it are unit-testable (the rule `architecture.md` §6.2
  * states for every `*-model.ts`).
  *

@@ -1,5 +1,5 @@
 /**
- * The chapter editor's state machine (issue #19) — pure logic, no React, no IO.
+ * The chapter editor's state machine — pure logic, no React, no IO.
  *
  * WHY THIS IS A SEPARATE MODULE: `node --test` has no DOM, so a React component
  * cannot be rendered here. Everything the editor *decides* — is there anything

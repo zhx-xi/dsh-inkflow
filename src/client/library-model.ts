@@ -1,5 +1,5 @@
 /**
- * Pure view model for the setting-library tab (issue #30, roadmap X-7).
+ * Pure view model for the setting-library tab (roadmap X-7).
  *
  * Everything here is a plain function over plain data, for the same reason
  * `panel-model.ts` is: `node --test` has no DOM, so the React View is only
@@ -69,7 +69,7 @@ export interface LibraryTree {
 }
 
 /**
- * "Open this entry for me" — a request from another page (#33's audit rows), not state the
+ * "Open this entry for me" — a request from another page (the audit rows), not state the
  * library owns.
  *
  * `nonce` exists because a second click on the *same* finding must re-focus the same row:
@@ -200,7 +200,7 @@ export const ISSUE_LABELS: Record<string, string> = {
   TIMELINE_TIME_INVALID: '时间线时间不合法',
   TIMELINE_TIME_REVERSED: '世界时间倒流',
   TIMELINE_ORDER_CONFLICT: '叙事次序冲突',
-  // #31 / #32 / #33 filled the codes these two families actually emit: before that the panel printed
+  // These two families' codes are the ones the Host actually emits: before that the panel printed
   // them verbatim (`FACT_CONFLICT`), which reads as a bug report rather than as a problem in the book.
   // `FORESHADOW_OVERDUE` / `FORESHADOW_DUE_NOW` are the audit's two lateness codes (data-model §5).
   FORESHADOW_RESOLVED_WITHOUT_CHAPTER: '伏笔标了已回收但没写回收章',
@@ -441,7 +441,7 @@ export function describeIssueRow(issue: LibraryIssue): string {
 }
 
 // ---------------------------------------------------------------------------
-// The editor (issue #30, second batch)
+// The editor (the second batch of the setting-library work)
 //
 // The Host owns the file format; this half owns "which fields a kind shows" and
 // "what the save sends". Both are pure functions over plain data — `node --test`
@@ -783,7 +783,7 @@ export function describeSaveError(error: InternalError | undefined): string {
   // must say the size, or the author only sees "保存失败" and no next step.
   const tooLarge = describeTooLarge(error)
   if (tooLarge !== null) return tooLarge
-  // The card the author saw (issue #115): a bare `forbidden-origin` with no hint.
+  // The card the author saw: a bare `forbidden-origin` with no hint.
   const refusedOrigin = describeOriginRefusal(error)
   if (refusedOrigin !== null) return refusedOrigin
   if (error.code === 'FILE_CHANGED') {

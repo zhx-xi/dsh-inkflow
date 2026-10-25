@@ -1,5 +1,5 @@
 /**
- * The import dialog's pure view model (issue #37, roadmap X-17 / X-20).
+ * The import dialog's pure view model (roadmap X-17 / X-20).
  *
  * No IO, no React: every decision the dialog makes (which step it is on, what the
  * preview says, which request body it sends, why a field is refused) is a function over

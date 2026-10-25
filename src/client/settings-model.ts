@@ -1,5 +1,5 @@
 /**
- * The settings page's view model (#42, ADR-0018) — pure functions, no React.
+ * The settings page's view model (ADR-0018) — pure functions, no React.
  *
  * Three sections on one page (设置 / 诊断包 / 备份), and each one is a form over the
  * wire shapes the hub channel answers (`/hub/settings`, `/hub/diagnostics`,
@@ -269,7 +269,7 @@ export function backupSummary(value: HubBackupsValue): string {
 }
 
 // ---------------------------------------------------------------------------
-// Semantic retrieval (#41): the status section's wire shapes and sentences
+// Semantic retrieval: the status section's wire shapes and sentences
 // ---------------------------------------------------------------------------
 
 export interface SemanticRebuildSummary {

@@ -1,5 +1,5 @@
 /**
- * The map tab (#48): places grouped by world category, one click to the entry.
+ * The map tab: places grouped by world category, one click to the entry.
  *
  * First version, on purpose: **a list with jumps, not a drawing.** Nothing here draws a
  * coordinate system, because a coordinate would have to live on the entry (ADR-0025 D4

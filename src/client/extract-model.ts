@@ -1,5 +1,5 @@
 /**
- * Pure view model for the candidate tab (#38, X-20).
+ * Pure view model for the candidate tab (X-20).
  *
  * Everything here is a plain function over plain data, for the same reason
  * `trash-model.ts` and `audit-model.ts` are: `node --test` has no DOM, so a page's
@@ -67,7 +67,7 @@ export interface CandidateVerdict {
   path: string | null
 }
 
-/** Same identity, different content (#178): the row the author has to decide about. */
+/** Same identity, different content: the row the author has to decide about. */
 export interface DuplicateMark {
   state: 'different'
   path: string
@@ -86,9 +86,9 @@ export interface CandidateRow {
   status: string
   file: string
   submittedAt: string
-  /** What `accept` would refuse right now (#175); null when the Host saw no conflict. */
+  /** What `accept` would refuse right now; null when the Host saw no conflict. */
   willFail: CandidateVerdict | null
-  /** The entity this would replace (#178); null when nothing of that identity exists. */
+  /** The entity this would replace; null when nothing of that identity exists. */
   duplicate: DuplicateMark | null
 }
 
@@ -319,7 +319,7 @@ export function waitingCount(counts: CandidateCounts | null): number {
 /** Rows a batch action may act on: only the ones still waiting for a decision. */
 /**
  * The ids a batch would act on: waiting rows the author ticked, minus the ones the Host
- * already said would fail (#175).
+ * already said would fail.
  *
  * They are dropped rather than sent, because a batch that half-succeeds is exactly what
  * the author cannot read at a glance; the page says how many were skipped and why, and a
@@ -332,7 +332,7 @@ export function actionableIds(rows: readonly CandidateRow[], selected: ReadonlyS
 }
 
 /**
- * Ticked waiting rows a batch skips because they would REPLACE an existing entity (#178).
+ * Ticked waiting rows a batch skips because they would REPLACE an existing entity.
  *
  * Overwriting is per-row on purpose: "the same person, other details" is a judgement about
  * one entity, and a batch that silently replaced twelve files would be a very expensive
@@ -376,7 +376,7 @@ export function toggleSelected(selected: ReadonlySet<string>, candidateId: strin
 /** Select-all for a page: adds every waiting row, or clears them when all are already in. */
 export function toggleAll(rows: readonly CandidateRow[], selected: ReadonlySet<string>): Set<string> {
   // Only rows a batch can act on: ticking a doomed row would promise something the batch
-  // skips (#175).
+  // skips.
   const waiting = rows
     .filter((row) => row.status === 'proposed' && row.willFail === null && row.duplicate === null)
     .map((row) => row.candidateId)

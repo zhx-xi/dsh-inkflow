@@ -1,5 +1,5 @@
 /**
- * The 提案 page's pure view model (#45, X-12): no React, no network, no IO.
+ * The 提案 page's pure view model (X-12): no React, no network, no IO.
  *
  * Everything the page decides with words or shapes lives here so it can be unit-tested
  * without a DOM: which state the page is in, what a hunk row says, which decisions a
@@ -291,7 +291,7 @@ export function describeCounts(counts: ProposalCounts): string {
   return `共 ${String(counts.total)} 段：待定 ${String(counts.pending)} · 接受 ${String(counts.accepted)} · 拒绝 ${String(counts.rejected)}`
 }
 
-/** The proposal list split at "still waiting on the author" vs "finished" (#199). */
+/** The proposal list split at "still waiting on the author" vs "finished". */
 export interface ProposalSplit {
   /** What the first screen shows: proposals that still need a decision. */
   readonly open: readonly ProposalRow[]
@@ -305,7 +305,7 @@ export interface ProposalSplit {
 }
 
 /**
- * Split the inbox at the fold (#199).
+ * Split the inbox at the fold.
  *
  * Two sources agree by construction: when the page holds the whole book the counts are the
  * rows' own, and when it does not (`truncated`) they come from the Host's full-population
@@ -346,7 +346,7 @@ export function describeClosedGroup(split: ProposalSplit): string {
   return `已结束（${String(split.closedCount)}）`
 }
 
-/** Whether a row may be cleaned up: only what the author has finished with (#199). */
+/** Whether a row may be cleaned up: only what the author has finished with. */
 export function cleanable(status: string): boolean {
   return status === 'applied' || status === 'rolled-back'
 }

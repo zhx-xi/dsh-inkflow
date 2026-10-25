@@ -1,5 +1,5 @@
 /**
- * The Client half of the private panel channel (ADR-0008, issue #18).
+ * The Client half of the private panel channel (ADR-0008).
  *
  * The browser may name a SESSION, never a directory: `fetchInternal` always
  * sends `sessionId` and never `root`/`path`/`cwd`. The Host resolves that id to
@@ -39,7 +39,7 @@ export interface InternalResult<T> {
 /**
  * The session this panel is attached to.
  *
- * Set by the session-scoped entry (`conversation.view`, issue #17): a root-scoped
+ * Set by the session-scoped entry (`conversation.view`): a root-scoped
  * panel has no session, and guessing one would report another book. Until it is
  * set, every request answers `NO_SESSION_CONTEXT` without a round trip.
  */

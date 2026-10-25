@@ -1,5 +1,5 @@
 /**
- * The export card on the book hub (#195, ADR-0024 D4 / 入口归属, roadmap X-20).
+ * The export card on the book hub (ADR-0024 D4 / 入口归属, roadmap X-20).
  *
  * WHERE IT LIVES AND WHY: the setting says the export entry belongs on the 书库 side, next to
  * 设置, and that it must NOT become a permanent tab — an export is a one-off action, not a
@@ -16,7 +16,7 @@
  *
  * EVERY HOOK SITS ABOVE THE FIRST RETURN (`scripts/check-hooks-order.mjs`, AGENTS.md §8 #2b):
  * a hook after an early return is a hook missing on that render, and React's "Rendered fewer
- * hooks than expected" is the blank-panel bug that cost a whole afternoon in #174.
+ * hooks than expected" is the blank-panel bug that cost a whole afternoon to find.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -132,7 +132,7 @@ export function HubExportPanel({ books, onClose }: { books: HubBookRow[]; onClos
   }, [book])
 
   /**
-   * One axis change, and the unused axis is cleared (#50: the two are not combinable).
+   * One axis change, and the unused axis is cleared (the two are not combinable).
    * Clearing here is a convenience for the clicker; `buildExportBody` still sends whatever is
    * chosen, and the Host refuses a mixed request rather than guessing which axis was meant.
    */

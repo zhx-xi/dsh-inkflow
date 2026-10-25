@@ -1,5 +1,5 @@
 /**
- * Pure view model for the shared-content page (ADR-0010 D5, issue #87 + #40).
+ * Pure view model for the shared-content page (ADR-0010 D5).
  *
  * Same reason as `hub-model.ts`: `node --test` has no DOM, so every wording
  * decision, every grouping rule and every fallback lives here as a plain function
@@ -8,7 +8,7 @@
  *
  * FOUR RULES THAT SHAPE THIS FILE:
  *
- *   1. The page can WRITE now (#40), but only in one direction: copy a library
+ *   1. The page can WRITE, but only in one direction: copy a library
  *      entry INTO a book, or refresh one copy that went stale. Nothing here offers
  *      a way to change the shared library — there is no "push" (ADR-0007 C6).
  *   2. Both writes are two-step: the button arms a confirmation card, and the
@@ -101,7 +101,7 @@ export interface HubSharedValue {
   total?: number
   truncated?: boolean
   /**
-   * Why the configured `sharedRoot` is not the directory that answered (#150).
+   * Why the configured `sharedRoot` is not the directory that answered.
    *
    * Absent when the setting is in force (or unset). Mirrored as an optional shape
    * rather than imported: the two halves are separate bundles, and the Client may
@@ -110,7 +110,7 @@ export interface HubSharedValue {
   sharedRootWarning?: { code?: string; message?: string }
 }
 
-/** One row of `GET /hub/shared/copies` (#40): a copy in the book and its state. */
+/** One row of `GET /hub/shared/copies`: a copy in the book and its state. */
 export interface SharedCopyRow {
   file?: string
   kind?: string
@@ -144,12 +144,12 @@ export type SharedState =
       total: number
       truncated: boolean
       /**
-       * One line when the settings file named a `sharedRoot` the plugin refused
-       * (#150), `null` otherwise.
+       * One line when the settings file named a `sharedRoot` the plugin refused:
+       * `null` otherwise.
        *
        * The page MUST say this: without it a library read from the default directory
        * looks exactly like the one the author configured and moved elsewhere, so the
-       * failure presents as "my entries vanished" (#42 shipped the field, nothing read
+       * failure presents as "my entries vanished" (the Host shipped the field, nothing read
        * it, and there was nowhere for that to show).
        */
       rootWarning: string | null
@@ -228,7 +228,7 @@ function countOf(value: unknown): number {
 }
 
 /**
- * The one line that explains a `sharedRoot` the plugin refused (#150), or `null`.
+ * The one line that explains a `sharedRoot` the plugin refused, or `null`.
  *
  * The Host's own message is quoted when it sent one: it already says what the value
  * was and why it was refused, and re-wording it here would give the author two

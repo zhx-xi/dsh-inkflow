@@ -1,5 +1,5 @@
 /**
- * The 提案 tab (#45, roadmap X-12): one proposal, its line hunks, and the three actions
+ * The 提案 tab (roadmap X-12): one proposal, its line hunks, and the three actions
  * that may follow — accept/reject per hunk, apply, roll back.
  *
  * What the page is responsible for: showing the author what would change, in lines, with
@@ -215,7 +215,7 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
   const [busy, setBusy] = useState(false)
   /** Which destructive action is armed; the second click sends `confirm: true`. */
   const [armed, setArmed] = useState<'apply' | 'rollback' | null>(null)
-  /** #199: the finished proposals' fold, the cleanup being confirmed, and the purge area. */
+  /** The finished proposals' fold, the cleanup being confirmed, and the purge area. */
   const [closedOpen, setClosedOpen] = useState(false)
   const [armedClean, setArmedClean] = useState<string | null>(null)
   const [purgedResult, setPurgedResult] = useState<InternalResult<unknown> | null>(null)
@@ -322,7 +322,7 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
     refresh()
   }, [selected, sessionId, refresh])
 
-  // The purge area (#199). Read on every refresh, so a cleanup or a restore is reflected
+  // The purge area. Read on every refresh, so a cleanup or a restore is reflected
   // without the author having to guess whether it worked.
   useEffect(() => {
     let live = true
@@ -387,7 +387,7 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
         ? (page.error ?? '提案答案读不懂')
         : null
 
-  // #199: the first screen shows what still needs a decision; finished proposals fold away and
+  // The first screen shows what still needs a decision; finished proposals fold away and
   // are the only cleanable ones. `split` is also what `describeTotals` counts, so the header and
   // the column cannot disagree.
   const split = useMemo(() => splitProposals(page), [page])

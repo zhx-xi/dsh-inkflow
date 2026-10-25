@@ -1,5 +1,5 @@
 /**
- * Wording for the refusals whose text has to carry a number (issue #115).
+ * Wording for the refusals whose text has to carry a number.
  *
  * Why a module of its own: `panel-model.ts` and `library-model.ts` are pure view
  * models — a guard test in `tests/panel-bundle.test.js` forbids them a runtime
@@ -45,7 +45,7 @@ export function describeTooLarge(error: SizedRefusal | undefined): string | null
 }
 
 /**
- * The write guard's refusal, in words an author can act on (issue #115).
+ * The write guard's refusal, in words an author can act on.
  *
  * `forbidden-origin` used to reach the panel as a bare English code — this is the
  * card the author actually saw. The Host's refusal carries `reason` (`origin-required`

@@ -1,5 +1,5 @@
 /**
- * The impact dialog's view model (#34, conventions §5.6, ADR-0014).
+ * The impact dialog's view model (conventions §5.6, ADR-0014).
  *
  * Split from `library-model.ts` rather than appended to it. That is **not** a
  * line-count fix: `library-model.ts` was already past the 600-line guideline
@@ -17,7 +17,7 @@ import { asRecord, optionalString } from './library-model.js'
 import type { LibraryFingerprint } from './library-model.js'
 
 // ---------------------------------------------------------------------------
-// The impact dialog (#34, conventions §5.6)
+// The impact dialog (conventions §5.6)
 //
 // 改设定 is the one action whose cost is invisible until later, so the dialog has
 // to do two jobs and nothing else: show what the change would touch (this half),
