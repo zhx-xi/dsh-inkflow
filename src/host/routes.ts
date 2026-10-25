@@ -227,6 +227,17 @@ interface InternalRoute {
    */
   readonly body?: readonly string[]
   /**
+   * The only QUERY keys this route reads (`sessionId` is always allowed, exactly as it is
+   * in a body). Anything else is a 400 `UNKNOWN_QUERY_PARAM`.
+   *
+   * Required, not optional (issue #200): the channel used to hand the whole query string to
+   * a handler that read three keys and silently ignored the rest, so `?chapterID=` (a
+   * spelling mistake) answered the DEFAULT chapter with HTTP 200 and the caller could not
+   * see that its target had been dropped. A route that takes no knobs says so with `[]`,
+   * and there is no third state where nobody declared anything.
+   */
+  readonly query: readonly string[]
+  /**
    * Read routes may have to make the derived index fresh first (issue #5), so a
    * handler is allowed to be async; the dispatcher awaits it either way.
    */
@@ -253,12 +264,14 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'status',
     pattern: /^\/status$/,
     methods: ['GET'],
+    query: [],
     handle: ({ target, version }) => ({ status: 200, body: ok(buildStatus(target, version)) }),
   },
   {
     name: 'chapters',
     pattern: /^\/chapters$/,
     methods: ['GET', 'POST'],
+    query: [],
     body: CHAPTER_CREATE_BODY_FIELDS,
     handle: async (input) =>
       input.method === 'POST'
@@ -269,6 +282,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'chapter',
     pattern: /^\/chapters\/([^/]+)$/,
     methods: ['GET', 'POST', 'DELETE'],
+    query: [],
     // `eol`/`bom` are the file's own format, read from `GET /chapters/:id` and
     // handed back on save (ADR-0016): without them the write door can only
     // normalise, which rewrites a CRLF chapter to LF. Both are validated by
@@ -287,6 +301,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'chapter-move',
     pattern: /^\/chapters\/([^/]+)\/move$/,
     methods: ['POST'],
+    query: [],
     body: CHAPTER_MOVE_BODY_FIELDS,
     handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
@@ -297,6 +312,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'search',
     pattern: /^\/search$/,
     methods: ['GET'],
+    query: ['q', 'kinds', 'offset', 'limit'],
     handle: async ({ target, query, version, dataDir }) => {
       const q = (query.get('q') ?? '').trim()
       if (q === '') {
@@ -318,6 +334,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'replace-preview',
     pattern: /^\/replace$/,
     methods: ['GET'],
+    query: ['q', 'with'],
     handle: ({ target, query, version }) => {
       const q = query.get('q') ?? ''
       if (q.trim() === '') {
@@ -332,6 +349,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'replace-apply',
     pattern: /^\/replace\/apply$/,
     methods: ['POST'],
+    query: [],
     body: REPLACE_APPLY_BODY_FIELDS,
     handle: ({ target, version, body }) => replaceApplyReply(target, version, body),
   },
@@ -342,6 +360,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'library',
     pattern: /^\/library$/,
     methods: ['GET'],
+    query: [],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildLibrary(target, version)) }),
   },
   {
@@ -356,6 +375,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'library-item',
     pattern: /^\/library\/item$/,
     methods: ['GET', 'POST'],
+    query: ['kind', 'id'],
     body: LIBRARY_WRITE_BODY_FIELDS,
     handle: async (input) => {
       if (input.method === 'POST') {
@@ -372,6 +392,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'library-issues',
     pattern: /^\/library\/issues$/,
     methods: ['GET'],
+    query: [],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildLibraryIssues(target, version)) }),
   },
   {
@@ -389,6 +410,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'impact',
     pattern: /^\/impact$/,
     methods: ['GET'],
+    query: ['kind', 'id', 'title', 'slug', 'newTitle'],
     handle: async ({ target, query, version }) =>
       buildImpact(target, version, {
         kind: query.get('kind') ?? '',
@@ -405,6 +427,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'impact-rename',
     pattern: /^\/impact\/rename$/,
     methods: ['POST'],
+    query: [],
     body: RENAME_BODY_FIELDS,
     handle: async ({ target, version, body }) => renameEntity({ source: target, version, body }),
   },
@@ -415,6 +438,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'trash',
     pattern: /^\/trash$/,
     methods: ['GET'],
+    query: [],
     handle: ({ target, version }) => trashListReply(target, version),
   },
   {
@@ -423,6 +447,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'trash-restore',
     pattern: /^\/trash\/restore$/,
     methods: ['POST'],
+    query: [],
     body: TRASH_RESTORE_BODY_FIELDS,
     handle: ({ target, version, body }) => restoreTrashReply(target, version, body),
   },
@@ -432,6 +457,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'trash-purge',
     pattern: /^\/trash\/purge$/,
     methods: ['POST'],
+    query: [],
     body: TRASH_PURGE_BODY_FIELDS,
     handle: ({ target, version, body }) => purgeTrashReply(target, version, body),
   },
@@ -443,6 +469,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'foreshadow',
     pattern: /^\/foreshadow$/,
     methods: ['GET'],
+    query: [],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildForeshadowBoard(target, version)) }),
   },
   {
@@ -458,9 +485,13 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'gate',
     pattern: /^\/gate$/,
     methods: ['GET'],
+    query: ['chapterId'],
     handle: ({ target, query, version }) => {
       const chapterId = query.get('chapterId') ?? ''
-      return buildGate(target, version, chapterId.trim() === '' ? {} : { chapterId })
+      return withAddressedBy(
+        buildGate(target, version, chapterId.trim() === '' ? {} : { chapterId }),
+        addressedByOf(query, ['chapterId']),
+      )
     },
   },
   {
@@ -476,6 +507,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'audit',
     pattern: /^\/audit$/,
     methods: ['GET'],
+    query: ['limit'],
     handle: ({ target, query, version }) => {
       const raw = Number(query.get('limit') ?? '')
       return buildAudit(target, version, Number.isFinite(raw) && raw > 0 ? { limit: raw } : {})
@@ -490,6 +522,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'audit-export',
     pattern: /^\/audit\/export$/,
     methods: ['POST'],
+    query: [],
     body: AUDIT_EXPORT_BODY_FIELDS,
     handle: ({ target, version, body }) => exportAudit(target, version, body),
   },
@@ -504,6 +537,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'library-import',
     pattern: /^\/library\/import$/,
     methods: ['POST'],
+    query: [],
     body: IMPORT_BODY_FIELDS,
     handle: async ({ target, version, body }) => importViaChannel({ source: target, version, body }),
   },
@@ -515,6 +549,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'candidates',
     pattern: /^\/candidates$/,
     methods: ['GET'],
+    query: ['kind', 'status', 'offset', 'limit'],
     handle: ({ target, version, query }) =>
       buildCandidates(target, version, {
         ...(query.get('kind') === null ? {} : { kind: query.get('kind') ?? '' }),
@@ -530,6 +565,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'candidates-accept',
     pattern: /^\/candidates\/accept$/,
     methods: ['POST'],
+    query: [],
     body: CANDIDATES_ACCEPT_BODY_FIELDS,
     handle: async ({ target, version, body }) => acceptViaChannel(target, version, body),
   },
@@ -539,6 +575,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'candidates-reject',
     pattern: /^\/candidates\/reject$/,
     methods: ['POST'],
+    query: [],
     body: CANDIDATES_REJECT_BODY_FIELDS,
     handle: ({ target, version, body }) => rejectViaChannel(target, version, body),
   },
@@ -548,6 +585,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'candidates-purge',
     pattern: /^\/candidates\/purge$/,
     methods: ['POST'],
+    query: [],
     body: CANDIDATES_PURGE_BODY_FIELDS,
     handle: ({ target, version, body }) => purgeViaChannel(target, version, body),
   },
@@ -563,13 +601,16 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'brief',
     pattern: /^\/brief$/,
     methods: ['GET'],
+    query: ['chapterId', 'chapterSeq', 'budgetTokens', 'tailChars'],
     handle: async ({ target, query, version }) => {
       const reply = await buildBrief(
         { sessionId: target.sessionId, root: target.root },
         version,
         briefOptionsFromQuery(query),
+        query.get('chapterId') ?? '',
       )
-      return { status: reply.status, body: reply.body }
+      // `chapterId` wins over `chapterSeq` here as well as in the assembly: one answer.
+      return withAddressedBy({ status: reply.status, body: reply.body }, addressedByOf(query, ['chapterId', 'chapterSeq']))
     },
   },
   {
@@ -581,6 +622,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'brief-audit',
     pattern: /^\/brief\/audit$/,
     methods: ['POST'],
+    query: [],
     body: BRIEF_AUDIT_BODY_FIELDS,
     handle: ({ target, version, body }) =>
       exportBriefAudit({ sessionId: target.sessionId, root: target.root }, version, {}, body),
@@ -598,16 +640,16 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'review',
     pattern: /^\/review$/,
     methods: ['GET'],
+    query: ['chapterId', 'runId'],
     handle: ({ target, query, version }) => {
       const chapterId = (query.get('chapterId') ?? '').trim()
       const runId = (query.get('runId') ?? '').trim()
-      return buildReviewList(
-        { sessionId: target.sessionId, root: target.root },
-        version,
-        {
+      return withAddressedBy(
+        buildReviewList({ sessionId: target.sessionId, root: target.root }, version, {
           ...(chapterId === '' ? {} : { chapterId }),
           ...(runId === '' ? {} : { runId }),
-        },
+        }),
+        addressedByOf(query, ['chapterId']),
       )
     },
   },
@@ -618,12 +660,14 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'review-compare',
     pattern: /^\/review\/compare$/,
     methods: ['GET'],
+    query: ['chapterId'],
     handle: ({ target, query, version }) => {
       const chapterId = (query.get('chapterId') ?? '').trim()
-      return buildReviewCompare(
-        { sessionId: target.sessionId, root: target.root },
-        version,
-        { ...(chapterId === '' ? {} : { chapterId }) },
+      return withAddressedBy(
+        buildReviewCompare({ sessionId: target.sessionId, root: target.root }, version, {
+          ...(chapterId === '' ? {} : { chapterId }),
+        }),
+        addressedByOf(query, ['chapterId']),
       )
     },
   },
@@ -640,6 +684,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'proposal',
     pattern: /^\/proposal$/,
     methods: ['GET'],
+    query: ['proposalId', 'limit'],
     handle: ({ target, query, version }) => {
       const proposalId = (query.get('proposalId') ?? '').trim()
       const raw = Number(query.get('limit') ?? '')
@@ -655,6 +700,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'proposal-decide',
     pattern: /^\/proposal\/decide$/,
     methods: ['POST'],
+    query: [],
     body: PROPOSAL_DECIDE_BODY_FIELDS,
     handle: ({ target, version, body }) => decideProposalViaChannel(target, version, body),
   },
@@ -663,6 +709,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'proposal-apply',
     pattern: /^\/proposal\/apply$/,
     methods: ['POST'],
+    query: [],
     body: PROPOSAL_APPLY_BODY_FIELDS,
     handle: async ({ target, version, body }) => applyProposalViaChannel(target, version, body),
   },
@@ -671,6 +718,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'proposal-rollback',
     pattern: /^\/proposal\/rollback$/,
     methods: ['POST'],
+    query: [],
     body: PROPOSAL_ROLLBACK_BODY_FIELDS,
     handle: async ({ target, version, body }) => rollbackProposalViaChannel(target, version, body),
   },
@@ -684,6 +732,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'batch',
     pattern: /^\/batch$/,
     methods: ['GET'],
+    query: ['jobId'],
     handle: ({ target, query, version }) => {
       const jobId = (query.get('jobId') ?? '').trim()
       return buildBatchPage(target, version, { ...(jobId === '' ? {} : { jobId }) })
@@ -697,6 +746,7 @@ const ROUTES: readonly InternalRoute[] = [
     name: 'batch-resume',
     pattern: /^\/batch\/resume$/,
     methods: ['POST'],
+    query: [],
     body: BATCH_RESUME_BODY_FIELDS,
     handle: ({ target, version, body }) => resumeBatchViaChannel(target, version, body),
   },
@@ -834,6 +884,55 @@ function unexpectedBodyField(body: JsonRecord, allowed: readonly string[]): stri
   return undefined
 }
 
+/**
+ * The first QUERY key the route did not declare, if any (issue #200).
+ *
+ * The counterpart of `unexpectedBodyField`, and `sessionId` is permitted for the same
+ * reason it is in a body: it is how the panel addresses the request, not a knob of the
+ * route. Everything else must be declared in the route table — the channel reads its
+ * query keys one by one, so an undeclared one used to be read by nobody and reported by
+ * nobody.
+ */
+function unexpectedQueryParam(query: URLSearchParams, allowed: readonly string[]): string | undefined {
+  const permitted = new Set([...allowed, SESSION_ID_PARAM])
+  for (const key of query.keys()) {
+    if (!permitted.has(key)) return key
+  }
+  return undefined
+}
+
+/** Which query key addressed the chapter (issue #200). */
+type AddressedBy = 'chapterId' | 'chapterSeq' | 'default'
+
+/**
+ * The key that actually addressed the chapter, in precedence order.
+ *
+ * `keys` is ordered the way the handlers read them (`chapterId` before `chapterSeq`), and a
+ * key present but blank counts as absent — that is exactly how the handlers treat
+ * `?chapterId=`, so the report and the behaviour cannot disagree.
+ */
+function addressedByOf(query: URLSearchParams, keys: readonly Exclude<AddressedBy, 'default'>[]): AddressedBy {
+  for (const key of keys) {
+    if ((query.get(key) ?? '').trim() !== '') return key
+  }
+  return 'default'
+}
+
+/**
+ * Attach `addressedBy` to a read route's `value` (issue #200).
+ *
+ * Why here and not inside each domain builder: which query key addressed the chapter is a
+ * fact about the ROUTE, not about the gate/review/brief computation. One helper keeps the
+ * four read routes from each inventing the field — and leaves `buildGate` /
+ * `buildReviewList` / `buildReviewCompare` / `buildBrief` with the signatures the TOOLS
+ * call, so the tool surfaces do not change at all.
+ */
+function withAddressedBy(reply: RouteReply, addressedBy: AddressedBy): RouteReply {
+  const value = reply.body['value']
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return reply
+  return { ...reply, body: { ...reply.body, value: { ...(value as Record<string, unknown>), addressedBy } } }
+}
+
 interface RouteMatch {
   route: InternalRoute
   params: string[]
@@ -890,6 +989,17 @@ interface HubRoute {
    * client cannot smuggle a directory or a future knob past the guards.
    */
   readonly body?: readonly string[]
+  /**
+   * The only QUERY keys this hub route reads — the same **required** declaration the
+   * session channel carries (`InternalRoute.query`, issue #200).
+   *
+   * Required here too, on purpose: `/hub/*` had the identical blind spot (a handler read
+   * `book` and silently ignored every other key, so a typo answered the default book with
+   * HTTP 200 and nothing to see). One declaration shape for both channels means the
+   * 400 `UNKNOWN_QUERY_PARAM` decision is written once (`unexpectedQueryParam`), and the
+   * third state — "nobody declared anything" — cannot come back.
+   */
+  readonly query: readonly string[]
   readonly handle: (input: HubRouteInput) => Promise<RouteReply> | RouteReply
 }
 
@@ -905,6 +1015,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-books',
     pattern: /^\/hub\/books$/,
     methods: ['GET'],
+    query: [],
     handle: async ({ ctx, version }) => {
       const result = await buildHubBooks(ctx, { pluginVersion: version })
       if (result.ok) return { status: 200, body: ok(result.value) }
@@ -919,6 +1030,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-plan',
     pattern: /^\/hub\/plan$/,
     methods: ['POST'],
+    query: [],
     body: HUB_PLAN_BODY_FIELDS,
     handle: ({ ctx, body }) => hubPlan(ctx, body),
   },
@@ -928,6 +1040,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-apply',
     pattern: /^\/hub\/apply$/,
     methods: ['POST'],
+    query: [],
     body: HUB_APPLY_BODY_FIELDS,
     handle: ({ ctx, body }) => hubApply(ctx, body),
   },
@@ -939,6 +1052,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared',
     pattern: /^\/hub\/shared$/,
     methods: ['GET'],
+    query: ['kind', 'q'],
     handle: ({ dataDir, query }) => {
       // The root comes from the settings file (#150): `dataDir/shared` unless the
       // author configured `sharedRoot`. A value the plugin refuses is reported in
@@ -967,6 +1081,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared-copies',
     pattern: /^\/hub\/shared\/copies$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, query }) => sharedCopiesReply(ctx, dataDir, query.get('book') ?? undefined),
   },
   {
@@ -976,6 +1091,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared-copy',
     pattern: /^\/hub\/shared\/copy$/,
     methods: ['POST'],
+    query: [],
     body: SHARED_COPY_BODY_FIELDS,
     handle: ({ ctx, dataDir, body }) => sharedCopyReply(ctx, dataDir, body),
   },
@@ -986,6 +1102,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-shared-update',
     pattern: /^\/hub\/shared\/update$/,
     methods: ['POST'],
+    query: [],
     body: SHARED_UPDATE_BODY_FIELDS,
     handle: ({ ctx, dataDir, body }) => sharedUpdateReply(ctx, dataDir, body),
   },
@@ -996,6 +1113,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-series-plan',
     pattern: /^\/hub\/series\/plan$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, query }) => seriesPlanReply(ctx, dataDir, query.get('book') ?? undefined),
   },
   {
@@ -1005,6 +1123,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-series-apply',
     pattern: /^\/hub\/series\/apply$/,
     methods: ['POST'],
+    query: [],
     body: SERIES_APPLY_BODY_FIELDS,
     handle: ({ ctx, dataDir, body }) => seriesApplyReply(ctx, dataDir, body),
   },
@@ -1015,6 +1134,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-settings',
     pattern: /^\/hub\/settings$/,
     methods: ['GET'],
+    query: [],
     handle: ({ ctx, dataDir, version }) => ({ status: 200, body: ok(buildHubSettings({ ctx, dataDir, version })) }),
   },
   {
@@ -1028,6 +1148,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-settings-update',
     pattern: /^\/hub\/settings\/update$/,
     methods: ['POST'],
+    query: [],
     body: HUB_SETTINGS_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(writeHubSettings({ ctx, dataDir, version }, body)),
   },
@@ -1037,6 +1158,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-diagnostics',
     pattern: /^\/hub\/diagnostics$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, version, query }) =>
       reply(buildHubDiagnostics({ ctx, dataDir, version }, query.get('book') ?? undefined)),
   },
@@ -1044,6 +1166,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-diagnostics-export',
     pattern: /^\/hub\/diagnostics\/export$/,
     methods: ['POST'],
+    query: [],
     body: HUB_DIAGNOSTICS_EXPORT_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(exportHubDiagnostics({ ctx, dataDir, version }, body)),
   },
@@ -1054,12 +1177,14 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-backups',
     pattern: /^\/hub\/backups$/,
     methods: ['GET'],
+    query: ['book'],
     handle: ({ ctx, dataDir, version, query }) => reply(buildHubBackups({ ctx, dataDir, version }, query.get('book'))),
   },
   {
     name: 'hub-backups-create',
     pattern: /^\/hub\/backups\/create$/,
     methods: ['POST'],
+    query: [],
     body: HUB_BACKUP_CREATE_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(createHubBackup({ ctx, dataDir, version }, body)),
   },
@@ -1069,12 +1194,17 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-backups-plan',
     pattern: /^\/hub\/backups\/plan$/,
     methods: ['GET'],
+    // `planHubRestore(deps, query)` reads BOTH keys: `book` (which book) and `file`
+    // (which package to preview). Declaring only `book` would refuse the call the panel
+    // actually makes — the list's own "preview" button carries the file name.
+    query: ['book', 'file'],
     handle: ({ ctx, dataDir, version, query }) => reply(planHubRestore({ ctx, dataDir, version }, query)),
   },
   {
     name: 'hub-backups-restore',
     pattern: /^\/hub\/backups\/restore$/,
     methods: ['POST'],
+    query: [],
     body: HUB_BACKUP_RESTORE_BODY_FIELDS,
     handle: async ({ ctx, dataDir, version, body }) => reply(await restoreHubBackup({ ctx, dataDir, version }, body)),
   },
@@ -1087,6 +1217,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-semantic',
     pattern: /^\/hub\/semantic$/,
     methods: ['GET'],
+    query: ['book'],
     handle: async ({ ctx, dataDir, version, query }) =>
       reply(await buildHubSemantic({ ctx, dataDir, version }, query.get('book'))),
   },
@@ -1096,6 +1227,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-semantic-rebuild',
     pattern: /^\/hub\/semantic\/rebuild$/,
     methods: ['POST'],
+    query: [],
     body: SEMANTIC_HUB_BODY_FIELDS,
     handle: async ({ ctx, dataDir, version, body }) => reply(await rebuildHubSemantic({ ctx, dataDir, version }, body)),
   },
@@ -1105,6 +1237,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     name: 'hub-semantic-purge',
     pattern: /^\/hub\/semantic\/purge$/,
     methods: ['POST'],
+    query: [],
     body: SEMANTIC_HUB_BODY_FIELDS,
     handle: async ({ ctx, dataDir, version, body }) => reply(await purgeHubSemantic({ ctx, dataDir, version }, body)),
   },
@@ -1184,6 +1317,24 @@ async function handleHubRequest(input: {
   const method = (req.method ?? 'GET').toUpperCase()
   if (!isHttpMethod(method) || !route.methods.includes(method)) {
     sendJson(res, 405, failure('method-not-allowed', { method, route: route.name }), { allow: route.methods.join(', ') })
+    return
+  }
+
+  // The hub's half of issue #200: `book` is how a hub call names the book it means, and a
+  // misspelt key used to answer the DEFAULT book with HTTP 200. Same decision function as
+  // the session channel, same 400, same body — a caller that gets it wrong on one channel
+  // does not get a different answer on the other. Checked before any handler and any IO.
+  const strayHubQuery = unexpectedQueryParam(url.searchParams, route.query)
+  if (strayHubQuery !== undefined) {
+    sendJson(
+      res,
+      400,
+      failure('UNKNOWN_QUERY_PARAM', {
+        route: route.name,
+        param: strayHubQuery,
+        allowed: [...route.query, SESSION_ID_PARAM],
+      }),
+    )
     return
   }
 
@@ -1311,6 +1462,23 @@ export function createHttpHandler(deps: HttpDeps) {
       sendJson(res, 405, failure('method-not-allowed', { method, route: matched.route.name }), {
         allow: matched.route.methods.join(', '),
       })
+      return
+    }
+
+    // A query key the route did not declare is a 400, before any filesystem access
+    // (issue #200). Silent acceptance is what made `?chapterID=` answer a DIFFERENT
+    // chapter with HTTP 200 — a legal-looking response for a target that was dropped.
+    const strayQuery = unexpectedQueryParam(url.searchParams, matched.route.query)
+    if (strayQuery !== undefined) {
+      sendJson(
+        res,
+        400,
+        failure('UNKNOWN_QUERY_PARAM', {
+          route: matched.route.name,
+          param: strayQuery,
+          allowed: [...matched.route.query, SESSION_ID_PARAM],
+        }),
+      )
       return
     }
 
