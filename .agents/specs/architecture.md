@@ -544,6 +544,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
 - `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
 - `brief-model.ts` — 简报页（#43）：九段每行的状态（`ok`/`trimmed`/`missing`，只读 Host 的两个标记，**不**从 `bytes === 0` 自行推算）、占比文案（`formatShare`）、裁剪记录文案、`readBrief` 的三态折叠（请求失败 / 答案读不懂 / 九段真的都没有来源）
+- `map-model.ts` — 地图页（#48，ADR-0025 D4）：把设定库同一份投影里的 `world` 分组重排成地点分组（`placeGroups`，保留分类存储顺序、未分类垫底）、三种空态分开（请求失败 / 索引不可读 / 这本书还没有地点）、`describePin` 与 `MAP_NOTE`；**地点就是 world 条目**，这里不定义第二套地点数据、不含任何坐标字段
 
 ### 6.1 一致性体检（#33）的取数与落点
 

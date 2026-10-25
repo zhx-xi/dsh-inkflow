@@ -46,6 +46,8 @@ import { ForeshadowView } from './foreshadow.js'
 import { AuditView } from './audit.js'
 import { ExtractView } from './extract.js'
 import { BriefView } from './brief.js'
+import { MapView } from './map.js'
+import { PLACE_KIND } from './map-model.js'
 import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
 import { HubIcon, HubView } from './hub.js'
@@ -519,6 +521,19 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     [chapters],
   )
 
+  /**
+   * Take the reader from a map pin to the entry it stands for (#48).
+   *
+   * Same rule as an audit row: the pin carries `(kind, id)` and the **workbench** decides
+   * what that means — for a place it always means "open it in 设定库", because the map is a
+   * view over the world book and holds no copy of the entry (ADR-0025 D4). A new nonce so a
+   * second click on the same pin re-focuses it.
+   */
+  const openFromMap = useCallback((pin: { id: string }): void => {
+    setLibraryFocus({ kind: PLACE_KIND, id: pin.id, nonce: Date.now() })
+    setTab('library')
+  }, [])
+
   const pageRenderers: Readonly<Record<string, () => ReactNode>> = {
     // Issue #30: the setting library — eight-kind tree, one entry's detail, the
     // editor and the problem panel. It talks to its own three routes, so this tab
@@ -539,6 +554,10 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // and trim state, the trim ladder's record, the rendered block, and the one write that
     // records it into `.inkflow/audit/brief-<chapterId>.json`.
     brief: () => <BriefView sessionId={sessionId} />,
+    // #48: 地图 — places grouped by the world book's own categories, one click to the
+    // entry. It reuses 设定库's projection (a place IS a world entry, ADR-0025 D4) and
+    // jumps the way an audit row does, so it adds no route and no second truth.
+    map: () => <MapView sessionId={sessionId} onOpen={openFromMap} />,
   }
 
   /**

@@ -157,6 +157,19 @@ export type { BookCalendar } from './calendar-book.js'
 export { parseMarkdown, patchFrontmatter } from './frontmatter.js'
 export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
 
+/**
+ * The map tab's pure view model (#48) and the panel tab list.
+ *
+ * Exported so the two claims a user actually sees — "a place is a world entry" and "the map
+ * page is reachable" — are assertions on the built artifact rather than on a source file
+ * somebody has to keep in mind. The model itself lives in the client half; this is the same
+ * re-export the panel's other pure models get, and it stays pure (no React, no IO).
+ */
+export { MAP_NOTE, PLACE_KIND, describePin, placeGroups, readMapView } from '../client/map-model.js'
+export type { MapView, PlaceGroup, PlacePin } from '../client/map-model.js'
+export { PANEL_TABS } from '../client/panel-model.js'
+export type { PanelTab } from '../client/panel-model.js'
+
 /** Hard dependency: the tool registry. `webServer` is injected lazily. */
 export const inject = ['tools']
 
