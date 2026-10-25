@@ -362,7 +362,10 @@ export function proposalTools(deps: ToolDeps): ToolDefinition[] {
       })
       if (!undone.ok) return { ok: false, root: projectRoot, error: { ...undone.error } }
       const ensured = await ensureIndex(projectRoot)
-      return { ...undone, indexRebuilt: ensured.ok ? ensured.rebuilt : false }
+      // `value`, not the whole `{ ok, value }` envelope (#201): `execute` answers the flat
+      // payload its own `render` reads — spreading the envelope left `restored`, `backup`
+      // and `verified` undefined, so a byte-identical rollback printed as a failed check.
+      return { ...undone.value, indexRebuilt: ensured.ok ? ensured.rebuilt : false }
     },
   }
 
