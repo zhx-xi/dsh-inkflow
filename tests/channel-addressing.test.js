@@ -320,10 +320,9 @@ test('addressedBy: the four read routes report which key answered, default inclu
     chapterBook(root)
     const harness = createHarness({ workspace: root })
 
-    // `null` = do not assert the echoed chapter id. `/review/compare` takes its `chapterId`
-    // from the recorded RUNS (`reviewCompareWire`), so a book with no runs echoes `''` even
-    // though it resolved the chapter — a separate echo bug, not an addressing one; what
-    // this issue pins there is `addressedBy`.
+    // `addressedBy` is not decoration: the payload's own `chapterId` must agree with it. The
+    // last disagreement was `/review/compare` (#205): its header came from the recorded RUNS,
+    // so a chapter with no runs echoed `''` while `addressedBy` said `chapterId`.
     const cases = [
       ['/brief', 'default', 'ch-0003'],
       ['/brief?chapterId=ch-0001', 'chapterId', 'ch-0001'],
@@ -332,16 +331,14 @@ test('addressedBy: the four read routes report which key answered, default inclu
       ['/gate?chapterId=ch-0001', 'chapterId', 'ch-0001'],
       ['/review', 'default', 'ch-0003'],
       ['/review?chapterId=ch-0001', 'chapterId', 'ch-0001'],
-      ['/review/compare', 'default', null],
-      ['/review/compare?chapterId=ch-0001', 'chapterId', null],
+      ['/review/compare', 'default', 'ch-0003'],
+      ['/review/compare?chapterId=ch-0001', 'chapterId', 'ch-0001'],
     ]
     for (const [path, addressedBy, chapterId] of cases) {
       const reply = await internalCall(harness, path)
       assert.equal(reply.status, 200, `${path}: ${JSON.stringify(reply.json)}`)
       assert.equal(reply.json.value.addressedBy, addressedBy, `${path} says which key answered`)
-      if (chapterId !== null) {
-        assert.equal(reply.json.value.chapterId, chapterId, `${path} briefs/reports the chapter it was told to`)
-      }
+      assert.equal(reply.json.value.chapterId, chapterId, `${path} briefs/reports the chapter it was told to`)
     }
     // The refusal path carries no `addressedBy` at all — there is no answered address to
     // report, and inventing `'default'` there would be the same lie in a new place.

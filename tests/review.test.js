@@ -462,6 +462,130 @@ test('横评：只有 1 个模型时表照样出，但明确标不可比', () =>
   }
 })
 
+test('横评 #205：表头的章身份取自解析出的那一章，记录只是回落', () => {
+  const fixture = book({
+    chapters: [
+      { id: 'ch-0001', seq: 1, title: '第一章 推门', body: BODY },
+      { id: 'ch-0002', seq: 2, title: '第二章 夜谈', body: BODY },
+    ],
+  })
+  try {
+    const context = buildReviewContext(fixture.root, { chapterId: 'ch-0001' })
+    assert.equal(context.ok, true)
+    const resolved = { chapterId: 'ch-0001', chapterTitle: '第一章 推门', wordCount: context.value.wordCount }
+
+    // (a) A chapter that resolved but has no recorded run: `rows: []` is fine, an EMPTY
+    // identity is not — the page must be able to say which chapter it is looking at.
+    // Before the fix the header came from `first?.chapterId ?? ''`, so this was `''` / `''` / 0.
+    const empty = compareReviewRuns([], resolved)
+    assert.equal(empty.chapterId, 'ch-0001', '章解析成功就回显该章 id')
+    assert.equal(empty.chapterTitle, '第一章 推门')
+    assert.equal(empty.wordCount, context.value.wordCount, '字数取自这一章，不是记录推出来的 0')
+    assert.deepEqual([...empty.rows], [])
+    assert.equal(empty.comparable, false)
+    assert.ok(empty.note.includes('还没有审稿运行'), `note 要说清这一章没跑过：${empty.note}`)
+
+    // (b) A record that names ANOTHER chapter (a hand-copied file, a renamed chapter) must
+    // not win over the resolved one: the records are the fallback, not the source.
+    const dir = join(fixture.root, '.inkflow', 'review', 'ch-0001')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, '20261025T100000000Z.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          runId: '20261025T100000000Z',
+          chapterId: 'ch-0002',
+          chapterPath: 'chapters/vol-01/0002-ch-0002.md',
+          chapterTitle: '第二章 夜谈',
+          wordCount: 999,
+          chapterDigest: 'digest',
+          reviewer: 'model-a',
+          createdAt: '2026-10-25T10:00:00.000Z',
+          dimensions: [],
+          opinions: [],
+          rejected: [],
+          scores: null,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    const stray = listReviewRuns(fixture.root, 'ch-0001')
+    assert.equal(stray.runs.length, 1, 'the record is readable, it just disagrees about the chapter')
+    const table = compareReviewRuns(stray.runs, resolved)
+    assert.equal(table.chapterId, 'ch-0001', '解析出的章压过记录里的章')
+    assert.equal(table.chapterTitle, '第一章 推门')
+    assert.equal(table.wordCount, context.value.wordCount, '字数也取自这一章，不是记录里的 999')
+    assert.equal(table.rows.length, 5 + 1, 'the rows still come from the record')
+
+    // (c) No chapter in hand: the record is still the fallback (the path the tool took before
+    // the route resolved a chapter for it), and it says so instead of inventing a chapter.
+    const fallback = compareReviewRuns(stray.runs)
+    assert.equal(fallback.chapterId, 'ch-0002', 'records are the fallback when nothing was resolved')
+  } finally {
+    fixture.done()
+  }
+})
+
+test('横评路由 #205：?chapterId= 就是那一章，未知 id 404 不回退，默认仍是最后一章', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'inkflow-review-compare-205-'))
+  const fixture = book({
+    chapters: [
+      { id: 'ch-0001', seq: 1, title: '第一章 推门', body: BODY },
+      { id: 'ch-0002', seq: 2, title: '第二章 夜谈', body: BODY },
+    ],
+  })
+  try {
+    // One run on ch-0002 only, so "the chapter I asked for has no runs" is a real state.
+    runOn(fixture, { chapterId: 'ch-0002', reviewer: 'model-a', opinions: [opunonPacing()] })
+    const source = { sessionId: 's-1', root: fixture.root }
+
+    const asked = buildReviewCompare(source, '0.0.0-test', { chapterId: 'ch-0001' })
+    assert.equal(asked.status, 200)
+    const askedValue = asked.body.value
+    assert.equal(askedValue.chapterId, 'ch-0001', 'the table header is the chapter the caller named')
+    assert.equal(askedValue.chapterTitle, '第一章 推门')
+    assert.ok(askedValue.wordCount > 0, 'the word count is the chapter\'s, not the record-derived 0')
+    assert.deepEqual(askedValue.rows, [])
+    assert.equal(askedValue.comparable, false)
+    assert.ok(askedValue.note.includes('还没有审稿运行'), `note 说清这一章还没跑过：${askedValue.note}`)
+    assert.ok(askedValue.markdown.includes('第一章 推门'), 'the export header names it too')
+
+    // The chapter WITH runs is still that chapter: the fix must not turn the header into
+    // "whatever the first record claims".
+    const withRuns = buildReviewCompare(source, '0.0.0-test', { chapterId: 'ch-0002' })
+    assert.equal(withRuns.status, 200)
+    assert.equal(withRuns.body.value.chapterId, 'ch-0002')
+    assert.equal(withRuns.body.value.chapterTitle, '第二章 夜谈')
+    assert.ok(withRuns.body.value.rows.length > 0, 'the rows are the run\'s')
+
+    // No address: the last chapter, the route's documented default — and named, not `''`.
+    const byDefault = buildReviewCompare(source, '0.0.0-test', {})
+    assert.equal(byDefault.status, 200)
+    assert.equal(byDefault.body.value.chapterId, 'ch-0002')
+
+    // An unknown id is refused like /brief: 404 naming the id, never a fallback.
+    const missing = buildReviewCompare(source, '0.0.0-test', { chapterId: 'ch-9999' })
+    assert.equal(missing.status, 404)
+    assert.equal(missing.body.error.code, 'CHAPTER_NOT_FOUND')
+    assert.equal(missing.body.value, undefined, 'no payload at all to mistake for the asked chapter')
+    assert.ok(!JSON.stringify(missing.body).includes('夜谈'), 'the last chapter is nowhere in the refusal')
+
+    // The tool and the route are one wire: the same chapter identity, zero runs included.
+    const harness = makeTools(join(dir, 'state'), fixture.dir)
+    const viaTool = await callTool(harness, 'inkflow_review_compare', { projectRoot: fixture.root, chapterId: 'ch-0001' })
+    assert.equal(viaTool.ok, true)
+    assert.equal(viaTool.chapterId, 'ch-0001')
+    assert.equal(viaTool.chapterTitle, '第一章 推门')
+    assert.equal(viaTool.markdown, askedValue.markdown, 'the tool and the route render one table')
+  } finally {
+    fixture.done()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 // ---------------------------------------------------------------------------
 // 5. The record: on disk, readable, one per run
 // ---------------------------------------------------------------------------

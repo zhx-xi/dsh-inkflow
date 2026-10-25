@@ -464,12 +464,12 @@ export function reviewTools(deps: ReviewToolDeps): ToolDefinition[] {
       const cap = limit === undefined || limit <= 0 ? REVIEW_LIST_LIMIT : Math.trunc(limit)
       const listed = listReviewRuns(probe.root, built.value.chapterId)
       const runs: readonly ReviewRunRecord[] = listed.runs.slice(0, cap)
-      const table = compareReviewRuns(runs)
+      // The resolved chapter decides the header (#205): a chapter with no run yet still has
+      // an id, a title and a word count, so the reply never answers with an empty identity.
+      const table = compareReviewRuns(runs, built.value)
       return {
         ok: true,
         root: probe.root,
-        chapterId: built.value.chapterId,
-        chapterTitle: built.value.chapterTitle,
         runCount: runs.length,
         skippedFiles: listed.skippedFiles,
         truncated: listed.runs.length > runs.length,
