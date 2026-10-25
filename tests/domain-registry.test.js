@@ -97,6 +97,12 @@ const BUILT_IN_TOOLS = [
   // it, and its dry run must be the same computation as its apply (X-29).
   ['inkflow_etl_plan', 'd0268bd8'],
   ['inkflow_etl_apply', '1c605cc2'],
+  // #46: the review DAG — run (locate + record), context (the text handed to the model) and
+  // compare (the cross-model table). Built-ins: a review reads one chapter plus two setting
+  // directories and writes , so no content directory owns it.
+  ['inkflow_review_run', 'ee5e8185'],
+  ['inkflow_review_context', 'f85b27ee'],
+  ['inkflow_review_compare', '770ed3a2'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

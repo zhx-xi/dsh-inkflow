@@ -636,7 +636,9 @@ export const PANEL_TABS: PanelTab[] = [
   { id: 'brief', label: '简报', available: true },
   // Issue #44 landed this row live: the page is `src/client/gate.tsx`, fed by `GET /gate`.
   { id: 'gate', label: '门禁', available: true },
-  { id: 'review', label: '审稿', available: false, note: '0.5.0 起 · 审稿意见与证据链' },
+  // Issue #46 landed this row live: the page is `src/client/review.tsx`, fed by `GET /review`
+  // (the recorded runs) and `GET /review/compare` (the cross-model table).
+  { id: 'review', label: '审稿', available: true },
   { id: 'proposal', label: '提案', available: false, note: '0.5.0 起 · 逐段接受与回滚' },
 ]
 

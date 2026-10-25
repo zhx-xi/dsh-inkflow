@@ -28,13 +28,15 @@ function workdir() {
   return mkdtempSync(join(tmpdir(), 'inkflow-private-'))
 }
 
-test('private state: the six subdirectories are the whole vocabulary', () => {
+test('private state: the seven subdirectories are the whole vocabulary', () => {
   assert.equal(PRIVATE_STATE_DIR, '.inkflow')
   // Six since X-25 / ADR-0023: `proposals/` (the proposal inbox, #45) and `jobs/`
   // (batch-job progress that must survive a restart, #47) joined trash/ backup/ audit/
   // candidates/ — the four X-18 left behind. A new name here widens the write
   // whitelist, which is why the list is asserted exactly rather than spot-checked.
-  assert.deepEqual([...PRIVATE_STATE_SUBDIRS], ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs'])
+  // The seventh is `review/` (#46): one record per review run, and a run is an event —
+  // the reviewer is a session's model, so it cannot be recomputed the way a gate verdict can.
+  assert.deepEqual([...PRIVATE_STATE_SUBDIRS], ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs', 'review'])
   assert.equal(PRIVATE_STATE_IGNORE_LINE, '.inkflow/')
   assert.equal(privateStateDirRelative('trash'), '.inkflow/trash')
   assert.equal(privateStateRelative('trash', 'chapters/vol-01/0001-a.md'), '.inkflow/trash/chapters/vol-01/0001-a.md')

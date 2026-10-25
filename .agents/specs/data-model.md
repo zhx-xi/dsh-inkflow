@@ -413,6 +413,22 @@ origin:
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 
+**仅审稿期诊断**（不是不变量，也不是机械判读：写入侧与重建侧都不报，只出现在审稿运行记录 `.inkflow/review/<chapterId>/<runId>.json` 里，由 [`review.ts`](../../src/host/review.ts) 按「一条意见一个维度」产出，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D3）：
+
+| code | 维度 | 来源 | `group` | `fixable` |
+|---|---|---|---|---|
+| `REVIEW_STRUCTURE` | 结构 | 会话里的模型写出的意见（插件零模型调用，X-26），位置提示由 `review.ts` 核对原文 | `structure` | false |
+| `REVIEW_CHARACTER` | 人物 | 同上 | `structure` | false |
+| `REVIEW_PACING` | 节奏 | 同上 | `catalog` | false |
+| `REVIEW_STYLE` | 文风 | 同上 | `catalog` | false |
+| `REVIEW_CONSISTENCY` | 一致性 | 同上 | `ledger` | false |
+
+> **为什么一个维度一个 code**：code 是报告分组与修复分派用的键，「结构问题」与「节奏问题」正是读者要分开处理的事；维度同时作为意见自己的字段（面板按它分组），code 只是让同一件事进得了共享词表。
+>
+> **为什么全部 `fixable: false`**：审美判读不是 `repair.ts` 可以改写的对象（ADR-0022 D3、ADR-0015 D2）。
+>
+> **定位与 `unlocated`**：每条意见带 `locator`（复用 `FindingLocator`，审稿实际用的是 `{kind:'path', path, line}` = 章文件行号）与 `evidence`（`before`/`quote`/`after` 前后文 + 段序号 + 字符偏移）。定位不到的意见**保留**并标 `located: false` + `unlocatedReason`（`REVIEW_HINT_MISSING` / `REVIEW_QUOTE_NOT_FOUND` / `REVIEW_QUOTE_AMBIGUOUS` / `REVIEW_OFFSET_OUT_OF_RANGE` / `REVIEW_PARAGRAPH_OUT_OF_RANGE` / `REVIEW_LINE_OUT_OF_RANGE`），此时 `locator` 为 `null`——**不编造一个章级地址**，否则横评表的「可定位率」会恒为 100%。
+
 ## 6. 2.0 同步为什么更容易了
 
 旧设计需要 outbox / 版本向量 / tombstone 才能同步（SQLite 变更不可读）。文件真相下：

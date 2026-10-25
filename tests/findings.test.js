@@ -101,6 +101,17 @@ const WRITE_SIDE_CODES = new Set([
   'INDEX_BUILD_FAILED',
   'INDEX_UNAVAILABLE',
   'NOT_AN_INKFLOW_PROJECT',
+  // #46: the review run's own refusals. A bad opinion shape (`REVIEW_DIMENSION_UNKNOWN`,
+  // `REVIEW_TEXT_REQUIRED`, `REVIEW_SEVERITY_INVALID`), a node that could not be run
+  // (`REVIEW_NODE_MISSING`), a node that failed (`REVIEW_NODE_FAILED`) or a project that
+  // could not be walked (`REVIEW_READ_FAILED`) describe a *call*, not the book — the book
+  // problems a review reports are the five `REVIEW_<DIMENSION>` findings.
+  'REVIEW_DIMENSION_UNKNOWN',
+  'REVIEW_NODE_FAILED',
+  'REVIEW_NODE_MISSING',
+  'REVIEW_READ_FAILED',
+  'REVIEW_SEVERITY_INVALID',
+  'REVIEW_TEXT_REQUIRED',
 ])
 
 /**
@@ -127,6 +138,10 @@ function emittedValidationCodes() {
     join(repoRoot, 'src/host/gate-rules.ts'),
     join(repoRoot, 'src/host/gate-proofread.ts'),
     join(repoRoot, 'src/host/gate-vocabulary.ts'),
+    // #46: the review DAG emits `REVIEW_*` (one code per dimension) from the same
+    // `code: '…'` shape, so the scan has to see it for the gate's reason: otherwise the
+    // five catalogue entries would read as "nobody emits this".
+    join(repoRoot, 'src/host/review.ts'),
   ]
   const codes = new Set()
   for (const file of files) {

@@ -533,6 +533,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/etl-plan.ts` | 旧行 → 九目录的**纯映射**（#51，X-29）：13 类各落到哪、卷 id 与目录重建、章号（`keep` 保原号含断层 / `compact` 显式重排）、`(table,id)` 幂等键与 id 钉住旧 uuid（ADR-0014）、`planToken` 与条目集合；每类给 `mapped / dropped（新模型无落点）/ lost（该落没落）` 三档与 ≤1% / 0.5% 结论；文档一律走**该域现有渲染器**（`renderCharacterCard` / `renderWorldFile` / `renderOutlineDocument` / `renderForeshadowDocument` / `renderTimelineDocument` / `renderRelationFile` / `renderPlotPoints`） | 读写磁盘、取写锁、建索引；不发明回收章、历法日期或 dangling 关系的端点 |
 | `src/host/etl.ts` | 迁移的**执行与撤销**（#51，X-29/X-30）：`planEtl` 零写盘、`applyEtl` 复用同一次计算 → 暂存到 `.inkflow/backup/<stamp>/staging/` → **逐文件 `rename`**（按批取写锁，默认 25 个/批，批次间放开）→ 合并写 `.inkflow/backup/etl-idmap.json` → 封包 → `rebuildCatalog` + `buildIndex` + `detectFindings` 报告；`rollbackEtl` 用 `backup.ts` 清单删本轮新建的文件、恢复改过的文件、清暂存、删本轮建的空目录；`commitSuggestion` 只回字符串，**从不跑 git** | 自己的备份格式（复用 `backup.ts`）、覆盖已有内容、整段持锁、自动提交 |
 | `src/host/etl-tools.ts` | 迁移工具面（#51）：`inkflow_etl_plan`（只读：13 类表 + 断层 + 裁决清单 + `planToken`）与 `inkflow_etl_apply`（`apply` 需 `confirm` + `planToken`，`rollback` 需 `confirm`），两个都走 `resolveProject` 的四态门禁 | 映射与执行实现（归 `etl-plan.ts` / `etl.ts`）、门禁判定本体、接受第三个入口 |
+| `src/host/review.ts` | **审稿 DAG 与证据链**（#46，ADR-0022 D3、X-24/X-26）：一次 `walkProjectFiles` + 读本章正文/角色卡/账本 → 五条**互相独立**的节点（结构/人物/节奏/文风/一致性，`REVIEW_NODES`，可只跑其中几维、可注入替换）→ 每条意见按模型给的位置提示（`quote` / `paragraph`+`offset` / `offset` / `line`）核对原文，落成 `Finding` 形状 + `locator` + `evidence`（前后文、段序号、字符偏移）；定位不到的意见**保留**并标 `located: false` + 理由码，`locator` 置 `null`（不编造章级地址）；运行记录落 `.inkflow/review/<chapterId>/<runId>.json`（**带**时间戳与 `chapterDigest`：一次运行是事件，不是可重算的结论，ADR-0022 D4.5 的区分）。`buildReviewContext` 把带段号与偏移的上下文交给模型 | 生成任何意见（插件零模型调用，X-26）、自己的审美阈值表（机械判定归 #44 门禁）、写内容目录或 `index/`、重建索引 |
+| `src/host/review-compare.ts` | **模型横评表**（#46）：从同一章的运行记录算出 `(运行 × 维度) + 每运行一行合计` 的表——列集固定（`REVIEW_COMPARE_COLUMNS`），模型自评**原样抄**、意见数 / 可定位率 / 密度 / 严重级计数按定义算；`—`（`null`）表示无从相除；`comparable` 说清是否真有 ≥2 个模型；`renderCompareMarkdown` 出可粘贴的 Markdown。`buildReviewCompare` 是同一条计算的只读通道投影 | 打分（模型自评是模型给的，插件不改写、不评判）、读正文重判意见、写盘 |
+| `src/host/review-tools.ts` | 审稿工具面（#46）：`inkflow_review_run`（收模型写好的意见 → 定位/证据/落记录，`opinions` 必填）、`inkflow_review_context`（**只读**，返回带段号偏移的上下文文本与定位协议）、`inkflow_review_compare`（读记录出横评表）；三个都走 `resolveProject` 的四态门禁 | DAG 与横评的实现（归 `review.ts` / `review-compare.ts`）、门禁判定本体、任何模型调用或出站请求 |
 
 ### 6.2 客户端纯模型（`src/client/*-model.ts`）
 
@@ -555,6 +558,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
 - `brief-model.ts` — 简报页（#43）：九段每行的状态（`ok`/`trimmed`/`missing`，只读 Host 的两个标记，**不**从 `bytes === 0` 自行推算）、占比文案（`formatShare`）、裁剪记录文案、`readBrief` 的三态折叠（请求失败 / 答案读不懂 / 九段真的都没有来源）
 - `map-model.ts` — 地图页（#48，ADR-0025 D4）：把设定库同一份投影里的 `world` 分组重排成地点分组（`placeGroups`，保留分类存储顺序、未分类垫底）、三种空态分开（请求失败 / 索引不可读 / 这本书还没有地点）、`describePin` 与 `MAP_NOTE`；**地点就是 world 条目**，这里不定义第二套地点数据、不含任何坐标字段
+- `review-model.ts` — 审稿页（#46）：三态（`loading`/`error`/`ready`，**没有**「无运行」这一态——那是 `ready` 且 `runCount: 0`，否则页面会把唯一的入口藏起来）、`readReviewValue`/`readCompareValue` 的防御式折叠、`evidenceJumpOf` 只认 Host 给的 `locator` 并复用候选页的 `EvidenceJump`（**不**自己解析 `path#L<n>`）、`evidenceLine`、`describeRun`/`describeScores`、`EMPTY_REVIEW`/`EMPTY_COMPARE`
 
 ### 6.1 一致性体检（#33）的取数与落点
 

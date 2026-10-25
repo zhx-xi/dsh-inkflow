@@ -50,6 +50,9 @@ import { GateQualityView } from './gate.js'
 import { ExtractView } from './extract.js'
 import { BriefView } from './brief.js'
 import { MapView } from './map.js'
+// Issue #46: the review tab — recorded runs, opinions with their evidence, and the
+// cross-model table. One file, one line in the page map below (X-12).
+import { ReviewView } from './review.js'
 import { PLACE_KIND } from './map-model.js'
 import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
@@ -565,6 +568,11 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // with its address and hint, filtered by severity. `GET /gate` is read-only, so this tab
     // cannot change the book or the conclusion file.
     gate: () => <GateQualityView sessionId={sessionId} />,
+    // Issue #46: the review runs of one chapter — which passes exist, what each dimension
+    // said with its evidence, and the cross-model table. Read-only (`GET /review`), and it
+    // jumps through the same `openFromEvidence` an extracted candidate uses, because an
+    // address is resolved by the workbench and never by the page that printed it.
+    review: () => <ReviewView sessionId={sessionId} onOpenEvidence={openFromEvidence} />,
   }
 
   /**

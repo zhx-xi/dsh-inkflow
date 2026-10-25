@@ -522,22 +522,22 @@ test('PANEL_TABS leaves unimplemented pages disabled with their release note', (
   // recovery bin), issue #31 伏笔 (the read-only board), issue #33 体检 (the five-family
   // audit), issue #38 候选 (the extraction queue — X-20's one new tab), #48 地图 (places
   // are world entries, ADR-0025 D4), #43 简报 (nine segments, X-23) and #44 门禁 (the seven
-  // quality gates, ADR-0022 D4). This list is the build's own claim about what a user can
+  // quality gates, ADR-0022 D4) and #46 审稿 (the review runs + evidence chain). This list is the build's own claim about what a user can
   // click, so it is spelled out rather than derived.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate'],
-    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43) 与门禁 (#44) exist in this build',
+    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review'],
+    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43)、门禁 (#44) 与审稿 (#46) exist in this build',
   )
   // Issue #180 registers the four 0.5.0 pages as placeholders (roadmap §2.4): a
   // registered row with `available: false` and a note, so the four B1/B2 issues add a
   // page instead of inserting a line into this array four times over. A placeholder
   // that quietly becomes clickable without a page is the failure this pins. #43 (brief) and
-  // #44 (gate) turned their rows live, so they left this list.
+  // #44 (gate) and #46 (review) turned their rows live, so they left this list.
   const disabled = PANEL_TABS.filter((tab) => !tab.available)
   assert.deepEqual(
     disabled.map((tab) => tab.id),
-    ['outline', 'review', 'proposal'],
+    ['outline', 'proposal'],
     'only the unimplemented pages are disabled',
   )
   assert.equal(disabled[0].note, '0.2.0 起', 'tab outline must say when it arrives')

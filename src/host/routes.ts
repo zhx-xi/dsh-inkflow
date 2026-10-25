@@ -142,6 +142,8 @@ import {
   buildAudit,
   exportAudit,
   buildGate,
+  buildReviewList,
+  buildReviewCompare,
   IMPORT_BODY_FIELDS,
   importViaChannel,
   BRIEF_AUDIT_BODY_FIELDS,
@@ -569,6 +571,48 @@ const ROUTES: readonly InternalRoute[] = [
     body: BRIEF_AUDIT_BODY_FIELDS,
     handle: ({ target, version, body }) =>
       exportBriefAudit({ sessionId: target.sessionId, root: target.root }, version, {}, body),
+  },
+  {
+    // The review runs of one chapter (#46, X-24/X-26): every recorded pass as a row
+    // (`runId`, model, time, opinion count, how many located, failed/skipped nodes), plus the
+    // selected run expanded — its five dimensions with anchors, and every opinion with its
+    // locator and evidence excerpt. `runId` only chooses which record is expanded; the list
+    // and the detail are one read over `.inkflow/review/<chapterId>/`.
+    //
+    // GET-only and **read-only**: the runs are written by `inkflow_review_run`, never by a
+    // page refresh — the record carries a timestamp, so a GET that wrote would create a run
+    // nobody asked for.
+    name: 'review',
+    pattern: /^\/review$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const chapterId = (query.get('chapterId') ?? '').trim()
+      const runId = (query.get('runId') ?? '').trim()
+      return buildReviewList(
+        { sessionId: target.sessionId, root: target.root },
+        version,
+        {
+          ...(chapterId === '' ? {} : { chapterId }),
+          ...(runId === '' ? {} : { runId }),
+        },
+      )
+    },
+  },
+  {
+    // The cross-model table (#46): the same computation as `inkflow_review_compare`, over the
+    // same recorded runs, with the Markdown export in the payload so the panel never renders
+    // a second table of its own.
+    name: 'review-compare',
+    pattern: /^\/review\/compare$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const chapterId = (query.get('chapterId') ?? '').trim()
+      return buildReviewCompare(
+        { sessionId: target.sessionId, root: target.root },
+        version,
+        { ...(chapterId === '' ? {} : { chapterId }) },
+      )
+    },
   },
 ]
 

@@ -89,3 +89,15 @@
   - **新增**：六类私有写入之后，`index/` 只剩 `.gitkeep`（且允许集合 = `.gitkeep` ∪ `*.db*`）。
 - 逃逸面（既有用例继续跑）：`../`、绝对路径、`C:\` / UNC、项目外 junction 均拒（`tests/io-writer.test.js` 的 junction 用例）。
 - 手工（#45 落地后）：写入 `proposals/` 之后 `git status --porcelain` 仍然干净（`.inkflow/` 已被忽略）。
+
+## 补充（#46 落地，2026-10-25）
+
+第七个子路径 `review/` 进白名单，判据与 D1 完全相同（重建不可再生）：一次审稿的意见由会话里的模型产出（roadmap X-26），**无法重放**，记录删了那次审稿就没了。
+
+```
+<book>/.inkflow/review/<chapterId>/<runId>.json
+```
+
+- `PRIVATE_STATE_SUBDIRS` 从六条扩到七条（`review` 追加在末尾），`resolveWriteTarget` 的白名单随之多一个名字；D4 的逃逸拒绝一条不放松。
+- 与 D1 那张表的一处**差异**：审稿记录**带**时间戳（`runId` 就是 UTC 时间戳，另有 `createdAt` 与 `chapterDigest`）。这正是 [ADR-0022](0022-writing-context-gate-findings.md) D4.5 划的那条线——「一章此刻的结论」同输入同字节，而「一次运行的产物」是一次事件；同章多次审稿必须并存，覆盖会让横评（同一章多模型对比）少掉一半样本。所以这里选「一次运行一个文件」，与 `audit/` 里带戳的 Markdown 报告同类。
+- 验证：`tests/private-state.test.js` 的「精确等于七名（含顺序）」断言、`tests/review.test.js` 的落点用例（同一章跑两次审稿后 `index/` 仍只有 `.gitkeep` 与 `*.db*`，`.gitignore` 的 `.inkflow/` 只追加一次，两次记录的路径不同）。
