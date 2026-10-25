@@ -97,13 +97,24 @@ if (guide !== '') {
     if (!documented.has(name)) failures.push(`docs/user-guide.md: never names ${name} (the tool exists but is undiscoverable)`)
   }
 
-  const stated = /(\d+)\s*个工具[（(]\s*(\d+)\s*个内置\s*\+\s*(\d+)\s*个域工具/u.exec(guide)
-  if (stated === null) {
+  // WHY matchAll and not exec: a merge once left THREE variants of this sentence in the
+  // guide (56 / 51 / 52 tools) and `exec` only ever read the first — so the gate compared
+  // one of them, said "ok", and the other two shipped as documentation. Reading every
+  // occurrence means the gate fails on the drift itself, and requiring exactly one means
+  // there is a single sentence that can be right (one fact, one place).
+  const statements = [...guide.matchAll(/(\d+)\s*个工具[（(]\s*(\d+)\s*个内置\s*\+\s*(\d+)\s*个域工具/gu)]
+  if (statements.length === 0) {
     failures.push(
       'docs/user-guide.md: the "N 个工具（M 个内置 + K 个域工具）" sentence is gone or no longer numeric — keep it so this gate can check it',
     )
+  } else if (statements.length > 1) {
+    const shown = statements.map((match) => `${String(match[1])}/${String(match[2])}/${String(match[3])}`).join(', ')
+    failures.push(
+      `docs/user-guide.md: declares the tool count ${String(statements.length)} times (${shown}) — keep exactly ONE sentence, ` +
+        'otherwise a stale copy is documentation nobody is comparing against src/',
+    )
   } else {
-    const [total, builtIn, domain] = stated.slice(1).map(Number)
+    const [total, builtIn, domain] = statements[0].slice(1).map(Number)
     if (total !== registered.size || builtIn !== builtInCount || domain !== domainCount) {
       failures.push(
         `docs/user-guide.md: says ${String(total)} tools (${String(builtIn)} built-in + ${String(domain)} domain), ` +
