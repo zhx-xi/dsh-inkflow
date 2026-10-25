@@ -1278,3 +1278,98 @@ export type {
 export { listLegacyProjects, readLegacyBook } from './etl-source.js'
 export type { EtlSourceOptions, LegacyBook, LegacyProject } from './etl-source.js'
 export { etlTools } from './etl-tools.js'
+
+// ---------------------------------------------------------------------------
+// issue #45 — proposals (ADR-0023, X-25 / X-26). The store, the line diff, the four
+// tool entries and the panel channel. Exported because the tests assert the two hard
+// properties directly: creating and deciding write no content file, and applying is
+// byte-for-byte reversible through the backup package.
+// ---------------------------------------------------------------------------
+
+export {
+  PROPOSAL_HUNKS_DIR,
+  PROPOSAL_HUNK_STATUSES,
+  PROPOSAL_ID_PREFIX,
+  PROPOSAL_META_FILE,
+  PROPOSAL_SCHEMA_VERSION,
+  PROPOSAL_STATUSES,
+  applyProposal,
+  countsOf,
+  createProposal,
+  decideProposal,
+  isProposalHunkStatus,
+  isProposalId,
+  listProposals,
+  proposalDirRelative,
+  proposalHunkPath,
+  proposalMetaPath,
+  proposalsDirRelative,
+  readProposal,
+  rollbackProposal,
+} from './proposal.js'
+export type {
+  ApplyProposalInput,
+  ApplyProposalOk,
+  CreateProposalInput,
+  CreateProposalOk,
+  DecideProposalInput,
+  DecideProposalOk,
+  HunkDecision,
+  ProposalBase,
+  ProposalCounts,
+  ProposalDigest,
+  ProposalError,
+  ProposalHunk,
+  ProposalHunkFile,
+  ProposalHunkRef,
+  ProposalHunkStatus,
+  ProposalMeta,
+  ProposalRead,
+  ProposalResult,
+  ProposalStatus,
+  RollbackProposalInput,
+  RollbackProposalOk,
+} from './proposal.js'
+export { applyHunks, diffLines, joinLines, splitLines } from './proposal-diff.js'
+export type { HunkKind, LineHunk } from './proposal-diff.js'
+export {
+  PROPOSAL_APPLY_BODY_FIELDS,
+  PROPOSAL_DECIDE_BODY_FIELDS,
+  PROPOSAL_HUNK_LINE_LIMIT,
+  PROPOSAL_LIST_LIMIT,
+  PROPOSAL_ROLLBACK_BODY_FIELDS,
+  applyViaChannel,
+  buildProposals,
+  decideViaChannel,
+  rollbackViaChannel,
+} from './proposal-channel.js'
+export type { ProposalReply, ProposalSource } from './proposal-channel.js'
+export { proposalTools } from './proposal-tools.js'
+
+/**
+ * The proposal tab's pure view model (#45). Re-exported for the same reason as
+ * `map-model`: the three states the page can be in, and the two "why the button is
+ * disabled" sentences, are claims the user sees, so the tests assert them on the built
+ * artifact. Pure by construction — no React, no network, no IO.
+ */
+export {
+  PROPOSAL_NOTE,
+  applyActionLabel,
+  applyBlocked,
+  confirmPayload,
+  decidePayload,
+  describeCounts,
+  describeHunk,
+  describeHunkKind,
+  describeHunkStatus,
+  describeOutcome,
+  describeProposalStatus,
+  describeTotals,
+  detailRequestPath,
+  pendingDecisions,
+  preferredProposalId,
+  readProposalPage,
+  rollbackActionLabel,
+  rollbackBlocked,
+} from '../client/proposal-model.js'
+export type { Decision, HunkRow, ProposalPage, ProposalRow } from '../client/proposal-model.js'

@@ -639,6 +639,7 @@ export const PANEL_TABS: PanelTab[] = [
   // Issue #46 landed this row live: the page is `src/client/review.tsx`, fed by `GET /review`
   // (the recorded runs) and `GET /review/compare` (the cross-model table).
   { id: 'review', label: '审稿', available: true },
-  { id: 'proposal', label: '提案', available: false, note: '0.5.0 起 · 逐段接受与回滚' },
+  // Issue #45 landed this row live: the page is `src/client/proposal.tsx`, fed by `GET /proposal`.
+  { id: 'proposal', label: '提案', available: true },
 ]
 

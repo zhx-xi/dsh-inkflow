@@ -536,6 +536,11 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/review.ts` | **审稿 DAG 与证据链**（#46，ADR-0022 D3、X-24/X-26）：一次 `walkProjectFiles` + 读本章正文/角色卡/账本 → 五条**互相独立**的节点（结构/人物/节奏/文风/一致性，`REVIEW_NODES`，可只跑其中几维、可注入替换）→ 每条意见按模型给的位置提示（`quote` / `paragraph`+`offset` / `offset` / `line`）核对原文，落成 `Finding` 形状 + `locator` + `evidence`（前后文、段序号、字符偏移）；定位不到的意见**保留**并标 `located: false` + 理由码，`locator` 置 `null`（不编造章级地址）；运行记录落 `.inkflow/review/<chapterId>/<runId>.json`（**带**时间戳与 `chapterDigest`：一次运行是事件，不是可重算的结论，ADR-0022 D4.5 的区分）。`buildReviewContext` 把带段号与偏移的上下文交给模型 | 生成任何意见（插件零模型调用，X-26）、自己的审美阈值表（机械判定归 #44 门禁）、写内容目录或 `index/`、重建索引 |
 | `src/host/review-compare.ts` | **模型横评表**（#46）：从同一章的运行记录算出 `(运行 × 维度) + 每运行一行合计` 的表——列集固定（`REVIEW_COMPARE_COLUMNS`），模型自评**原样抄**、意见数 / 可定位率 / 密度 / 严重级计数按定义算；`—`（`null`）表示无从相除；`comparable` 说清是否真有 ≥2 个模型；`renderCompareMarkdown` 出可粘贴的 Markdown。`buildReviewCompare` 是同一条计算的只读通道投影 | 打分（模型自评是模型给的，插件不改写、不评判）、读正文重判意见、写盘 |
 | `src/host/review-tools.ts` | 审稿工具面（#46）：`inkflow_review_run`（收模型写好的意见 → 定位/证据/落记录，`opinions` 必填）、`inkflow_review_context`（**只读**，返回带段号偏移的上下文文本与定位协议）、`inkflow_review_compare`（读记录出横评表）；三个都走 `resolveProject` 的四态门禁 | DAG 与横评的实现（归 `review.ts` / `review-compare.ts`）、门禁判定本体、任何模型调用或出站请求 |
+| `src/host/proposal-diff.ts` | **行级 diff 的唯一实现**（#45，X-26）：patience 锚点（两侧各自只出现一次的行 + 下一侧索引的最长递增子序列）、`splitLines`/`joinLines`/`diffLines`/`applyHunks`；按行切而不是按字符切（中文按字符切会把词切成两半）；没有唯一锚点的区域塌成一段整体 `replace`，诚实降级 | 任何 IO、时钟、随机数；提案的落盘与决定（归 `proposal.ts`） |
+| `src/host/proposal.ts` | **提案的唯一读写口**（#45，[ADR-0023](../adrs/0023-proposal-job-private-placement.md) D5）：`.inkflow/proposals/<proposalId>/{meta.json,hunks/<n>.json}` 的形状与逐字段校验、`createProposal`（只写提案目录，回答里 `contentFilesWritten: 0`）、`decideProposal`（**决定时刻**取章节指纹当 CAS 基线 —— ADR-0021 的教训）、`applyProposal`（`confirm` + 无待定段 + 有已接受段 → 先开 `replace` 备份包 → 走 `chapters.ts` 的写链 → 封包并记 `meta.apply`）、`rollbackProposal`（`rollbackBackup` 逐字节还原后回读校验摘要） | 第二套章文件写入（归 `chapters.ts`/`io.ts`）、自己跑 git、调模型、新造备份格式（归 `backup.ts`）、新索引表/列 |
+| `src/host/proposal-channel.ts` | 提案页签的通道半：`GET /proposal`（列表 + 可选 `proposalId` 的逐段差异；读路径**不** `ensureIndex`）、`POST /proposal/{decide,apply,rollback}` 的信封、`confirm: true` 闸门、拒绝码到 HTTP 状态；每个 hunk 连同自己的 `baseLines`/`nextLines` 一起下发，面板不必再算一次 diff | 提案规则、写盘（一律调 `proposal.ts`）、HTTP 加固（归 `routes.ts`） |
+| `src/host/proposal-tools.ts` | 四个工具（#45）：`inkflow_proposal_create`（收会话已产出的修订正文，切段落盘）、`_decide`（逐段接受/拒绝/撤回，`contentFilesWritten: 0`）、`_apply` 与 `_rollback`（都要 `confirm: true`）。走 `resolveProject` 的四态门禁，与内置工具同一套判定 | 提案语义（归 `proposal.ts`）、调模型或出站请求（X-26）、直接拼章路径 |
+| `src/client/proposal.tsx` | 「提案」页签（#45 + X-12 的一行一页）：提案列表、逐段差异（原文行与修订行分开染色）、逐段接受与拒绝、全部接受/拒绝、应用与回滚各自**两段式确认**、以及「为什么现在不能应用」的那句话；只调 `/proposal` 四条路由 | 判 diff 是否成立、算 hunk（都来自 Host）、写盘 |
 
 ### 6.2 客户端纯模型（`src/client/*-model.ts`）
 
@@ -559,6 +564,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `brief-model.ts` — 简报页（#43）：九段每行的状态（`ok`/`trimmed`/`missing`，只读 Host 的两个标记，**不**从 `bytes === 0` 自行推算）、占比文案（`formatShare`）、裁剪记录文案、`readBrief` 的三态折叠（请求失败 / 答案读不懂 / 九段真的都没有来源）
 - `map-model.ts` — 地图页（#48，ADR-0025 D4）：把设定库同一份投影里的 `world` 分组重排成地点分组（`placeGroups`，保留分类存储顺序、未分类垫底）、三种空态分开（请求失败 / 索引不可读 / 这本书还没有地点）、`describePin` 与 `MAP_NOTE`；**地点就是 world 条目**，这里不定义第二套地点数据、不含任何坐标字段
 - `review-model.ts` — 审稿页（#46）：三态（`loading`/`error`/`ready`，**没有**「无运行」这一态——那是 `ready` 且 `runCount: 0`，否则页面会把唯一的入口藏起来）、`readReviewValue`/`readCompareValue` 的防御式折叠、`evidenceJumpOf` 只认 Host 给的 `locator` 并复用候选页的 `EvidenceJump`（**不**自己解析 `path#L<n>`）、`evidenceLine`、`describeRun`/`describeScores`、`EMPTY_REVIEW`/`EMPTY_COMPARE`
+- `proposal-model.ts` — 提案页（#45）：`readProposalPage` 的三态折叠（请求失败 / 答案读不懂 / 可读，其中「这本书还没有提案」是 `ready` 的空列表而不是错误）、段行摘要与状态文案、`preferredProposalId`、`applyBlocked`/`rollbackBlocked`（为什么现在不能按 —— 与 Host 的拒绝码同一口径）、两段式按钮文案、`decidePayload`/`confirmPayload`/`detailRequestPath`、拒绝码 → 人话；**不**重算 diff（hunk 与状态都由 Host 给）
 
 ### 6.1 一致性体检（#33）的取数与落点
 

@@ -97,12 +97,22 @@ const BUILT_IN_TOOLS = [
   // it, and its dry run must be the same computation as its apply (X-29).
   ['inkflow_etl_plan', 'd0268bd8'],
   ['inkflow_etl_apply', '1c605cc2'],
+<<<<<<< HEAD
   // #46: the review DAG — run (locate + record), context (the text handed to the model) and
   // compare (the cross-model table). Built-ins: a review reads one chapter plus two setting
   // directories and writes , so no content directory owns it.
   ['inkflow_review_run', 'ee5e8185'],
   ['inkflow_review_context', 'f85b27ee'],
   ['inkflow_review_compare', '770ed3a2'],
+=======
+  // #45: proposals — create / decide / apply / rollback. Built-ins for the same reason as the
+  // extraction queue: a proposal is not an entity, belongs to no content directory, and its one
+  // write path is the chapter writer, which no domain module owns.
+  ['inkflow_proposal_create', '9d647000'],
+  ['inkflow_proposal_decide', 'a6f7a092'],
+  ['inkflow_proposal_apply', '0c64fabf'],
+  ['inkflow_proposal_rollback', '822d2435'],
+>>>>>>> a420beb (feat(proposal): 提案制修订 + 逐段接受/拒绝 + 应用前备份与逐字节回滚)
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

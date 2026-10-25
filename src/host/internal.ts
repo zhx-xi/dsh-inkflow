@@ -1212,6 +1212,7 @@ export type { BriefChannelSource, BriefReply } from './brief.js'
 
 export { GATE_CHECK_IDS, GATE_LIST_LIMIT, buildGate } from './gate.js'
 export type { GateReport, GateResult } from './gate.js'
+<<<<<<< HEAD
 // issue #46 — the review DAG (ADR-0022 D3, X-24/X-26). The engine is `review.ts` (one read
 // pass → five independent nodes → the run record under `.inkflow/review/`), the comparison
 // table `review-compare.ts`, the tool surface `review-tools.ts`. Re-exported here so
@@ -1221,3 +1222,22 @@ export type { GateReport, GateResult } from './gate.js'
 export { buildReviewList } from './review.js'
 export { buildReviewCompare } from './review-compare.js'
 export type { ReviewOpinion, ReviewRunRecord } from './review.js'
+=======
+// ---------------------------------------------------------------------------
+// issue #45 — the proposal tab (ADR-0023 D5). The store and its four actions live in
+// `proposal.ts` / the wire in `proposal-channel.ts`. Re-exported here so `routes.ts` keeps
+// ONE entry point for the channel — the same arrangement as the bin (#35), the audit
+// (#33), the import (#37), the queue (#38) and the gate (#44).
+// ---------------------------------------------------------------------------
+
+export {
+  PROPOSAL_APPLY_BODY_FIELDS,
+  PROPOSAL_DECIDE_BODY_FIELDS,
+  PROPOSAL_ROLLBACK_BODY_FIELDS,
+  applyViaChannel,
+  buildProposals,
+  decideViaChannel,
+  rollbackViaChannel,
+} from './proposal-channel.js'
+export type { ProposalReply, ProposalSource } from './proposal-channel.js'
+>>>>>>> a420beb (feat(proposal): 提案制修订 + 逐段接受/拒绝 + 应用前备份与逐字节回滚)

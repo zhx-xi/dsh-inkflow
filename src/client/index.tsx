@@ -47,6 +47,9 @@ import { AuditView } from './audit.js'
 // Issue #44: the seven quality gates for one chapter (ADR-0022 D4). Its own file, so the
 // workbench's renderer map stays one line per page (X-12).
 import { GateQualityView } from './gate.js'
+// Issue #45: proposals — one chapter's revision cut into hunks, decided piece by piece,
+// then applied (with a backup package) or rolled back. Its own four routes.
+import { ProposalView } from './proposal.js'
 import { ExtractView } from './extract.js'
 import { BriefView } from './brief.js'
 import { MapView } from './map.js'
@@ -573,6 +576,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // jumps through the same `openFromEvidence` an extracted candidate uses, because an
     // address is resolved by the workbench and never by the page that printed it.
     review: () => <ReviewView sessionId={sessionId} onOpenEvidence={openFromEvidence} />,
+    // Issue #45: 提案 — the diff, the per-hunk verdicts and the two confirmed actions.
+    // `GET /proposal` is read-only, so opening this tab never touches a chapter.
+    proposal: () => <ProposalView sessionId={sessionId} />,
   }
 
   /**

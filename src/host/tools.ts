@@ -46,7 +46,11 @@ import { scanSharedLibrary } from './hub-shared.js'
 import { sharedRootOf } from './settings.js'
 import { buildSharedCopies, copySharedEntry, updateSharedEntry } from './shared-copy.js'
 import { etlTools } from './etl-tools.js'
+<<<<<<< HEAD
 import { reviewTools } from './review-tools.js'
+=======
+import { proposalTools } from './proposal-tools.js'
+>>>>>>> a420beb (feat(proposal): 提案制修订 + 逐段接受/拒绝 + 应用前备份与逐字节回滚)
 
 export interface ToolDeps {
   ctx: HostContext
@@ -2232,11 +2236,18 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // reason as the pair above — it writes into every content directory, so no single
     // domain module owns it, and its dry run must be the same computation as its apply.
     ...etlTools(deps),
+<<<<<<< HEAD
     // The review DAG (#46, ADR-0022 D3, X-26): run / context / compare. Built-ins for the
     // same reason as the pair above — a review reads one chapter plus two setting
     // directories and writes a run record under `.inkflow/review/`, so no content
     // directory owns it, and the plugin embeds no model client to produce the opinions.
     ...reviewTools(deps),
+=======
+    // Proposals (#45, ADR-0023, X-26): create / decide / apply / rollback. A built-in rather
+    // than a domain tool — a proposal is not an entity, belongs to no content directory, and
+    // its one write path is the chapter writer, which no domain module owns.
+    ...proposalTools(deps),
+>>>>>>> a420beb (feat(proposal): 提案制修订 + 逐段接受/拒绝 + 应用前备份与逐字节回滚)
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),
