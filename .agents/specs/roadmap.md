@@ -255,7 +255,7 @@
 | 写入器与路径安全 | `resolveWriteTarget`、原子替换、单项目写锁、`PROJECT_BUSY`、编码归一、可选 `expected` 基线 CAS | `src/host/io.ts`、`file-cas.ts`；`tests/io-writer.test.js` |
 | 派生索引 v8（现行） | 域模块自带表与行写入（X-2）；跨类 `entities` 投影（主键 `(kind, id)`）+ `entities_fts`；章正文 `chapters_fts`；逐版追加见 `data-model` §4.1 尾注（v3 世界书三列、v4 角色卡、v5 时间线、v6 提及、v7 账本、v8 伏笔）；不匹配即删库重建，不写 ALTER | `src/host/indexer.ts`、`src/host/domains/`；`tests/index-parity.test.js` |
 | 工具面 50 | 34 内置 + 16 域（`DOMAIN_MODULES` 一行一域）；工具名双向对拍（`src/` 提及 ↔ 注册名、注册名 ↔ 手册点名、手册声明的数字） | `scripts/check-tool-names.mjs`；`tests/tool-schema.test.js`、`domain-registry.test.js` |
-| 面板入口与页签 | 两处入口：书库 = root 的 `sidebar.panellist` + `main`（ADR-0010，另有共享内容页与设置页）；创作工作台 = session 的 `conversation.view`。页签六个可用：章节 / 设定库 / 伏笔 / 回收站 / 体检 / 候选（大纲**不单开页签**——在设定库里编辑）。私有内部通道 `/inkflow/internal/*` + hub `/hub/*`（Origin/Host/方法/字段白名单四道守卫） | `src/client/index.tsx`、`hub*.tsx`、`settings.tsx`；`src/host/internal.ts`、`routes.ts`；`tests/internal-channel.test.js`、`panel-bundle.test.js` |
+| 面板入口与页签 | 两处入口：书库 = root 的 `sidebar.panellist` + `main`（ADR-0010，另有共享内容页与设置页）；创作工作台 = session 的 `conversation.view`。页签十三个可用、无禁用占位：章节 / 设定库 / 大纲 / 伏笔 / 回收站 / 体检 / 候选 / 地图 / 简报 / 门禁 / 审稿 / 提案 / 批量。**大纲有独立页签**（三层树 + 逐条情节点；读 `/library` 的 `outlines` 组，写仍走 `POST /library/item`，没有第二套编辑器或路由）。私有内部通道 `/inkflow/internal/*` + hub `/hub/*`（Origin/Host/方法/字段白名单四道守卫） | `src/client/index.tsx`、`panel-model.ts`、`outline-model.ts`、`outline.tsx`、`hub*.tsx`、`settings.tsx`；`src/host/internal.ts`、`routes.ts`；`tests/internal-channel.test.js`、`panel-bundle.test.js`、`outline-panel.test.js` |
 | 写作 skills 与 preset | 5 个写作工艺 skill 与 `inkflow-writing` preset，按 `cwd` 门禁 | `src/host/skills.ts`、`preset.ts`、`skills/` |
 | 检索 | 单一入口 `searchEntries`（X-16）：章正文 + 八类设定一招搜；分页 `{offset,limit,total}`（≤100）+ `truncated`；语义后端缺席时 `degradedReason` 降级，**任何失败都不 500** | `src/host/search.ts`、`ovk-search.ts`；`tests/search.test.js`、`search-entities.test.js` |
 | 0.2.0 结构化 | 大纲三层、角色卡/状态、世界树与世界书关键词、关系、时间线双轴、九分类树与通用条目编辑器 | `src/host/domains/`；`tests/{outline,character,world,relation,timeline,entities}.test.js` |
@@ -279,9 +279,7 @@
 
 ### 4.3 契约已定、尚未落地
 
-| 项 | 状态 | 归属 |
-|---|---|---|
-| 大纲页签 | 【不计划单独开页签】：大纲三类节点在设定库里编辑（`library` 页的 `outline` kind），避免两套入口写同一批文件 | — |
+当前没有卡在这一档的项：排期见 §2，已落地的事实见 §4.1，未取证的见 §4.4。
 
 ### 4.4 未验证
 

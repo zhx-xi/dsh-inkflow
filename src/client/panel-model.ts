@@ -554,12 +554,10 @@ export function shortBuild(build: string | null): string | null {
 }
 
 /**
- * `2026-10-21 13:44:02` in the reader's own timezone.
- *
- * Fixed-width by hand rather than `toLocaleString`: the banner compares two
- * different days' worth of clock (a build from last night, a restart this
- * morning) and a locale-dependent format makes that comparison harder, not
- * easier. An unparseable stamp is shown as it arrived.
+ * `2026-10-21 13:44:02` in the reader's own timezone. Fixed-width by hand rather than
+ * `toLocaleString`: the banner compares two days' worth of clock (a build from last
+ * night, a restart this morning) and a locale-dependent format makes that harder.
+ * An unparseable stamp is shown as it arrived.
  */
 export function describeBuildTime(iso: string | null): string {
   if (iso === null || iso === '' || iso === 'unknown') return UNKNOWN_BUILD_LABEL
@@ -601,21 +599,23 @@ export interface PanelTab {
  * 设定库 (the eight-kind tree, read-only detail and the problem panel),
  * 回收站 (the recovery bin, restore or purge), 伏笔 (the
  * read-only board: late / open / by linked entity) and 体检 (the five-family
- * consistency report with one-click export). 大纲 stays DISABLED with its release note:
- * a button that opens nothing is worse than a disabled one that says when it arrives.
+ * consistency report with one-click export). 大纲 is the last placeholder to turn live —
+ * its page is `outline.tsx`, which reads the same library projection and the same editor.
  *
- * Four more rows went in **disabled** while their page was still being written (roadmap §2.4 「面板落点」): the
- * 0.5.0 pages that two or more issues each will land. They are rows here and not later
- * additions because the row order is this file's, not the feature's: four parallel
- * issues inserting themselves into one array is a merge conflict per rebase, while a
- * placeholder line is a one-word edit (`available: true`) nobody has to re-argue. The
- * note is the same contract as 大纲's — what the page will be, and when — so a user who
- * clicks nothing still learns something (X-12).
+ * The 0.5.0 rows also went in **disabled** before their pages existed (roadmap §2.4 「面板落点」):
+ * they are rows here and not later additions because the row order is this file's,
+ * not the feature's: four parallel issues inserting themselves into one array is a
+ * merge conflict per rebase, while a placeholder line is a one-word edit
+ * (`available: true`) nobody has to re-argue. Every page has landed, so no row carries
+ * a note any more — an empty note would be worse than none (X-12).
  */
 export const PANEL_TABS: PanelTab[] = [
   { id: 'chapters', label: '章节', available: true },
   { id: 'library', label: '设定库', available: true },
-  { id: 'outline', label: '大纲', available: false, note: '0.2.0 起' },
+  // 大纲: the three-level tree with each node's plot points. A tab of its own because the
+  // reading order (整体 → 卷 → 章) and the object being edited (情节点) are not the setting
+  // library's — it still writes through `POST /library/item`, so no second write path.
+  { id: 'outline', label: '大纲', available: true },
   { id: 'foreshadowing', label: '伏笔', available: true },
   { id: 'trash', label: '回收站', available: true },
   { id: 'audit', label: '体检', available: true },

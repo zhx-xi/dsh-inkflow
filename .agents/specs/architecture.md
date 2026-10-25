@@ -598,6 +598,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `hub-shared-model.ts` — 共享内容页：两种信封折叠（库 / 副本）、`copyNeedsUpdate`（只为 `stale` 给按钮）、`copyModes`（引用只给 `library/`）、`copyTargets`（只列 `usable`）、拒绝码 → 人话
 - `series-model.ts` — 系列同步区块（#49）：计划信封的防御式折叠（`readSeriesPlan`，`expected` 缺省时由行重建）、四类分组（冲突在最上）、`applyBlockedReason`（选书 → 预览 → 裁决冲突 → "没有要写的"，按作者下一步排序）、`applyPayload`（把计划自己的 `expected` 交回去）、结果行与拒绝码 → 人话
 - `library-model.ts` — 设定库：8 个 kind 的树与 `world` 的 category 分组（`buildLibraryTree`/`groupByCategory`）、每类的字段表（`KIND_FIELDS`/`fieldsForKind`）、编辑草稿与未知字段（`draftFromItem`/`unknownFields`）、问题分组与文案（`aggregateIssues`/`describeIssueRow`）
+- `outline-model.ts` — 大纲页：三层树（`buildOutlineTree` 整体在前、卷章按 `order`、循环截断；未挂父节点与「父节点不存在」各成一组、从不吞节点）、层级推断（`inferOutlineTier` 与文件名的关系同 `domains/scan-helpers.ts`，详情里的 `kind` 一旦读到就压过来）、行与编辑器入参（`flattenOutlineTree`/`outlineItemOf` 把节点投成设定库的行，复用同一个编辑器）、情节点解析（`parseOutlinePlotPoints`/`plotPointLabel`：`[标签]` 留作 `arc`，不剥掉）、地址 → 页签（`tabForEntityKind`：`outlines` → `outline`，其余 → `library`）、空态文案（`OUTLINE_EMPTY`）
 - `library-import-model.ts` — 导入对话框三步：草案校验、请求体、预览文案、结果文案、拒绝码 → 人话（路径由作者填，Client 无文件 API）
 - `editor-model.ts` — 编辑器的纯状态机：`AUTOSAVE_DELAY_MS`/`UNDO_GROUP_MS`、脏判定与 CAS 保存相（`SAVE_LABELS`）、撤销分组、文件被外部改过时的处理、`CHAPTER_STATUSES`
 - `layout-model.ts` — 面板滚动 box 的纯几何（§4.3.1）：可用底边规则、`Math.floor` 定高、CSS 变量与兜底、两列共享的样式常量

@@ -214,7 +214,7 @@ test('client bundle talks only to the private internal channel', () => {
 
 test('client bundle ships the skeleton wording the user sees', () => {
   const text = readBundle()
-  for (const marker of ['章节树', '正文（Markdown 编辑器）', '打开初始化向导', '缺少（missing）', '0.2.0 起', '新建章']) {
+  for (const marker of ['章节树', '正文（Markdown 编辑器）', '打开初始化向导', '缺少（missing）', '这本书还没有大纲节点', '新建章']) {
     assert.ok(text.includes(marker), `bundle is missing the panel wording: ${marker}`)
   }
   // The four-state badge must be able to name every state.
@@ -518,28 +518,32 @@ test('projectFacts reports derived state without implying it is the truth', () =
   assert.equal(describeFacts(projectFacts(null)), '索引 未知 · 卷 — · 章 —')
 })
 
-test('PANEL_TABS leaves unimplemented pages disabled with their release note', () => {
+test('PANEL_TABS is the build’s own list of pages a user can open', () => {
   const { PANEL_TABS } = model
   const available = PANEL_TABS.filter((tab) => tab.available)
-  // The panel grew one page at a time: 设定库 (the eight-kind setting library), 回收站 (the recovery
-  // bin), 伏笔 (the read-only board), 体检 (the five-family audit), 候选 (the
-  // extraction queue — X-20's one new tab), 地图 (places are world entries, ADR-0025 D4),
-  // 简报 (nine segments, X-23), 门禁 (the seven quality gates, ADR-0022 D4),
-  // 审稿 (the review runs and their evidence chain), 提案 (per-hunk accept, apply,
-  // rollback) and 批量 (the batch job's status, gate counts and 续跑). This list is the
-  // build's own claim about what a user can click, so it is
-  // spelled out rather than derived — and it is ONE list, not one list per issue.
+  // The panel grew one page at a time: 设定库 (the eight-kind setting library), 大纲 (the
+  // three-level outline tree with its plot points), 回收站 (the recovery bin), 伏笔 (the
+  // read-only board), 体检 (the five-family audit), 候选 (the extraction queue — X-20's
+  // one new tab), 地图 (places are world entries, ADR-0025 D4), 简报 (nine segments,
+  // X-23), 门禁 (the seven quality gates, ADR-0022 D4), 审稿 (the review runs and their
+  // evidence chain), 提案 (per-hunk accept, apply, rollback) and 批量 (the batch job's
+  // status, gate counts and 续跑). This list is the build's own claim about what a user
+  // can click, so it is spelled out rather than derived — and it is ONE list, not one
+  // list per issue.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal', 'batch'],
-    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图、简报、门禁、审稿、提案 与批量 exist in this build',
+    ['chapters', 'library', 'outline', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal', 'batch'],
+    '章节, 设定库, 大纲, 伏笔, 回收站, 体检, 候选、地图、简报、门禁、审稿、提案 与批量 exist in this build',
   )
-  // The 0.5.0 batch registered the four 0.5.0 pages as placeholders (roadmap §2.4);
-  // 简报, 门禁, 审稿 and 提案 each turned their own row live, so exactly one placeholder is left. A row that
-  // quietly becomes clickable without a page is the failure this pins.
+  // 大纲 was the last placeholder row and its page landed: nothing is disabled any more.
+  // A tab that is live with no page, or a live page nobody can reach, is what the two
+  // assertions around this one exist to catch — so an empty list here is a claim, not a
+  // leftover.
   const disabled = PANEL_TABS.filter((tab) => !tab.available)
-  assert.deepEqual(disabled.map((tab) => tab.id), ['outline'], 'only the unimplemented page is disabled')
-  assert.equal(disabled[0].note, '0.2.0 起', 'tab outline must say when it arrives')
+  assert.deepEqual(disabled.map((tab) => tab.id), [], 'every row in this build opens a page')
+  for (const tab of PANEL_TABS) {
+    assert.equal(tab.note, undefined, `a live tab carries no release note (${tab.id})`)
+  }
 })
 
 test('the client bundle ships the title-suspicion tooltip', () => {
