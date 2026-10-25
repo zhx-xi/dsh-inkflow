@@ -384,6 +384,42 @@ export function listRelationsFor(root: string, entityId: string, limit?: number)
   }
 }
 
+/**
+ * Display titles for a handful of entity ids, from the cross-class projection (#48).
+ *
+ * Why not `listEntities` + a filter: the clue view asks about the peers of *one* entity,
+ * which may be a dozen ids of five different kinds, and reading the whole projection to
+ * resolve twelve names is the query this tool would then spend its budget on.
+ *
+ * "Exactly one" is not required here (unlike `RELATION_ENDPOINT`): an id two kinds share
+ * still resolves to a *name* for display, and the report says which one won by taking the
+ * first in `(kind, id)` order — deterministic on every run, which is what a stable reply
+ * needs.
+ */
+export function titlesForIds(root: string, ids: readonly string[]): Record<string, string> | undefined {
+  if (ids.length === 0) return {}
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const placeholders = ids.map(() => '?').join(', ')
+    const rows = db
+      .prepare(`SELECT id, title FROM entities WHERE id IN (${placeholders}) ORDER BY kind, id`)
+      .all(...ids) as unknown as Array<Record<string, unknown>>
+    const titles: Record<string, string> = {}
+    for (const row of rows) {
+      const id = typeof row['id'] === 'string' ? row['id'] : ''
+      const title = typeof row['title'] === 'string' ? row['title'] : ''
+      if (id === '' || id in titles) continue
+      titles[id] = title
+    }
+    return titles
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
 /** Count entities per kind — the panel's section badges, and a cheap sanity check. */
 export function entityCounts(root: string): Record<string, number> | undefined {
   const db = openIndex(root)

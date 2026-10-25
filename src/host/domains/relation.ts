@@ -29,7 +29,7 @@ import { readdirSync } from 'node:fs'
 import { extname, join } from 'node:path'
 
 import { parseMarkdown, stringField } from '../frontmatter.js'
-import { RELATION_DIRECTIONS, RELATION_KINDS } from './relation-write.js'
+import { RELATION_DIRECTIONS, RELATION_KINDS, relationConflicts } from './relation-write.js'
 import type { RelationRow } from './relation-write.js'
 import { relationTools } from './relation-tools.js'
 import { rowsBucket } from './types.js'
@@ -255,6 +255,14 @@ export const relationDomain: DomainModule = {
           detail: `the edge ${row.source} → ${row.target} (${row.relationKind}) is already declared by ${previous}`,
         })
       }
+    }
+
+    // The knowledge graph's second invariant (#48): the same pair + kind claimed in
+    // contradictory directions. Blocking on both nets — a write that would create one is
+    // refused, and a rebuild reports the pair, so a hand-written pair of files is visible
+    // instead of silently overriding each other.
+    for (const conflict of relationConflicts(rows)) {
+      issues.push({ code: conflict.code, path: conflict.path, detail: conflict.detail })
     }
 
     // Write path: only blocking issues belong here (types.ts `DomainValidateInput`).

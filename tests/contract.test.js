@@ -257,6 +257,7 @@ test('registers the thirty-one built-ins, the tools of every registered domain, 
       'inkflow_project_plan',
       'inkflow_project_repair',
       'inkflow_project_status',
+      'inkflow_relation_clues',
       'inkflow_relation_list',
       'inkflow_relation_upsert',
       // #39: the single search entry (X-16) and the search-replace batch (X-17), both

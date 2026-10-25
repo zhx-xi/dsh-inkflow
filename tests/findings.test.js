@@ -81,6 +81,8 @@ const WRITE_SIDE_CODES = new Set([
   // the timeline already owns.
   'CALENDAR_INVALID_SPEC',
   'CALENDAR_SET_REQUIRES_CONFIRMATION',
+  // #48: a `kind` outside the five-type vocabulary, refused by the relation tools.
+  'RELATION_FIELD_INVALID',
   'ORDER_INVALID',
   'PRIORITY_INVALID',
   'SLUG_INVALID',

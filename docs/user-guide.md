@@ -184,7 +184,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
-插件提供 52 个工具（34 个内置 + 18 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
+插件提供 53 个工具（34 个内置 + 19 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
 
 **项目与索引**
 
@@ -225,7 +225,8 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_outline_upsert` | 建或改大纲节点：卷只能挂整体、最多三层，必须带确认 | 「给卷一加一条情节点」 |
 | `inkflow_outline_move` | 移动大纲节点改父级（卷中卷、章挂章会被拒） | 「把这条情节挪到第二卷」 |
 | `inkflow_relation_list` | 查一个实体两个方向的关系边 | 「清音和白云观是什么关系」 |
-| `inkflow_relation_upsert` | 建或改关系边：两端必须存在、禁自环、同源同目标同类型不许重复 | 「记一条：清音与白云观是旧识」 |
+| `inkflow_relation_upsert` | 建或改关系边：两端必须存在、禁自环、同源同目标同类型不许重复、方向不许自相矛盾 | 「记一条：清音与白云观是旧识」 |
+| `inkflow_relation_clues` | 线索视图：按关系类型（人物 / 知识 / 亲缘 / 阵营 / 地理）分组列出某个实体连着谁、从它这侧看是出向还是入向 | 「清音这个人脉图上都有谁」 |
 | `inkflow_timeline_list` | 时间线双轴（世界时间 / 叙事顺序），可只看某一章、也可列待确认事件 | 「这本书里的大事按时间排一下」/「哪些事件还没定时间」 |
 | `inkflow_timeline_upsert` | 建或改时间线事件；`confirmed` 必须带世界时间，同槽位不许两个时间；多纪元书里用 `era` 说明这是哪个纪元的日子 | 「记一笔：开元十三年冬，破庙相遇」 |
 | `inkflow_calendar_get` | 读这本书的历法表（纪元、各纪元起点的绝对日、月长、闰规则），也可换算一个日期 | 「这本书用的是哪套历法」/「开元十三年换算成绝对日是第几天」 |
