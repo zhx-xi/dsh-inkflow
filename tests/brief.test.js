@@ -179,7 +179,9 @@ test('brief: nine segments, ADR-0022 D2 order, ids and labels agree with the reg
     }
 
     // Order on the wire, not just in the array: the rendered block repeats D2's order.
-    const positions = ['### 当前章', '### 本章人物', '### 语言基因', '### 账本事实', '### 伏笔提示', '### 世界书', '### 上一章结尾']
+    // MIGRATED: the `outline` segment used to render the six-segment `### 当前章` block (identity
+    // + plot points). The identity moved to the header line; the segment kept the plan.
+    const positions = ['### 剧情点', '### 本章人物', '### 语言基因', '### 账本事实', '### 伏笔提示', '### 世界书', '### 上一章结尾']
       .map((heading) => brief.text.indexOf(heading))
       .filter((position) => position >= 0)
     assert.ok(positions.length === 7, `every sourced segment heading must be rendered, saw ${String(positions.length)}`)
@@ -254,7 +256,7 @@ test('brief: the ladder trims world → facts → foreshadow → prevTail and ne
       const outline = brief.segments.find((segment) => segment.id === 'outline')
       assert.ok(outline !== undefined)
       assert.equal(outline.missing, false, `budget ${String(budgetTokens)}: the chapter segment is not dropped`)
-      assert.ok(brief.text.includes('### 当前章'), `budget ${String(budgetTokens)}: the chapter block is rendered`)
+      assert.ok(brief.text.includes('### 剧情点'), `budget ${String(budgetTokens)}: the plot points are rendered`)
 
       assert.ok(brief.trims.length <= previousCount, 'a bigger budget never trims more')
       previousCount = brief.trims.length
@@ -507,8 +509,8 @@ test('brief: the chapter outline writes [承诺] / [锚点] lines and the two se
 
     // D2 order on the wire: right after the chapter block, and last of the nine.
     const at = (needle) => brief.text.indexOf(needle)
-    assert.ok(at('### 当前章') >= 0)
-    assert.ok(at(`### ${BRIEF_LABELS.promise}`) > at('### 当前章'), 'promise sits after outline')
+    assert.ok(at('### 剧情点') >= 0)
+    assert.ok(at(`### ${BRIEF_LABELS.promise}`) > at('### 剧情点'), 'promise sits after outline')
     assert.ok(at(`### ${BRIEF_LABELS.promise}`) < at('### 本章人物'), 'promise sits before characters')
     assert.ok(at(`### ${BRIEF_LABELS.anchors}`) > at('### 上一章结尾'), 'anchors closes the nine')
 
@@ -844,10 +846,12 @@ test('brief: the header names the book and the whole book, ahead of the chapter 
     // The writer has to know WHICH BOOK it is writing before it reads what to write. Same
     // job the retired six-segment `project` block did — without a tenth segment (D2).
     const firstLine = brief.text.split('\n')[0]
-    assert.match(firstLine, /^《简报之书》· 全书 2 章 \/ \d+\.\d 万字$/u)
+    // MIGRATED (the shape change IS this change): the first line now names the chapter too,
+    // so the assertion pins the whole line instead of the counts alone.
+    assert.match(firstLine, /^《简报之书》· 全书 2 章 \/ \d+\.\d 万字 · 本章：起风（vol-01 · seq 2 · draft）$/u)
     assert.equal(brief.header, firstLine, 'the field is the first line, not a second spelling of it')
     assert.equal(brief.text.indexOf(brief.header), 0)
-    assert.ok(brief.text.indexOf('### 当前章') > 0, 'the chapter block follows the header')
+    assert.ok(brief.text.indexOf('### 剧情点') > 0, 'the plot points follow the header')
 
     // Nine segments means nine: the identity is brief-level, not a tenth one.
     assert.deepEqual(brief.segments.map((segment) => segment.id), ORDER)
@@ -886,10 +890,12 @@ test('brief: the header is never trimmed — at the floor it shortens to the tit
     const root = await book(join(dir, 'book'))
     const floor = buildWritingBrief(root, { budgetTokens: 1 })
 
-    assert.equal(floor.header, '《简报之书》', 'the counts go before the title does')
-    assert.equal(floor.text.split('\n')[0], '《简报之书》')
+    // MIGRATED: the counts AND the chapter title go before the book name and the chapter
+    // number. The floor used to be the book name alone, which left the chapter unnamed.
+    assert.equal(floor.header, '《简报之书》· 本章：seq 2', 'the counts go before the title does')
+    assert.equal(floor.text.split('\n')[0], '《简报之书》· 本章：seq 2')
     assert.equal(floor.overBudget, true, 'a header that does not fit is reported, not dropped')
-    assert.ok(floor.text.includes('### 当前章'), 'and it is not paid for by dropping the task statement')
+    assert.ok(floor.text.includes('### 剧情点'), 'and it is not paid for by dropping the task statement')
     assert.deepEqual([...new Set(floor.trims.map((trim) => trim.segment))], [...BRIEF_TRIM_ORDER], 'the ladder still walks its own rungs')
 
     // The shortening is a floor-only branch: an ordinary budget keeps the whole line.
@@ -952,7 +958,9 @@ const CHAPTER_PLOT = [
 async function outlineBook(root, outline) {
   scaffold(root)
   writeMarkdown(root, 'chapters/vol-01/0001-开端.md', ['id: ch-0001', 'title: 开端', 'volume: vol-01', 'seq: 1'], '第一章正文。\n')
-  writeMarkdown(root, 'chapters/vol-01/0002-起风.md', ['id: ch-0002', 'title: 起风', 'volume: vol-01', 'seq: 2'], '第二章正文。\n')
+  // `status: draft` so the identity line's four parts (title / volume / seq / status) are
+  // all sourced from the chapter's own record: a field the index fills, not the node.
+  writeMarkdown(root, 'chapters/vol-01/0002-起风.md', ['id: ch-0002', 'title: 起风', 'volume: vol-01', 'seq: 2', 'status: draft'], '第二章正文。\n')
   writeMarkdown(root, 'outlines/overall.md', ['id: ov', 'kind: overall', 'title: 总纲', 'order: 0'], '- 故事线\n')
   writeMarkdown(
     root,
@@ -998,7 +1006,7 @@ test('brief: the chapter outline is the tree node, whatever its file is called',
     assert.match(segmentOf(brief, 'promise').text, /断剑的来历这一章必须露一角/u)
     assert.equal(segmentOf(brief, 'anchors').missing, false)
     assert.match(segmentOf(brief, 'anchors').text, /剑未出鞘，雨先落/u)
-    assert.ok(brief.text.includes('### 当前章'), 'the outline segment is rendered under its own heading')
+    assert.ok(brief.text.includes('### 剧情点'), 'the outline segment is rendered under its own heading')
     assert.ok(brief.text.includes(`### ${BRIEF_LABELS.promise}`), 'the markers reach the wire too')
     assert.ok(brief.text.includes(`### ${BRIEF_LABELS.anchors}`))
   } finally {
@@ -1124,6 +1132,177 @@ test('brief: a volume node and the overall node never stand in for the chapter n
     const flatOutline = segmentOf(buildWritingBrief(flat, { chapterSeq: 2, budgetTokens: 20_000 }), 'outline')
     assert.ok(flatOutline.text.includes('大纲 outlines/第二章-试剑.md：'))
     assert.match(flatOutline.text, /清音在青萍宗后山见到信物/u)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 9. Chapter identity on the header line, plot points in the `outline` segment
+// ---------------------------------------------------------------------------
+
+/**
+ * The chapter being written is named by the brief's **first line**:
+ *
+ *     《简报之书》· 全书 2 章 / 12.3 万字 · 本章：起风（vol-01 · seq 2 · draft）
+ *
+ * Why it is not inside the `outline` segment any more: that segment is honestly `missing`
+ * when the author has not written the chapter's plot points yet, and the identity used to
+ * ride in the same block — so "create the chapter, plan it later" (the normal order) left
+ * the model writing into a chapter it could not name. The record the identity comes from is
+ * the chapter's own catalog/index row, which exists as soon as the chapter does.
+ */
+const IDENTITY_LINE = /^《简报之书》· 全书 2 章 \/ \d+\.\d 万字 · 本章：起风（vol-01 · seq 2 · draft）$/u
+
+test('brief: the header names the chapter and the outline segment carries only the plot points', async () => {
+  const dir = workdir()
+  try {
+    const root = await outlineBook(join(dir, 'book'), chapterNode('outlines/第二章-试剑.md'))
+    const brief = buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 })
+
+    const firstLine = brief.text.split('\n')[0]
+    assert.match(firstLine, IDENTITY_LINE, 'the chapter is named on the header line')
+    assert.equal(brief.header, firstLine, 'one string, not a second spelling of it')
+
+    const outline = segmentOf(brief, 'outline')
+    assert.equal(outline.missing, false, 'the node is there, so the plot points are there')
+    assert.match(outline.text, /^### 剧情点\n/u, 'the plot points have a heading of their own')
+    assert.match(outline.text, /清音在青萍宗后山见到信物/u, 'and they are the chapter\'s own words')
+    assert.equal(outline.text.includes('标题：'), false, 'the identity block is not repeated inside the segment')
+    assert.equal(outline.text.includes('vol-01'), false, 'nor the volume')
+    assert.equal(outline.text.includes('seq 2'), false, 'nor the sequence number')
+    assert.equal(outline.text.includes('draft'), false, 'nor the status')
+
+    // One chapter, one naming. The retired block did both jobs, so the old text named the
+    // chapter twice; now the header owns the identity and the segment owns the plan.
+    assert.equal(brief.text.includes('### 当前章'), false, 'no second chapter block on the wire')
+    assert.equal((brief.text.match(/本章：/gu) ?? []).length, 1, 'exactly one place names the chapter')
+
+    // Same input, same bytes: nothing here reads a clock or a cache.
+    assert.equal(buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 }).text, brief.text)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: with no outline node the header still names the chapter', async () => {
+  const dir = workdir()
+  try {
+    // The case that made this a bug: the chapter exists (so the author knows its number and
+    // title) but its plot points are not planned yet.
+    const root = await outlineBook(join(dir, 'book'), undefined)
+    const brief = buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 })
+
+    assert.match(brief.text.split('\n')[0], IDENTITY_LINE, 'the identity is the chapter record, not the node')
+    const outline = segmentOf(brief, 'outline')
+    assert.equal(outline.missing, true, 'the plot points are honestly absent')
+    assert.equal(outline.text, '')
+    assert.equal(brief.text.includes('### 剧情点'), false, 'no heading for a segment with no source')
+    assert.equal(brief.text.includes('### 当前章'), false, 'and no half chapter block either')
+
+    // Stated as an assertion: the same chapter names itself the same way either way. Before
+    // this change the two headers were identical too — and both were missing the chapter.
+    const withNode = buildWritingBrief(await outlineBook(join(dir, 'both'), chapterNode('outlines/第二章-试剑.md')), {
+      chapterSeq: 2,
+      budgetTokens: 20_000,
+    })
+    assert.equal(withNode.header, brief.header, 'a missing node cannot cost the chapter its name')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: a chapter that does not exist yet is named as unbuilt, never invented', async () => {
+  const dir = workdir()
+  try {
+    // "About to write chapter 3": no such chapter, so no title, no volume, no number.
+    const root = await outlineBook(join(dir, 'book'), chapterNode('outlines/第二章-试剑.md'))
+    const brief = buildWritingBrief(root, { chapterSeq: 3, budgetTokens: 20_000 })
+
+    assert.equal(brief.chapterSeq, null, 'the fixture really has no chapter 3')
+    assert.equal(brief.chapterPath, null)
+    assert.match(brief.header, /^《简报之书》· 全书 2 章 \/ \d+\.\d 万字 · 本章：（尚未建章）$/u)
+    assert.equal(brief.text.split('\n')[0], brief.header)
+    for (const guess of ['起风', '试剑', 'vol-01', 'seq 3']) {
+      assert.equal(brief.header.includes(guess), false, `"${guess}" would be a guess, not a fact`)
+    }
+    assert.equal(segmentOf(brief, 'outline').missing, true, 'a chapter that does not exist has no node')
+    assert.equal(buildWritingBrief(root, { chapterSeq: 3, budgetTokens: 20_000 }).text, brief.text)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: a chapter node with no plot points is a gap, not a heading over nothing', async () => {
+  const dir = workdir()
+  try {
+    // The node exists (the author created it) but says nothing yet: an empty body is not a
+    // plan, and a heading with an empty line under it reads as "the outline is fine" — the
+    // same silent lie the missing branch exists to avoid.
+    const root = await outlineBook(join(dir, 'book'), { ...chapterNode('outlines/空节点.md'), body: '' })
+    const brief = buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 })
+
+    const outline = segmentOf(brief, 'outline')
+    assert.equal(outline.missing, true, 'no plot points means missing — an empty body is no source')
+    assert.equal(outline.text, '')
+    assert.equal(brief.text.includes('### 剧情点'), false, 'no heading over an empty body')
+    assert.equal(brief.text.includes('大纲 outlines/空节点.md：'), false, 'nor a path with nothing after it')
+    // The chapter is still named: an unplanned chapter is normal, an unnamed one is not.
+    assert.match(brief.header, IDENTITY_LINE)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: preview, injection and the audit file carry one identity line, node or no node', async () => {
+  const dir = workdir()
+  try {
+    for (const [name, node] of [
+      ['present', chapterNode('outlines/第二章-试剑.md')],
+      ['absent', undefined],
+    ]) {
+      const root = await outlineBook(join(dir, name), node)
+      const brief = briefFor(root, { chapterSeq: 2 })
+      const wire = briefWire(brief)
+      const written = writeBriefAudit(root, brief)
+      assert.equal(written.ok, true, written.ok ? '' : written.message)
+      const parsed = JSON.parse(readFileSync(join(root, briefAuditPath(brief.chapterId)), 'utf8'))
+
+      // X-23 with the identity in it: one computation, three consumers, same bytes.
+      assert.match(brief.header, IDENTITY_LINE, `${name}: the header names the chapter`)
+      assert.equal(wire.header, brief.header, `${name}: preview`)
+      assert.equal(parsed.header, brief.header, `${name}: audit file`)
+      assert.equal(brief.text.split('\n')[0], brief.header, `${name}: injection`)
+      // And it is not copied into a segment as well: the segments stay a plan, not an address.
+      assert.equal(
+        wire.segments.some((segment) => segment.text.includes('本章：')),
+        false,
+        `${name}: the identity is not a tenth copy inside a segment`,
+      )
+      assert.equal(parsed.schemaVersion, 2, `${name}: no new field, so no schema bump`)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: at the floor the header shortens to the book and the chapter number, never to nothing', async () => {
+  const dir = workdir()
+  try {
+    const root = await outlineBook(join(dir, 'book'), chapterNode('outlines/第二章-试剑.md'))
+    const floor = buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 1 })
+    const normal = buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 })
+
+    // The counts and the chapter title go first; the book name and the chapter number are
+    // what cannot — the identity is the part of the line that is never traded away.
+    assert.equal(floor.header, '《简报之书》· 本章：seq 2')
+    assert.equal(floor.text.split('\n')[0], floor.header, 'still the first line, not a footnote')
+    assert.ok(estimateTokens(floor.header) < estimateTokens(normal.header), 'the floor line is the short one')
+    assert.equal(floor.overBudget, true, 'a header that does not fit is reported, not dropped')
+    // Shortened, not paid for out of the task statement: `outline` is never trimmable.
+    assert.ok(floor.text.includes('### 剧情点'), 'the plot points survive the floor')
+    // Nor is the identity on the trim record: the ladder never reports it as a casualty.
+    assert.equal(floor.trims.some((trim) => trim.segment === 'outline'), false)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -58,10 +58,34 @@ export function renderChapter(current: ChapterHead, outline: OutlinedChapter | u
   if (current.seq !== undefined) facts.push(`seq：${String(current.seq)}`)
   if (current.status !== undefined && current.status !== '') facts.push(`状态：${current.status}`)
   const lines = ['### 当前章', facts.length === 0 ? `文件：${current.path}` : facts.join('｜')]
-  if (outline !== undefined && outline.body !== '') {
-    lines.push(`大纲 ${outline.path}：`, clipHead(outline.body, MAX_OUTLINE_CHARS))
-  }
+  if (outline !== undefined && outline.body !== '') lines.push(renderPlotPoints(outline))
   return lines.join('\n')
+}
+
+/**
+ * The brief's `outline` segment heading.
+ *
+ * Not `### 当前章`, and deliberately not `当前章大纲` either (that is the segment's *label* in
+ * the preview and in the `[trimmed: …]` marker): this segment holds the author's plot points
+ * and nothing else, so the heading names exactly that. The chapter's identity — title, volume,
+ * sequence, status — is on the brief's header line, which is the whole point of the split:
+ * a chapter whose plot points are not planned yet still gets named.
+ */
+const OUTLINE_HEADING = '### 剧情点'
+
+/**
+ * The `outline` segment: the chapter's plot points, under their own heading.
+ *
+ * `大纲 <path>：` stays the first line so the model can open the file instead of guessing,
+ * and it is the same line the six-segment chapter block renders — one spelling, two owners.
+ */
+export function renderOutlineSegment(outline: OutlinedChapter): string {
+  return `${OUTLINE_HEADING}\n${renderPlotPoints(outline)}`
+}
+
+/** The part both owners render byte for byte: which file, then its (capped) body. */
+function renderPlotPoints(outline: OutlinedChapter): string {
+  return [`大纲 ${outline.path}：`, clipHead(outline.body, MAX_OUTLINE_CHARS)].join('\n')
 }
 
 export function renderTail(tail: TailSlice, taken: number, body: string): string {
@@ -70,23 +94,64 @@ export function renderTail(tail: TailSlice, taken: number, body: string): string
 }
 
 /**
- * The book's identity line — the brief's **first line**, above every segment.
+ * The brief's **first line**: which book, and which chapter of it.
  *
  * Why it is not a segment: ADR-0022 D2 fixes the nine ids and their order, and the block
  * that used to carry the book (`project`, in the six-segment context) is exactly what the brief
  * removed. The writer still has to know *which book* it is writing — a series shares one
  * setting library across books, and the title is where the author's expectation of tone
  * lives — so the identity belongs to the brief itself, outside the ladder, and is never
- * trimmed. Over budget it shortens ({@link renderBriefHeader}'s `short`): the title is the
- * part that cannot go, the counts are.
+ * trimmed.
  *
- * `stats === undefined` (no index yet) degrades like the six-segment assembly did: the
- * title alone, never a fabricated chapter or word count.
+ * The chapter half is read from the chapter's own record (`ChapterHead`, filled from the
+ * index or, with no index, from the file's frontmatter) and **not** from its outline node:
+ * "create the chapter, plan it later" is the normal order, and a book whose chapter has no
+ * node yet still has a title, a volume, a number and a status. `chapter === undefined` is
+ * the honest case of a chapter that does not exist yet (writing chapter N+1 before creating
+ * it) — it renders `（尚未建章）` rather than a guess.
+ *
+ * Over budget it shortens ({@link renderBriefHeader}'s `short`): the counts and the chapter
+ * title go first, the book name and the chapter number are what cannot.
  */
-export function renderBriefHeader(title: string, stats: ProjectStats | undefined, short: boolean): string {
+export function renderBriefHeader(
+  title: string,
+  stats: ProjectStats | undefined,
+  short: boolean,
+  chapter: ChapterHead | undefined,
+): string {
   const name = `《${title}》`
-  if (short || stats === undefined) return name
-  return `${name}· 全书 ${String(stats.chapters)} 章 / ${(stats.words / 10_000).toFixed(1)} 万字`
+  const counts =
+    short || stats === undefined
+      ? undefined
+      : `全书 ${String(stats.chapters)} 章 / ${(stats.words / 10_000).toFixed(1)} 万字`
+  const identity = short ? shortChapterLabel(chapter) : chapterLabel(chapter)
+  return counts === undefined ? `${name}· ${identity}` : `${name}· ${counts} · ${identity}`
+}
+
+/** `本章：起风（vol-01 · seq 2 · draft）` — every part that the chapter's record really has. */
+function chapterLabel(chapter: ChapterHead | undefined): string {
+  if (chapter === undefined) return '本章：（尚未建章）'
+  const facts: string[] = []
+  if (chapter.volume !== undefined && chapter.volume !== '') facts.push(chapter.volume)
+  if (chapter.seq !== undefined) facts.push(`seq ${String(chapter.seq)}`)
+  if (chapter.status !== undefined && chapter.status !== '') facts.push(chapter.status)
+  const title = chapter.title ?? ''
+  return facts.length === 0 ? `本章：${title}` : `本章：${title}（${facts.join(' · ')}）`
+}
+
+/**
+ * The floor form: the book name plus the chapter's number, nothing else.
+ *
+ * The number is the one part that has to survive with the book name — without it the model
+ * knows the book but not which chapter, which is the failure this line was added to stop.
+ * A chapter with no number of its own falls back to its title, then to a plain admission,
+ * rather than printing an empty `本章：`.
+ */
+function shortChapterLabel(chapter: ChapterHead | undefined): string {
+  if (chapter === undefined) return '本章：（尚未建章）'
+  if (chapter.seq !== undefined) return `本章：seq ${String(chapter.seq)}`
+  if (chapter.title !== undefined && chapter.title !== '') return `本章：${chapter.title}`
+  return '本章：（未编号）'
 }
 
 export function renderWorld(world: WorldSelection): string {
