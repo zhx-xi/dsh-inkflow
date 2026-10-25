@@ -141,7 +141,11 @@ function emittedValidationCodes() {
     // #46: the review DAG emits `REVIEW_*` (one code per dimension) from the same
     // `code: '…'` shape, so the scan has to see it for the gate's reason: otherwise the
     // five catalogue entries would read as "nobody emits this".
+    // #193: the per-dimension catalogue codes moved with the dimension table into
+    // `review-nodes.ts` while `review.ts` kept the DAG's own codes, so the scan follows the
+    // literals — the file list tracks where they actually live, the assertions are unchanged.
     join(repoRoot, 'src/host/review.ts'),
+    join(repoRoot, 'src/host/review-nodes.ts'),
   ]
   const codes = new Set()
   for (const file of files) {

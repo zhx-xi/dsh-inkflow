@@ -196,7 +196,7 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 
 - 组合优于继承、early return 优于深嵌套、显式优于隐式。
 - 标准库优先；不手搓已有轮子。
-- 无巨型文件（单文件 >600 行先考虑拆分）。
+- 无巨型文件（单文件 >600 行先考虑拆分；`pnpm run check:guards` 已把它变成机制——超 600 行的文件在 `scripts/check-guards.mjs` 的 `OVER_CAP_BUDGET` 里有显式预算，**只减不增**：新文件一律 ≤600，旧文件回到 600 以内时同一次改动里删掉它的条目）。
 - 新代码全类型化；边界处先校验再进内部类型。
 
 ### 10.6 证据与来源

@@ -143,6 +143,104 @@ check('no hook is called after an early return (client components)', () => {
   }
 })
 
+/**
+ * No source file may grow past 600 lines (#193).
+ *
+ * WHY this is a mechanism and not a style note: `AGENTS.md` §10.5 has said "单文件 >600 行先
+ * 考虑拆分" for the whole project, and three files reached 2269 / 1688 / 1374 lines anyway —
+ * because a rule nobody checks is a preference. Every one of them still "worked"; the cost
+ * was paid by the next person who had to find the write path inside it (#199 wants to add a
+ * fold to `review.ts` and a cleanup tool to `tools.ts`).
+ *
+ * WHY a budget list rather than a flat cap: when the guard landed, 42 tracked source files
+ * were already over the cap (worst: `routes.ts` 1580), so a flat cap would have reddened the
+ * build over a backlog instead of stopping the growth. The rule is therefore two-sided:
+ *
+ *   * a file **not** on the list may not exceed the cap;
+ *   * a file **on** the list may not exceed its recorded count (its budget), and once it is
+ *     back under the cap its entry must be deleted in the same change — otherwise the list
+ *     would quietly become a permanent exemption.
+ *
+ * The list only shrinks. Burning it down is roadmap work, not something this guard does.
+ *
+ * Tracked files only (`git ls-files`): untracked scratch files are not the repository's
+ * problem, and this guard is about the repository.
+ */
+const SIZE_CAP = 600
+const OVER_CAP_BUDGET = {
+  'src/client/index.tsx': 1053,
+  'src/client/library-model.ts': 821,
+  'src/client/library.tsx': 602,
+  'src/client/panel-model.ts': 648,
+  'src/client/settings.tsx': 686,
+  'src/host/backup-zip.ts': 716,
+  'src/host/backup.ts': 644,
+  'src/host/catalog.ts': 823,
+  'src/host/chapters.ts': 1415,
+  'src/host/diagnostics.ts': 621,
+  'src/host/domains/facts-tools.ts': 674,
+  'src/host/domains/foreshadowing-query.ts': 605,
+  'src/host/domains/outline-tools.ts': 800,
+  'src/host/domains/timeline-plan.ts': 679,
+  'src/host/domains/timeline-tools.ts': 822,
+  'src/host/domains/world-tools.ts': 661,
+  'src/host/etl-plan.ts': 1209,
+  'src/host/etl-source.ts': 631,
+  'src/host/etl.ts': 753,
+  'src/host/export.ts': 1004,
+  'src/host/extract-accept.ts': 704,
+  'src/host/extract-tools.ts': 677,
+  'src/host/extract.ts': 1084,
+  'src/host/frontmatter.ts': 747,
+  'src/host/hub-shared.ts': 611,
+  'src/host/hub-wizard.ts': 656,
+  'src/host/impact.ts': 619,
+  'src/host/import-write.ts': 675,
+  'src/host/index.ts': 1519,
+  'src/host/internal.ts': 1261,
+  'src/host/io.ts': 925,
+  'src/host/jobs-tools.ts': 624,
+  'src/host/migrate.ts': 670,
+  'src/host/ovk.ts': 699,
+  'src/host/repair.ts': 945,
+  'src/host/routes.ts': 1580,
+  'src/host/search.ts': 626,
+  'src/host/series.ts': 762,
+  'src/host/settings-tools.ts': 643,
+  'src/host/shared-copy.ts': 896,
+  'src/host/trash.ts': 649,
+  'src/host/writing-context.ts': 863,
+}
+
+check('no source file grows past the line cap', () => {
+  const listed = spawnSync('git', ['ls-files', '-z', 'src/**/*.ts', 'src/**/*.tsx', 'src/*.ts', 'src/*.tsx'], {
+    cwd: ROOT,
+    encoding: 'buffer',
+  })
+  if (listed.status !== 0) throw new Error('git ls-files failed (run inside the repository)')
+  const names = listed.stdout.toString('utf8').split('\u0000').filter(Boolean)
+  const counted = new Map()
+  for (const name of names) {
+    const text = readFileSync(join(ROOT, name), 'utf8')
+    const lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
+    counted.set(name, lines)
+  }
+  const offenders = []
+  for (const [name, lines] of counted) {
+    const budget = OVER_CAP_BUDGET[name]
+    if (budget === undefined) {
+      if (lines > SIZE_CAP) offenders.push(`${name}:${String(lines)} (over the ${String(SIZE_CAP)}-line cap: split it)`)
+      continue
+    }
+    if (lines > budget) offenders.push(`${name}:${String(lines)} (grew past its recorded ${String(budget)}: split it back down)`)
+    else if (lines <= SIZE_CAP) offenders.push(`${name}:${String(lines)} (back under the cap: delete its OVER_CAP_BUDGET entry)`)
+  }
+  for (const name of Object.keys(OVER_CAP_BUDGET)) {
+    if (!counted.has(name)) offenders.push(`${name} (budgeted but no longer a tracked source file: delete its entry)`)
+  }
+  if (offenders.length > 0) throw new Error(offenders.join(', '))
+})
+
 if (!skipArtifacts) {
   check('built host bundle is ESM with apply()', () => {
     const path = join(ROOT, 'lib', 'index.js')
