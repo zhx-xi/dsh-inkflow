@@ -28,15 +28,18 @@ function workdir() {
   return mkdtempSync(join(tmpdir(), 'inkflow-private-'))
 }
 
-test('private state: the four subdirectories are the whole vocabulary', () => {
+test('private state: the six subdirectories are the whole vocabulary', () => {
   assert.equal(PRIVATE_STATE_DIR, '.inkflow')
-  // Four since X-18: `candidates/` joined trash/ backup/ audit/ for the extract
-  // pipeline's unreviewed work (ADR-0017 D3). A new name here widens the write
+  // Six since X-25 / ADR-0023: `proposals/` (the proposal inbox, #45) and `jobs/`
+  // (batch-job progress that must survive a restart, #47) joined trash/ backup/ audit/
+  // candidates/ — the four X-18 left behind. A new name here widens the write
   // whitelist, which is why the list is asserted exactly rather than spot-checked.
-  assert.deepEqual([...PRIVATE_STATE_SUBDIRS], ['trash', 'backup', 'audit', 'candidates'])
+  assert.deepEqual([...PRIVATE_STATE_SUBDIRS], ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs'])
   assert.equal(PRIVATE_STATE_IGNORE_LINE, '.inkflow/')
   assert.equal(privateStateDirRelative('trash'), '.inkflow/trash')
   assert.equal(privateStateRelative('trash', 'chapters/vol-01/0001-a.md'), '.inkflow/trash/chapters/vol-01/0001-a.md')
+  assert.equal(privateStateRelative('proposals', 'ch-0001/0001-diff.json'), '.inkflow/proposals/ch-0001/0001-diff.json')
+  assert.equal(privateStateDirRelative('jobs'), '.inkflow/jobs')
   // A leading slash is not a path, it is a separator: it never doubles.
   assert.equal(privateStateRelative('backup', '/world/a.md'), '.inkflow/backup/world/a.md')
 })

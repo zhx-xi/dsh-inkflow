@@ -113,13 +113,21 @@ export type WriteDir = (typeof WRITE_DIRS)[number]
  */
 export const PRIVATE_STATE_DIR = '.inkflow'
 /**
- * The four writable names under `.inkflow/` (roadmap X-18 widened this from three).
+ * The six writable names under `.inkflow/` (roadmap X-18 widened this from three;
+ * X-25 / ADR-0023 widened it again from four).
  *
  * `candidates/` holds the extract pipeline's unreviewed proposals (ADR-0017 D3): they
  * are work files, not derived artefacts, so a rebuild must not be able to sweep them
  * away — which is exactly why they are here instead of under `index/`.
+ *
+ * `proposals/` (#45), `jobs/` (#47) and `audit/` (#43's gate records) follow the same
+ * rule: a piece of prose awaiting the author's decision, or a progress record a long
+ * task must survive a restart with, is not rebuildable. `index/` is (ADR-0006 D2:
+ * delete it and it comes back empty), so anything a rebuild would erase lives here.
+ * The issue texts for #43/#47 named `index/audit/` and `index/jobs/`; X-25 overrides
+ * them for exactly that reason.
  */
-export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit', 'candidates'] as const
+export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs'] as const
 export type PrivateStateSubdir = (typeof PRIVATE_STATE_SUBDIRS)[number]
 
 /**

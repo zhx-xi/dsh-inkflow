@@ -505,15 +505,15 @@ test('io: the write lock file itself is not a writable target', () => {
   }
 })
 
-test('io: the private state directory is writable only inside its four subdirectories', () => {
+test('io: the private state directory is writable only inside its six subdirectories', () => {
   const dir = workdir()
   try {
     const root = project(dir)
 
-    // ADR-0012 / roadmap X-9, X-18: exactly trash/ backup/ audit/ candidates/, one
-    // segment deeper than a content directory because the file lives inside the
-    // subdirectory.
-    for (const sub of ['trash', 'backup', 'audit', 'candidates']) {
+    // ADR-0012 / roadmap X-9, X-18, X-25: exactly trash/ backup/ audit/ candidates/
+    // proposals/ jobs/, one segment deeper than a content directory because the file
+    // lives inside the subdirectory.
+    for (const sub of ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs']) {
       const resolved = resolveWriteTarget(root, `.inkflow/${sub}/chapters/vol-01/0001-a.md`)
       assert.equal(resolved.ok, true, `.inkflow/${sub}/ must be writable`)
       assert.equal(resolved.target.dir, '.inkflow')
@@ -529,9 +529,14 @@ test('io: the private state directory is writable only inside its four subdirect
       '.inkflow/trash/',
       '.inkflow/candidates',
       '.inkflow/candidates/',
+      '.inkflow/proposals',
+      '.inkflow/proposals/',
+      '.inkflow/jobs',
+      '.inkflow/jobs/',
       '.inkflow',
       '.inkflow/../chapters/x.md',
       '.inkflow/trash/../../inkflow.json',
+      '.inkflow/proposals/../../chapters/x.md',
     ]) {
       const resolved = resolveWriteTarget(root, relative)
       assert.equal(resolved.ok, false, `${relative} must be refused`)
@@ -543,6 +548,9 @@ test('io: the private state directory is writable only inside its four subdirect
     assert.equal(resolveWriteTarget(root, '.inkflow/other/a.json').error.code, 'PATH_NOT_WRITABLE')
     assert.equal(resolveWriteTarget(root, '.inkflow/trash/../../inkflow.json').error.code, 'PATH_INVALID')
     assert.equal(resolveWriteTarget(root, '.inkflow/candidates').error.code, 'PATH_INVALID')
+    assert.equal(resolveWriteTarget(root, '.inkflow/proposals').error.code, 'PATH_INVALID')
+    assert.equal(resolveWriteTarget(root, '.inkflow/jobs').error.code, 'PATH_INVALID')
+    assert.equal(resolveWriteTarget(root, '.inkflow/proposals/../../chapters/x.md').error.code, 'PATH_INVALID')
 
     // Resolving still writes nothing: no `.inkflow/` appears on disk.
     assert.equal(existsSync(join(root, '.inkflow')), false)
@@ -555,6 +563,14 @@ test('io: the private state directory is writable only inside its four subdirect
     assert.equal(written.ok, true, '.inkflow/candidates/<file> must be writable')
     assert.equal(readFileSync(join(root, '.inkflow', 'candidates', '20261024T011500Z-character.json'), 'utf8'), '{"schemaVersion":1}\n')
 
+    // X-25's two new subdirectories, written for real: `proposals/` holds a diff a
+    // person has to accept or reject, `jobs/` holds the progress a long task resumes
+    // from. Neither is rebuildable, which is why neither may live under `index/`.
+    const proposal = writeTextAtomic(root, '.inkflow/proposals/ch-0001/0001-diff.json', '{"schemaVersion":1}\n')
+    assert.equal(proposal.ok, true, '.inkflow/proposals/<chapter>/<file> must be writable')
+    assert.equal(readFileSync(join(root, '.inkflow', 'proposals', 'ch-0001', '0001-diff.json'), 'utf8'), '{"schemaVersion":1}\n')
+    const job = writeTextAtomic(root, '.inkflow/jobs/20261025T090000Z-draft.json', '{"status":"paused"}\n')
+    assert.equal(job.ok, true, '.inkflow/jobs/<file> must be writable')
     // The neighbours that must stay out, through the writer and not only the resolver.
     const refusedCandidate = writeTextAtomic(root, '.inkflow/other/a.json', 'x\n')
     assert.equal(refusedCandidate.ok, false, '.inkflow/other/a.json must be refused')
@@ -562,6 +578,36 @@ test('io: the private state directory is writable only inside its four subdirect
     const refusedBare = writeTextAtomic(root, '.inkflow/candidates', 'x\n')
     assert.equal(refusedBare.ok, false, '.inkflow/candidates without a file name must be refused')
     assert.equal(refusedBare.error.code, 'PATH_INVALID')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('io: nothing written for private state lands in index/, which holds only .gitkeep and the database', () => {
+  // X-25: `index/` is the one derived directory. ADR-0006 D2 makes it rebuildable —
+  // delete it and the next call recreates it empty — so a proposal, a job record or a
+  // gate report stored there is a record that vanishes exactly when a user rebuilds.
+  // The property is asserted by listing the directory after every private-state
+  // writer has run, rather than by trusting the call sites.
+  const dir = workdir()
+  try {
+    const root = project(dir)
+    writeFileSync(join(root, 'index', '.gitkeep'), '', 'utf8')
+
+    writeTextAtomic(root, '.inkflow/proposals/ch-0001/0001-diff.json', '{}\n')
+    writeTextAtomic(root, '.inkflow/jobs/20261025T090000Z-draft.json', '{}\n')
+    writeTextAtomic(root, '.inkflow/audit/gate-ch-0001.json', '{}\n')
+    writeTextAtomic(root, '.inkflow/candidates/20261024T011500Z-character.json', '{}\n')
+    writeTextAtomic(root, '.inkflow/trash/chapters/vol-01/0001-a.md', '旧文\n')
+    writeTextAtomic(root, '.inkflow/backup/20261025T090000Z/chapters/vol-01/0001-a.md', '旧文\n')
+
+    const derived = readdirSync(join(root, 'index')).sort()
+    assert.deepEqual(derived, ['.gitkeep'], 'index/ holds the marker and nothing else')
+
+    // And the rule for what may appear later: the database and the files SQLite keeps
+    // beside it. A name outside both sets is the bug this test exists for.
+    const allowed = (name) => name === '.gitkeep' || /\.db(-wal|-shm)?$/.test(name)
+    assert.equal(derived.every(allowed), true)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
