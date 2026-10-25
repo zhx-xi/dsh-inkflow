@@ -290,7 +290,9 @@
 
 ### 4.7 写作上下文注入 — `ctx.systemPrompt`
 
-`ctx.systemPrompt.section(section: PromptSection): () => void`，`PromptSection = { name, order, text: string | ((context: AssembleContext) => string), interpolate?, complete? }`；同名 section 在**同一层**重复注册会抛 `already registered`。本插件注册一个段 `inkflow:writing-context`（order 120，位置只是建议值：宿主按 order 排序，具体邻居到重启后目视才算验证）：写作会话的 system prompt 里直接带上「这是哪本书、写到哪一章、上一章怎么收尾、本章该记起哪些设定」，让模型在**第一次工具调用之前**就知道处境。
+`ctx.systemPrompt.section(section: PromptSection): () => void`，`PromptSection = { name, order, text: string | ((context: AssembleContext) => string), interpolate?, complete? }`；同名 section 在**同一层**重复注册会抛 `already registered`。本插件注册一个段 `inkflow:writing-context`（order 120，位置只是建议值：宿主按 order 排序，具体邻居到重启后目视才算验证）：写作会话的 system prompt 里直接带上「写到哪一章、这一章要做什么、上一章怎么收尾、本章该记起哪些设定」，让模型在**第一次工具调用之前**就知道处境。
+
+**这一段注入的是九段简报**（`briefFor()` → `buildWritingBrief()`，ADR-0022 D1/D2，§4.7 以下几节描述的是它复用的六段装配 `buildWritingContext()` 的取数与阶梯）：预览页、落盘审计与真实注入是**同一次计算**，因此「面板上看到的九段」与「模型收到的」在原理上不可能不同（X-23）。
 
 **为什么不用 `inject: ['systemPrompt']`**：硬注入会让服务缺失直接拖死整个插件（与 skills/preset 同一条纪律，§4.6）。
 
@@ -304,7 +306,9 @@
 
 `AssembleContext` 的**公开**声明只有 `{ scope?, signal? }`；会话身份 `context.agent` 是运行时实际传入、但没写进类型声明的字段（本机 `dsh-memory-evolve` 与 `dsh-novel-forge` 两个插件的实现都依赖它）。因此本插件把 `context` 当 `unknown` 收窄后逐层可选读取，取不到就退回 `process.cwd()`：宿主哪天改掉这个字段，最坏结果是「某些会话不注入」，不是抛错。
 
-#### 四段
+#### 四份材料（六段装配的段；简报里 `outline` / `prevTail` / `world` 也读这四份）
+
+> 注入的段集自 #183 起是简报的九段（`outline → promise → characters → voice → facts → foreshadow → world → prevTail → anchors`，ADR-0022 D2）。下表描述的是**取数**：其中「当前章」「上章结尾」「世界书」三份在简报里分别落到 `outline` / `prevTail` / `world`，而「项目摘要」只存在于六段装配（`buildWritingContext`），**不进简报**——简报的九个 id 里没有 `project`，书名改由宿主的会话/工作区信息与 `outline` 段里的卷/章标识承担。
 
 | # | 段 | 取数 | 依据 |
 |---|---|---|---|
@@ -316,6 +320,8 @@
 只出现书名与**相对路径**（`outlines/ch-0012.md`、`world/门派/白鹤门.md`），绝不出现项目绝对路径——提示词会进会话日志，日志可能被分享。
 
 #### 预算与裁剪
+
+> 注入的阶梯是简报的那一条（ADR-0022 D2）：`world → facts → foreshadow → prevTail`，`outline` / `promise` / `characters` **永不裁**，裁不动就报 `overBudget`（下面的 L0–L5 是六段装配 `buildWritingContext` 的阶梯，它现在只被测试与对照用例调用）。
 
 预算按**估算 token** 计（默认 1200，`config.promptBudgetTokens`）：CJK 1 字 ≈ 1 token、其余 4 字符 ≈ 1 token【推断，无 tokenizer 依赖】。超预算按固定阶梯退化，**第一个装得下的阶梯胜出**：
 
@@ -340,9 +346,9 @@
 
 #### 可观测
 
-`buildWritingContext(root, opts)` 是这一段的唯一取数入口：纯投影（无缓存，除门禁文档化的 `index/` 自愈外无副作用），返回 `{ text, segments, trimmed, tokens, budgetTokens }`。取数规则集中在 `writing-sources.ts`（同步、失败即「缺这一段」），装配在 `prompt.ts`，section 回调只做「取 cwd → build → 返回 text」，所以测试直接断言纯函数；面板的「简报预览」将来复用它（当前版本只提供函数，没有面板入口）。
+`briefFor(root, opts)` 是这一段的唯一取数入口（#183 起走简报；`buildWritingContext(root, opts)` 是同一批段渲染器的六段装配，`tests/prompt.test.js` 拿它与简报逐段对拍等价性）：两者都是纯投影（无缓存，除门禁文档化的 `index/` 自愈外无副作用）。取数规则集中在 `writing-sources.ts` / `brief-sources.ts`（同步、失败即「缺这一段」），装配在 `prompt.ts`，section 回调只做「取 cwd → build → 返回 text」，所以测试直接断言纯函数。`briefFor` 额外带进程内计数（`runs` / `overBudgetRuns` / `last`），由 `inkflow_diagnostics_export` 读走——**注入侧**的裁剪因此可测、可观测，不只是预览侧。
 
-不在范围内：九段写作简报与「承诺书 / 场景契约 / 人物卡 / 账本 / 伏笔」（P1 F-P1-06）、面板预览与编辑。
+不在范围内：`promise`（承诺书）与 `anchors`（场景锚点）的**数据来源**（[#213](https://github.com/zhx-xi/dsh-inkflow/issues/213)：由会话里的模型产出，插件只组装；在此之前这两段如实记 `missing: true`）、简报页的编辑能力。
 
 ### 4.8 构建标识与 stale 检测 — `src/host/build-info.ts`
 
@@ -444,9 +450,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/state.ts` | 插件自身状态（`lastProjectRoot`，仅展示），原子写 | 作品数据、项目解析来源 |
 | `src/host/probe.ts` | 可选 Host 服务的结构化探测（形状校验 + 降级）、错误文本 | 任何业务规则 |
 | `src/host/skills.ts` | 5 个写作技能的读取与校验、按 cwd 门禁的 provider、注册与降级 | 写作品数据、生成正文 |
-| `src/host/writing-context.ts` | 写作上下文的**纯投影**：段渲染（既有六段**注入**装配 `buildWritingContext()` + #43 的**九段简报**装配 `buildWritingBrief()`，两者共用 `writing-context-render.ts` 的同一份段渲染器）、单段上限、预算阶梯、裁剪标记、九段顺序常量 `BRIEF_SEGMENT_ORDER` 与裁剪常量 `BRIEF_TRIM_ORDER`；另含**扩展段注册表** `EXTRA_SEGMENTS`（roadmap X-13：域只声明 `{name,label,capRatio,build}`，顺序与裁剪阶梯归本模块；`build()` 的入参带 `capChars = floor(capRatio × budgetTokens)`，段自己按整行装填——计数与装填必须由一处算，否则 header 会写着 N 条而实际只渲染出几行） | 会话/服务/日志、写任何作品数据 |
+| `src/host/writing-context.ts` | 写作上下文的**纯投影**：段渲染（六段装配 `buildWritingContext()` + #43 的**九段简报**装配 `buildWritingBrief()`——#183 起注入走简报，六段保留为对照与等价性基准；两者共用 `writing-context-render.ts` 的同一份段渲染器）、单段上限、预算阶梯、裁剪标记、九段顺序常量 `BRIEF_SEGMENT_ORDER` 与裁剪常量 `BRIEF_TRIM_ORDER`；另含**扩展段注册表** `EXTRA_SEGMENTS`（roadmap X-13：域只声明 `{name,label,capRatio,build}`，顺序与裁剪阶梯归本模块；`build()` 的入参带 `capChars = floor(capRatio × budgetTokens)`，段自己按整行装填——计数与装填必须由一处算，否则 header 会写着 N 条而实际只渲染出几行） | 会话/服务/日志、写任何作品数据 |
 | `src/host/writing-sources.ts` | 写作上下文的取数：索引查询 + 文件读取（章节对/大纲/上章正文/世界书），全部同步且失败即缺段 | 渲染、预算、Host 装配 |
-| `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等 | 取数规则、渲染规则 |
+| `src/host/prompt.ts` | `systemPrompt` section 的注册：会话目录解析、text 回调、降级与幂等；text 回调调 `briefFor()`（#183：注入的就是简报，与预览/审计同一次计算） | 取数规则、渲染规则 |
 | `src/host/preset.ts` | 写作 preset 的声明（人设 + 工具行）、注册与降级 | 其他插件的业务逻辑、技能正文 |
 | `src/host/tools.ts` | **工具表的装配处**：`ToolDeps` 的对外形状、`buildTools()` 的注册顺序（内置各域 → repair / settings / extract / semantic / etl / review / proposal / jobs / export / series → 域模块，顺序由 `tests/domain-registry.test.js` 逐名钉住）与 `TOOL_OUTPUT_SCHEMA` 的再导出。单个工具的定义在 `src/host/tools/<域>-tools.ts` | 任何工具 schema 与拒绝码的定义（归各域工具文件）、直接扫目录（走 indexer/project/workspace） |
 | `src/host/tools/shared.ts` | 工具面共用的**形状**（不含规则）：`ToolDeps` / `Json`、`{ok, …}` 信封（`SUCCESS_SCHEMA` / `text` / `asRecord`）、`PROJECT_ROOT_PARAM`、CAS 写入基线（`EXPECTED_PARAM` / `expectedParam`）、索引重建失败的两种渲染（`indexBuildFailure` / `ensureFailure`）、`commitLine` | 任何领域判定或拒绝码语义（每个域的拒绝渲染留在该域自己的文件里）、读文件、写盘 |
@@ -545,9 +551,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/ovk-status.ts` | **三个语义动作的唯一实现**（工具与面板共用）：`semanticStatusOf`（设置 + peer + 可用性 + 账本计数 + 队列状态 + 阈值）、`estimateRebuild`（含 `requiresConfirm`：>200 章或 >5 MB）、`rebuildNow`（走队列）、`purgePlanOf` / `purgeApply`（逐条删、**首条失败即停**、只摘掉真正删掉的条目） | 会话 / 书锚点解析（那两个调用方各做各的）、HTTP 细节、工具 schema |
 | `src/host/ovk-tools.ts` | 语义三工具：`inkflow_semantic_status`（只读、无 `confirm`）、`inkflow_semantic_rebuild`（先估值、超阈值要 `confirm`）、`inkflow_semantic_purge`（**唯一会物理删除**、先列清单再 `confirm`、首条失败即停并报位置） | 动作实现（在 `ovk-status.ts`）、直连 OVK、读作品正文以外的内容 |
 | `src/host/ovk-hub.ts` | 设置页「语义检索」块的三条 hub 路由（`GET /hub/semantic`、`POST /hub/semantic/rebuild`、`POST /hub/semantic/purge`）：书锚点走 `resolveHubBook`（注册表 id / 已注册路径 / 目录名，**不接受任意路径**），先把索引刷新鲜再估值，动作一律调 `ovk-status.ts` | 在请求里携带端点或密钥（ADR-0020 决策：连接只来自设置文件）、自己再实现一遍重建 / 清理 |
-| `src/host/writing-context-render.ts` | 两套装配共用的**段渲染器**（#43，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D1/D2）：`### 项目` / `### 当前章` / `### 上一章结尾` / `### 世界书` 四个块的文字、`[trimmed: …]` 标记、`MAX_OUTLINE_CHARS` 与两个裁剪方向（尾段留尾、其余留头）；注入的六段与简报的九段调同一份，所以同一个段在两处不可能渲染成两种文字 | 决定要渲染哪些段、预算与裁剪顺序（归 `writing-context.ts`）、任何 IO |
+| `src/host/writing-context-render.ts` | 两套装配共用的**段渲染器**（#43，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D1/D2）：`### 项目` / `### 当前章` / `### 上一章结尾` / `### 世界书` 四个块的文字、`[trimmed: …]` 标记、`MAX_OUTLINE_CHARS` 与两个裁剪方向（尾段留尾、其余留头）；六段装配与简报的九段调同一份，所以同一个段在两处不可能渲染成两种文字（#183 的等价性用例逐字节对拍这一条） | 决定要渲染哪些段、预算与裁剪顺序（归 `writing-context.ts`）、任何 IO |
 | `src/host/brief-sources.ts` | 简报 `characters` / `voice` 两段的**来源**（#43）：从 `characters` + `character_states` 取「本章大纲 + 上章结尾」里点名的人物卡（姓名/别名 ≥2 字、`firstAppearance` 不晚于本章），按「角色 · 本章状态」与 `voice`（语言基因）整行装填到 `capChars`；无索引/无命中 → `undefined`（简报记 `missing`），有来源但装不下一整行 → `{ text: '', truncated: true }` | 段顺序、预算与裁剪阶梯（归 `writing-context.ts`）、写入人物卡、拿 `entity_mentions` 当来源（那是「已存在章」的提及，而本章还没有正文） |
-| `src/host/brief.ts` | 简报的**审计与两个通道回复**（#43，ADR-0022 D4、[ADR-0023](../adrs/0023-proposal-job-private-placement.md)）：`briefFor`（唯一装配入口 + 进程内超预算计数）、`briefAuditRecord`/`serializeBriefAudit`（确定性：无时钟、无随机 id、无绝对路径，字段顺序即构造顺序）、`writeBriefAudit`（落 `.inkflow/audit/brief-<chapterId>.json`，`sha256` 从磁盘回读）、`GET /brief` 与 `POST /brief/audit`（要 `confirm: true`） | 装配规则（归 `writing-context.ts`）、第二次装配（预览与审计必须是同一份）、把段正文写进审计文件 |
+| `src/host/brief.ts` | 简报的**审计、注入入口与两个通道回复**（#43，ADR-0022 D1/D4、[ADR-0023](../adrs/0023-proposal-job-private-placement.md)）：`briefFor`（唯一装配入口 + 进程内超预算计数；#183 起 `prompt.ts` 也调它，所以注入、预览、审计是同一份）、`briefAuditRecord`/`serializeBriefAudit`（确定性：无时钟、无随机 id、无绝对路径，字段顺序即构造顺序）、`writeBriefAudit`（落 `.inkflow/audit/brief-<chapterId>.json`，`sha256` 从磁盘回读）、`GET /brief` 与 `POST /brief/audit`（要 `confirm: true`） | 装配规则（归 `writing-context.ts`）、第二次装配（预览与审计必须是同一份）、把段正文写进审计文件 |
 | `src/host/etl-source.ts` | 旧 InkFlow 库的**只读取数**（#51）：`readOnly` 打开 `.db`，按 `PRAGMA table_info` **只投影该文件真正有的列**（52 次 `ensure_*` 的历史意味着老库缺列，缺列不该让迁移器拒绝最老的书），把 13 张内容表读成 `LegacyBook`；工程按 `uuid / 名字 / 序号` 解析，缺省选内容最多的那个 | 写库、建表、判迁移规则（归 `etl-plan.ts`）、碰书里的任何文件 |
 | `src/host/etl-plan.ts` | 旧行 → 九目录的**纯映射**（#51，X-29）：13 类各落到哪、卷 id 与目录重建、章号（`keep` 保原号含断层 / `compact` 显式重排）、`(table,id)` 幂等键与 id 钉住旧 uuid（ADR-0014）、`planToken` 与条目集合；每类给 `mapped / dropped（新模型无落点）/ lost（该落没落）` 三档与 ≤1% / 0.5% 结论；文档一律走**该域现有渲染器**（`renderCharacterCard` / `renderWorldFile` / `renderOutlineDocument` / `renderForeshadowDocument` / `renderTimelineDocument` / `renderRelationFile` / `renderPlotPoints`） | 读写磁盘、取写锁、建索引；不发明回收章、历法日期或 dangling 关系的端点 |
 | `src/host/etl.ts` | 迁移的**执行与撤销**（#51，X-29/X-30）：`planEtl` 零写盘、`applyEtl` 复用同一次计算 → 暂存到 `.inkflow/backup/<stamp>/staging/` → **逐文件 `rename`**（按批取写锁，默认 25 个/批，批次间放开）→ 合并写 `.inkflow/backup/etl-idmap.json` → 封包 → `rebuildCatalog` + `buildIndex` + `detectFindings` 报告；`rollbackEtl` 用 `backup.ts` 清单删本轮新建的文件、恢复改过的文件、清暂存、删本轮建的空目录；`commitSuggestion` 只回字符串，**从不跑 git** | 自己的备份格式（复用 `backup.ts`）、覆盖已有内容、整段持锁、自动提交 |

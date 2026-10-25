@@ -20,6 +20,8 @@
 
 > **修订（2026-10-25，#43）**：本节标题原写 `buildWritingContext()` 是「简报的唯一入口」，落地后函数名分开、纪律不变——简报的装配是 `buildWritingBrief()`，旧六段注入仍是 `buildWritingContext()`，两者**共用** `writing-context-render.ts` 的同一份段渲染器。**注入面本轮未切换**（生成路径仍用六段装配）：`tests/prompt.test.js:516` 钉死 `section.text === buildWritingContext(root).text`、同文件 286–357 钉死六段阶梯，迁移要一次性改这三处断言，已在 **#183** 立单专门做。因此本 ADR 的「预览＝注入」目前只对**简报自身**成立（预览与审计同源），对生成路径要等 #183。
 
+> **修订（2026-10-25，#183 落地）**：生成路径已切到 `briefFor()` → `buildWritingBrief()`，注入、`GET /brief` 与落盘审计现在是同一次计算、同一份入参，D1 的「预览＝注入」对生成路径成立。三处旧断言按上面的约定**迁移**而非删除（`tests/prompt.test.js` 里标 `MIGRATED (#183)`）：section 文本改为逐字节等于简报的 `text`，裁剪断言改钉 `BRIEF_TRIM_ORDER` 与「`outline`/`promise`/`characters` 永不裁」，模板外超预算（`overBudget`）取代旧阶梯的「把当前章大纲丢掉」。`buildWritingContext()` 保留为第二套装配，由一条**等价性用例**逐字节对拍「当前章/上章结尾/世界书/账本/伏笔」五个段在两套装配下文字相同——切换因此不是一次静默的内容变更。D2 的「项目摘要不进简报」代价如实记下：注入文本里不再有书名与全书字数，章级身份（标题/卷/序号/状态/大纲）仍由 `outline` 段承担。
+
 预览与真实注入调用**同一个函数、同一份入参**（`{ root, budgetTokens?, tailChars?, chapterSeq? }`），差别只在调用方拿返回值做什么：
 
 1. 生成路径用它拼 `text` 注入系统提示段；
