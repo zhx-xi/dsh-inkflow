@@ -96,7 +96,21 @@ interface GateView {
   readonly checks: readonly { readonly id: string; readonly label: string; readonly count: number }[]
   readonly findings: readonly GateFindingView[]
   readonly truncated: boolean
+  /** 本作有几条豁免、这一章用掉了哪几处（ADR-0028 D6）。 */
+  readonly waivers: GateWaiverView
 }
+
+interface GateWaiverView {
+  readonly configured: number
+  readonly applied: readonly {
+    readonly code: string
+    readonly locator: string
+    readonly fragment: string
+    readonly whitelistLine: number
+  }[]
+}
+
+const NO_WAIVERS: GateWaiverView = { configured: 0, applied: [] }
 
 const EMPTY_VIEW: GateView = {
   chapterId: '',
@@ -110,6 +124,7 @@ const EMPTY_VIEW: GateView = {
   checks: [],
   findings: [],
   truncated: false,
+  waivers: NO_WAIVERS,
 }
 
 function str(value: unknown): string {
@@ -148,6 +163,8 @@ function readGateValue(raw: unknown): GateView {
   for (const [key, value] of Object.entries(byCheckRaw)) byCheck[key] = num(value)
   const checksRaw = Array.isArray(root['checks']) ? (root['checks'] as unknown[]) : []
   const findingsRaw = Array.isArray(root['findings']) ? (root['findings'] as unknown[]) : []
+  const waiversRaw = asRecord(root['waivers'])
+  const appliedRaw = Array.isArray(waiversRaw['applied']) ? (waiversRaw['applied'] as unknown[]) : []
   return {
     chapterId: str(root['chapterId']),
     chapterTitle: str(root['chapterTitle']),
@@ -157,6 +174,18 @@ function readGateValue(raw: unknown): GateView {
     warning: num(counts['warning']),
     info: num(counts['info']),
     byCheck,
+    waivers: {
+      configured: num(waiversRaw['configured']),
+      applied: appliedRaw.map((entry) => {
+        const hit = asRecord(entry)
+        return {
+          code: str(hit['code']),
+          locator: str(hit['locator']),
+          fragment: str(hit['fragment']),
+          whitelistLine: num(hit['whitelistLine']),
+        }
+      }),
+    },
     checks: checksRaw.map((entry) => {
       const check = asRecord(entry)
       return { id: str(check['id']), label: str(check['label']), count: num(check['count']) }
@@ -318,6 +347,19 @@ export function GateQualityView({ sessionId }: GateViewProps) {
         <div style={{ ...muted, ...mono, fontSize: 11 }}>
           {view.recordPath === '' ? '只读：这个页面不写任何文件' : `结论文件：${view.recordPath}（同章同文件两次运行字节相同）`}
         </div>
+        {/* 本作有 N 条豁免——不显示的话，作者过两周就会忘了自己豁免过什么（ADR-0028 D6）。 */}
+        {view.waivers.configured === 0 ? null : (
+          <div style={{ ...muted, ...mono, fontSize: 11 }}>
+            {`本作有 ${String(view.waivers.configured)} 条豁免（library/gate-whitelist.txt），这一章用掉 ${String(
+              view.waivers.applied.length,
+            )} 处`}
+            {view.waivers.applied.length === 0
+              ? ''
+              : `：${view.waivers.applied
+                  .map((hit) => `${hit.code} ${hit.locator}「${hit.fragment}」（第 ${String(hit.whitelistLine)} 行）`)
+                  .join(' · ')}`}
+          </div>
+        )}
         {chapterError === null ? null : <div style={{ ...muted, fontSize: 12 }}>章节列表读取失败：{chapterError}</div>}
         {loadError === null ? null : <div style={{ ...muted, fontSize: 12 }}>{loadError}</div>}
 

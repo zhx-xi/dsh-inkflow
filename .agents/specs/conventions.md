@@ -3,7 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 + 派生索引）、[ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 四态门禁 / catalog / 向导）、[ADR-0007](../adrs/0007-plugin-shared-library.md)（共享库字段与 `.gitignore`）、[ADR-0008](../adrs/0008-panel-data-channel.md)（面板通道）。
 > **依赖**：[data-model.md](data-model.md)（字段字典与不变量）、[architecture.md](architecture.md)（模块边界）。
 > **相关 ADR**：0004（loopback 加固，继承）、0006（目录与门禁，修改 0005 条款）、0007、0008。
-> **references/**：本文件受 800 行上限约束（S6），超出部分下沉到这个目录：[references/impact-and-rename.md](references/impact-and-rename.md)（§5.6 细则）、[references/trash-semantics.md](references/trash-semantics.md)（§3.11.1 细则）、[references/private-purge.md](references/private-purge.md)（§3.11 的回收区细则：#199）。
+> **references/**：本文件受 800 行上限约束（S6），超出部分下沉到这个目录：[references/impact-and-rename.md](references/impact-and-rename.md)（§5.6 细则）、[references/trash-semantics.md](references/trash-semantics.md)（§3.11.1 细则）、[references/private-purge.md](references/private-purge.md)（§3.11 的回收区细则：#199）、[references/gate-waivers-and-thresholds.md](references/gate-waivers-and-thresholds.md)（§3.1 的 `gate` 段与 `library/gate-whitelist.txt` 细则，ADR-0028）。
 > **状态**：活跃。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。契约已定而尚未落地的部分见 §9。
 
 ## 1. 什么算一个 InkFlow 项目
