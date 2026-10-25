@@ -35,6 +35,7 @@ import {
   REVIEW_DIMENSIONS,
   REVIEW_DIMENSION_CODES,
   REVIEW_DIMENSION_SPECS,
+  REVIEW_LIST_LIMIT,
   REVIEW_NODES,
   apply,
   buildReviewCompare,
@@ -116,6 +117,34 @@ function runOn(fixture, request, options = {}) {
   const result = runReview(fixture.root, { chapterId: 'ch-0001', ...request }, { now: NOW, ...options })
   assert.equal(result.ok, true, `the run was refused: ${JSON.stringify(result.error ?? null)}`)
   return result
+}
+
+/** `20261025T095501123Z`: sortable, no separators a Windows path would reject. */
+function seedRuns(root, chapterId, count) {
+  const dir = join(root, '.inkflow', 'review', chapterId)
+  mkdirSync(dir, { recursive: true })
+  const ids = []
+  for (let index = 0; index < count; index += 1) {
+    const runId = `20261025T${String(10000000 + index)}Z`
+    ids.push(runId)
+    const record = {
+      schemaVersion: 1,
+      runId,
+      chapterId,
+      chapterPath: `chapters/vol-01/0001-${chapterId}.md`,
+      chapterTitle: '第一章 推门',
+      wordCount: 20,
+      chapterDigest: 'digest',
+      reviewer: 'model-a',
+      createdAt: '2026-10-25T09:55:01.123Z',
+      dimensions: [],
+      opinions: [],
+      rejected: [],
+      scores: null,
+    }
+    writeFileSync(join(dir, `${runId}.json`), `${JSON.stringify(record, null, 2)}\n`, 'utf8')
+  }
+  return ids
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +521,44 @@ test('运行记录：落 .inkflow/review/<chapterId>/<runId>.json，可回读，
   }
 })
 
+/**
+ * #199: the run list is folded, not truncated away.
+ *
+ * The author's question was "do these stay here forever?" — and the honest answer needs
+ * both halves: the first screen stays readable (one page of runs) AND the older ones stay
+ * reachable. So the fold boundary travels **with the page** (`foldLimit`) instead of being
+ * a second copy of `20` in the panel, and `limit` is how the panel asks for the rest.
+ *
+ * Fails if: the host stops sending `foldLimit`, the default page grows past
+ * `REVIEW_LIST_LIMIT`, a larger `limit` is ignored, or an old run cannot be selected.
+ */
+test('运行列表：默认一页、更早的由 foldLimit 说明、limit 放大后可选中旧运行（#199）', () => {
+  const fixture = book()
+  try {
+    seedRuns(fixture.root, 'ch-0001', 25)
+    const page = buildReviewList({ sessionId: 's-1', root: fixture.root }, '0.0.0-test', { chapterId: 'ch-0001' })
+    assert.equal(page.body.value.runCount, 25)
+    assert.equal(page.body.value.runs.length, REVIEW_LIST_LIMIT, 'the first screen is one page of runs')
+    assert.equal(page.body.value.truncated, true)
+    assert.equal(
+      page.body.value.foldLimit,
+      REVIEW_LIST_LIMIT,
+      'the fold boundary comes from the host: the panel must not keep a second copy of the number',
+    )
+
+    const expanded = buildReviewList({ sessionId: 's-1', root: fixture.root }, '0.0.0-test', { chapterId: 'ch-0001', limit: 25 })
+    assert.equal(expanded.body.value.runs.length, 25, 'limit is what the panel asks with when the fold opens')
+    assert.equal(expanded.body.value.foldLimit, REVIEW_LIST_LIMIT, 'the fold boundary does not move when the page grows')
+
+    const oldest = '20261025T10000000Z'
+    const picked = buildReviewList({ sessionId: 's-1', root: fixture.root }, '0.0.0-test', { chapterId: 'ch-0001', limit: 25, runId: oldest })
+    assert.equal(picked.body.value.selected.runId, oldest, 'a run behind the fold is selectable once the fold opens')
+    assert.equal(picked.body.value.selectedMissing, false)
+  } finally {
+    fixture.done()
+  }
+})
+
 test('运行记录：手改坏的记录文件计进 skippedFiles，不拖垮面板', () => {
   const fixture = book()
   try {
@@ -798,6 +865,47 @@ test('面板纯模型：三态、跳转形状、证据行与空值', async () =>
   assert.equal(view.dimensions[0].anchors[0].value, '4')
   assert.equal(model.readReviewValue(undefined), model.EMPTY_REVIEW)
   assert.equal(model.describeRun(view.runs[0]).includes('model-a'), true)
+})
+
+/**
+ * #199: the panel's fold, as a pure decision.
+ *
+ * The list is one page plus a count of what is behind it; opening the fold must not
+ * *renumber* the fold (the older rows are always the ones past the host's boundary), and a
+ * book whose runs all fit must never show a fold row at all.
+ *
+ * Fails if: `splitRuns` is missing, the boundary is taken from `runs.length` instead of
+ * `foldLimit`, or the older rows are returned in a different order than the host sent them.
+ */
+test('面板纯模型：运行列表分「当前一页」与「更早的 N 次」（#199）', async () => {
+  const model = await loadClientModel('review-model.ts')
+  const rows = Array.from({ length: 25 }, (_, index) => ({
+    runId: `r${String(25 - index).padStart(2, '0')}`,
+    reviewer: 'model-a',
+    createdAt: '2026-10-25T09:55:01.123Z',
+    opinions: 1,
+    located: 1,
+    failed: 0,
+    skipped: 0,
+    scores: null,
+  }))
+
+  const folded = model.splitRuns({ runCount: 25, foldLimit: 20, runs: rows.slice(0, 20) })
+  assert.equal(folded.recent.length, 20)
+  assert.equal(folded.older.length, 0, 'the first page carries no older row: they are behind the fold')
+  assert.equal(folded.olderCount, 5, 'the fold row says how many runs are behind it')
+
+  const expanded = model.splitRuns({ runCount: 25, foldLimit: 20, runs: rows })
+  assert.equal(expanded.recent.length, 20)
+  assert.equal(expanded.older.length, 5)
+  assert.equal(expanded.olderCount, 5)
+  assert.equal(expanded.older[0].runId, 'r05', 'older runs keep the host order (newest first)')
+  assert.equal(expanded.older.at(-1).runId, 'r01')
+
+  const everything = model.splitRuns({ runCount: 3, foldLimit: 20, runs: rows.slice(0, 3) })
+  assert.equal(everything.olderCount, 0, 'a book that fits shows no fold row')
+  assert.equal(everything.older.length, 0)
+  assert.equal(everything.recent.length, 3)
 })
 
 /** Bundle one client model on the fly (the panel tests' own trick: same compiler). */

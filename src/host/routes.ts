@@ -165,6 +165,8 @@ import {
   resumeViaChannel as resumeBatchViaChannel,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
+import { KNOWN_METHODS } from './route-types.js'
+import type { HttpMethod, InternalRoute, RouteInput, RouteReply } from './route-types.js'
 import { MAX_QUERY_CHARS } from './search.js'
 import { REPLACE_APPLY_BODY_FIELDS, replaceApplyReply, replacePreviewReply, searchAllFromQuery } from './search-channel.js'
 import {
@@ -186,63 +188,12 @@ export interface HttpDeps {
   version: string
 }
 
-/** Only the verbs the channel will ever declare; anything else is a 405. */
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-
-const KNOWN_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
-
-interface RouteInput {
-  target: ChannelTarget
-  /** The verb that actually arrived; a route may declare several. */
-  method: HttpMethod
-  query: URLSearchParams
-  version: string
-  /**
-   * The plugin's own data directory, for the reads that need plugin-level state rather than
-   * book content (the settings file behind the semantic backend's endpoint, #41).
-   */
-  dataDir: string
-  /** `pattern` capture groups, still percent-encoded. */
-  params: readonly string[]
-  /** Parsed JSON object body (empty for a bodyless request). */
-  body: JsonRecord
-}
-
-interface RouteReply {
-  status: number
-  body: JsonRecord
-  headers?: Record<string, string>
-}
-
-interface InternalRoute {
-  /** Human name for tests/logs, not a wire value. */
-  readonly name: string
-  readonly pattern: RegExp
-  /** Declared per route. A verb outside this list is a 405 with `Allow`. */
-  readonly methods: readonly HttpMethod[]
-  /**
-   * The only body fields this route accepts (writes only; `sessionId` is always
-   * allowed). Anything else is a 400 `UNEXPECTED_BODY_FIELD`, so a client
-   * cannot smuggle a directory or a future knob past the guards.
-   */
-  readonly body?: readonly string[]
-  /**
-   * The only QUERY keys this route reads (`sessionId` is always allowed, exactly as it is
-   * in a body). Anything else is a 400 `UNKNOWN_QUERY_PARAM`.
-   *
-   * Required, not optional (issue #200): the channel used to hand the whole query string to
-   * a handler that read three keys and silently ignored the rest, so `?chapterID=` (a
-   * spelling mistake) answered the DEFAULT chapter with HTTP 200 and the caller could not
-   * see that its target had been dropped. A route that takes no knobs says so with `[]`,
-   * and there is no third state where nobody declared anything.
-   */
-  readonly query: readonly string[]
-  /**
-   * Read routes may have to make the derived index fresh first (issue #5), so a
-   * handler is allowed to be async; the dispatcher awaits it either way.
-   */
-  readonly handle: (input: RouteInput) => RouteReply | Promise<RouteReply>
-}
+/**
+ * The route contract (`HttpMethod` / `RouteInput` / `RouteReply` / `InternalRoute` /
+ * `KNOWN_METHODS`) lives in `route-types.ts`: this file is at its line budget, and #199's
+ * purge routes keep their descriptors next to the channel that answers them, so the shape
+ * needs a home that is not "inside the biggest dispatch loop".
+ */
 
 function ok(value: JsonRecord): JsonRecord {
   return { ok: true, value }
@@ -637,17 +588,24 @@ const ROUTES: readonly InternalRoute[] = [
     // GET-only and **read-only**: the runs are written by `inkflow_review_run`, never by a
     // page refresh — the record carries a timestamp, so a GET that wrote would create a run
     // nobody asked for.
+    //
+    // `limit` (#199) is how the panel opens the fold: the first screen keeps the declared
+    // page (`REVIEW_LIST_LIMIT`), and "更早的 N 次运行" asks again with a bigger page. The
+    // fold boundary itself travels back as `foldLimit`, so the panel never keeps a second
+    // copy of the number.
     name: 'review',
     pattern: /^\/review$/,
     methods: ['GET'],
-    query: ['chapterId', 'runId'],
+    query: ['chapterId', 'runId', 'limit'],
     handle: ({ target, query, version }) => {
       const chapterId = (query.get('chapterId') ?? '').trim()
       const runId = (query.get('runId') ?? '').trim()
+      const pageSize = Number(query.get('limit') ?? '')
       return withAddressedBy(
         buildReviewList({ sessionId: target.sessionId, root: target.root }, version, {
           ...(chapterId === '' ? {} : { chapterId }),
           ...(runId === '' ? {} : { runId }),
+          ...(Number.isFinite(pageSize) && pageSize > 0 ? { limit: pageSize } : {}),
         }),
         addressedByOf(query, ['chapterId']),
       )
