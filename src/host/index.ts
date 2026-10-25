@@ -68,6 +68,36 @@ export { PROMPT_SECTION_NAME, PROMPT_SECTION_ORDER, registerWritingContext } fro
 export type { WritingContextRegistration } from './prompt.js'
 
 /**
+ * The calendar table and its one conversion (issue #180, roadmap X-28).
+ *
+ * Exported because the round trip that makes this module worth having —
+ * `toAbsolute(fromAbsolute(n)) === n` for every day, leap days and era boundaries
+ * included — is a property of the built artifact or it is a claim. #48 adds the
+ * derived absolute-day column to the index and #43's deadline work compares
+ * chapters; both call these functions instead of growing a second day count.
+ */
+export {
+  DEFAULT_CALENDAR,
+  calendarDaysBetween,
+  eraAt,
+  findEra,
+  fromAbsolute,
+  isLeapYear,
+  monthLength,
+  toAbsolute,
+  validateCalendarSpec,
+} from './calendar.js'
+export type {
+  CalendarDate,
+  CalendarError,
+  CalendarErrorCode,
+  CalendarResult,
+  CalendarSpec,
+  EraSpec,
+  LeapRule,
+} from './calendar.js'
+
+/**
  * The frontmatter reader/writer is re-exported from the bundle entry so the
  * contract tests can drive it directly (they import lib/index.js only). The P1
  * proposal writer uses the same pair in-process, so this is not a test-only

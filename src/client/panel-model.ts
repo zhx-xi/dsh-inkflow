@@ -603,6 +603,14 @@ export interface PanelTab {
  * read-only board: late / open / by linked entity) and 体检 (issue #33 — the five-family
  * consistency report with one-click export). 大纲 stays DISABLED with its release note:
  * a button that opens nothing is worse than a disabled one that says when it arrives.
+ *
+ * Four more rows are registered **disabled** by #180 (roadmap §2.4 「面板落点」): the
+ * 0.5.0 pages that two or more issues each will land. They are rows here and not later
+ * additions because the row order is this file's, not the feature's: four parallel
+ * issues inserting themselves into one array is a merge conflict per rebase, while a
+ * placeholder line is a one-word edit (`available: true`) nobody has to re-argue. The
+ * note is the same contract as 大纲's — what the page will be, and when — so a user who
+ * clicks nothing still learns something (X-12).
  */
 export const PANEL_TABS: PanelTab[] = [
   { id: 'chapters', label: '章节', available: true },
@@ -616,5 +624,13 @@ export const PANEL_TABS: PanelTab[] = [
   // it is a proposal waiting for a decision, and mixing "what is true" with "what might
   // become true" in one tree is how an author approves a duplicate by accident.
   { id: 'candidates', label: '候选', available: true },
+  // 0.5.0 placeholders (#180). Each belongs to a page one of the B1/B2 issues lands:
+  // `brief` #43 (nine segments + token share + what was trimmed), `gate` #44 (the seven
+  // quality gates with evidence), `review` #46 (审稿意见 by chapter/paragraph/offset) and
+  // `proposal` #45 (diff accepted or rejected piece by piece, then apply/roll back).
+  { id: 'brief', label: '简报', available: false, note: '0.5.0 起 · 九段简报与裁剪记录' },
+  { id: 'gate', label: '门禁', available: false, note: '0.5.0 起 · 七项门禁与逐条证据' },
+  { id: 'review', label: '审稿', available: false, note: '0.5.0 起 · 审稿意见与证据链' },
+  { id: 'proposal', label: '提案', available: false, note: '0.5.0 起 · 逐段接受与回滚' },
 ]
 

@@ -186,7 +186,7 @@
 
 | # | 契约 | 说明 |
 |---|---|---|
-| X-23 | **一个装配、一份预览**：简报的预览与真实注入必须是同一次计算 | `buildWritingContext()` 是唯一装配点；预览走同一函数、同一入参，返回的每段 `{id, bytes, tokens, truncated}` 与生成时落盘的审计记录逐字段相等（用例断言，不靠人眼）；9 段顺序与预算表由 B0 的常量表定死：`outline → promise → characters → voice → facts → foreshadow → world → prevTail → anchors`；超预算按 `world → facts → foreshadow → prevTail` 依次裁，`outline`/`promise`/`characters` 不裁；每次裁剪都要埋点（段 id + 裁掉比例），超预算次数进诊断包 |
+| X-23 | **一个装配、一份预览**：简报的预览与真实注入必须是同一次计算 | `buildWritingContext()` 是唯一装配点；预览走同一函数、同一入参，返回的每段 `{id, bytes, tokens, truncated}` 与生成时落盘的审计记录逐字段相等（用例断言，不靠人眼）；9 段顺序与裁剪优先级由 B0 在 ADR-0022 D2 定死（`outline → promise → characters → voice → facts → foreshadow → world → prevTail → anchors`）；超预算按 `world → facts → foreshadow → prevTail` 依次裁，`outline`/`promise`/`characters` 不裁；**各段预算份额与那张常量表随 #43 落地**（无消费者的常量表属投机代码），落地时按 ADR-0022 D2 逐字抄、不得重排；每次裁剪都要埋点（段 id + 裁掉比例），超预算次数进诊断包 |
 | X-24 | **门禁/审稿/校对统一用 findings 形状** | 复用 X-14 的 `{code,severity,kind,locator,detail,hint,fixable}`；`fixable` 只对机械可修项为 true（校对类可修，#46 的审美类判读一律 false）；新 `code` 必须同一提交写进 [data-model](data-model.md) §5（`tests/findings.test.js` 双向对拍）；门禁结果落 `.inkflow/audit/gate-<chapterId>.json`，**确定性可 diff**（同输入同字节，不含时间戳） |
 | X-25 | **提案、作业、审计的落点只在 `.inkflow/`** | `.inkflow/{proposals,jobs,audit}/` 扩进 `PRIVATE_STATE_SUBDIRS` 与 `resolveWriteTarget` 白名单；`index/` 除 `.gitkeep`/`*.db` 外一律为空（用例断言）；`.gitignore` 的 `.inkflow/` 行仍由首次使用方 append-only 追加（X-9 不变）。#43/#47 正文里的 `index/audit/`、`index/jobs/` 以本条为准 |
 | X-26 | **插件不内嵌模型客户端，AI 环节一律「会话产出、插件落地」** | 适用 #43 承诺书/细纲、#45 修订正文、#46 审稿意见、#47 批量起草。插件侧接口只接收「已产出的文本 + 元信息」，做校验、定位、队列、落地与回滚；没有 API key、没有 HTTP 出站调用（OVK 检索除外，那是 ADR-0009 的只读检索面） |
