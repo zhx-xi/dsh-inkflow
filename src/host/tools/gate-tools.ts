@@ -1,7 +1,7 @@
 /**
  * The quality-gate tool (split out of `tools.ts`, #193): `inkflow_gate_check` (#44,
- * X-24/X-26). Seven checks over one chapter; the verdict lands in
- * `.inkflow/audit/gate-<chapterId>.json` (ADR-0022 D4) — derived, idempotent, never
+ * X-24/X-26). Eight checks over one chapter (#212 added the eighth, 退化检测); the verdict
+ * lands in `.inkflow/audit/gate-<chapterId>.json` (ADR-0022 D4) — derived, idempotent, never
  * inside a content directory and never inside `index/` (X-25).
  */
 
@@ -14,7 +14,7 @@ import { PROJECT_ROOT_PARAM, SUCCESS_SCHEMA, asRecord, optionalString, text } fr
 
 export function gateTools(deps: ToolDeps): ToolDefinition[] {
   /**
-   * The quality gate (#44, X-24/X-26). Seven checks over **one** chapter, and the verdict
+   * The quality gate (#44, X-24/X-26). Eight checks over **one** chapter, and the verdict
    * lands in `.inkflow/audit/gate-<chapterId>.json` (ADR-0022 D4) — derived, idempotent,
    * never inside a content directory and never inside `index/` (X-25).
    *
@@ -28,14 +28,17 @@ export function gateTools(deps: ToolDeps): ToolDefinition[] {
   const gateCheck: ToolDefinition = {
     name: 'inkflow_gate_check',
     description:
-      'Run the seven quality gates over one chapter: word count against the target range, the chapter-end hook, the six ' +
+      'Run the eight quality gates over one chapter: word count against the target range, the chapter-end hook, the six ' +
       'de-AI dimensions (sentence length, dash/ellipsis density, parallel structure, explanatory narration, modifier ' +
       'density, paragraph-end clichés), consistency with the setting library (pov, ledger values that no longer hold), ' +
-      'a sensitive-word self-check, platform form rules (pasted-in residue, off-site promotion) and mechanical ' +
+      'a sensitive-word self-check, platform form rules (pasted-in residue, off-site promotion), mechanical ' +
       'proofreading (punctuation pairing, half/full-width mixing, doubled words, near-miss character names, mixed ' +
-      'appellations, Arabic numbers with Chinese measure words). Every judgement is a regular expression, a static ' +
-      'word list or an arithmetic threshold: no model is called and nothing leaves the process, so one chapter costs ' +
-      'a few file reads. The reply carries the seven checks with their counts and one row per finding (code, ' +
+      'appellations, Arabic numbers with Chinese measure words) and degeneration detection (verbatim repetition, a ' +
+      'body cut off mid-sentence, placeholder/meta lines such as 「（此处继续展开）」, engineering words such as TODO or ' +
+      'lorem; text inside quotation marks is a character\'s line and is exempt). Every judgement is a regular ' +
+      'expression, a static word list or an arithmetic threshold: no model is called and nothing leaves the process, so ' +
+      'one chapter costs ' +
+      'a few file reads. The reply carries the eight checks with their counts and one row per finding (code, ' +
       'severity, locator, what is wrong, what to do), and the verdict is written to ' +
       '`.inkflow/audit/gate-<chapterId>.json` — no timestamp, no absolute path, the same bytes for the same chapter ' +
       'and files, so two runs diff empty. Omit `chapterId` for the book\'s last chapter; pass `write: false` to ' +
@@ -77,7 +80,7 @@ export function gateTools(deps: ToolDeps): ToolDefinition[] {
           `门禁：${String(v['chapterId'] ?? '?')}（${String(v['wordCount'] ?? 0)} 字）· ` +
             `共 ${String(counts['total'] ?? 0)} 项（需要处理 ${String(counts['warning'] ?? 0)} · 提示 ${String(counts['info'] ?? 0)}）`,
         )
-        lines.push(`七项：${checks.map((check) => `${String(check['label'])} ${String(check['count'])}`).join(' · ')}`)
+        lines.push(`八项：${checks.map((check) => `${String(check['label'])} ${String(check['count'])}`).join(' · ')}`)
         const file = asRecord(v['file'])
         if (file['path'] === undefined) {
           lines.push('未落盘（write: false）。')
@@ -85,7 +88,7 @@ export function gateTools(deps: ToolDeps): ToolDefinition[] {
           lines.push(`结论：${String(file['path'])}（${String(file['bytes'] ?? 0)} 字节，同章同文件两次运行字节相同）`)
         }
         if (findings.length === 0) {
-          lines.push('七项门禁都没有发现问题。')
+          lines.push('八项门禁都没有发现问题。')
           return text(lines)
         }
         lines.push('')

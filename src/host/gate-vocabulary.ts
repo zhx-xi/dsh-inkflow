@@ -1,14 +1,17 @@
 /**
- * Issue #44 — the quality gate's vocabulary: the seven checks, their code table, the
+ * Issue #44 — the quality gate's vocabulary: the eight checks, their code table, the
  * thresholds and the input types the rules read.
  *
  * Split out of `gate-rules.ts` for two reasons, both structural rather than cosmetic:
  *
  *   * **the vocabulary is what three readers share** — `gate.ts` (report, serialiser), the
- *     tool/`GET /gate` (`check` labels, counts) and the seven rules themselves. Keeping it
+ *     tool/`GET /gate` (`check` labels, counts) and the rules themselves. Keeping it
  *     beside the rules made one file that both defines and uses the words, which is where a
  *     second definition starts growing;
  *   * the rules file was past the project's 600-line ceiling; the words are not the rules.
+ *
+ * #212（退化检测，第 8 项）把它的阈值与词表也放在这里（`DEGENERATION`，见下文「出处」一
+ * 节）：ADR-0027 D5 要求凡引用的数字能在这一类单一来源文件里找到，散在规则文件里迟早漂移。
  *
  * Two contracts live here and nowhere else:
  *
@@ -24,7 +27,7 @@
 import { findingCode } from './findings.js'
 import type { Finding, FindingLocator, FindingSeverity } from './findings.js'
 
-/** The seven checks, in report order. Nothing may reorder this tuple. */
+/** The eight checks, in report order. Nothing may reorder this tuple. */
 export const GATE_CHECK_IDS = [
   'wordCount',
   'hook',
@@ -33,6 +36,7 @@ export const GATE_CHECK_IDS = [
   'sensitive',
   'platform',
   'proofread',
+  'degeneration',
 ] as const
 export type GateCheckId = (typeof GATE_CHECK_IDS)[number]
 
@@ -44,6 +48,7 @@ export const GATE_CHECK_LABELS: Readonly<Record<GateCheckId, string>> = {
   sensitive: '敏感自查',
   platform: '平台规则',
   proofread: '机械校对',
+  degeneration: '退化检测',
 }
 
 /**
@@ -81,6 +86,105 @@ export const GATE_DEFAULTS: GateThresholds = {
   aiSentenceEvenness: 0.34,
   aiModifierPer1000: 55,
   maxFindingsPerRule: 5,
+}
+
+// ---------------------------------------------------------------------------
+// 8 退化检测（#212）的阈值与词表
+// ---------------------------------------------------------------------------
+
+/**
+ * One detector: a regex **source** plus the label a finding prints.
+ *
+ * The source is kept as a string rather than a shared `RegExp` on purpose: a `/g` object
+ * carries `lastIndex` between calls, so two rules sharing one instance would silently skip
+ * every other line. Each use compiles a fresh one.
+ */
+export interface DegenerationPattern {
+  readonly source: string
+  readonly label: string
+}
+
+/**
+ * Everything the eighth check reads — thresholds and word lists, one place.
+ *
+ * ## 出处（ADR-0027 D2/D5）
+ *
+ * 类别划分、以及「**引号外叙述判定 + 对话行豁免**」这条形态，参考
+ * `zenstory-ai/oh-story-claudecode` 的 `skills/story-deslop/scripts/check-degeneration.js`
+ * （MIT，15,453 字节，只 `require` `fs`/`path`）。按 ADR-0027 的分档：
+ *
+ *   * **D2（数据表可引用）**：四类检测的名字、`TODO` / `lorem` / 工程词一类的词面，
+ *     以及复读阈值的量级（长句 ≥12 字 × ≥3 次、紧邻整行 ≥8 字）；
+ *   * **D5（数字可追溯）**：标 **自标** 的号码是本项目按「正文最不容易误伤」调的，理由写在
+ *     每个值的注释里；凡自标值，出处只到「类别启发来自 oh-story」，数值不是他们的；
+ *   * **D3（代码）**：判定代码按本仓形状重写（不在 `gate-rules.ts`，Finding 走
+ *     `gateFinding()`，地址是 `path#L<n>`），改写点列在 `gate-degeneration.ts` 的文件头。
+ *
+ * 本表**不进** `GateThresholds`：那份表是「同一次判决要能复现」的参数（ADR-0022 D4），
+ * 会随判决写进 `.inkflow/audit/gate-<chapterId>.json`；这几条是代码里的固定判据、调用方
+ * 不能改，写进结论文件只会让文件多出四个恒不变的键。
+ */
+export interface DegenerationVocabulary {
+  /** 同句连发：一句要有多长才值得计数（可见字，不含标点）。自标：12。 */
+  readonly repeatSentenceMinChars: number
+  /** 同句连发：出现几次算打转。12/3 是 oh-story 的标定，本仓沿用。 */
+  readonly repeatSentenceMinCount: number
+  /** 紧邻整行重复：整行要有多少可见字才判（短句复沓是体裁手法）。8 沿用 oh-story。 */
+  readonly repeatLineMinChars: number
+  /** 整段重复：只重复 2 次也要报，所以门槛抬高到 16 可见字。自标。 */
+  readonly repeatBlockMinChars: number
+  /** Findings 与 message 里回显的片段长度（字符）。自标：24。 */
+  readonly excerptChars: number
+  /** 一个**已写完**的段落以这些收尾；正文末段不以此结尾即视为截断。 */
+  readonly truncatedTerminal: string
+  /** 成对引号（台词、系统提示、引用物件）。引号内的内容不参与占位/工程词与复读判定。 */
+  readonly quotedSpanSources: readonly string[]
+  /** 占位语与元话语。 */
+  readonly placeholder: readonly DegenerationPattern[]
+  /** 工程词泄漏（写作流水线术语与模板占位）。 */
+  readonly metaLeak: readonly DegenerationPattern[]
+}
+
+export const DEGENERATION: DegenerationVocabulary = {
+  repeatSentenceMinChars: 12,
+  repeatSentenceMinCount: 3,
+  repeatLineMinChars: 8,
+  repeatBlockMinChars: 16,
+  excerptChars: 24,
+  // A finished paragraph ends on a sentence terminator, a closing quote, an ellipsis run or a
+  // closing bracket. `，、；：` are deliberately absent — a body ending on a comma is the
+  // accident this rule exists for.
+  truncatedTerminal: '[。！？!?…”"』」）)】》]$',
+  // 成对引号：只收中文书名式与弯/直双引号。英文单引号（'…'）故意不收：中文正文里它是词内
+  // 撇号的多，成对出现极少，收进来反而会把两处撇号之间的正常叙述整段吃掉。
+  quotedSpanSources: ['「[^」]*」', '『[^』]*』', '【[^】]*】', '“[^”]*”', '"[^"]*"'],
+  placeholder: [
+    // 「以下是第 N 章」：批量作业里最典型的开场。锚在行首，配合「是/第」两个信号，
+    // 所以「以下三条你记好」这种正常叙述不会命中。
+    { source: '^\\s*以下是\\s*第\\s*[一二三四五六七八九十百千万两0-9]+\\s*章', label: '元话语（以下是第 N 章）' },
+    { source: '^\\s*以下是(?:本章|正文|内容|本节|我(?:根据|按照)|根据|大纲)', label: '元话语（以下是…）' },
+    { source: '^\\s*本章(?:将|主要|讲述|内容|小结|要点|分为)', label: '元话语（本章将…）' },
+    // 「（此处继续展开）」一类：括号认的是形态，「括号内出现继续/省略 + 至多 12 字说明」。
+    { source: '[（(]\\s*(?:此处|以下|这里|下文|后续)?\\s*(?:继续展开|继续写|省略|略去|待补|补充说明)[^）)]{0,12}[）)]', label: '占位符（括号省略）' },
+    { source: '(?:此处|以下|这里|下文|后续)\\s*(?:继续展开|继续写|省略|略去|待补)', label: '占位语' },
+    // 拒绝语：只在引号外算（对话里是角色在拒绝）。见 gate-degeneration.ts 的 masked()。
+    { source: '我(?:无法|不能|没法)(?:答应|承诺|继续|完成|生成|创作)', label: '元话语（生成拒绝语）' },
+    // 收尾寒暄一律锚行首：它们是整段性质的话，而「如需继续赶路，天亮前就得出门」这类正常叙述
+    // 也以「如需」开头，只有段落级的位置信号能把两者分开。
+    { source: '^\\s*(?:如需|如果需要)(?:继续|更多|其他)', label: '元话语（收尾寒暄）' },
+    { source: '^\\s*(?:希望|请)(?:以上|这个|本章)(?:内容)?(?:对|能)', label: '元话语（收尾寒暄）' },
+  ],
+  metaLeak: [
+    { source: '\\bTODO\\b', label: '工程词（TODO）' },
+    { source: '\\bFIXME\\b', label: '工程词（FIXME）' },
+    { source: 'lorem', label: '模板占位（lorem）' },
+    { source: 'as an AI', label: '元信息（英文 AI 自指）' },
+    { source: '作为(?:一个)?(?:AI|人工智能|大?语言模型|智能助手)', label: '元信息（AI 自指）' },
+    { source: '\\{\\{[^}]{0,40}\\}\\}', label: '模板占位（{{…}}）' },
+    { source: '占位符|placeholder', label: '模板占位' },
+    // 写作流水线术语：漏进正文就破坏代入感，而漏词的模型自己发现不了。
+    { source: '细纲|情节点|卷纲|字数目标|章首钩子|章尾钩子', label: '工程词（写作流水线术语）' },
+  ],
 }
 
 /** One character card as the gates read it: names only — the gates never judge a card. */
@@ -184,6 +288,14 @@ export const GATE_CODES: readonly GateCodeSpec[] = [
   { code: 'GATE_PROOF_APPELLATION_MIXED', check: 'proofread', severity: 'info', hint: '同一章内统一称谓：选定一个，其余改成动作指代' },
   { code: 'GATE_PROOF_ARABIC_MEASURE', check: 'proofread', severity: 'info', hint: '正文数量一般写汉字（三个、五次），年份与编号除外' },
   { code: 'GATE_PROOF_NUMBER_MIXED', check: 'proofread', severity: 'info', hint: '同一段里统一数字写法：要么全阿拉伯数字，要么全汉字' },
+
+  // 8 退化检测（#212）— 「模型是不是写坏了」，不是「写得好不好」。四码全 `warning`：判据是
+  // 确定性的（重复 / 无收尾标点 / 占位语 / 工程词），误报面小，而批量作业的暂停策略读的是
+  // warning —— 降成 `info` 就变成没人会处理的提示。
+  { code: 'GATE_DEGEN_REPEAT', check: 'degeneration', severity: 'warning', hint: '删掉重复的那一段/那一句，保留一处；模型打转通常要重写该段' },
+  { code: 'GATE_DEGEN_TRUNCATED', check: 'degeneration', severity: 'warning', hint: '补完结尾：正文末段要停在句末或收尾标点上，不要停在半句' },
+  { code: 'GATE_DEGEN_PLACEHOLDER', check: 'degeneration', severity: 'warning', hint: '删掉占位语与元话语，按大纲把这一段真正写出来' },
+  { code: 'GATE_DEGEN_META_LEAK', check: 'degeneration', severity: 'warning', hint: '删掉写作流水线术语与模板占位，改成角色/场景内的表达' },
 ]
 
 const SPEC_BY_CODE = new Map(GATE_CODES.map((spec) => [spec.code, spec]))

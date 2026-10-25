@@ -194,6 +194,13 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'GATE_PROOF_APPELLATION_MIXED', group: 'catalog', fixable: false, meaning: '同一角色在同一章内混用不同称谓' },
   { code: 'GATE_PROOF_ARABIC_MEASURE', group: 'catalog', fixable: false, meaning: '阿拉伯数字后紧接中文量词' },
   { code: 'GATE_PROOF_NUMBER_MIXED', group: 'catalog', fixable: false, meaning: '同一段里阿拉伯数字与汉字数字混写' },
+  // 8 退化检测（#212）— 「模型是不是写坏了」：七项判的是「写得好不好」，判不出复读、截断、
+  // 占位语与工程词泄漏，而批量作业正是靠这条关口决定要不要落盘。四码都挂在章族（`catalog`）：
+  // 它们全是「这一章的文本本身坏了」的事实，与设定库是否一致无关。
+  { code: 'GATE_DEGEN_REPEAT', group: 'catalog', fixable: false, meaning: '复读：紧邻整行重复 / 整段重复 / 同句连发' },
+  { code: 'GATE_DEGEN_TRUNCATED', group: 'catalog', fixable: false, meaning: '章末停在半句（正文不再以句末/收尾标点结束）' },
+  { code: 'GATE_DEGEN_PLACEHOLDER', group: 'catalog', fixable: false, meaning: '占位语与元话语（（此处继续展开）/以下是第 N 章/生成拒绝语）' },
+  { code: 'GATE_DEGEN_META_LEAK', group: 'catalog', fixable: false, meaning: '工程词泄漏（TODO/lorem/{{占位}}/as an AI/写作流水线术语）' },
 
   // The review DAG (#46, roadmap X-24/X-26). One code per dimension rather than one
   // `REVIEW_OPINION`: the code is what a report groups and a repair pass dispatches on, and

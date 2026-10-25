@@ -1,10 +1,10 @@
 /**
  * The quality-gate tab (#44, ADR-0022 D4, roadmap X-12).
  *
- * One screen: pick a chapter, read the seven checks, filter by severity. Nothing here
+ * One screen: pick a chapter, read the eight checks, filter by severity. Nothing here
  * decides anything — the Host runs the gate (`gate.ts`) and this page prints what it said:
  *
- *   1. **七项各多少项** — a clean check is visible as a zero instead of being
+ *   1. **八项各多少项** — a clean check is visible as a zero instead of being
  *      indistinguishable from a check nobody ran;
  *   2. **每条 finding 的地址、说什么、怎么办** — the address is the same string the
  *      conclusion file carries, so a row can be pasted into an issue;
@@ -352,7 +352,7 @@ export function GateQualityView({ sessionId }: GateViewProps) {
 
         {!loading && loadError === null && view.total === 0 && view.checks.length > 0 ? (
           <div style={{ ...muted, fontSize: 12 }}>
-            七项门禁都没有发现问题。门禁只做机械判读（零模型调用）：它拦的是错字与硬伤，不管你写得好不好。
+            八项门禁都没有发现问题。门禁只做机械判读（零模型调用）：它拦的是错字与硬伤，不管你写得好不好。
           </div>
         ) : null}
         {view.truncated ? (

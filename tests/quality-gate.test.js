@@ -589,7 +589,7 @@ async function callTool(harness, name, args) {
   return tool.execute(args, { signal: AbortSignal.timeout(15000), agent: { id: 'test-session' } })
 }
 
-test('质量门禁：工具 inkflow_gate_check 回七项、落一个文件，write: false 只算不写', async () => {
+test('质量门禁：工具 inkflow_gate_check 回八项、落一个文件，write: false 只算不写', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'inkflow-qgate-tool-'))
   const fixture = book({ chapters: [{ id: 'ch-0001', body: `${CLEAN}\n\n她的的剑还挂在墙上。` }] })
   try {
@@ -597,7 +597,9 @@ test('质量门禁：工具 inkflow_gate_check 回七项、落一个文件，wri
     const value = await callTool(harness, 'inkflow_gate_check', { projectRoot: fixture.root })
     assert.equal(value.ok, true)
     assert.deepEqual(value.checks.map((check) => check.id), [...GATE_CHECK_IDS])
-    assert.equal(value.checks.length, 7)
+    // #212 的预期变更：门禁从七项变八项（新增 degeneration）。这条断言是本次唯一按「七→八」
+    // 显式更新的项数断言，不是放宽 —— 上一条 `deepEqual(GATE_CHECK_IDS)` 仍然钉住顺序。
+    assert.equal(value.checks.length, 8)
     assert.ok(value.counts.total > 0)
     assert.equal(value.file.path, '.inkflow/audit/gate-ch-0001.json')
     assert.ok(readFileSync(join(fixture.root, '.inkflow/audit/gate-ch-0001.json'), 'utf8').includes('GATE_PROOF_REPEAT_WORD'))

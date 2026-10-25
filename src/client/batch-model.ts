@@ -259,7 +259,7 @@ export function describeJobStatus(status: string): string {
 /** `门禁 12 项（需要处理 2 · 提示 10）` — the same counts the tool reply prints. */
 export function describeGate(gate: BatchChapterView['gate']): string | null {
   if (gate === null) return null
-  if (gate.total === 0) return '门禁 0 项（七项都没发现问题）'
+  if (gate.total === 0) return '门禁 0 项（八项都没发现问题）'
   return `门禁 ${gate.total} 项（需要处理 ${gate.warning} · 提示 ${gate.info}）${gate.paused ? ' → 停下来等批准' : ''}`
 }
 

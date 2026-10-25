@@ -485,7 +485,7 @@ origin:
 
 两者都是「书走到哪儿」的函数而不是文件属性，所以不写进 `validation_issues`（每天的答案都不同，存进索引就会过期）；它们进 `FINDING_CODES` 是为了让报告与修复共用一套词（X-14）。
 
-**仅门禁期诊断**（质量问题，不是不变量：写入侧与重建侧都不报，只出现在质量门禁结论 `.inkflow/audit/gate-<chapterId>.json` 里，由 [`gate-rules.ts`](../../src/host/gate-rules.ts) 产出，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D3/D4）：
+**仅门禁期诊断**（质量问题，不是不变量：写入侧与重建侧都不报，只出现在质量门禁结论 `.inkflow/audit/gate-<chapterId>.json` 里，由 [`gate-rules.ts`](../../src/host/gate-rules.ts)（第 1–7 项）与 [`gate-degeneration.ts`](../../src/host/gate-degeneration.ts)（第 8 项退化检测）产出，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D3/D4）：
 
 | code | 门禁项 | 判据（零模型：正则 / 词表 / 阈值） | `group` | `fixable` |
 |---|---|---|---|---|
@@ -512,10 +512,16 @@ origin:
 | `GATE_PROOF_APPELLATION_MIXED` | 机械校对 | 同一角色在一章内 ≥2 种称谓各出现 ≥2 次 | `catalog` | false |
 | `GATE_PROOF_ARABIC_MEASURE` | 机械校对 | 阿拉伯数字后紧接中文量词（年份/编号除外） | `catalog` | false |
 | `GATE_PROOF_NUMBER_MIXED` | 机械校对 | 同一段里同一单位既有汉字数字又有阿拉伯数字 | `catalog` | false |
+| `GATE_DEGEN_REPEAT` | 退化检测 | 复读：紧邻整行重复（≥8 可见字）/ 整段重复（≥16 可见字且 ≥2 次）/ 同句连发（≥12 可见字且 ≥3 次）；只判**引号外叙述** | `catalog` | false |
+| `GATE_DEGEN_TRUNCATED` | 退化检测 | 正文末段不以句末或收尾标点（`。！？!?…”"』」）)】》`）结束 = 停在半句（尚未写完，或被 `max_tokens` 切断） | `catalog` | false |
+| `GATE_DEGEN_PLACEHOLDER` | 退化检测 | 占位语与元话语：「（此处继续展开）」「以下是第 N 章」「本章将…」「如需继续…」「我无法答应你」式生成拒绝语；引号内的台词豁免 | `catalog` | false |
+| `GATE_DEGEN_META_LEAK` | 退化检测 | 工程词泄漏：`TODO` / `FIXME` / `lorem` / `{{占位}}` / `placeholder` / `as an AI` / 作为 AI / 细纲·情节点·卷纲一类流水线术语；引号内的台词豁免 | `catalog` | false |
 
-> **为什么 `group` 只有这三个值**：`FINDING_GROUPS` 仍固定五个（ADR-0022 D3 未扩枚举），门禁按「这条 finding 挂在哪个域」归档——名字/实体引用属 `structure`、账本取值属 `ledger`、其余属章族 `catalog`；七项仍以 `check` 列与 code 前缀区分（面板按 `check` 分组）。
+> **为什么 `group` 只有这三个值**：`FINDING_GROUPS` 仍固定五个（ADR-0022 D3 未扩枚举），门禁按「这条 finding 挂在哪个域」归档——名字/实体引用属 `structure`、账本取值属 `ledger`、其余属章族 `catalog`；八项仍以 `check` 列与 code 前缀区分（面板按 `check` 分组）。
 >
 > **为什么全部 `fixable: false`**：`repair.ts` 是唯一修复路径且按 code 分派动作，`GATE_PROOF_*` 目前没有动作；标 `true` 会让报告说「N 项可自动修复」而一键修复什么也不做（ADR-0015 D2，同类事故见 #143）。机械校对类翻成 `true` 的那次提交必须同时让 `repair.ts` 学会改写并补用例。
+>
+> **第 8 项（退化检测）的阈值出处**：四类划分与「引号外叙述判定 + 对话行豁免」的形态参考 `oh-story` 的 `check-degeneration.js`（MIT），阈值与词表落在 [`gate-vocabulary.ts`](../../src/host/gate-vocabulary.ts) 的 `DEGENERATION`，逐项注明「沿用 oh-story 标定」或「本项目自标」，按 [ADR-0027](../adrs/0027-external-reference-tiers.md) D2/D5 办理。它们**不进** `GateThresholds`：那份表是随判决写进结论文件的可配参数（D4），这四条是代码里的固定判据、调用方不能改。
 
 **与旧设计的差异**：不再有 FK / CHECK / 触发器；UNIQUE 只对「索引内可判定的键」有效。I-11–I-14 由 `src/host/catalog.ts` 的 `validateCatalog` 在 catalog 层与非阻塞方式报告（写入侧工具在级联时重建、把 `SEQ_CONFLICT` / `VOLUME_EXISTS` 前移到拒绝）。
 
