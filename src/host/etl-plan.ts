@@ -1,5 +1,5 @@
 /**
- * Old InkFlow rows → the nine content directories (issue #51, roadmap X-29).
+ * Old InkFlow rows → the nine content directories (roadmap X-29).
  *
  * This module is **pure**: it takes the rows `etl-source.ts` read, the prior id map and
  * a "what is on disk" probe, and returns the whole plan (target path + text + counts).

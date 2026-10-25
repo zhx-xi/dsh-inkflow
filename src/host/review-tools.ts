@@ -1,5 +1,5 @@
 /**
- * The review tool surface (#46): `inkflow_review_run` / `inkflow_review_context` /
+ * The review tool surface: `inkflow_review_run` / `inkflow_review_context` /
  * `inkflow_review_compare`.
  *
  * The split follows X-26, which is the whole design:
@@ -464,7 +464,7 @@ export function reviewTools(deps: ReviewToolDeps): ToolDefinition[] {
       const cap = limit === undefined || limit <= 0 ? REVIEW_LIST_LIMIT : Math.trunc(limit)
       const listed = listReviewRuns(probe.root, built.value.chapterId)
       const runs: readonly ReviewRunRecord[] = listed.runs.slice(0, cap)
-      // The resolved chapter decides the header (#205): a chapter with no run yet still has
+      // The resolved chapter decides the header: a chapter with no run yet still has
       // an id, a title and a word count, so the reply never answers with an empty identity.
       const table = compareReviewRuns(runs, built.value)
       return {

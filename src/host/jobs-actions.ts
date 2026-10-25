@@ -1,7 +1,7 @@
 /**
- * Issue #47 — the queue's own actions: `enqueue`, `take`, `resume`.
+ * The queue's own actions: `enqueue`, `take`, `resume`.
  *
- * Extracted from `jobs.ts` by #193, and split from the drafting half (`jobs-drafts.ts`)
+ * Extracted from `jobs.ts` when it was split, and split from the drafting half (`jobs-drafts.ts`)
  * because the two answer different questions: this file decides **what to write next**, the
  * other decides **whether a draft may land**.
  *

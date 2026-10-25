@@ -1,5 +1,5 @@
 /**
- * The series sync's tool surface (#49): `inkflow_series_plan` / `inkflow_series_apply`.
+ * The series sync's tool surface: `inkflow_series_plan` / `inkflow_series_apply`.
  *
  * Two tools, one computation: `series.ts` owns both halves, and `apply` recomputes the
  * plan so the write can be compared against what was previewed (X-17). Nothing is

@@ -1,7 +1,7 @@
 /**
- * Series sync (#49): take the SERIES' shared settings INTO one book.
+ * Series sync: take the SERIES' shared settings INTO one book.
  *
- * WHAT IT IS, AND WHAT IT IS NOT. #40 gave the plugin one direction — copy one shared
+ * WHAT IT IS, AND WHAT IT IS NOT. The shared library gave the plugin one direction — copy one shared
  * entry into one book, on one click (`shared-copy.ts`). A series (ADR-0007 C5) is the
  * same direction applied to a *set*: every `world/`/`library/` entry of the library,
  * landed into the book at the same paths a copy would use, in one confirmed action.
@@ -24,7 +24,7 @@
  *   | `update`    | the shared entry moved after the copy was taken              | no               |
  *   | `conflict`  | the two sides carry different text and only a human can pick | **yes**          |
  *
- * `update` vs `conflict` is decided by #40's own `stale` verdict: a copy whose recorded
+ * `update` vs `conflict` is decided by the shared library's own `stale` verdict: a copy whose recorded
  * `origin.contentHash` no longer matches the shared entry has a newer version to take
  * (that is literally what `updateSharedEntry` does, backed up). A copy whose hash still
  * matches cannot have been changed by the library, so any difference is the book's own
@@ -37,11 +37,11 @@
  * moved AND the author also edited the copy, this engine can only classify it `update` —
  * it cannot prove the book was untouched. Two things bound that risk: `changedFields`
  * shows what the write replaces, and every write is staged into an
- * `.inkflow/backup/<stamp>/` package first (`kind: 'shared'` — the same undo trail #40
- * leaves), so nothing is unrecoverable.
+ * `.inkflow/backup/<stamp>/` package first (`kind: 'shared'` — the same undo trail the copy
+ * path leaves), so nothing is unrecoverable.
  *
  * COMPARISON IS REUSED, NOT REBUILT: reader-meaning content comparison is
- * `extract-compare.ts` (#178) — `id`/bookkeeping keys ignored, EOL normalised, list
+ * `extract-compare.ts` — `id`/bookkeeping keys ignored, EOL normalised, list
  * fields compared as sets. It is asked twice per row (source-as-candidate and
  * book-as-candidate) because it walks the candidate's field names only; asking both
  * ways is what makes a field that exists on just one side show up as a change.
@@ -262,7 +262,7 @@ function nonEmptyString(value: unknown): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Reader-meaning comparison (delegated to #178)
+// Reader-meaning comparison (delegated to the duplicate judgement, ADR-0021)
 // ---------------------------------------------------------------------------
 
 /**
@@ -324,7 +324,7 @@ export function buildSeriesPlan(input: SeriesPlanInput): SeriesResult<SeriesPlan
   if (!library.ok) return fail('SHARED_UNAVAILABLE', library.error.message, { hint: library.error.hint })
 
   // The book side in one pass: which files are copies, of what, and whether the copy is
-  // behind its source. #40's own verdict is the authority here (see the header).
+  // behind its source. The shared library's own verdict is the authority here (see the header).
   const copies = buildSharedCopies({ dataDir: input.dataDir, root })
   if (!copies.ok) return fail('SHARED_UNAVAILABLE', copies.error.message, { hint: copies.error.hint })
   const copyByFile = new Map<string, { entryId: string | null; mode: string; state: string }>()
@@ -713,7 +713,7 @@ export interface SeriesRunRecord {
 /**
  * Write the record of ONE run into the book's private state directory.
  *
- * WHY A TIMESTAMP HERE, WHEN #44's gate conclusion deliberately has none (ADR-0022 D4):
+ * WHY A TIMESTAMP HERE, WHEN A GATE CONCLUSION deliberately has none (ADR-0022 D4):
  * these are opposite kinds of file. A gate file answers "what does this chapter say now",
  * so two runs on unchanged input must be byte-identical and diffable. A series run answers
  * "what happened at 18:55" — who was overwritten, who was kept, which way each conflict

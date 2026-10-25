@@ -154,14 +154,14 @@ export function walkProjectFiles(root: string): WalkedFile[] {
 export interface ScanResult {
   files: WalkedFile[]
   issues: ValidationIssue[]
-  /** One bucket per table, contributed by the domain modules (#23). */
+  /** One bucket per table, contributed by the domain modules. */
   tables: DomainTableRows[]
   /** The cross-class projection (X-1): every entity of the book, one row each. */
   entities: DomainEntityRef[]
   /**
    * Legacy narrow views, derived from `tables`. Kept so existing readers (parity
-   * tests, the build result) do not have to care about the bucket shape; #23 is the
-   * commit that introduced `tables`, so nothing else depends on them yet.
+   * tests, the build result) do not have to care about the bucket shape; the index
+   * rewrite introduced `tables`, so nothing else depends on them yet.
    */
   chapterRows: ReadonlyArray<Record<string, unknown>>
   characterRows: ReadonlyArray<Record<string, unknown>>
@@ -195,7 +195,7 @@ export function scanProject(root: string): ScanResult {
 
   // 2) A content directory with no owner yet still gets the generic frontmatter pass:
   //    v1 reported it for every content directory, and a broken frontmatter block must
-  //    not become invisible just because its domain has not landed (#27/#28/#31).
+  //    not become invisible just because its domain has not landed.
   for (const file of files) {
     if ((CONTENT_DIRS as readonly string[]).includes(file.dir) === false) continue
     if (file.dir === 'library') libraryFiles.push(file)
@@ -204,7 +204,7 @@ export function scanProject(root: string): ScanResult {
     const parsed = parseMarkdown(readText(join(root, file.path)))
     for (const issue of parsed.issues) issues.push({ code: 'FRONTMATTER_ISSUE', path: file.path, detail: issue })
     // I-09: `resolved: true` is only checkable when the file names the chapter that
-    // pays it off. There is no table for it yet (#31), so this stays a validation-only
+    // pays it off. There is no table for it yet, so this stays a validation-only
     // pass over the frontmatter — the same shape v1 had.
     if (file.dir === 'foreshadowing') {
       const resolvedChapter = stringField(parsed.data, 'resolvedChapter')
@@ -234,7 +234,7 @@ export function scanProject(root: string): ScanResult {
 
   // 4) I-20 (ADR-0014): an entity whose id is a **former path**. That is the normal
   //    state after a rename — the old id stays pinned in the file so every reference
-  //    keeps resolving — so this is reported for the audit report (#33) to show as
+  //    keeps resolving — so this is reported for the audit report to show as
   //    **info** and never blocks a build or a write. Reported rather than ignored
   //    because "why can I not find this file by its id?" is otherwise unanswerable.
   //
@@ -345,7 +345,7 @@ CREATE TABLE library_files (path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime 
 CREATE TABLE validation_issues (seq INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, path TEXT, detail TEXT NOT NULL);
 `)
     for (const statement of ENTITIES_DDL) db.exec(statement)
-    // Mentions (#29) are a cross-cutting scan, not a domain: `mentions` owns no
+    // Mentions are a cross-cutting scan, not a domain: `mentions` owns no
     // content directory, so its table is created here beside the projection. The rows
     // are written by `insertMentions` below rather than contributed as a domain table
     // because they carry no `path`: `applyCandidate()` replaces a table's rows by path,
@@ -385,7 +385,7 @@ CREATE TABLE validation_issues (seq INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT
     insertMeta.run('indexSchemaVersion', String(INDEX_SCHEMA_VERSION))
     insertMeta.run('fileCount', String(counts.files))
     insertMeta.run('entityCount', String(entities.length))
-    // #48: the book's calendar is not a content directory, so `files` cannot see an edit
+    // The book's calendar is not a content directory, so `files` cannot see an edit
     // to it. Its fingerprint is stored here instead, and `checkIndexFreshness()` compares
     // it — otherwise every derived `world_absolute_day` would silently keep describing
     // the old table after `inkflow.json` changed.
@@ -456,7 +456,7 @@ export interface ChapterSummary {
  *
  * This is a **page** cap, not a book size: a 520-chapter book has 520 chapters, and
  * asking for all of them returns 500 plus a `truncated` flag from the caller. It was a
- * silent clamp before issue #161 — every entry that claimed "all chapters" read at most
+ * silent clamp until the total came from the book — every entry that claimed "all chapters" read at most
  * 500 rows and nothing said so, which made one book answer different chapter counts
  * depending on which caller asked.
  */
@@ -522,7 +522,7 @@ function openChapterIndex(root: string): DatabaseSync | undefined {
  * How many chapters this book has, from the derived index.
  *
  * The number a caller must report as `total`: `listChapters` returns a *page*, so its
- * length is not the book (issue #161 — reading it back as "total" made a 520-chapter
+ * length is not the book (reading it back as "total" made a 520-chapter
  * book look like a 100-chapter one).
  *
  * `undefined` when the index is absent or foreign, like every other index read.

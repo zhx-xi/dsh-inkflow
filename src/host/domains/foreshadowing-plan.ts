@@ -1,5 +1,5 @@
 /**
- * The foreshadowing model, as pure functions (#31): one file's meaning, the state
+ * The foreshadowing model, as pure functions: one file's meaning, the state
  * machine, the computed `overdue` state, and the document a write produces.
  *
  * Why the rules live here and not inside `foreshadowing.ts`: a rebuild judges a whole
@@ -252,7 +252,7 @@ export function foreshadowValidate(rows: readonly ForeshadowRow[], candidatePath
 }
 
 /**
- * The two findings a **report** makes about lateness (#33, X-14).
+ * The two findings a **report** makes about lateness (X-14).
  *
  * Why they are produced here and not in `audit.ts`: "late" is the foreshadow domain's
  * own rule (`foreshadowUrgency`), and a report that re-derived it would be a second

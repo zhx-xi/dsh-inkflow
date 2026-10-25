@@ -1,5 +1,5 @@
 /**
- * Chapter full-text search over the derived index (issue #22, ADR-0005).
+ * Chapter full-text search over the derived index (ADR-0005).
  *
  * The index already carries `chapters_fts` built with `tokenize='trigram'`
  * (`indexer.ts`), and trigram matching has a hard floor: a query shorter than
@@ -13,7 +13,7 @@
  *   - **Read-only.** Search never builds, repairs or deletes an index; a query
  *     must not write to the author's project. `INDEX_UNAVAILABLE` tells the
  *     caller to rebuild, and the tool layer decides to do so exactly once
- *     (issue #4's lazy rebuild).
+ *     (the lazy rebuild).
  *   - **No query reaches the FTS parser as syntax.** Every term is wrapped in a
  *     double-quoted FTS5 phrase (with `"` doubled), so `-`, `*`, `NEAR(`, `OR`
  *     and friends are literal text, never operators. The LIKE branch escapes
@@ -286,14 +286,14 @@ export function searchChapters(root: string, query: string, options: ChapterSear
 }
 
 // ---------------------------------------------------------------------------
-// One search entry for every kind (issue #39, roadmap X-16)
+// One search entry for every kind (roadmap X-16)
 //
 // `searchChapters` above answers "which chapter holds this text". The book also
 // holds six more kinds of prose (characters, world, outlines, foreshadowing,
 // timeline, relations, facts, library) and the author's real question is "where
 // is this name", not "which chapter". X-16 fixes one entry point and one entry
 // shape for that question — `{kind, id, path, title, snippet, offset?, score?}`,
-// paged by `{offset, limit, total}` with `limit` capped at 100 — so #41 can put a
+// paged by `{offset, limit, total}` with `limit` capped at 100 — so a semantic backend can sit
 // semantic backend behind the same envelope without changing a single caller.
 //
 // Three properties this implementation owns:
@@ -314,7 +314,7 @@ export function searchChapters(root: string, query: string, options: ChapterSear
 export const SEARCH_KINDS = CONTENT_DIRS
 export type SearchKind = ContentDir
 
-/** Which backend answered — `'ovk'` is #41's, and this build never claims it. */
+/** Which backend answered — `'ovk'` is the semantic backend's, and this build never claims it. */
 export type SearchBackend = 'fts5' | 'ovk'
 
 /** One hit, in the shape X-16 fixes for every backend. */

@@ -1,5 +1,5 @@
 /**
- * The purge area's half of the private channel (#199): one read projection and two write
+ * The purge area's half of the private channel: one read projection and two write
  * actions, nothing else.
  *
  * Scope: `GET /inkflow/internal/purged`, `POST /inkflow/internal/purged/clean` and
@@ -16,7 +16,7 @@
  *   * **an absent target is a 400**, not "everything": a write that forgets its target must not
  *     fall back to a bulk action;
  *   * **a cleanup needs `confirm: true`** — the panel already asks twice, this is the net under
- *     it (ADR-0012 #4). A restore does not: it is the undo direction, and it still refuses to
+ *     it (ADR-0012 decision 4). A restore does not: it is the undo direction, and it still refuses to
  *     overwrite anything.
  *
  * `confirm` is checked again inside the domain (`cleanUp`), not only here: the tool-less

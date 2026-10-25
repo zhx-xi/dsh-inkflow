@@ -1,5 +1,5 @@
 /**
- * Reading the ledger out of the derived index (issue #32).
+ * Reading the ledger out of the derived index.
  *
  * Why the tools read the **table** instead of re-parsing `facts/`: the table exists for
  * exactly this (data-model §4.1 — "账本跨章查询"), and "which facts are in effect at

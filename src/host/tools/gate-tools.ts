@@ -1,6 +1,6 @@
 /**
- * The quality-gate tool (split out of `tools.ts`, #193): `inkflow_gate_check` (#44,
- * X-24/X-26). Eight checks over one chapter (#212 added the eighth, 退化检测); the verdict
+ * The quality-gate tool (split out of `tools.ts`): `inkflow_gate_check` (X-24/X-26).
+ * Eight checks over one chapter (the eighth: 退化检测); the verdict
  * lands in `.inkflow/audit/gate-<chapterId>.json` (ADR-0022 D4) — derived, idempotent, never
  * inside a content directory and never inside `index/` (X-25).
  */
@@ -14,7 +14,7 @@ import { PROJECT_ROOT_PARAM, SUCCESS_SCHEMA, asRecord, optionalString, text } fr
 
 export function gateTools(deps: ToolDeps): ToolDefinition[] {
   /**
-   * The quality gate (#44, X-24/X-26). Eight checks over **one** chapter, and the verdict
+   * The quality gate (X-24/X-26). Eight checks over **one** chapter, and the verdict
    * lands in `.inkflow/audit/gate-<chapterId>.json` (ADR-0022 D4) — derived, idempotent,
    * never inside a content directory and never inside `index/` (X-25).
    *

@@ -1,5 +1,5 @@
 /**
- * The proposal tool surface (#45, roadmap X-26): create, decide, apply, rollback.
+ * The proposal tool surface (roadmap X-26): create, decide, apply, rollback.
  *
  * Four tools, one proposal. Their shape follows from where the intelligence lives
  * (ADR-0017 D1, restated as X-26 for this milestone): the **session model writes the
@@ -362,7 +362,7 @@ export function proposalTools(deps: ToolDeps): ToolDefinition[] {
       })
       if (!undone.ok) return { ok: false, root: projectRoot, error: { ...undone.error } }
       const ensured = await ensureIndex(projectRoot)
-      // `value`, not the whole `{ ok, value }` envelope (#201): `execute` answers the flat
+      // `value`, not the whole `{ ok, value }` envelope: `execute` answers the flat
       // payload its own `render` reads — spreading the envelope left `restored`, `backup`
       // and `verified` undefined, so a byte-identical rollback printed as a failed check.
       return { ...undone.value, indexRebuilt: ensured.ok ? ensured.rebuilt : false }

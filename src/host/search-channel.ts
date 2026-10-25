@@ -1,5 +1,5 @@
 /**
- * The unified search and the search-replace batch on the private channel (#39).
+ * The unified search and the search-replace batch on the private channel.
  *
  * Scope: `GET /inkflow/internal/search` (X-16's single entry), `GET /inkflow/internal/replace`
  * (the preview) and `POST /inkflow/internal/replace/apply` (the batch). Everything about

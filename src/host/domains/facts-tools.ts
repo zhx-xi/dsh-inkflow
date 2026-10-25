@@ -1,5 +1,5 @@
 /**
- * The fact ledger's three model-facing tools (issue #32):
+ * The fact ledger's three model-facing tools:
  * `inkflow_facts_append`, `inkflow_facts_snapshot`, `inkflow_facts_list`.
  *
  * They live in the domain, not in `tools.ts` (roadmap §2.1 X-5): a domain branch adds one
@@ -62,7 +62,7 @@ import { applyCandidate } from './types.js'
 import type { DomainEntityRef, DomainToolDeps, DomainWriteView } from './types.js'
 
 /**
- * The caller-supplied write baseline (issue #5) — same shape `tools.ts` exposes on the
+ * The caller-supplied write baseline — same shape `tools.ts` exposes on the
  * chapter writers, declared here because that constant is module-private.
  */
 const EXPECTED_PARAM = {
@@ -145,7 +145,7 @@ function readProjectText(root: string, relativePath: string): string | undefined
  *   2. the **projection** — `facts/<slug>.md` publishes one entity even when the file has no
  *      fact line at all (an empty or prose-only ledger is still a known ledger). Using the
  *      rows alone made `inkflow_facts_append` create a *second* file for a subject whose
- *      ledger simply held no parseable line yet (rework of PR #124): the slug was derived
+ *      ledger simply held no parseable line yet: the slug was derived
  *      from the subject, found nothing at that path, and wrote a new page next to the
  *      author's.
  *
@@ -384,7 +384,7 @@ function factsAppendTool(deps: DomainToolDeps): ToolDefinition {
         // The author's own endings are kept: a one-line append must not restyle the whole
         // ledger. Writing the joined text through `normalizeText` (BOM stripped, CRLF → LF)
         // rewrote every line of a file the author had saved on Windows — the tool said "never
-        // rewrites the rest of the file" and did exactly that (rework of PR #124). The
+        // rewrites the rest of the file" and did exactly that. The
         // appended line follows the file's ending, so a CRLF ledger stays CRLF throughout.
         const eol = existingText !== undefined && existingText.includes('\r\n') ? '\r\n' : '\n'
         const head =

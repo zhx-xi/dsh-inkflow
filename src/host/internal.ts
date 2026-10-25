@@ -1,5 +1,5 @@
 /**
- * The private panel channel's projection layer (ADR-0008, issue #18).
+ * The private panel channel's projection layer (ADR-0008).
  *
  * This module answers one question and derives four read-only projections from
  * it: **which book does this browser request belong to?** The browser carries
@@ -61,7 +61,7 @@ export const INTERNAL_PREFIX = '/inkflow/internal'
 /**
  * Upper bound for a request body.
  *
- * Why 1 MiB and not the 64 KiB this used to be (#115): a save carries a whole
+ * Why 1 MiB and not the 64 KiB this used to be: a save carries a whole
  * chapter or a whole setting entry as ONE JSON string, and the ceiling counts the
  * serialised bytes, not the prose. Measured on a real book: a body with 20,000
  * Chinese characters serialises to ~70 KB, so a long chapter could not be saved at
@@ -291,7 +291,7 @@ export function noSessionContextBody(version: string, sessionId?: string): JsonR
 }
 
 /**
- * Attach the loaded-build summary to a refusal envelope (issue #88).
+ * Attach the loaded-build summary to a refusal envelope.
  *
  * The stale-build banner has to render on the "needs setup" / "needs repair"
  * screens too: that screen is exactly what a stale generation shows for a book
@@ -398,7 +398,7 @@ export function buildStatus(target: ChannelTarget, version: string): JsonRecord 
     actions: target.probe.actions,
     reasons: target.probe.reasons,
     meta: target.probe.meta ?? {},
-    // Issue #89: a hand-written file with a GBK-misread title is a hint for the
+    // A hand-written file with a GBK-misread title is a hint for the
     // panel, not a verdict on the book — `state`/`usable`/`readOnly` above stay
     // exactly what the gate said.
     ...(target.probe.titleSuspicious === true ? { titleSuspicious: true } : {}),
@@ -416,11 +416,11 @@ export function buildStatus(target: ChannelTarget, version: string): JsonRecord 
       volumes: catalog.catalog.volumes.length,
       chapters: chapterCount,
     },
-    // #39: the search box exists now and covers every kind (X-16); `scope` names what
+    // The search box exists now and covers every kind (X-16); `scope` names what
     // `GET /search` answers, and a degraded answer (unusable index) says so per reply in
     // `degradedReason` — the capability itself no longer depends on the index.
     search: { available: true, scope: 'all-kinds', backends: ['fts5'] },
-    // Issue #88: the panel's "is this build old?" banner. Read at call time, so a
+    // The panel's "is this build old?" banner. Read at call time, so a
     // rebuild while DSH is running makes the next `/status` answer "stale" and
     // only a restart makes it "fresh" again — refreshing cannot clear it.
     build: summarizeBuild(getLoadedBuild({ version })),
@@ -431,7 +431,7 @@ export function buildStatus(target: ChannelTarget, version: string): JsonRecord 
  * `GET /chapters`: the volume/chapter tree from the `.md` projection.
  *
  * The tree itself comes from the catalog (files → projection, always current),
- * but the index is made fresh first (issue #5) so that this call and a following
+ * but the index is made fresh first so that this call and a following
  * `/search` cannot answer from two different generations of the cache. A failed
  * rebuild is reported, never fatal: the projection still answers.
  */
@@ -537,7 +537,7 @@ export function buildChapter(target: ChannelTarget, version: string, rawId: stri
     // way it found it. Read-only: the write path takes it back as a declaration.
     eol: style.eol,
     bom: style.bom,
-    // The CAS baseline for the next save (issue #19): the editor reads a chapter,
+    // The CAS baseline for the next save: the editor reads a chapter,
     // edits it, and writes back against exactly these bytes. Without it the
     // browser could not tell "the file changed under me" from "my own save".
     fingerprint: fingerprintProjectFile(target.root, entry.chapter.file) ?? null,
@@ -552,7 +552,7 @@ function escapeLike(value: string): string {
  * Search the derived index's `chapters` table for a *metadata* match (id, path, title).
  *
  * This is the degraded answer, not the main one: `buildSearch` below searches body prose
- * and every setting kind through `searchEntries` (#39, X-16) and only falls back here when
+ * and every setting kind through `searchEntries` (X-16) and only falls back here when
  * the index cannot be used at all. It reads the index rather than the catalog when it can,
  * because `seq`/`status`/`volume` are index columns and the panel shows them.
  *
@@ -611,13 +611,13 @@ export interface ChannelSearchInput {
 }
 
 /**
- * `GET /search?q=`: the single search entry over the whole book (#39, X-16).
+ * `GET /search?q=`: the single search entry over the whole book (X-16).
  *
  * The envelope is X-16's, unchanged from the tool surface: `items` of
  * `{kind, id, path, title, snippet}`, `{offset, limit, total}`, `truncated` and
  * `searchBackend`, so the panel and the model read the same answer.
  *
- * Issue #5: the index is made fresh first, so the panel cannot show a chapter list built
+ * The index is made fresh first, so the panel cannot show a chapter list built
  * from the files while searching an index from a previous generation. If the index is
  * missing, foreign or unrebuildable (another process holds the lock), the answer degrades
  * to a metadata scan of the same files and `degradedReason` says exactly that — a panel
@@ -639,7 +639,7 @@ export async function buildSearch(
     indexState: ensured.state,
     ...indexFailureOf(ensured),
   }
-  // #41: the semantic backend sits behind this same entry. With no `dataDir` (a caller that
+  // The semantic backend sits behind this same entry. With no `dataDir` (a caller that
   // has no plugin state to read) the answer is the keyword one, which is exactly what the
   // `disabled` degradation returns anyway — so the two paths agree instead of diverging.
   const semantic =
@@ -698,12 +698,12 @@ export async function buildSearch(
 }
 
 // ---------------------------------------------------------------------------
-// Write routes (issue #19): the panel editor's save path
+// Write routes: the panel editor's save path
 //
 // These are the only places in this module that change the truth files, and
 // they do it the same way a tool does: through `chapters.ts`, which owns the
 // write lock, the atomic replace, the catalog rebuild and `commitIndex`. The
-// channel adds nothing but HTTP semantics and the CAS plumbing (issue #5), so
+// channel adds nothing but HTTP semantics and the CAS plumbing, so
 // there is exactly one writer implementation in the plugin.
 //
 // The HTTP vocabulary is declared per route (ADR-0008 D3): request problems are
@@ -881,7 +881,7 @@ const CONFLICT_CODES = new Set([
   'VOLUME_EXISTS',
   'PROJECT_BUSY',
   // The recovery bin refused the move because that path already owns a slot in it
-  // (PR #123 review B1): a state conflict, not a server fault.
+  // (a review blocking finding): a state conflict, not a server fault.
   'TRASH_ENTRY_EXISTS',
 ])
 
@@ -941,7 +941,7 @@ function writeValue(target: ChannelTarget, version: string, chapter: ChapterView
   }
 }
 
-// The three chapter write routes' body whitelists (#162). They live here, not in the
+// The three chapter write routes' body whitelists. They live here, not in the
 // route table, because THIS is the module that reads those bodies: the field names sit
 // next to the `requiredText`/`optionalSeq`/`readExpected` calls that consume them, so a
 // new field is one edit in one file. `sessionId` is allowed on every write anyway
@@ -1089,7 +1089,7 @@ export async function deleteChapterViaChannel(request: WriteRequest): Promise<Wr
         sessionId: request.target.sessionId,
         root: request.target.root,
         deleted: result.deleted,
-        // #35: the delete is reversible, so the wire says where the copy went.
+        // The delete is reversible, so the wire says where the copy went.
         trashed: result.trashed,
         catalogRebuilt: result.catalogRebuilt,
         indexRebuilt: result.indexRebuilt,
@@ -1100,7 +1100,7 @@ export async function deleteChapterViaChannel(request: WriteRequest): Promise<Wr
 }
 
 // ---------------------------------------------------------------------------
-// The setting library (issue #30, roadmap X-7 / X-8)
+// The setting library (roadmap X-7 / X-8)
 //
 // X-8 puts these payloads in this issue rather than in a view registry. The two
 // readers live in `library-view.ts` and the single writer in `library-write.ts`;
@@ -1127,7 +1127,7 @@ export { writeLibraryItem } from './library-write.js'
 export type { LibraryWriteRequest } from './library-write.js'
 
 /**
- * 影响面与改名（#34, conventions §5.6): re-exported only, never implemented here.
+ * 影响面与改名（conventions §5.6): re-exported only, never implemented here.
  *
  * The listing and the rename write live in `impact.ts` / `impact-write.ts` — this
  * file already carries the session chain and the library projections, and the two
@@ -1138,7 +1138,7 @@ export { IMPACT_KINDS, buildImpact } from './impact.js'
 export type { ImpactReply, ImpactRequest, ImpactSource } from './impact.js'
 export { RENAME_BODY_FIELDS, renameEntity } from './impact-write.js'
 export type { RenameRequest } from './impact-write.js'
-// The recovery bin (#35): the domain lives in `trash.ts` (imported by
+// The recovery bin: the domain lives in `trash.ts` (imported by
 // `chapters.ts` as well), the three channel replies in `trash-channel.ts`. Both
 // are re-exported here so `routes.ts` keeps ONE entry point for the channel.
 export {
@@ -1150,36 +1150,36 @@ export {
 } from './trash-channel.js'
 export type { TrashReply, TrashSource } from './trash-channel.js'
 // ---------------------------------------------------------------------------
-// issue #31 — the foreshadow board (data-model §3.2). One read-only projection,
+// The foreshadow board (data-model §3.2). One read-only projection,
 // so the payload layer keeps growing in its own module instead of in this one.
 // ---------------------------------------------------------------------------
 
 export { buildForeshadowBoard } from './domains/foreshadowing-query.js'
 export type { ForeshadowSource } from './domains/foreshadowing-query.js'
 // ---------------------------------------------------------------------------
-// issue #33 — the consistency audit. The engine lives in `audit.ts` (scan → findings →
+// The consistency audit. The engine lives in `audit.ts` (scan → findings →
 // Markdown; no HTTP, no writes on the read path), the two channel replies in
 // `audit-channel.ts`; both are re-exported here so `routes.ts` keeps ONE entry point for
-// the channel — the same arrangement the bin (#35) and the impact listing (#34) use.
+// the channel — the same arrangement the bin and the impact listing use.
 // ---------------------------------------------------------------------------
 
 export { AUDIT_EXPORT_BODY_FIELDS, auditWire, buildAudit, exportAudit, findingWire } from './audit-channel.js'
 export type { AuditReply, AuditSource } from './audit-channel.js'
 // ---------------------------------------------------------------------------
-// issue #37 — importing an old manuscript (X-17). The domain lives in `import.ts`
+// Importing an old manuscript (X-17). The domain lives in `import.ts`
 // (decode + split, pure) and `import-write.ts` (plan/apply + the backup package); the
 // one channel reply in `import-channel.ts`. Re-exported here so `routes.ts` keeps ONE
-// entry point for the channel, the same arrangement as the bin (#35) and the audit (#33).
+// entry point for the channel, the same arrangement as the bin and the audit.
 // ---------------------------------------------------------------------------
 
 export { IMPORT_BODY_FIELDS, importViaChannel } from './import-channel.js'
 export type { ImportChannelRequest, ImportChannelSource, ImportReply } from './import-channel.js'
 // ---------------------------------------------------------------------------
-// issue #38 — the extraction queue (X-20, ADR-0017). The store lives in `extract.ts`
+// The extraction queue (X-20, ADR-0017). The store lives in `extract.ts`
 // (candidates only), the write path in `extract-accept.ts` (the one place a candidate
 // becomes a file), the four channel replies in `extract-channel.ts`. Re-exported here so
-// `routes.ts` keeps ONE entry point for the channel, the same arrangement as the bin
-// (#35), the audit (#33) and the import (#37).
+// `routes.ts` keeps ONE entry point for the channel, the same arrangement as the bin,
+// the audit and the import.
 // ---------------------------------------------------------------------------
 
 export {
@@ -1194,28 +1194,28 @@ export {
 } from './extract-channel.js'
 export type { CandidateReply, CandidateSource } from './extract-channel.js'
 // ---------------------------------------------------------------------------
-// issue #43 — the nine-segment brief (ADR-0022 D1/D2, X-23). The assembly lives in
+// The nine-segment brief (ADR-0022 D1/D2, X-23). The assembly lives in
 // `writing-context.ts` (`buildWritingBrief`, beside the six-segment context it must not
 // disturb), the two new sources in `brief-sources.ts`, the audit record and both channel
 // replies in `brief.ts`. Re-exported here so `routes.ts` keeps ONE entry point for the
-// channel — the same arrangement as the bin (#35), the audit (#33), the import (#37) and
-// the queue (#38).
+// channel — the same arrangement as the bin, the audit, the import and
+// the queue.
 // ---------------------------------------------------------------------------
 
 export { BRIEF_AUDIT_BODY_FIELDS, briefOptionsFromQuery, buildBrief, exportBriefAudit } from './brief.js'
 export type { BriefChannelSource, BriefReply } from './brief.js'
-// issue #44 — the quality gate (ADR-0022 D4, X-24/X-26). The engine is `gate.ts`
+// The quality gate (ADR-0022 D4, X-24/X-26). The engine is `gate.ts`
 // (files → seven checks → the deterministic conclusion file under `.inkflow/audit/`),
 // the rules in `gate-rules.ts`. Re-exported here so `routes.ts` keeps ONE entry point for
-// the channel, the same arrangement as the audit (#33) and the extraction queue (#38).
+// the channel, the same arrangement as the audit and the extraction queue.
 // ---------------------------------------------------------------------------
 
 export { GATE_CHECK_IDS, GATE_LIST_LIMIT, buildGate } from './gate.js'
 export type { GateReport, GateResult } from './gate.js'
-// issue #46 — the review DAG (ADR-0022 D3, X-24/X-26). The engine is `review.ts` (one read
+// The review DAG (ADR-0022 D3, X-24/X-26). The engine is `review.ts` (one read
 // pass → five independent nodes → the run record under `.inkflow/review/`), the comparison
 // table `review-compare.ts`, the tool surface `review-tools.ts`. Re-exported here so
-// `routes.ts` keeps ONE entry point for the channel, the same arrangement as the gate (#44).
+// `routes.ts` keeps ONE entry point for the channel, the same arrangement as the gate.
 // ---------------------------------------------------------------------------
 
 export { buildReviewList } from './review.js'
@@ -1223,10 +1223,10 @@ export { buildReviewCompare } from './review-compare.js'
 export type { ReviewOpinion } from './review-locate.js'
 export type { ReviewRunRecord } from './review-store.js'
 // ---------------------------------------------------------------------------
-// issue #45 — the proposal tab (ADR-0023 D5). The store and its four actions live in
+// The proposal tab (ADR-0023 D5). The store and its four actions live in
 // `proposal.ts` / the wire in `proposal-channel.ts`. Re-exported here so `routes.ts` keeps
-// ONE entry point for the channel — the same arrangement as the bin (#35), the audit
-// (#33), the import (#37), the queue (#38) and the gate (#44).
+// ONE entry point for the channel — the same arrangement as the bin, the audit,
+// the import, the queue and the gate.
 // ---------------------------------------------------------------------------
 
 export {
@@ -1240,21 +1240,21 @@ export {
 } from './proposal-channel.js'
 export type { ProposalReply, ProposalSource } from './proposal-channel.js'
 // ---------------------------------------------------------------------------
-// issue #47 — the batch job queue (ADR-0023, X-26/X-30). The engine and the state machine live
+// The batch job queue (ADR-0023, X-26/X-30). The engine and the state machine live
 // in `jobs.ts`, the panel projection in `jobs-wire.ts`, the tool surface in `jobs-tools.ts`.
 // Re-exported here so `routes.ts` keeps ONE entry point for the channel — the same arrangement
-// as the bin (#35), the audit (#33), the import (#37), the queue (#38), the gate (#44), the
-// review (#46) and the proposals (#45).
+// as the bin, the audit, the import, the queue, the gate, the
+// review and the proposals.
 // ---------------------------------------------------------------------------
 
 export { BATCH_RESUME_BODY_FIELDS, buildBatchPage, resumeViaChannel } from './jobs-wire.js'
 export type { BatchChapterRow, BatchCounts, BatchDetail, BatchPage } from './jobs-wire.js'
 // ---------------------------------------------------------------------------
-// issue #49 — the series sync (ADR-0007 C2/C5, X-17). The engine is `series.ts` (plan and apply
+// The series sync (ADR-0007 C2/C5, X-17). The engine is `series.ts` (plan and apply
 // on ONE computation, a decision per conflict, the run record under `.inkflow/audit/`), the two
 // hub replies in `series-channel.ts`, the tool surface in `series-tools.ts`. Re-exported here so
-// `routes.ts` keeps ONE entry point for the channel — the same arrangement as the gate (#44),
-// the review (#46), the proposals (#45) and the batch queue (#47).
+// `routes.ts` keeps ONE entry point for the channel — the same arrangement as the gate,
+// the review, the proposals and the batch queue.
 // ---------------------------------------------------------------------------
 
 export { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'

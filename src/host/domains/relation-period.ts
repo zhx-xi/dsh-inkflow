@@ -1,8 +1,8 @@
 /**
- * Relation time windows — issue #188, data-model §3.3 / §5 (I-08's third clause).
+ * Relation time windows, data-model §3.3 / §5 (I-08's third clause).
  *
  * `relations/<slug>.md` carries `since` / `until`: the narrative span a relation holds
- * over. Issue #48 reported contradictory *directions* and deliberately left the spans
+ * over. The direction rule reported contradictory *directions* and deliberately left the spans
  * alone, because deciding "these two intervals cannot both hold" needs a **chapter
  * order**, and inventing a second one here is how two answers to "which chapter is
  * later" appear in one book.

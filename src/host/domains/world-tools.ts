@@ -1,5 +1,5 @@
 /**
- * The world domain's two model-facing tools (#26): `inkflow_world_tree` and
+ * The world domain's two model-facing tools: `inkflow_world_tree` and
  * `inkflow_world_upsert`.
  *
  * Why they live in the domain instead of `tools.ts`: roadmap §2.1 X-5 — a domain
@@ -11,7 +11,7 @@
  * directory, so the tool would always report `NOT_AN_INKFLOW_PROJECT`.
  *
  * Everything that writes goes through `io.ts` (path checks + write lock + atomic
- * replace) **and** through the domain module's own judge (#159): `parseFile()` →
+ * replace) **and** through the domain module's own judge: `parseFile()` →
  * `applyCandidate()` → `validate({ candidate })` before a byte lands, the same chain
  * `character-tools.ts` runs. `planWorldUpsert()` stays as the precheck that gives the
  * model a reason it can act on, but the gate is the domain's. Everything that reads
@@ -97,7 +97,7 @@ function slugify(title: string): string {
 /**
  * Keywords as an inline list: `keywords: [白鹤, 鹤鸣剑]` (what `conventions.md` §3.4 shows).
  *
- * A value is quoted when the parser would otherwise read it as something else (issue #169).
+ * A value is quoted when the parser would otherwise read it as something else.
  * The renderer writes plain text but the reader is a YAML-shaped type guesser: a bare `true`
  * becomes boolean `true`, `null`/`~` become null, and `#` starts a comment — `keywordsOf()`
  * only keeps strings, so those keywords used to vanish between "written successfully" and
@@ -135,7 +135,7 @@ interface WorldFileInput {
  * `priority` are written only when meaningful, so a plain entry stays a three-line
  * frontmatter and `git diff` shows what the author actually asked for.
  *
- * Exported because the extraction accept path (#38) must produce the *same* document
+ * Exported because the extraction accept path must produce the *same* document
  * from a candidate's `fields`: a second renderer would be a second dialect of
  * `world/<category>/<slug>.md`, and the two would drift the first time this one
  * gained a field.
@@ -377,7 +377,7 @@ function refusal(root: string, code: string, message: string, extra: Json = {}):
  *                                  a stale one is how a second root slips in
  *   2. `planWorldUpsert()`       — the tree rules early, so the model gets a reason it
  *                                  can act on before any text is rendered
- *   3. `renderWorldFile()`       — the one renderer (the accept path of #38 uses it too)
+ *   3. `renderWorldFile()`       — the one renderer (the accept path uses it too)
  *   4. `parseFile()`             — the document, parsed exactly as a rebuild parses it
  *   5. `applyCandidate()`        — the seam-owned "replace this one path" fold
  *   6. `validate({ candidate })` — the same invariants a rebuild runs; **this** is the
@@ -387,7 +387,7 @@ function refusal(root: string, code: string, message: string, extra: Json = {}):
  *
  * Steps 1 and 5 come from layers above the registry (`indexer.ts`, `types.ts`), which is
  * why the orchestration lives up here and not in `world.ts`: a domain module must not
- * import the seam that imports it (`character-tools.ts` records the same reason, #26).
+ * import the seam that imports it (`character-tools.ts` records the same reason).
  */
 function applyUpsert(domain: DomainModule, projectRoot: string, input: WorldUpsertInput): WriteOutcome {
   const locked = withProjectWriteLock(resolvePath(projectRoot), (lock): WriteOutcome => {

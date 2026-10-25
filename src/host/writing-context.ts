@@ -1,5 +1,5 @@
 /**
- * The writing context (issue #20): what a session opened inside a novel must
+ * The writing context: what a session opened inside a novel must
  * know before its first tool call — which book, which chapter, how the previous
  * chapter ended, and which world-book entries this chapter is about.
  *
@@ -19,19 +19,19 @@
  * relaxation every tool gets, so a project cannot be "usable for tools but invisible to
  * the prompt".
  *
- * ## Two assemblies, one set of renderers (issue #43, ADR-0022 D1/D2)
+ * ## Two assemblies, one set of renderers (ADR-0022 D1/D2)
  *
  * This module now owns **two** projections, and the difference is deliberate:
  *
- *   * {@link buildWritingContext} — the six segments #20 shipped, injected as the
+ *   * {@link buildWritingContext} — the six segments that shipped first, injected as the
  *     `inkflow:writing-context` system-prompt section. Its order, caps and six-rung ladder
- *     are pinned by `tests/prompt.test.js`, so #43 must not touch them.
+ *     are pinned by `tests/prompt.test.js`, so the brief must not touch them.
  *   * {@link buildWritingBrief} — the **nine** segments of ADR-0022 D2
  *     (`outline → promise → characters → voice → facts → foreshadow → world →
  *     prevTail → anchors`), each reported as `{ id, bytes, tokens, truncated }`, with
  *     the four-rung ladder of D2 (`world → facts → foreshadow → prevTail`) and a trim
  *     record per rung. It is what the preview shows and what the audit file records, plus
- *     one book identity line above the first segment — outside the ladder (#219).
+ *     one book identity line above the first segment — outside the ladder.
  *
  * Why not one function with a flag: the two ladder contracts genuinely disagree — D2 says
  * the outline and the task statement are **never** trimmed, while the injected six-segment
@@ -101,7 +101,7 @@ export interface WritingContextOptions {
   /** Explicit chapter to describe; defaults to the highest `seq`. */
   chapterSeq?: number
   /**
-   * The exact chapter file to describe, resolved by the caller (issue #200).
+   * The exact chapter file to describe, resolved by the caller.
    *
    * This is the `chapterId` of a `GET /brief` request after the channel looked it up in
    * `chapterPositions()`; it wins over `chapterSeq` because a volume-local number is the
@@ -118,7 +118,7 @@ export type WritingContextSegmentName = 'project' | 'chapter' | 'tail' | 'world'
  * (roadmap X-13: `project → chapter → tail → world → facts → foreshadow`).
  *
  * Why a registry instead of another `if` in the renderer: two domains land their
- * own segment in the same milestone (facts #32, foreshadow #31), and the render
+ * own segment in the same milestone (the facts and foreshadowing domains), and the render
  * function is a single 40-line block with a hand-written trim ladder — without a
  * seam they queue on the same lines and every rebase is a semantic merge.
  *
@@ -390,7 +390,7 @@ function renderWritingContext(input: RenderInput): RenderedContext {
   // current-chapter outline → world book → previous tail. The world book comes
   // before the tail because the tail has no side channel — a model that loses
   // it cannot re-read the previous chapter, while world entries can be fetched
-  // again by the model (found in review after #20: the first ladder dropped the
+  // again by the model (found in review: the first ladder dropped the
   // tail first, which contradicts that asymmetry).
   if (input.state.dropSummary) trimmed.push(TRIM_SUMMARY)
   if (input.state.dropOutline && input.outline !== undefined) trimmed.push(TRIM_OUTLINE)
@@ -445,16 +445,16 @@ function renderWritingContext(input: RenderInput): RenderedContext {
 }
 
 // ---------------------------------------------------------------------------
-// The nine-segment brief (issue #43, ADR-0022 D1/D2)
+// The nine-segment brief (ADR-0022 D1/D2)
 // ---------------------------------------------------------------------------
 
 /**
  * The nine segments, in the ONE order any caller may rely on (ADR-0022 D2).
  *
- * This is the constant table X-23 held back until its first consumer (#43). It is the
+ * This is the constant table X-23 held back until its first consumer. It is the
  * single source of the brief's order, its labels, its caps and — through
  * {@link BRIEF_TRIM_ORDER} — its ladder. A caller that renders a brief in another order
- * is not "slightly different": #46's review pipeline addresses segments by `id`, and the
+ * is not "slightly different": the review pipeline addresses segments by `id`, and the
  * audit file's field order is this order, so a reordering would silently rewrite what a
  * stored audit says.
  */
@@ -607,7 +607,7 @@ interface RenderedBrief {
  *
  * No-source segments are `missing: true` with empty text — never placeholder prose, which
  * would put invented instructions in front of the writer. `promise`/`anchors` are the
- * author's own marker bullets in THIS chapter's outline node (#213); none written = missing.
+ * author's own marker bullets in THIS chapter's outline node; none written = missing.
  */
 export function buildWritingBrief(root: string, options: WritingContextOptions = {}): WritingBrief {
   const budgetTokens = clampInt(options.budgetTokens, DEFAULT_BUDGET_TOKENS, 1, 200_000)
@@ -651,7 +651,7 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
   } else {
     built.set('outline', { text: '', truncated: false, missing: true })
   }
-  // #213: the two marker bullets in THIS chapter's outline node are their only source.
+  // The two marker bullets in THIS chapter's outline node are their only source.
   for (const id of ['promise', 'anchors'] as const) {
     const tagged = taggedOutlineSegment(outline?.body ?? '', id, BRIEF_LABELS[id])
     built.set(id, tagged === undefined ? { text: '', truncated: false, missing: true } : { ...tagged, missing: false })
@@ -782,7 +782,7 @@ function renderBrief(input: RenderBriefInput): RenderedBrief {
       const shrunk = input.rung.tailLimit < input.tailChars
       if (shrunk) {
         // A shrunk tail is trimmed exactly like a dropped one: the marker names it and
-        // the note says how to get the rest back (mirrors the injected context, #20).
+        // the note says how to get the rest back (mirrors the injected context).
         dropped.push(label)
         notes.push(`找回：读 ${input.tail.path} 的最后约 ${String(TAIL_RECOVERY_LINES)} 行`)
       }

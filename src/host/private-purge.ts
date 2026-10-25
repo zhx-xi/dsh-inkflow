@@ -1,10 +1,10 @@
 /**
- * The private state's **purge area**: `.inkflow/purged/` (#199, [ADR-0026](../../../.agents/adrs/0026-private-purge-area.md)).
+ * The private state's **purge area**: `.inkflow/purged/` ([ADR-0026](../../../.agents/adrs/0026-private-purge-area.md)).
  *
- * Why it exists at all: review runs (`.inkflow/review/<chapterId>/<runId>.json`, #46) and
- * proposals (`.inkflow/proposals/<proposalId>/`, #45) accumulate, and until now the only two
+ * Why it exists at all: review runs (`.inkflow/review/<chapterId>/<runId>.json`) and
+ * proposals (`.inkflow/proposals/<proposalId>/`) accumulate, and until now the only two
  * options were "keep every one forever" or "delete it for good" — the extract queue's
- * `purge` is the second kind, and the author cannot undo it. The recovery bin (`trash/`, #35)
+ * `purge` is the second kind, and the author cannot undo it. The recovery bin (`trash/`)
  * is deliberately NOT the answer: it refuses `.inkflow/` sources on purpose (a chapter the
  * author deleted and a probe the plugin wrote are different kinds of loss), so the private
  * state gets its **own** holding area instead of widening that ban.
@@ -60,7 +60,7 @@ export const PURGE_MANIFEST_RELATIVE = privateStateRelative('purged', 'index.jso
 /** The manifest's own shape version; a different value is refused, never migrated. */
 export const PURGE_SCHEMA_VERSION = 1
 
-/** The two things an author may clean up (#199 P0 covers exactly these). */
+/** The two things an author may clean up (the P0 batch covers exactly these). */
 export const PURGE_KINDS = ['review-run', 'proposal'] as const
 export type PurgeKind = (typeof PURGE_KINDS)[number]
 

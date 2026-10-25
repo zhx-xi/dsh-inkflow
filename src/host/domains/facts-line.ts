@@ -88,7 +88,7 @@ export type FactLineVerdict =
   | 'prose'
 
 /**
- * First `:` of a segment — and `：` too, but **only to find the key** (#135).
+ * First `:` of a segment — and `：` too, but **only to find the key**.
  *
  * A Chinese IME produces `：` by default, and `- attribute：境界 | value：金丹` is unambiguously
  * a fact line written with the wrong colon. Reading it as prose would swallow the line without
@@ -110,7 +110,7 @@ function isKnownKey(key: string | undefined): boolean {
 }
 
 /**
- * Is this list item a fact line, a spoiled fact line, or just prose (I-22, rework of #135)?
+ * Is this list item a fact line, a spoiled fact line, or just prose (I-22)?
  *
  * Every `- ` item used to be a candidate, so an author's notebook — which is mostly prose and
  * tables under bullets (`- 差别在**换算比**：A 说 2:1…`, `- 正文：`D:\小说\…``) — was reported
@@ -249,7 +249,7 @@ function optionalKey(key: FactKnownKey, known: ReadonlyMap<string, string>): Rec
  * written empty: `until:` with nothing after it reads back as "no until", the same
  * meaning, but keeping it out makes the diff of an edit a single line.
  *
- * Unknown keys are a different case (rework of PR #124): their **empty value is data**.
+ * Unknown keys are a different case: their **empty value is data**.
  * `- attribute: 境界 | value: 金丹 | 备注:` parses to `extra['备注'] === ''`, and dropping
  * that on render broke the pair's only promise — `parse(render(parse(x)))` came back without
  * the key the file has, so anything that rewrites a ledger line silently ate a field the

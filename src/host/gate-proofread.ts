@@ -1,5 +1,5 @@
 /**
- * Issue #44 — item 7 of the quality gate: the mechanical proofreader.
+ * Item 7 of the quality gate: the mechanical proofreader.
  *
  * Six classes of 「错字」, all decidable without a model (X-26):
  *

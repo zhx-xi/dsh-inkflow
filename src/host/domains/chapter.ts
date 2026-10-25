@@ -26,7 +26,7 @@ export interface ChapterRow {
   /**
    * `pov` from frontmatter: who the chapter is told from (data-model §3.1).
    *
-   * Carried for one reason (#29): a mention scan has to cover the frontmatter too,
+   * Carried for one reason: a mention scan has to cover the frontmatter too,
    * and an author's `pov: 清音` is a stronger statement than a name occurring in the
    * prose. Only this module parses chapter frontmatter, so it is the only place
    * that can hand it over — re-reading the file later would be a second truth.

@@ -1,10 +1,10 @@
 /**
- * The rollback package (#36, roadmap X-9 / X-10, [ADR-0012](../../.agents/adrs/0012-plugin-private-state-dir.md)).
+ * The rollback package (roadmap X-9 / X-10, [ADR-0012](../../.agents/adrs/0012-plugin-private-state-dir.md)).
  *
  * One batch change (a repair pass, a 6→9 layout migration) writes before/after
  * digests and byte copies into `<book>/.inkflow/backup/<stamp>/` **before** the
  * first change lands, so "undo that batch" never depends on the process still
- * being alive. The recovery bin (#35) shares the directory but not the format
+ * being alive. The recovery bin shares the directory but not the format
  * (X-10): that one is a user-facing list with manual purging, this one is a
  * one-shot machine-read journal.
  *
@@ -48,14 +48,14 @@ export const BACKUP_MANIFEST_FILE = 'manifest.json'
 export const BACKUP_FILES_DIR = 'files'
 
 /**
- * Which batch produced the package — the two maintenance passes (#36) and the four
+ * Which batch produced the package — the two maintenance passes and the four
  * 0.4.0 producers that reuse this package instead of inventing their own
  * (roadmap X-17: batch import, id replace, shared-content copy, restore).
  *
  * One closed list rather than a union per issue: a kind the writer accepts but a
  * reader refuses is a package nobody can roll back, so writer and reader both take
  * their vocabulary from `BACKUP_KINDS`. `shared` is the shared-library copy/update
- * batch (#40, ADR-0007 C2/C3): one package per copy or per per-entry update, so
+ * batch (ADR-0007 C2/C3): one package per copy or per per-entry update, so
  * "undo that refresh" does not depend on git.
  */
 export const BACKUP_KINDS = ['repair', 'migrate', 'import', 'replace', 'shared', 'restore'] as const
@@ -111,7 +111,7 @@ export interface BackupHandle {
   /** Project-relative manifest path. */
   manifestPath: string
   /**
-   * Non-fatal problems that happened while the package was opened (#149).
+   * Non-fatal problems that happened while the package was opened.
    *
    * Only one value today: `gitignore-not-updated` — the `.gitignore` append failed, so
    * the package's files will show up as untracked. The batch still runs; the caller
@@ -177,7 +177,7 @@ export function backupCopyPath(dir: string, relativePath: string): string {
  * The directory is created lazily by the first `stageFile` / `sealBackup` write
  * (both go through `io.ts`), so a batch that writes nothing leaves no empty
  * directory behind. `.gitignore` gains `.inkflow/` here, before the first copy —
- * the same append-only discipline as the bin (ADR-0012 #2).
+ * the same append-only discipline as the bin (ADR-0012 decision 2).
  */
 export function openBackup(root: string, kind: BackupKind, at: Date = new Date()): BackupResult<BackupHandle> {
   const base = backupStamp(at)
@@ -189,7 +189,7 @@ export function openBackup(root: string, kind: BackupKind, at: Date = new Date()
   const dir = privateStateRelative('backup', name)
   // A failed `.gitignore` append is NOT fatal — the copies still have to land, and a
   // backup that refuses to start because one ignore line is unwritable would be the
-  // wrong trade. It is reported instead (#149): before this, both branches returned
+  // wrong trade. It is reported instead: before this, both branches returned
   // the same object, so the caller could not tell "ignored" from "not ignored" and
   // the recovery bin's files quietly showed up as untracked in `git status`.
   const ignored = ensurePrivateStateIgnored(root)

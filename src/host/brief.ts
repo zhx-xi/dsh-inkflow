@@ -1,6 +1,6 @@
 /**
- * The brief's audit record, its preview payload and the one write it causes (issue #43,
- * ADR-0022 D1/D4, roadmap X-23/X-25).
+ * The brief's audit record, its preview payload and the one write it causes (ADR-0022
+ * D1/D4, roadmap X-23/X-25).
  *
  * WHY THE AUDIT IS A SEPARATE FILE FROM THE PREVIEW: the preview answers "what would the
  * model see right now?"; the audit answers "what did it see, and why is this segment
@@ -33,14 +33,14 @@ import { buildWritingBrief } from './writing-context.js'
 import { writeTextAtomic } from './io.js'
 import { ensureIndex } from './index-freshness.js'
 import { ensurePrivateStateIgnored, privateStateRelative } from './private-state.js'
-// The chapter map `/gate` and `/review` resolve through (issue #200): a `chapterId` must
+// The chapter map `/gate` and `/review` resolve through: a `chapterId` must
 // mean the same chapter on every read route, so there is one lookup and not four.
 import { chapterPositions } from './domains/foreshadowing-query.js'
 
 /** The record's own identity, so a reader can refuse a file it does not understand. */
 export const BRIEF_AUDIT_FORMAT = 'inkflow.brief-audit'
 /**
- * `2` since #219 added `header` (the book identity line). The key set is part of the
+ * `2` because `header` (the book identity line) was added. The key set is part of the
  * contract, so an additive field still moves the number: a reader that only knows `1`
  * can tell the two shapes apart instead of guessing what an unfamiliar key means.
  * Nothing migrates — the files are private state, rewritten on the next audit.
@@ -75,7 +75,7 @@ export interface BriefAuditRecord {
   /** Project-relative: an absolute path would make the file machine-specific. */
   readonly chapterPath: string | null
   /**
-   * The book identity line, recorded verbatim (issue #219). It is the ONE string the
+   * The book identity line, recorded verbatim. It is the ONE string the
    * preview, the injection and this file share, so storing it — rather than a title plus
    * two counts the reader would have to re-format — is what makes "same header" a fact
    * about bytes instead of a claim about formatting. `''` means the brief is empty.
@@ -208,7 +208,7 @@ export interface BriefWire {
   readonly chapterId: string
   readonly chapterSeq: number | null
   readonly chapterPath: string | null
-  /** The identity line, also the first line of {@link text} (issue #219). */
+  /** The identity line, also the first line of {@link text}. */
   readonly header: string
   readonly budgetTokens: number
   readonly tokens: number
@@ -333,13 +333,13 @@ function refused(status: number, code: string, extra: JsonRecord = {}): BriefRep
 /**
  * `GET /brief`: the nine-segment preview.
  *
- * The index is refreshed first, exactly like `/chapters` and `/foreshadow` (issue #5): the
+ * The index is refreshed first, exactly like `/chapters` and `/foreshadow`: the
  * `characters` and `voice` segments read `character_states`, and a preview that ignored a
  * card the author saved a second ago would be a preview of a different book. A failed
  * rebuild is reported (`indexRebuilt: false`), never fatal — the brief then renders with
  * the segments the files can still answer.
  *
- * CHAPTER ADDRESSING (issue #200): `chapterId` wins over the `chapterSeq` in `options`,
+ * CHAPTER ADDRESSING: `chapterId` wins over the `chapterSeq` in `options`,
  * and an id that matches nothing is a **404 `CHAPTER_NOT_FOUND` naming that id** — it does
  * not fall back to the last chapter. The lookup runs AFTER `ensureIndex` and through
  * `chapterPositions()`, the map `/gate` and `/review` resolve through, so "which chapter

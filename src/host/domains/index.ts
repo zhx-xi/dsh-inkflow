@@ -8,7 +8,7 @@
  *
  * Besides the list this module holds `domainTools()` (the tool aggregate). The other
  * seam helper — `applyCandidate()`, the **only** implementation of "replace one path's
- * rows" — moved to `./types.js` in #24: a domain's own tools have to run that fold
+ * rows" — moved to `./types.js` when the domains landed: a domain's own tools run that fold
  * before writing, and importing this registry from a domain would close a runtime
  * import cycle (registry → domains → registry). Both names are re-exported below, so
  * no importer changes.
@@ -40,7 +40,7 @@ export const DOMAIN_MODULES: readonly DomainModule[] = [
   relationDomain,
   timelineDomain,
   worldDomain,
-  // #31 foreshadowing state machine
+  // Foreshadowing state machine
 ]
 
 /**

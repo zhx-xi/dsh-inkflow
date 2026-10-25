@@ -1,5 +1,5 @@
 /**
- * Taking shared entries INTO a book (#40): copy snapshot, `origin` provenance,
+ * Taking shared entries INTO a book: copy snapshot, `origin` provenance,
  * stale detection and the explicit per-entry update (ADR-0007 C2–C6).
  *
  * WHY A MODULE OF ITS OWN. `hub-shared.ts` is the read-only projection of
@@ -321,7 +321,7 @@ function kindOfProjectFile(file: string): SharedKind {
 }
 
 /**
- * Where a shared entry lands inside a book — exported for the series sync (#49).
+ * Where a shared entry lands inside a book — exported for the series sync.
  *
  * One function, so "which book path does this entry become" has exactly one answer: a
  * copy and a series sync that disagreed about it would write the same entry to two

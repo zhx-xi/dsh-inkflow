@@ -1,5 +1,5 @@
 /**
- * Line-level diff for the proposal workflow (#45, roadmap X-26).
+ * Line-level diff for the proposal workflow (roadmap X-26).
  *
  * A proposal is "what the session model would write instead of this chapter body",
  * cut into hunks the author accepts or rejects one by one. Two decisions live here

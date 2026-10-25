@@ -1,6 +1,6 @@
 /**
  * The migration **run**: book → staged copies → per-file rename → one backup package
- * (issue #51, roadmap X-29 / X-30).
+ * (roadmap X-29 / X-30).
  *
  * `etl-plan.ts` decides *what* the book should contain; this module decides *how it gets
  * there* without ever leaving a half-migrated book behind:

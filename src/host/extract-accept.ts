@@ -1,6 +1,6 @@
 /**
  * Turning a candidate into an entity — the one and only write path of extraction
- * (ADR-0017 D4/D5, issue #38).
+ * (ADR-0017 D4/D5).
  *
  * The discipline is the domain seam's own (X-4), run once here instead of six times:
  *
@@ -172,7 +172,7 @@ export function materializeCandidate(proposal: CandidateProposal): MaterializeRe
     const path = category === undefined ? at.path : `world/${category}/${at.path.slice('world/'.length)}`
     const parent = textField(fields, 'parent')
     const priority = numberField(fields, 'priority')
-    // The same keyword rule the tool applies (#169): a keyword carrying a separator cannot
+    // The same keyword rule the tool applies: a keyword carrying a separator cannot
     // survive `keywords: [a, b]`, so accepting it would write a document whose trigger word
     // is silently different from the candidate the author approved.
     const keywords = listField(fields, 'keywords')
@@ -340,9 +340,9 @@ export interface AcceptOutcome {
   readonly accepted: boolean
   /** Project-relative path of the written file (accepted only). */
   readonly path?: string
-  /** True when an existing file was replaced (only with an explicit `overwrite`). #178 */
+  /** True when an existing file was replaced (only with an explicit `overwrite`). */
   readonly overwritten?: boolean
-  /** True when the book already said this, so nothing had to be written. #178 */
+  /** True when the book already said this, so nothing had to be written. */
   readonly unchanged?: boolean
   readonly error?: AcceptRefusal
 }
@@ -377,7 +377,7 @@ function domainFor(kind: ExtractKind, modules: readonly DomainModule[]): DomainM
 }
 
 /**
- * Copy `path` into a sealed `replace` backup package before an overwrite (#178, X-17).
+ * Copy `path` into a sealed `replace` backup package before an overwrite (X-17).
  *
  * Sealed immediately rather than held open across the batch: one file is replaced per
  * candidate, so a package per overwrite is the honest unit — "which file did this click
@@ -404,7 +404,7 @@ function storeError(error: ExtractError): AcceptRefusal {
 }
 
 /**
- * What the project already holds at a candidate's address (#178).
+ * What the project already holds at a candidate's address.
  *
  * The author's rule: the same entity extracted twice is not a conflict to report — if the
  * content is the same there is nothing to review, and if it differs they want to be asked
@@ -425,7 +425,7 @@ export interface ExistingEntity {
 }
 
 /**
- * "Would this candidate land, and as what?" — the ONE judgement (#175, #178).
+ * "Would this candidate land, and as what?" — the ONE judgement.
  *
  * Accept runs it and writes when it says yes; `inkflow_extract_propose` runs the very same
  * function, so what the queue promises and what accepting does cannot drift (a second
@@ -597,7 +597,7 @@ export function acceptCandidates(
         continue
       }
       // The verdict comes from `judgeCandidate` — the same function `propose` calls to
-      // mark `willFail` (#175), so what the panel promised and what accept does cannot
+      // mark `willFail`, so what the panel promised and what accept does cannot
       // drift. A fresh scan happens inside it per candidate: the previous candidate in
       // this batch may have added a file, and judging the next one against a stale view
       // could let two candidates collide in the index after both were "validated".
@@ -610,7 +610,7 @@ export function acceptCandidates(
       const existing = judged.existing
 
       // The book already says exactly this: nothing to review and nothing to write, so the
-      // candidate is closed out rather than reported as a failure (#178).
+      // candidate is closed out rather than reported as a failure.
       if (existing !== undefined && existing.state === 'identical') {
         outcomes.push({ candidateId, kind: proposal.kind, accepted: true, path, unchanged: true })
         acceptedRefs.push({ file: record.file, candidateId })
@@ -633,7 +633,7 @@ export function acceptCandidates(
         }
         // The baseline is the digest recorded when the AUTHOR decided (propose time), not
         // the one this judgement just measured — otherwise an edit made in between would
-        // always look consistent and be silently clobbered (#178).
+        // always look consistent and be silently clobbered.
         const baseline = proposal.duplicate?.digest ?? existing.digest
         const current = fingerprintProjectFile(projectRoot, path)
         if (baseline !== undefined && current !== undefined && current.sha256 !== baseline) {

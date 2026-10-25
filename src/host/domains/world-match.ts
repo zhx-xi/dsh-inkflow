@@ -1,11 +1,11 @@
 /**
- * World-book keyword matching (issue #26).
+ * World-book keyword matching.
  *
  * The world book (`world/<category>/`) is a *lookup* device: a chapter naming
  * 白鹤门 must be able to pull that entry into the briefing context, and an entry
  * marked `always: true` must come along whatever the chapter says. This module is
  * the whole rule set, as one pure function — the injection chain that consumes it
- * is #43's, so nothing here reads the index, the files or the clock.
+ * belongs to the brief, so nothing here reads the index, the files or the clock.
  *
  * Reproducibility is the contract: the same entries and the same chapter text give
  * the same hits in the same order, on every machine. That is why the order is

@@ -1,6 +1,6 @@
 /**
- * The one shape a "problem" has, shared by the audit report (#33) and the repair
- * pass (#36) — roadmap X-14.
+ * The one shape a "problem" has, shared by the audit report and the repair
+ * pass — roadmap X-14.
  *
  * Why this exists as its own module: the index already reports problems, but as
  * `validation_issues { code, path, detail }` — enough for a rebuild log, not enough
@@ -11,7 +11,7 @@
  *
  * What lives here is deliberately small: the types, the five report groups, and the
  * code catalogue (`FINDING_CODES`). It has **no** check implementations and no
- * filesystem access — #33 produces findings, #36 consumes them, and both take their
+ * filesystem access — the audit produces findings, the repair pass consumes them, and both take their
  * vocabulary from this file. The catalogue is asserted against
  * [data-model §5](../../.agents/specs/data-model.md) by `tests/findings.test.js`, so
  * a code cannot exist in code and be missing from the invariant table (or the other
@@ -41,7 +41,7 @@ export type FindingLocator =
   | { readonly kind: 'chapter'; readonly chapterId: string }
   | { readonly kind: 'catalog'; readonly volumeId?: string }
 
-/** The five check families the report groups by (issue #33's 范围). */
+/** The five check families the report groups by (the audit's scope). */
 export const FINDING_GROUPS = ['structure', 'ledger', 'foreshadow', 'timeline', 'catalog'] as const
 export type FindingGroup = (typeof FINDING_GROUPS)[number]
 
@@ -55,7 +55,7 @@ export interface Finding {
   readonly detail: string
   /** What to do about it — the repair hint a person reads. */
   readonly hint: string
-  /** Whether #36 has a repair action for this code. */
+  /** Whether the repair pass has an action for this code. */
   readonly fixable: boolean
 }
 
@@ -97,25 +97,25 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'RELATION_ENDPOINT', group: 'structure', fixable: false, meaning: '关系两端不是各恰一个已存在实体' },
   { code: 'RELATION_SELF_LOOP', group: 'structure', fixable: false, meaning: '关系自环' },
   { code: 'RELATION_DUPLICATE', group: 'structure', fixable: true, meaning: '同 (source,target,kind) 的关系重复' },
-  // #48: the same unordered pair + kind claimed in contradictory directions (A→B and
+  // The same unordered pair + kind claimed in contradictory directions (A→B and
   // B→A both directed, or one directed and one undirected). Not `fixable` on purpose:
   // which file holds the surviving claim is the author's decision, and merging toward a
   // guessed direction is how a graph silently loses an edge.
   { code: 'RELATION_CONFLICT', group: 'structure', fixable: false, meaning: '同一对实体同类型的关系方向互相矛盾' },
-  // #188: the graph's third contradiction — `since`/`until` windows that cannot both hold
+  // The graph's third contradiction — `since`/`until` windows that cannot both hold
   // (one file whose window is empty or reversed, or two files writing two windows for one
   // relation). The judgement reuses the ledger's chapter order (I-23) rather than inventing a
   // second one. Not `fixable`: which of the two windows is the true one is the author's
   // knowledge, and merging toward a guessed span is how a relation silently moves in time.
   { code: 'RELATION_PERIOD_CONFLICT', group: 'structure', fixable: false, meaning: '关系的 since/until 时段自相矛盾或两条边写了两套时段' },
-  // #188: a boundary the book cannot place — a free label (`永平三年秋`) or a chapter id the
+  // A boundary the book cannot place — a free label (`永平三年秋`) or a chapter id the
   // book does not have. Reported so the gap is visible, and never blocking: "cannot say" is
   // not "says the opposite", and the lax path (no window at all, or free labels) must stay
   // writable.
   { code: 'RELATION_PERIOD_UNCOMPARABLE', group: 'structure', fixable: false, meaning: '关系时段有一端不是本书章 id，无法按章序判定' },
   { code: 'RELATION_FIELD_DEPRECATED', group: 'structure', fixable: true, meaning: '关系文件用了已废弃字段（如 direction）' },
   // Emitted by a domain's scan/validate as well as by a write plan (a hand-written file
-  // raises them), so they belong in the report's vocabulary — #33 surfaced that
+  // raises them), so they belong in the report's vocabulary — the audit surfaced that
   // `findings.test.js` had filed them as "bad request" codes because they are *also*
   // argument rejections. None is auto-fixable: each needs the author's judgement.
   { code: 'CHARACTER_NAME_REQUIRED', group: 'structure', fixable: false, meaning: '角色卡缺 name（文件名只是位置）' },
@@ -132,17 +132,17 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'FACT_CONFLICT', group: 'ledger', fixable: false, meaning: '同主体同属性的生效区间重叠且取值不同' },
 
   // foreshadow — foreshadowing/ (data-model I-09, I-21)
-  // Not auto-fixable on purpose (#143, ADR-0015 D2): the fix is either naming the chapter
+  // Not auto-fixable on purpose (ADR-0015 D2): the fix is either naming the chapter
   // that pays the setup off (the author's knowledge) or retracting `resolved` (denying what
   // the author wrote). A catalogue entry claiming `fixable` with no action behind it makes
   // the report say "1 fixable" while the repair pass offers nothing.
   { code: 'FORESHADOW_RESOLVED_WITHOUT_CHAPTER', group: 'foreshadow', fixable: false, meaning: 'resolved: true 缺 resolvedChapter' },
   { code: 'FORESHADOW_TRANSITION_INVALID', group: 'foreshadow', fixable: true, meaning: '伏笔状态非法流转（可由证据字段确定性推导）' },
-  // The two **audit-only** codes (#33). They are not invariants: nothing is refused and
+  // The two **audit-only** codes. They are not invariants: nothing is refused and
   // no rebuild reports them, because "late" is a fact about where the book stands today,
   // not about the file being wrong (data-model §3.2.2). They live in the catalogue anyway
   // so the report cannot invent a second vocabulary for the same idea (X-14), and they are
-  // emitted by `foreshadowing-plan.ts` — the module that owns the lateness rule — so #36
+  // emitted by `foreshadowing-plan.ts` — the module that owns the lateness rule — so the repair
   // sees the same wording the audit prints.
   { code: 'FORESHADOW_OVERDUE', group: 'foreshadow', fixable: false, meaning: '伏笔已过 dueBy 仍未回收' },
   { code: 'FORESHADOW_DUE_NOW', group: 'foreshadow', fixable: false, meaning: '伏笔正好到期（本期该回收）' },
@@ -160,7 +160,7 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'CHAPTER_FILE_MISSING', group: 'catalog', fixable: true, meaning: 'catalog 引用的章文件不存在' },
   { code: 'CHAPTER_NOT_MARKDOWN', group: 'catalog', fixable: false, meaning: '正文目录下有非 .md 文件（catalog 除外）' },
 
-  // The quality gate (#44, roadmap X-24). Seven checks over one chapter, emitted by
+  // The quality gate (roadmap X-24). Seven checks over one chapter, emitted by
   // `gate.ts` / `gate-rules.ts` into `.inkflow/audit/gate-<chapterId>.json`.
   //
   // `group` answers "which family of book facts does this finding touch", because
@@ -171,7 +171,7 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   //
   // `fixable` is false for every one of them on purpose (ADR-0022 D3 / ADR-0015 D2):
   // `repair.ts` is the one repair path and it has no action for a gate code, so a
-  // `true` here would promise a one-click fix that does nothing — the accident #143
+  // `true` here would promise a one-click fix that does nothing — the accident the gate
   // recorded. The mechanical classes flip to true in the commit that also teaches
   // `repair.ts` the rewrite, with its own tests.
   //
@@ -188,7 +188,7 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'GATE_AI_NARRATION', group: 'catalog', fixable: false, meaning: '解释性旁白：动作之后补写情绪结论' },
   { code: 'GATE_AI_MODIFIER', group: 'catalog', fixable: false, meaning: '形容词/副词（的、地、程度副词）密度过高' },
   { code: 'GATE_AI_TEMPLATE', group: 'catalog', fixable: false, meaning: '段尾套路话（空气仿佛凝固一类）' },
-  // #214 B 块：同一项的反方向——「太碎」。判据与阈值见 `gate-fragment.ts` / `FRAGMENT`，
+  // 同一项的反方向——「太碎」。判据与阈值见 `gate-fragment.ts` / `FRAGMENT`，
   // 严重级与上面六维一致（info，不拦写盘）：它们说的是「读着像不像人写的」，不是「写错了」。
   { code: 'GATE_AI_STUTTER', group: 'catalog', fixable: false, meaning: '电报体：连续 N 句都 ≤5 可见字' },
   { code: 'GATE_AI_LOW_LINK', group: 'catalog', fixable: false, meaning: '整章没有一处因果/转折/递进连接词' },
@@ -210,7 +210,7 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'GATE_PROOF_APPELLATION_MIXED', group: 'catalog', fixable: false, meaning: '同一角色在同一章内混用不同称谓' },
   { code: 'GATE_PROOF_ARABIC_MEASURE', group: 'catalog', fixable: false, meaning: '阿拉伯数字后紧接中文量词' },
   { code: 'GATE_PROOF_NUMBER_MIXED', group: 'catalog', fixable: false, meaning: '同一段里阿拉伯数字与汉字数字混写' },
-  // 8 退化检测（#212）— 「模型是不是写坏了」：七项判的是「写得好不好」，判不出复读、截断、
+  // 8 退化检测 — 「模型是不是写坏了」：七项判的是「写得好不好」，判不出复读、截断、
   // 占位语与工程词泄漏，而批量作业正是靠这条关口决定要不要落盘。四码都挂在章族（`catalog`）：
   // 它们全是「这一章的文本本身坏了」的事实，与设定库是否一致无关。
   { code: 'GATE_DEGEN_REPEAT', group: 'catalog', fixable: false, meaning: '复读：紧邻整行重复 / 整段重复 / 同句连发' },
@@ -218,7 +218,7 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'GATE_DEGEN_PLACEHOLDER', group: 'catalog', fixable: false, meaning: '占位语与元话语（（此处继续展开）/以下是第 N 章/生成拒绝语）' },
   { code: 'GATE_DEGEN_META_LEAK', group: 'catalog', fixable: false, meaning: '工程词泄漏（TODO/lorem/{{占位}}/as an AI/写作流水线术语）' },
 
-  // The review DAG (#46, roadmap X-24/X-26). One code per dimension rather than one
+  // The review DAG (roadmap X-24/X-26). One code per dimension rather than one
   // `REVIEW_OPINION`: the code is what a report groups and a repair pass dispatches on, and
   // "a structure problem" vs "a pacing problem" is the distinction a reader acts on. The
   // dimension also travels as its own field, because the panel filters on it; the code is

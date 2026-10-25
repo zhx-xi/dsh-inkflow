@@ -1,18 +1,18 @@
 /**
- * The export entry's Host half (#195, [ADR-0024](../../.agents/adrs/0024-export-zip-reuse.md) D4 /
+ * The export entry's Host half ([ADR-0024](../../.agents/adrs/0024-export-zip-reuse.md) D4 /
  * 「入口归属」, roadmap X-20) — and deliberately nothing more than a **thin forwarder**.
  *
- * WHY THIS FILE IS SHORT. `#50` already decided everything an export *is*: which chapters a
+ * WHY THIS FILE IS SHORT. The engine already decided everything an export *is*: which chapters a
  * selection keeps, how EPUB/DOCX/Markdown/TXT are built, that the artifact lands in
  * `dataDir/exports` and never in the book, that a refusal writes no file. That lives in
- * `export.ts` as `exportBook()`, and the tool `inkflow_export` calls it. #195 is about the
+ * `export.ts` as `exportBook()`, and the tool `inkflow_export` calls it. This file is about the
  * *entry*, so the GUI must call the SAME function: a second implementation would answer
  * slightly different questions ("the panel's EPUB has no toc entry") and nobody would notice
  * for a release. This module therefore owns exactly two things:
  *
  *   1. the anchor — the panel is root-scoped and has no session (ADR-0010 D3), so a book is
  *      named the way `/hub/books` listed it. `registeredBook()`/`usableBook()` are reused from
- *      `shared-channel.ts` (#40) on purpose: the anchor rule and the four-state gate have ONE
+ *      `shared-channel.ts` on purpose: the anchor rule and the four-state gate have ONE
  *      home, and a hub write into a directory the user has not opened is not expressible;
  *   2. the two channel replies — the read preview (`GET /hub/export/options`) and the export
  *      itself (`POST /hub/export`), each mapped to a status code the page can act on.

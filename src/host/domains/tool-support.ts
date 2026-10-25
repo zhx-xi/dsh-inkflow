@@ -2,7 +2,7 @@
  * The small surface every domain tool needs, in one place.
  *
  * `world-tools.ts` and `outline-tools.ts` each carry a private copy of these helpers
- * (they landed before this file existed); the timeline tools (#28) use this module
+ * (they landed before this file existed); the timeline tools use this module
  * instead of adding a third. Moving the two older copies over is a mechanical
  * follow-up that no branch has to own — nothing here is domain-specific:
  *
@@ -109,7 +109,7 @@ export function slugify(title: string): string {
  * would be written successfully and then be invisible: the tool answered 200, yet
  * `GET /library`/`GET /impact` cannot find it, the index has no row for it, and
  * the relations that name it report `RELATION_ENDPOINT` — the entry is gone, with
- * git as the only way back (#34 review). `.`/`..` are refused by the same line.
+ * git as the only way back (review). `.`/`..` are refused by the same line.
  */
 export function isPortableSlug(slug: string): boolean {
   return slug !== '' && !slug.startsWith('.') && !UNSAFE_SEGMENT.test(slug) && !slug.includes('/')

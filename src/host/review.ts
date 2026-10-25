@@ -1,5 +1,5 @@
 /**
- * Issue #46 — the review run: route the opinions, run the five nodes, assemble the replies.
+ * The review run: route the opinions, run the five nodes, assemble the replies.
  *
  * ## What this module owns, and what it refuses to own
  *
@@ -28,7 +28,7 @@
  * while the other four still finish. A crashed review is useless; a four-of-five review
  * with a named hole is usable.
  *
- * ## Where the pieces live (#193 split)
+ * ## Where the pieces live (the split)
  *
  * This file is the **orchestration and the outward replies**: run the DAG, then answer the
  * three callers — `inkflow_review_context` (`buildReviewContext`), the panel's
@@ -296,7 +296,7 @@ export function buildReviewList(
         recordDir: reviewDirOf(chapter.id),
         runCount: listed.runs.length,
         runs: listed.runs.slice(0, limit).map((run) => reviewRunSummary(run)),
-        // #199: the fold boundary travels WITH the page. The panel draws "更早的 N 次运行"
+        // The fold boundary travels WITH the page. The panel draws "更早的 N 次运行"
         // past this number, so `limit` (a bigger page) must not move it — otherwise opening
         // the fold would push its own boundary and the count would never reach zero.
         foldLimit: REVIEW_LIST_LIMIT,

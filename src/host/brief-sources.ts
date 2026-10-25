@@ -1,6 +1,5 @@
 /**
- * Who is on stage, for the brief's `characters` and `voice` segments (issue #43,
- * ADR-0022 D2).
+ * Who is on stage, for the brief's `characters` and `voice` segments (ADR-0022 D2).
  *
  * WHY THIS IS NOT A DOMAIN MODULE: the two segments are *views* over the setting
  * library (`characters/*.md` → the `characters` + `character_states` tables), not a new
@@ -53,7 +52,7 @@ export const MAX_CAST_SHOWN = 8
 export const MAX_VOICE_SHOWN = 6
 
 /**
- * Cap for one **marker** segment (`promise` / `anchors`), in characters (#213).
+ * Cap for one **marker** segment (`promise` / `anchors`), in characters.
  *
  * One constant for both: they are the same shape of material — a few hand-written lines
  * the author typed into the chapter's own outline node — read by the same function and
@@ -64,7 +63,7 @@ export const MAX_VOICE_SHOWN = 6
 export const MAX_TAGGED_CHARS = 400
 
 /**
- * The two marker tags a chapter-level outline node may carry (#213).
+ * The two marker tags a chapter-level outline node may carry.
  *
  * `promise` / `anchors` had no source at all (X-26), so the brief said so with
  * `missing: true`. Giving them one does **not** mean a new frontmatter field — that would
@@ -85,7 +84,7 @@ export interface BriefTaggedText {
 
 /**
  * The `promise` / `anchors` segment, built from the tagged bullets of **this** chapter's
- * own outline body (issue #213).
+ * own outline body.
  *
  * `undefined` means exactly one thing: the author wrote no such bullet here, so the brief
  * reports `missing: true`. There is no fallback — not to the previous chapter's node, not

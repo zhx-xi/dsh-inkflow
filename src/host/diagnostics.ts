@@ -145,7 +145,7 @@ export interface DiagnosticsDocument {
     reason: string
   }
   /**
-   * The brief's run counters (issue #43, ADR-0022 D2: "超预算次数进诊断包").
+   * The brief's run counters (ADR-0022 D2: "超预算次数进诊断包").
    *
    * COUNTS AND SEGMENT IDS ONLY — no rendered text, no chapter prose, no file name: the
    * question this answers is "when the context did not fit, which segments paid for it",

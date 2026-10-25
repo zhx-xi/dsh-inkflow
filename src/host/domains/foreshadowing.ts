@@ -1,5 +1,5 @@
 /**
- * Foreshadowing domain (`foreshadowing/`) — issue #31.
+ * Foreshadowing domain (`foreshadowing/`).
  *
  * Owns the state machine and the computed lateness of data-model §3.2: the
  * `foreshadowings` table, the reminder that goes into the writing context, and the two

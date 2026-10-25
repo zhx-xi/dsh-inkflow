@@ -1,5 +1,5 @@
 /**
- * Issue #47 — the batch job queue: many chapters drafted in one run, resumable after a
+ * The batch job queue: many chapters drafted in one run, resumable after a
  * kill, without a model client inside the plugin.
  *
  * ## The division of labour (roadmap X-26, [ADR-0017](../../.agents/adrs/0017-extraction-by-session-model.md))
@@ -66,7 +66,7 @@
  * cannot save for an hour" (X-30). A refusal is `PROJECT_BUSY` **plus** who holds the lock,
  * so the caller can say which session to wait for.
  *
- * ## Where the pieces live (#193 split)
+ * ## Where the pieces live (the split)
  *
  * This file is the **entry surface** of the queue: the four layers below are re-exported here
  * so the tools, the panel route and the tests keep one import, and so "which module owns this"

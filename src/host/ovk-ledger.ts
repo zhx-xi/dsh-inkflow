@@ -1,5 +1,5 @@
 /**
- * The semantic block ledger — what this plugin has written into OpenViking (#41).
+ * The semantic block ledger — what this plugin has written into OpenViking.
  *
  * WHY IT IS NOT IN THE DERIVED INDEX (ADR-0020 E4). Two of the facts here cannot be
  * derived from the files:
@@ -10,7 +10,7 @@
  *     it only in an explicit "clean up the deleted chapters" action, which needs a list.
  *
  * Putting that state in `index/inkflow.db` would therefore delete it exactly when the
- * cache is rebuilt (AGENTS §8 #5), and `inkflow_semantic_purge` would always answer "no
+ * cache is rebuilt (AGENTS §8 row 5), and `inkflow_semantic_purge` would always answer "no
  * orphans". ADR-0005's split is the guide: files are truth, the index is a cache, and
  * state that is neither belongs in the plugin's own directory (ADR-0012 / ADR-0018 D1).
  *
@@ -288,7 +288,7 @@ export interface ChapterSource {
  * a book that trips the confirm threshold can also be a book a page-capped read would cut
  * short — a rebuild that saw 500 of 520 chapters would silently stop writing blocks for
  * the tail. The unbounded read therefore lives in `indexer.ts` (`listAllChapters`) so the
- * book's chapter count has exactly one source (issue #161); this function only narrows the
+ * book's chapter count has exactly one source; this function only narrows the
  * summary to the fields a rebuild walks.
  */
 export function chapterSources(root: string): ChapterSource[] | undefined {
@@ -334,7 +334,7 @@ export interface RebuildPlan {
    *
    * NOT a tombstone: a read that failed says nothing about whether the chapter still
    * exists, and the tombstone path *overwrites* the chapter's blocks with a deleted marker
-   * — one lost read would wipe a live chapter out of recall (issue #207). They are handed
+   * — one lost read would wipe a live chapter out of recall. They are handed
    * to the caller as stale so the next run retries them and the status surface names them.
    */
   unreadable: string[]

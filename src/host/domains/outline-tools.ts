@@ -1,5 +1,5 @@
 /**
- * Outline tools (`inkflow_outline_*`, issue #24) — the model-facing write surface of
+ * Outline tools (`inkflow_outline_*`) — the model-facing write surface of
  * the outline domain.
  *
  * They live beside the domain rather than in `tools.ts` because the aggregate there is

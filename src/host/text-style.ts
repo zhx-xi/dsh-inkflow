@@ -1,5 +1,5 @@
 /**
- * The line-ending and BOM style of a manuscript file (ADR-0016, issue #132).
+ * The line-ending and BOM style of a manuscript file (ADR-0016).
  *
  * A chapter has a format of its own — the author wrote it on Windows with CRLF, or
  * in an editor that stamped a UTF-8 BOM — and the plugin's job is to edit the

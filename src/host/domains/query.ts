@@ -165,7 +165,7 @@ export function searchEntities(root: string, query: string, limit = DEFAULT_LIMI
 
 /**
  * One hit of the cross-class search, in the shape X-16 fixes
- * (`{kind, id, path, title, snippet, offset?, score?}`, issue #39).
+ * (`{kind, id, path, title, snippet, offset?, score?}`).
  *
  * `snippet` is cut from the entry's own searchable fields (title · aliases ·
  * keywords) rather than from the file: the projection stores frontmatter values, not
@@ -235,7 +235,7 @@ function entityHitOf(row: Record<string, unknown>, terms: readonly string[], rad
 /**
  * Search the entity projection by title, aliases or keywords, with a total and a page.
  *
- * This is the shape the unified search (#39, X-16) needs and `searchEntities` above
+ * This is the shape the unified search (X-16) needs and `searchEntities` above
  * cannot give it: a count for `total`, a snippet, and multi-term AND semantics that
  * match the chapter side (every whitespace-separated term has to appear somewhere in
  * the entry's fields). `undefined` means "no usable index", never "no matches".
@@ -387,7 +387,7 @@ export function listRelationsFor(root: string, entityId: string, limit?: number)
 }
 
 /**
- * Display titles for a handful of entity ids, from the cross-class projection (#48).
+ * Display titles for a handful of entity ids, from the cross-class projection.
  *
  * Why not `listEntities` + a filter: the clue view asks about the peers of *one* entity,
  * which may be a dozen ids of five different kinds, and reading the whole projection to
@@ -440,7 +440,7 @@ export function entityCounts(root: string): Record<string, number> | undefined {
 }
 
 /**
- * One world entry as the world book reads it (issue #26).
+ * One world entry as the world book reads it.
  *
  * Read from `world_entries` rather than from the `entities` projection: `always`
  * and `priority` are world-book fields and are deliberately **not** columns of the
@@ -510,7 +510,7 @@ export function listEntityIds(root: string): Set<string> | undefined {
 /**
  * Every timeline event, ordered by path so two builds of the same book list them the
  * same way. The **axes** are not sorted here: `planTimelineView()` owns both orders,
- * so the world axis and the narrative axis are judged by one pure function (#28)
+ * so the world axis and the narrative axis are judged by one pure function
  * instead of by an SQL ORDER BY that a caller could forget to ask for.
  *
  * Read from `timeline_events` rather than from the `entities` projection: `worldTime`,
@@ -518,7 +518,7 @@ export function listEntityIds(root: string): Set<string> | undefined {
  * the projection (X-1 fixes that column set), so the projection cannot answer "what
  * happened before some date".
  *
- * `world_era` / `world_absolute_day` come straight out of the row (#48): they were
+ * `world_era` / `world_absolute_day` come straight out of the row: they were
  * derived once at build time from the book's calendar, so a reader that gets a row back
  * never re-derives (and cannot re-derive differently) which day the author meant.
  */
@@ -551,7 +551,7 @@ export function listTimelineEvents(root: string): TimelineRow[] | undefined {
 }
 
 /**
- * Chapter positions for a reader that needs "which chapter is later" (#188).
+ * Chapter positions for a reader that needs "which chapter is later".
  *
  * Why not `chapterPositions()` from `foreshadowing-query.ts`: that module imports
  * `indexer.ts` at run time, and the relation tools are reached *from* the registry, so

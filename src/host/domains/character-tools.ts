@@ -1,5 +1,5 @@
 /**
- * The character domain's model-facing tools (#25) — `inkflow_character_list` and
+ * The character domain's model-facing tools — `inkflow_character_list` and
  * `inkflow_character_upsert`.
  *
  * Why the write orchestration lives here and not in `character-write.ts`: the
@@ -19,7 +19,7 @@
  *
  * The domain is passed in (`characterTools(deps, domain)`) instead of imported, for
  * the same reason: this module must not close the loop back onto `character.ts`.
- * `deps` is required and comes first, like `worldTools(deps)` (#26): a missing host
+ * `deps` is required and comes first, like `worldTools(deps)`: a missing host
  * must fail at the call site that forgot it, not silently resolve the workspace
  * from `process.cwd()` — inside the host process that is the DSH install
  * directory, so every tool would answer `NOT_AN_INKFLOW_PROJECT` for a healthy book.
@@ -74,7 +74,7 @@ function optionalStringList(value: unknown): string[] | undefined {
  * throws a `TypeError` on `\n`/`\r`, and that throw happens *after* the caller is
  * committed: the write lock turns it into `IO_FAILED`, so the model is told the
  * disk failed when nothing was written, and it cannot see which field to fix.
- * Judged here, before the lock, so the refusal stays data (#25 review, D-6).
+ * Judged here, before the lock, so the refusal stays data (review D-6).
  */
 function listItemProblem(field: string, items: readonly string[]): string | undefined {
   for (const item of items) {
@@ -346,7 +346,7 @@ function indexLine(value: Json): string {
 /**
  * The domain's tools.
  *
- * `deps` is required and first, exactly like `worldTools(deps)` (#26). An optional
+ * `deps` is required and first, exactly like `worldTools(deps)`. An optional
  * `deps` with a `{ get: () => undefined }` stand-in let a mis-assembled plugin keep
  * answering — every tool then resolved the workspace from `process.cwd()` and
  * reported `NOT_AN_INKFLOW_PROJECT` for a book the user had open. A required

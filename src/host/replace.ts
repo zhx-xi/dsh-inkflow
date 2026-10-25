@@ -1,5 +1,5 @@
 /**
- * Search-and-replace over chapter prose (issue #39, roadmap X-17).
+ * Search-and-replace over chapter prose (roadmap X-17).
  *
  * X-17 is the batch-write contract, and this file is its worked example: a batch
  * change is **preview = execution**, it takes a rollback package, and it can be

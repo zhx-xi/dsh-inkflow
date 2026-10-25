@@ -1,5 +1,5 @@
 /**
- * Character domain (`characters/`) — issue #25.
+ * Character domain (`characters/`).
  *
  * Owns three things:
  *
@@ -311,8 +311,8 @@ export const characterDomain: DomainModule = {
   },
 
   /**
-   * Tools are bound to the session: `deps` is required, like `worldTools(deps)`
-   * (#26). There is no `process.cwd()` fallback — a card tool that guessed its
+   * Tools are bound to the session: `deps` is required, like `worldTools(deps)`.
+   * There is no `process.cwd()` fallback — a card tool that guessed its
    * book would answer "not a project" for the one the user has open.
    */
   tools(deps) {

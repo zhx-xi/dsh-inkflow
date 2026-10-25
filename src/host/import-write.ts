@@ -1,5 +1,5 @@
 /**
- * Importing an old manuscript into the book (issue #37, roadmap X-17): plan → confirm → apply.
+ * Importing an old manuscript into the book (roadmap X-17): plan → confirm → apply.
  *
  * The shape is X-17's, and it is the same shape `repair.ts` and `migrate.ts` use:
  *

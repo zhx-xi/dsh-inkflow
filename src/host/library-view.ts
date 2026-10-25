@@ -1,5 +1,5 @@
 /**
- * The setting library's panel projections (issue #30, roadmap X-7 / X-8).
+ * The setting library's panel projections (roadmap X-7 / X-8).
  *
  * X-7 fixes the shape: the tree's top level is `CONTENT_DIRS` minus `chapters`
  * (8 kinds — the chapter tree belongs to the workbench, M13), and 地点 is a
@@ -13,7 +13,7 @@
  *
  * READ DISCIPLINE: nothing here writes. `ensureIndex` is the one exception the
  * read routes are allowed (a rebuildable cache inside a `usable` project,
- * conventions §6.2 / issue #5) — the same call `/chapters` and `/search` make,
+ * conventions §6.2) — the same call `/chapters` and `/search` make,
  * so a fresh book does not show an empty library until the chapter tab is
  * opened. The entity file is only READ, through `parseMarkdown` (BOM/CRLF
  * tolerant, the same reader the indexer uses).
@@ -379,7 +379,7 @@ export async function buildLibraryItem(
       body: parsed?.body ?? '',
       bodyChars: parsed === undefined ? 0 : countChars(parsed.body),
       issues: parsed?.issues ?? [],
-      // The CAS baseline for the next save (issue #30, second batch): the editor
+      // The CAS baseline for the next save (second batch): the editor
       // reads an entry, edits it, and writes back against exactly these bytes.
       // Without it the panel could not tell "the file changed under me" from
       // "my own save", and `POST /library/item` refuses a save without one.

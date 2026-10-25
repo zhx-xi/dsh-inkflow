@@ -1,5 +1,5 @@
 /**
- * Entity mentions (#29, roadmap M18 / data-model §4.2).
+ * Entity mentions (roadmap M18 / data-model §4.2).
  *
  * The manuscript names the setting library all the time — 清音 walks in, 白鹤门
  * raises its gate — and until this table existed none of it was indexed, so
@@ -63,7 +63,7 @@ export const MENTION_SOURCES = ['explicit', 'alias', 'name'] as const
 export type MentionSource = (typeof MENTION_SOURCES)[number]
 
 /**
- * Statements for the mentions table (#29; `INDEX_SCHEMA_VERSION` 3 → 4).
+ * Statements for the mentions table (`INDEX_SCHEMA_VERSION` 3 → 4).
  *
  * The primary key is the natural one and includes `offset`: a chapter naming the
  * same entity twice is two rows, and the same offset can legitimately hold both a
@@ -203,7 +203,7 @@ function pushInto(map: Map<string, string[]>, key: string, value: string): void 
  * An alias that only repeats the entity's own name (I-03 allows it) is not a
  * second way to be mentioned — one `name` row already covers it.
  *
- * **`kind === 'facts'` is skipped on purpose** (rework of PR #124, data-model §5 I-04). A
+ * **`kind === 'facts'` is skipped on purpose** (data-model §5 I-04). A
  * ledger entry has no name of its own: its `title` is the *subject's* display name, so
  * keeping it in the automaton counted every 清音 in the manuscript twice — once for
  * `characters:char-qingyin`, once for `facts:facts/char-qingyin.md` — and an impact report
@@ -273,7 +273,7 @@ function compareRows(left: MentionRow, right: MentionRow): number {
 }
 
 /**
- * Every mention of every entity in every chapter body (#29).
+ * Every mention of every entity in every chapter body.
  *
  * Pure: no filesystem, no database, no clock — which is what lets the DoD figure
  * be measured directly in a test rather than inferred from a timed rebuild.

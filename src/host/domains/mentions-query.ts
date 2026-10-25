@@ -1,5 +1,5 @@
 /**
- * Reading `entity_mentions` (#29).
+ * Reading `entity_mentions`.
  *
  * Three questions, in the order the product asks them:
  *   `mentionsOf`         — where is this entity named? (jump-to-text, impact list)

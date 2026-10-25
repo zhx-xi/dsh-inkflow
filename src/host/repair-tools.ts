@@ -1,5 +1,5 @@
 /**
- * The maintenance tool surface (#36): `inkflow_project_repair` and
+ * The maintenance tool surface: `inkflow_project_repair` and
  * `inkflow_project_migrate`.
  *
  * Two tools, and both are deliberately **three-staged with an explicit confirm**,

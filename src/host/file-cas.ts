@@ -1,5 +1,5 @@
 /**
- * Write-time compare-and-swap on a project file (issue #5).
+ * Write-time compare-and-swap on a project file.
  *
  * Files are the truth (ADR-0005), which means a human can edit a chapter in
  * their own editor at any moment — including between "the model read it" and

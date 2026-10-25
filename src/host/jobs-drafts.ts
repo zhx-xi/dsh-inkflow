@@ -1,7 +1,7 @@
 /**
- * Issue #47 — the drafting half: `complete` (gate first, write second) and `approve`.
+ * The drafting half: `complete` (gate first, write second) and `approve`.
  *
- * Extracted from `jobs.ts` by #193, and split from the queue half (`jobs-actions.ts`)
+ * Extracted from `jobs.ts` when it was split, and split from the queue half (`jobs-actions.ts`)
  * because this is the only place in a batch job where a chapter file can change, and a
  * thousand-line file is not where a write path should be hard to find.
  *

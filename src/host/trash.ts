@@ -1,5 +1,5 @@
 /**
- * The recovery bin (#35, roadmap X-9 / X-10, [ADR-0012](../../../.agents/adrs/0012-plugin-private-state-dir.md)).
+ * The recovery bin (roadmap X-9 / X-10, [ADR-0012](../../../.agents/adrs/0012-plugin-private-state-dir.md)).
  *
  * A delete that cannot be undone is the one mistake git cannot help with before
  * the author commits, so every removal this plugin performs first moves the file
@@ -13,7 +13,7 @@
  * Six properties this module is built around, each checkable:
  *
  *   1. **Nothing but a copy is ever created here.** The bin holds user data, so
- *      it is never auto-pruned (ADR-0012 #4): an entry leaves only through
+ *      it is never auto-pruned (ADR-0012 decision 4): an entry leaves only through
  *      `restoreTrash` (the file went back) or `purgeTrash` (`confirm: true`).
  *   2. **The copy is verified before the original is touched.** "We have a copy"
  *      is a measurement, not a belief: after writing it the bytes are re-read and
@@ -37,7 +37,7 @@
  *      is what frees the slot.
  *
  * Why its own module rather than a few functions in `chapters.ts`: the migration
- * backup (#36) shares the directory but not the format (X-10), and the chapter
+ * backup shares the directory but not the format (X-10), and the chapter
  * cascade is already 1300 lines. This file owns the bin's format, its invariants
  * and nothing else. The channel half (route replies) lives in `trash-channel.ts`.
  */
@@ -123,7 +123,7 @@ export interface TrashFileOk {
   root: string
   entry: TrashEntry
   trashPath: string
-  /** Result of the append-only `.gitignore` step (ADR-0012 #2); reported, not thrown. */
+  /** Result of the append-only `.gitignore` step (ADR-0012 decision 2); reported, not thrown. */
   ignored: { ok: boolean; added: boolean; error?: string }
 }
 
@@ -257,7 +257,7 @@ function pruneEmptyBinDirs(root: string, fileRelativePath: string): void {
  *   4. write the manifest entry — *before* the original is removed, so a crash
  *      leaves "copy + entry + original" (duplicated, recoverable) rather than
  *      "copy + original, no entry" (an orphan nobody can find);
- *   5. append the `.gitignore` line (ADR-0012 #2), then remove the original; if
+ *   5. append the `.gitignore` line (ADR-0012 decision 2), then remove the original; if
  *      that last step fails, unwind the entry and the copy so the bin never
  *      claims a file that is still in the working tree.
  *
@@ -375,7 +375,7 @@ export function trashFile(projectRoot: string, input: TrashFileInput): TrashFile
 
   // Invariant: nothing is written for a refusal, `.gitignore` included — that is
   // why the ignore line is appended only once the copy and its entry are both in
-  // place (ADR-0012 #2: the line exists from the moment the bin is used, and a
+  // place (ADR-0012 decision 2: the line exists from the moment the bin is used, and a
   // delete that refused before that point never used it).
   const ignored = ensurePrivateStateIgnored(root)
 
@@ -544,7 +544,7 @@ export function restoreTrash(projectRoot: string, input: RestoreInput): RestoreR
  * Forever remove one entry: the copy and the manifest row.
  *
  * `confirm: true` is required — this is the only irreversible action in the bin
- * and the panel asks twice (ADR-0012 #4). A copy that is already gone is not an
+ * and the panel asks twice (ADR-0012 decision 4). A copy that is already gone is not an
  * error: purging is how an orphaned entry is cleared.
  */
 export function purgeTrash(projectRoot: string, input: PurgeInput): PurgeResult {

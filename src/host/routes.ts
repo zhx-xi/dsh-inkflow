@@ -1,5 +1,5 @@
 /**
- * The private panel channel: `/inkflow/internal/*` (ADR-0008, issue #18).
+ * The private panel channel: `/inkflow/internal/*` (ADR-0008).
  *
  * It is NOT an API. There is no version segment, no OpenAPI, no compatibility
  * promise and no documentation for third parties (ADR-0008 D2). The only
@@ -39,12 +39,12 @@
  * the bin through `trash.ts`; never through this file: see `internal.ts` for the
  * domain mapping and the CAS plumbing.
  *
- * THE RECOVERY BIN (issue #35, roadmap X-9/X-10) is one read route — `/trash` —
+ * THE RECOVERY BIN (roadmap X-9/X-10) is one read route — `/trash` —
  * plus those two writes. An entry is addressed by its manifest `id`, so the
  * browser still names no directory; `POST /trash/purge` needs `confirm: true`
- * in the body, which is the second half of ADR-0012 #4.
+ * in the body, which is the second half of ADR-0012 decision 4.
  *
- * THE SETTING LIBRARY (issue #30) is three read routes — `/library` (the
+ * THE SETTING LIBRARY is three read routes — `/library` (the
  * eight-kind tree, X-7), `/library/item?kind=&id=` (one entry) and
  * `/library/issues` (`validation_issues`) — plus the one `POST /library/item`
  * save. All of them name an entity rather than a directory and reuse every
@@ -57,9 +57,9 @@
  * loopback host/origin/peer, per-route methods, the path-parameter ban, the body
  * cap, and a body-field allowlist per route. A hub write route (`plan`/`apply`,
  * ADR-0010 D4) additionally requires an `Origin` that is the SAME ORIGIN as
- * `Host`, not merely loopback (ADR-0010 D6 #6).
+ * `Host`, not merely loopback (ADR-0010 D6 guard 6).
  *
- * THE SHARED LIBRARY HAS TWO HALVES (#40, ADR-0007). Browsing it is the one hub
+ * THE SHARED LIBRARY HAS TWO HALVES (ADR-0007). Browsing it is the one hub
  * read that belongs to no book (`/hub/shared`, ADR-0010 D5). Taking an entry INTO
  * a book (`/hub/shared/copies`, `/hub/shared/copy`, `/hub/shared/update`) is a hub
  * WRITE, so it needs the same-origin guard *and* an anchor: the request names
@@ -80,7 +80,7 @@ import {
   sharedCopyReply,
   sharedUpdateReply,
 } from './shared-channel.js'
-// The series sync (#49) reuses #40's anchor rule (`registeredBook`/`usableBook`) rather than
+// The series sync reuses the shared library's anchor rule (`registeredBook`/`usableBook`) rather than
 // restating "which directory may I write into" — one guard, one place.
 import { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'
 import {
@@ -98,7 +98,7 @@ import {
   writeHubSettings,
 } from './hub-settings.js'
 import { HUB_APPLY_BODY_FIELDS, HUB_PLAN_BODY_FIELDS, hubApply, hubPlan } from './hub-wizard.js'
-// The export entry (#195): a thin forwarder to `exportBook()`, so the page and `inkflow_export`
+// The export entry: a thin forwarder to `exportBook()`, so the page and `inkflow_export`
 // are one computation (ADR-0024 入口归属).
 import { HUB_EXPORT_BODY_FIELDS, hubExportOptions, hubExportReply } from './export-channel.js'
 import { sharedRootOf } from './settings.js'
@@ -194,8 +194,8 @@ export interface HttpDeps {
 
 /**
  * The route contract (`HttpMethod` / `RouteInput` / `RouteReply` / `InternalRoute` /
- * `KNOWN_METHODS`) lives in `route-types.ts`: this file is at its line budget, and #199's
- * purge routes keep their descriptors next to the channel that answers them, so the shape
+ * `KNOWN_METHODS`) lives in `route-types.ts`: this file is at its line budget, and the purge
+ * routes keep their descriptors next to the channel that answers them, so the shape
  * needs a home that is not "inside the biggest dispatch loop".
  */
 
@@ -261,7 +261,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
   {
-    // The single search entry (#39, roadmap X-16): body prose plus every setting kind,
+    // The single search entry (roadmap X-16): body prose plus every setting kind,
     // one page at a time. `kinds` (repeated or comma-separated) narrows it; an unusable
     // index is a 200 answer with `degradedReason`, never a 5xx.
     name: 'search',
@@ -283,7 +283,7 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The replace preview (#39, X-17): what a batch would change, with the exact
+    // The replace preview (X-17): what a batch would change, with the exact
     // `expected` set an apply must send back. Read-only — it does not even refresh the
     // index, because a preview is a question and a rebuild during a question is a write.
     name: 'replace-preview',
@@ -309,7 +309,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: ({ target, version, body }) => replaceApplyReply(target, version, body),
   },
   {
-    // The setting library (issue #30, X-7): eight kind groups, `world` carrying
+    // The setting library (X-7): eight kind groups, `world` carrying
     // its `category` buckets. Read-only; the index is refreshed through the same
     // `ensureIndex` the chapter tree uses (conventions §4.0's single trigger).
     name: 'library',
@@ -323,7 +323,7 @@ const ROUTES: readonly InternalRoute[] = [
     // the path-parameter ban above still means what it says. 400 for an unknown
     // kind or a missing id, 404 for an id the projection does not hold.
     //
-    // POST is the editor's save (issue #30, second batch): it carries the same
+    // POST is the editor's save (second batch): it carries the same
     // `kind`/`id` address plus `frontmatter`/`body`/`expected`, so a write still
     // names an entity and never a directory. The body allowlist below is the
     // write guard — `path`/`root`/… are a 400 before any filesystem access.
@@ -351,7 +351,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildLibraryIssues(target, version)) }),
   },
   {
-    // The impact listing (#34, conventions §5.6): what a setting change would touch
+    // The impact listing (conventions §5.6): what a setting change would touch
     // across the manuscript, the graph and the three file-only reference sites.
     //
     // GET-only and **read-only**: unlike `/chapters` and `/search` it does NOT call
@@ -376,7 +376,7 @@ const ROUTES: readonly InternalRoute[] = [
       }),
   },
   {
-    // The rename itself (#34, ADR-0014): move the file, pin the OLD id, rewrite no
+    // The rename itself (ADR-0014): move the file, pin the OLD id, rewrite no
     // reference. A write route, so it carries every write guard declared above plus
     // the mandatory CAS baseline (`expected`, §5.5).
     name: 'impact-rename',
@@ -387,9 +387,9 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async ({ target, version, body }) => renameEntity({ source: target, version, body }),
   },
   {
-    // The recovery bin (#35, roadmap X-9/X-10): what a delete moved to
+    // The recovery bin (roadmap X-9/X-10): what a delete moved to
     // `.inkflow/trash/`, newest first. Read-only and read-only by design — the
-    // bin never prunes itself (ADR-0012 #4), so this route only looks.
+    // bin never prunes itself (ADR-0012 decision 4), so this route only looks.
     name: 'trash',
     pattern: /^\/trash$/,
     methods: ['GET'],
@@ -406,14 +406,14 @@ const ROUTES: readonly InternalRoute[] = [
     body: TRASH_RESTORE_BODY_FIELDS,
     handle: ({ target, version, body }) => restoreTrashReply(target, version, body),
   },
-  // The purge area's three routes (#199): `GET /purged`, `POST /purged/clean`,
+  // The purge area's three routes: `GET /purged`, `POST /purged/clean`,
   // `POST /purged/restore`. Their descriptors live in `private-purge-routes.ts` — this file is
   // exactly on its line budget, and they are dispatched through the same guards as every entry
   // above (the table is one list; where a row was written changes nothing).
   ...PRIVATE_PURGE_ROUTES,
   {
     // Forever: copy plus entry. `confirm: true` is required in the body — the
-    // panel asks twice, and this is the net under that (ADR-0012 #4).
+    // panel asks twice, and this is the net under that (ADR-0012 decision 4).
     name: 'trash-purge',
     pattern: /^\/trash\/purge$/,
     methods: ['POST'],
@@ -422,7 +422,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: ({ target, version, body }) => purgeTrashReply(target, version, body),
   },
   {
-    // The foreshadow board (issue #31, data-model §3.2): read-only, three groupings
+    // The foreshadow board (data-model §3.2): read-only, three groupings
     // of the same entries (open / late / by linked entity). Lateness is computed by
     // the Host against the latest chapter — the panel never re-derives it, so there
     // is exactly one definition of "超期" in the product.
@@ -433,7 +433,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildForeshadowBoard(target, version)) }),
   },
   {
-    // The quality gate (#44, ADR-0022 D4): seven checks over ONE chapter — 字数 / 章末钩子 /
+    // The quality gate (ADR-0022 D4): seven checks over ONE chapter — 字数 / 章末钩子 /
     // 六维去 AI 味 / 一致性 / 敏感自查 / 平台规则 / 机械校对 — with the counts of all seven
     // and one row per finding.
     //
@@ -455,7 +455,7 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The consistency audit (#33, roadmap X-14): five families — structure / ledger /
+    // The consistency audit (roadmap X-14): five families — structure / ledger /
     // foreshadow / timeline / catalog — as one sorted `Finding[]`, with the first `limit`
     // of them and the counts of all.
     //
@@ -474,8 +474,8 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The report file (#33): `.inkflow/audit/audit-<时间戳>.md`, derived and deletable
-    // (ADR-0012 #6). A write route, so it carries every write guard declared above plus
+    // The report file: `.inkflow/audit/audit-<时间戳>.md`, derived and deletable
+    // (ADR-0012 decision 6). A write route, so it carries every write guard declared above plus
     // `confirm: true` — the panel asks once with an explicit label, this is the net under
     // it. The audit is re-run here rather than trusting a client-supplied body: the report
     // must describe the files now.
@@ -487,7 +487,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: ({ target, version, body }) => exportAudit(target, version, body),
   },
   {
-    // Importing an old manuscript (#37, X-17): `action: 'plan'` previews, `action:
+    // Importing an old manuscript (X-17): `action: 'plan'` previews, `action:
     // 'apply'` writes with `confirm: true`. ONE POST for both actions, because the
     // preview has to name the file the author picked (`sourcePath`) — and a field that may
     // point outside the book has to ride the write route's guards (Origin present and
@@ -502,7 +502,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async ({ target, version, body }) => importViaChannel({ source: target, version, body }),
   },
   {
-    // The extraction queue (#38, X-20, ADR-0017): what the session model proposed and what
+    // The extraction queue (X-20, ADR-0017): what the session model proposed and what
     // the author has not judged yet. Read-only and it does NOT call `ensureIndex` — the
     // queue is plain JSON under `.inkflow/candidates/`, so the tab must open on a book
     // whose index is missing (which is exactly when a candidate is worth accepting).
@@ -550,14 +550,14 @@ const ROUTES: readonly InternalRoute[] = [
     handle: ({ target, version, body }) => purgeViaChannel(target, version, body),
   },
   {
-    // The nine-segment brief (#43, ADR-0022 D1/D2, X-23): every segment as
+    // The nine-segment brief (ADR-0022 D1/D2, X-23): every segment as
     // `{id,label,bytes,tokens,truncated,missing}` in the one fixed order
     // (`outline → promise → characters → voice → facts → foreshadow → world → prevTail →
     // anchors`), plus the trim records and the totals.
     //
     // It is the SAME `buildWritingBrief()` the audit writes from — the preview is not a
     // second assembly, which is the whole point of D1. GET-only: the read path may refresh
-    // the derived index (issue #5, like `/chapters` and `/foreshadow`) but writes no file.
+    // the derived index (like `/chapters` and `/foreshadow`) but writes no file.
     name: 'brief',
     pattern: /^\/brief$/,
     methods: ['GET'],
@@ -574,7 +574,7 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The injection audit (#43, ADR-0022 D4): `.inkflow/audit/brief-<chapterId>.json`,
+    // The injection audit (ADR-0022 D4): `.inkflow/audit/brief-<chapterId>.json`,
     // same input → same bytes (no clock, no random id, no absolute path). A write route, so
     // it carries every write guard plus `confirm: true`, and it rebuilds the brief here
     // instead of trusting a body: a client-supplied segment list would be a second
@@ -588,7 +588,7 @@ const ROUTES: readonly InternalRoute[] = [
       exportBriefAudit({ sessionId: target.sessionId, root: target.root }, version, {}, body),
   },
   {
-    // The review runs of one chapter (#46, X-24/X-26): every recorded pass as a row
+    // The review runs of one chapter (X-24/X-26): every recorded pass as a row
     // (`runId`, model, time, opinion count, how many located, failed/skipped nodes), plus the
     // selected run expanded — its five dimensions with anchors, and every opinion with its
     // locator and evidence excerpt. `runId` only chooses which record is expanded; the list
@@ -598,7 +598,7 @@ const ROUTES: readonly InternalRoute[] = [
     // page refresh — the record carries a timestamp, so a GET that wrote would create a run
     // nobody asked for.
     //
-    // `limit` (#199) is how the panel opens the fold: the first screen keeps the declared
+    // `limit` is how the panel opens the fold: the first screen keeps the declared
     // page (`REVIEW_LIST_LIMIT`), and "更早的 N 次运行" asks again with a bigger page. The
     // fold boundary itself travels back as `foldLimit`, so the panel never keeps a second
     // copy of the number.
@@ -621,7 +621,7 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The cross-model table (#46): the same computation as `inkflow_review_compare`, over the
+    // The cross-model table: the same computation as `inkflow_review_compare`, over the
     // same recorded runs, with the Markdown export in the payload so the panel never renders
     // a second table of its own.
     name: 'review-compare',
@@ -639,7 +639,7 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The proposal inbox (#45, ADR-0023, X-25): what a session model has proposed as a
+    // The proposal inbox (ADR-0023, X-25): what a session model has proposed as a
     // revision of one chapter, newest first, plus one proposal's hunks when `proposalId`
     // is given.
     //
@@ -690,7 +690,7 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async ({ target, version, body }) => rollbackProposalViaChannel(target, version, body),
   },
   {
-    // The batch job of this book (#47, ADR-0023, X-30): the job list plus one job's chapters,
+    // The batch job of this book (ADR-0023, X-30): the job list plus one job's chapters,
     // each with its status, its gate counts and whether a draft is waiting for approval.
     //
     // GET-only and **read-only**, and deliberately no `ensureIndex`: a job is plain JSON under
@@ -795,7 +795,7 @@ async function readBody(req: IncomingMessage): Promise<BodyRead> {
   // Collect BYTES and decode ONCE. Decoding per chunk splits every multibyte
   // character that straddles a chunk boundary into two U+FFFD and writes the
   // damaged text back out — measured before this fix: a 300 KB body came back
-  // `200 OK` with 8 replacement characters already on disk (issue #115 review).
+  // `200 OK` with 8 replacement characters already on disk (review).
   const chunks: Buffer[] = []
   for await (const chunk of req as AsyncIterable<unknown>) {
     const buffer =
@@ -852,7 +852,7 @@ function unexpectedBodyField(body: JsonRecord, allowed: readonly string[]): stri
 }
 
 /**
- * The first QUERY key the route did not declare, if any (issue #200).
+ * The first QUERY key the route did not declare, if any.
  *
  * The counterpart of `unexpectedBodyField`, and `sessionId` is permitted for the same
  * reason it is in a body: it is how the panel addresses the request, not a knob of the
@@ -868,7 +868,7 @@ function unexpectedQueryParam(query: URLSearchParams, allowed: readonly string[]
   return undefined
 }
 
-/** Which query key addressed the chapter (issue #200). */
+/** Which query key addressed the chapter. */
 type AddressedBy = 'chapterId' | 'chapterSeq' | 'default'
 
 /**
@@ -886,7 +886,7 @@ function addressedByOf(query: URLSearchParams, keys: readonly Exclude<AddressedB
 }
 
 /**
- * Attach `addressedBy` to a read route's `value` (issue #200).
+ * Attach `addressedBy` to a read route's `value`.
  *
  * Why here and not inside each domain builder: which query key addressed the chapter is a
  * fact about the ROUTE, not about the gate/review/brief computation. One helper keeps the
@@ -927,7 +927,7 @@ function matchRoute(path: string): RouteMatch | undefined {
 //     argument must not turn a global list into a session-scoped one;
 //   * no session is resolved, so no `NO_SESSION_CONTEXT` is possible here;
 //   * a write route (`plan`/`apply`) must carry an `Origin` that is the SAME
-//     ORIGIN as `Host`, not merely a loopback one (ADR-0010 D6 #6).
+//     ORIGIN as `Host`, not merely a loopback one (ADR-0010 D6 guard 6).
 // ---------------------------------------------------------------------------
 
 interface HubRouteInput {
@@ -958,7 +958,7 @@ interface HubRoute {
   readonly body?: readonly string[]
   /**
    * The only QUERY keys this hub route reads — the same **required** declaration the
-   * session channel carries (`InternalRoute.query`, issue #200).
+   * session channel carries (`InternalRoute.query`).
    *
    * Required here too, on purpose: `/hub/*` had the identical blind spot (a handler read
    * `book` and silently ignored every other key, so a typo answered the default book with
@@ -973,7 +973,7 @@ interface HubRoute {
 /**
  * The hub's capability whitelist (ADR-0010 D3/D4). Two read routes (`books`,
  * `shared`), and the wizard's two POST steps (`plan`, `apply`) which
- * additionally require an `Origin` that is the SAME ORIGIN as `Host` (D6 #6) —
+ * additionally require an `Origin` that is the SAME ORIGIN as `Host` (D6 guard 6) —
  * see `handleHubRequest`. Every capability declares its own verb here; there is
  * never a blanket write switch.
  */
@@ -1012,7 +1012,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     handle: ({ ctx, body }) => hubApply(ctx, body),
   },
   {
-    // The export entry (#195, ADR-0024 D4 / 入口归属). Two routes and no new semantics: the
+    // The export entry (ADR-0024 D4 / 入口归属). Two routes and no new semantics: the
     // read half serves what the page may offer (volumes + the three vocabularies, straight
     // from `export.ts`), the write half forwards to `exportBook()` — the SAME function
     // `inkflow_export` calls, so the panel and the tool cannot drift apart.
@@ -1039,7 +1039,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     handle: ({ ctx, dataDir, body }) => hubExportReply(ctx, dataDir, body),
   },
   {
-    // The shared library (ADR-0010 D5, issue #87): read-only browsing of
+    // The shared library (ADR-0010 D5): read-only browsing of
     // `dataDir/shared`, the one hub surface that belongs to no book. There is no
     // anchor to resolve and nothing to accept from the caller — the root comes
     // from the plugin config, and the route takes only `kind?`/`q?` filters.
@@ -1048,7 +1048,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     methods: ['GET'],
     query: ['kind', 'q'],
     handle: ({ dataDir, query }) => {
-      // The root comes from the settings file (#150): `dataDir/shared` unless the
+      // The root comes from the settings file: `dataDir/shared` unless the
       // author configured `sharedRoot`. A value the plugin refuses is reported in
       // the answer (`sharedRootWarning`) instead of being silently re-rooted.
       const shared = sharedRootOf(dataDir)
@@ -1063,7 +1063,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
   },
   {
     // What this book already holds from the library, and how fresh each copy is
-    // (#40, ADR-0007 C3 — "stale" is a report, never a repair). Read-only: it hashes
+    // (ADR-0007 C3 — "stale" is a report, never a repair). Read-only: it hashes
     // the library and reads each copy's head; the library's own manifest is not
     // written back here either (that stays derived).
     //
@@ -1101,7 +1101,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     handle: ({ ctx, dataDir, body }) => sharedUpdateReply(ctx, dataDir, body),
   },
   {
-    // The series sync (#49): what a sync would do to ONE registered book. A GET because it
+    // The series sync: what a sync would do to ONE registered book. A GET because it
     // writes nothing at all — previewing a diff must not need the write guards, and the
     // plan is exactly what `apply` compares against (X-17).
     name: 'hub-series-plan',
@@ -1122,7 +1122,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     handle: ({ ctx, dataDir, body }) => seriesApplyReply(ctx, dataDir, body),
   },
   {
-    // The settings page (#42, ADR-0018 D1): settings live OUTSIDE every book, so this
+    // The settings page (ADR-0018 D1): settings live OUTSIDE every book, so this
     // route takes no anchor at all. It also carries the book choices the backup
     // section offers (id + title, never a path) and the retention rule in force.
     name: 'hub-settings',
@@ -1136,7 +1136,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     // `Origin`, the body whitelist) plus `confirm: true`: the panel arms its own
     // button, and this is the net under it.
     //
-    // The whitelist is DERIVED (`SETTINGS_FIELDS` + `confirm`, #162): this route is the
+    // The whitelist is DERIVED (`SETTINGS_FIELDS` + `confirm`): this route is the
     // one that shipped a hand-copied field list and nearly refused a legal setting, so
     // the list lives beside the function that reads it (`writeHubSettings`) instead.
     name: 'hub-settings-update',
@@ -1147,7 +1147,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     handle: ({ ctx, dataDir, version, body }) => reply(writeHubSettings({ ctx, dataDir, version }, body)),
   },
   {
-    // The diagnostics PREVIEW (#42, D5): built, never written — the page shows the
+    // The diagnostics PREVIEW (D5): built, never written — the page shows the
     // summary and the target name before the user confirms the export.
     name: 'hub-diagnostics',
     pattern: /^\/hub\/diagnostics$/,
@@ -1203,7 +1203,7 @@ const HUB_ROUTES: readonly HubRoute[] = [
     handle: async ({ ctx, dataDir, version, body }) => reply(await restoreHubBackup({ ctx, dataDir, version }, body)),
   },
   {
-    // Semantic retrieval (#41): status + estimate for ONE book, on the page that owns the
+    // Semantic retrieval: status + estimate for ONE book, on the page that owns the
     // settings that decide whether it can work at all. The anchor is a registered book, like
     // the backup section above — never a path (ADR-0010 D3), and never the endpoint itself:
     // the connection comes from `settings.json` (ADR-0020 E1), so no request can point this
@@ -1262,7 +1262,7 @@ function isHubPath(internalPath: string): boolean {
 }
 
 /**
- * Same-origin, not merely loopback (ADR-0010 D6 #6).
+ * Same-origin, not merely loopback (ADR-0010 D6 guard 6).
  *
  * The session channel's write routes only need a loopback `Origin`, because the
  * Host derives their path from a session it resolved itself. A hub WRITE is
@@ -1295,7 +1295,7 @@ async function handleHubRequest(input: {
   const { deps, req, res, internalPath, url, origin, host } = input
 
   // A path parameter is refused before the route is even matched: no handler and
-  // no filesystem access may run for it (ADR-0010 D6 #5).
+  // no filesystem access may run for it (ADR-0010 D6 guard 5).
   const forbiddenQuery = findPathParam(url.searchParams.entries())
   if (forbiddenQuery !== undefined) {
     sendJson(res, 400, failure('ROOT_PARAM_NOT_ALLOWED', { reason: 'unexpected-path-param', param: forbiddenQuery, in: 'query' }))
@@ -1314,7 +1314,7 @@ async function handleHubRequest(input: {
     return
   }
 
-  // The hub's half of issue #200: `book` is how a hub call names the book it means, and a
+  // The hub's half: `book` is how a hub call names the book it means, and a
   // misspelt key used to answer the DEFAULT book with HTTP 200. Same decision function as
   // the session channel, same 400, same body — a caller that gets it wrong on one channel
   // does not get a different answer on the other. Checked before any handler and any IO.
@@ -1332,7 +1332,7 @@ async function handleHubRequest(input: {
     return
   }
 
-  // Write guards (ADR-0010 D6 #6/#7): the hub's POST routes are `plan`/`apply`.
+  // Write guards (ADR-0010 D6 guards 6/7): the hub's POST routes are `plan`/`apply`.
   // Read routes stay usable without an `Origin` — a same-origin `fetch` from the
   // panel may omit it — but a write must come from the page the Host serves.
   if (method !== 'GET') {
@@ -1459,8 +1459,8 @@ export function createHttpHandler(deps: HttpDeps) {
       return
     }
 
-    // A query key the route did not declare is a 400, before any filesystem access
-    // (issue #200). Silent acceptance is what made `?chapterID=` answer a DIFFERENT
+    // A query key the route did not declare is a 400, before any filesystem access.
+    // Silent acceptance is what made `?chapterID=` answer a DIFFERENT
     // chapter with HTTP 200 — a legal-looking response for a target that was dropped.
     const strayQuery = unexpectedQueryParam(url.searchParams, matched.route.query)
     if (strayQuery !== undefined) {
@@ -1483,7 +1483,7 @@ export function createHttpHandler(deps: HttpDeps) {
       // `Origin`, when it arrives, has already been checked for loipback above.
       //
       // An ABSENT `Origin` used to be a 403 `origin-required`. It is not, for two
-      // measured reasons (issue #115): a real panel save answered exactly
+      // measured reasons: a real panel save answered exactly
       // `forbidden-origin / origin-required` with every other guard satisfied, so
       // the header simply does not reach a Host write from that shell; and "no
       // Origin" is what a non-browser client looks like, not what a web page looks

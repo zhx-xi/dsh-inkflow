@@ -1,5 +1,5 @@
 /**
- * The semantic-retrieval tool surface (#41): status, rebuild, purge.
+ * The semantic-retrieval tool surface: status, rebuild, purge.
  *
  * Three tools, three different risk levels, so the shape of each is decided by what it can
  * destroy:
@@ -181,7 +181,7 @@ export function semanticTools(deps: SemanticToolDeps): ToolDefinition[] {
       if (resolved.probe === undefined || resolved.probe.usable !== true) return gateFailure(resolved)
       const root = resolved.probe.root
       // The estimate reads the chapter list from the index, so it has to be fresh — the same
-      // single rebuild trigger every other read tool uses (#5).
+      // single rebuild trigger every other read tool uses.
       const ensured = await ensureIndex(root)
       if (!ensured.ok) {
         return {

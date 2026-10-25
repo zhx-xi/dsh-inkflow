@@ -1,5 +1,5 @@
 /**
- * Index freshness and **the one rebuild trigger** (issue #5).
+ * Index freshness and **the one rebuild trigger**.
  *
  * The index used to be rebuilt only when it was *absent* or built by another
  * schema version (`listChapters` → `undefined`, `searchChapters` →
@@ -14,7 +14,7 @@
  *     and no lock or database is created — so it is safe to call on every read
  *     path and in a test that asserts "the project did not move".
  *   - `ensureIndex(root)` **acts.** `fresh` → nothing; `stale` / `missing` /
- *     `incompatible` → exactly one `buildIndex()` (issue #4's atomic build,
+ *     `incompatible` → exactly one `buildIndex()` (the atomic build,
  *     single-flight, `index/.lock`, temp-file swap) and a structured failure
  *     value instead of a throw.
  *
@@ -96,7 +96,7 @@ function schemaVersionOf(db: DatabaseSync): number {
 
 /**
  * The calendar fingerprint the index was built under, or `undefined` when the row is
- * missing (an index from before #48, which the schema bump already rejects).
+ * missing (an index the schema bump already rejects).
  */
 function indexedCalendar(db: DatabaseSync): string | undefined {
   try {
@@ -207,7 +207,7 @@ export interface EnsureIndexFailure {
   state: IndexFreshnessState
   rebuilt: false
   freshness: IndexFreshness
-  /** Issue #4's structured build failure (`INDEX_BUILD_FAILED` / `INDEX_BUSY`). */
+  /** The structured build failure (`INDEX_BUILD_FAILED` / `INDEX_BUSY`). */
   failure: IndexBuildFailure
 }
 
@@ -221,7 +221,7 @@ export type EnsureIndexResult = EnsureIndexSuccess | EnsureIndexFailure
  * search is old" from happening: both read paths see the same build.
  *
  * Never throws: a failed build is `{ ok:false, failure }`, and the previous
- * index (if any) is left readable by `buildIndex` (issue #4).
+ * index (if any) is left readable by `buildIndex`.
  */
 export async function ensureIndex(root: string, options: EnsureIndexOptions = {}): Promise<EnsureIndexResult> {
   const freshness = checkIndexFreshness(root)

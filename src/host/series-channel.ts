@@ -1,15 +1,15 @@
 /**
- * The series sync's channel half (#49): `GET /hub/series/plan` and
+ * The series sync's channel half: `GET /hub/series/plan` and
  * `POST /hub/series/apply`, for the 共享内容 page.
  *
  * WHY SO THIN. Everything that decides WHAT a sync would do lives in `series.ts`; this
  * file decides only whether a request may touch a book at all. The anchor rule is not
- * re-implemented here — it is #40's (`shared-channel.ts`: the `book` field must be the
+ * re-implemented here — it is the shared library's (`shared-channel.ts`: the `book` field must be the
  * canonical path of a **registered workspace**, then the four-state gate, then the
  * domain). A second copy of "which directory may I write into" is exactly how a panel
  * write path drifts away from its guard, so the two functions are imported.
  *
- * THE BODY WHITELIST is the guard ADR-0010 D6 #6 requires on every hub write: `book`,
+ * THE BODY WHITELIST is the guard ADR-0010 D6 guard 6 requires on every hub write: `book`,
  * `expected`, `decisions`, `confirm`. There is no `root`, no `path`, and no way to name
  * the shared library — the library's location is the plugin's configuration (ADR-0010
  * D5), and the only book this channel can touch is one the Host itself listed.
@@ -42,7 +42,7 @@ function text(value: unknown): string {
  * Why each series code answers with which status.
  *
  * Only the codes this feature introduces: `SHARED_UNAVAILABLE` (the library cannot be
- * named) keeps #40's 200-with-`ok:false` meaning — "cannot answer", not a transport
+ * named) keeps the shared library's 200-with-`ok:false` meaning — "cannot answer", not a transport
  * failure — and everything else is a 400 the caller can fix by sending a different body.
  * A conflict block is a 409: the request was well formed, the book's state is what
  * refuses it.

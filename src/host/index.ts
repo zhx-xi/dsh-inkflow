@@ -29,7 +29,7 @@ import { createHttpHandler } from './routes.js'
 export const name = 'dsh-inkflow'
 
 /**
- * The writing surface (issue #21) is re-exported for the contract tests, which
+ * The writing surface is re-exported for the contract tests, which
  * import `lib/index.js` only and must drive what users install — the bundled
  * skills and the preset declaration are data this plugin owns, so the assembly
  * inputs are part of that surface.
@@ -50,7 +50,7 @@ export { WRITING_PRESET_ID, buildWritingPreset, registerWritingPreset, writingPe
 export type { PresetRegistration } from './preset.js'
 
 /**
- * The writing context (issue #20) is exported the same way: `buildWritingContext`
+ * The writing context is exported the same way: `buildWritingContext`
  * is the whole projection, and the contract tests assert it directly instead of
  * scraping a fake prompt pipeline. The panel's future briefing preview reuses
  * the same entry point, so this is not a test-only surface.
@@ -68,7 +68,7 @@ export { PROMPT_SECTION_NAME, PROMPT_SECTION_ORDER, registerWritingContext } fro
 export type { WritingContextRegistration } from './prompt.js'
 
 /**
- * The nine-segment brief (issue #43, ADR-0022 D1/D2, roadmap X-23/X-25).
+ * The nine-segment brief (ADR-0022 D1/D2, roadmap X-23/X-25).
  *
  * `buildWritingBrief` is the whole brief as a pure function of the tree (order, caps,
  * ladder, `{id,bytes,tokens,truncated,missing}` per segment), and `briefFor` is the same
@@ -108,12 +108,12 @@ export {
 export type { BriefAuditRecord, BriefAuditSegment, BriefAuditWrite, BriefRunSummary, BriefWire } from './brief.js'
 
 /**
- * The calendar table and its one conversion (issue #180, roadmap X-28).
+ * The calendar table and its one conversion (roadmap X-28).
  *
  * Exported because the round trip that makes this module worth having —
  * `toAbsolute(fromAbsolute(n)) === n` for every day, leap days and era boundaries
- * included — is a property of the built artifact or it is a claim. #48 adds the
- * derived absolute-day column to the index and #43's deadline work compares
+ * included — is a property of the built artifact or it is a claim. The calendar adds
+ * the derived absolute-day column to the index and the foreshadow deadline work compares
  * chapters; both call these functions instead of growing a second day count.
  */
 export {
@@ -138,7 +138,7 @@ export type {
 } from './calendar.js'
 
 /**
- * Where the book's calendar lives, and what a missing/broken one means (#48).
+ * Where the book's calendar lives, and what a missing/broken one means.
  *
  * Exported beside the arithmetic because they are one contract: `calendar.ts` answers
  * "what day is this", `calendar-book.ts` answers "which table applies to this book" —
@@ -158,7 +158,7 @@ export { parseMarkdown, patchFrontmatter } from './frontmatter.js'
 export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
 
 /**
- * The map tab's pure view model (#48) and the panel tab list.
+ * The map tab's pure view model and the panel tab list.
  *
  * Exported so the two claims a user actually sees — "a place is a world entry" and "the map
  * page is reachable" — are assertions on the built artifact rather than on a source file
@@ -199,24 +199,24 @@ export type { IndexBuildErrorCode, IndexBuildFailure } from './index-build.js'
 export type { IndexBuildResult } from './indexer.js'
 
 /**
- * Domain module registry (#101): the seam every 0.2.0 data domain plugs into
+ * Domain module registry: the seam every 0.2.0 data domain plugs into
  * (roadmap §2.1 X-5). Exported so the contract tests can assert that the tool
  * surface is "built-ins + registered modules" and that the pre-write replace
  * (`applyCandidate`) keeps `I-04` honest.
  */
 export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
-/** Outline planners (#24): pure, so the write-side invariants are test-driven directly. */
+/** Outline planners: pure, so the write-side invariants are test-driven directly. */
 export { planOutlineMove, planOutlinePlacement, planOutlineUpsert } from './domains/outline-write.js'
 export type { OutlinePlan, OutlineRefusal, OutlineRefusalCode, OutlineWriteNode } from './domains/outline-write.js'
-/** Cross-class projection queries (#23): the nine-class panel and mention work read through these. */
+/** Cross-class projection queries: the nine-class panel and mention work read through these. */
 export { entityCounts, listEntities, listEntityIds, listWorldEntries, searchEntities } from './domains/query.js'
-/** One entity's edges in both roles (#27): the read behind `inkflow_relation_list`. */
+/** One entity's edges in both roles: the read behind `inkflow_relation_list`. */
 export { listRelationsFor } from './domains/query.js'
 export type { EntitySummary, WorldIndexEntry } from './domains/query.js'
 export type { RelationEdge } from './domains/query.js'
 
 /**
- * Relation domain (#27): `planRelationUpsert` is exported so the write-side decision
+ * Relation domain: `planRelationUpsert` is exported so the write-side decision
  * can be driven as a pure function — the same function the tool calls, so a test
  * cannot pass while the tool would refuse (or the other way round). The rest of the
  * domain stays behind `DOMAIN_MODULES`, like every other module.
@@ -224,16 +224,16 @@ export type { RelationEdge } from './domains/query.js'
 export { planRelationUpsert } from './domains/relation-write.js'
 
 /**
- * The knowledge graph's type vocabulary and its two contradiction rules — direction (#48) and
- * `since`/`until` windows (#188). Exported because a test and a panel need them and each rule has
+ * The knowledge graph's type vocabulary and its two contradiction rules — direction and
+ * `since`/`until` windows. Exported because a test and a panel need them and each rule has
  * one implementation every net and reader calls (X-4); the window judgement is pure arithmetic, so
  * "1000 edges under 100 ms" is measured on the function itself (`relation-period.ts`). */
 export { RELATION_KINDS, relationConflicts } from './domains/relation-write.js'
 export type { RelationConflict } from './domains/relation-write.js'
-// Inline `type` specifiers, one line: this file sits at its recorded line budget (guard #10).
+// Inline `type` specifiers, one line: this file sits at its recorded line budget (a file may not grow past its recorded count).
 export { chapterPositionsFromProjection, relationPeriodFindings, relationPeriodMarks, type RelationPeriodConflict, type RelationPeriodMark, type RelationPeriodUncomparable, type RelationPeriodVerdict } from './domains/relation-period.js'
 
-/** Timeline planners and views (#28): pure, so both axes are test-driven directly. */
+/** Timeline planners and views: pure, so both axes are test-driven directly. */
 export {
   planTimelineUpsert,
   planTimelineView,
@@ -264,7 +264,7 @@ export { ENTITY_COLUMNS, entityFromRow, entityKey } from './domains/entities.js'
 export type { DomainWriteView } from './domains/index.js'
 
 /**
- * Entity mentions (#29): the scan is pure (text in, rows out) so the DoD's
+ * Entity mentions: the scan is pure (text in, rows out) so the DoD's
  * "590k characters under 5 s" is measured directly, and the three queries are
  * what the 影响面 / 改名级联 / 掉线检测 surfaces read. `MENTIONS_DDL` and
  * `insertMentions` are the seam's half — `indexer.ts` creates the table and writes
@@ -276,10 +276,10 @@ export { absentEntities, chaptersMentioning, mentionsOf } from './domains/mentio
 export type { AbsentEntity, AbsentQueryOptions, MentionChapterHit, MentionHit, MentionQueryOptions } from './domains/mentions-query.js'
 
 /**
- * World book (#26): the keyword matcher, the write-side half of I-08 and the tree
+ * World book: the keyword matcher, the write-side half of I-08 and the tree
  * shape are pure — no reads, no writes — so the rule that decides "which setting
  * entry this chapter pulls in" is testable without a project on disk. The
- * injection chain that consumes them is #43's and is not wired yet.
+ * injection chain that consumes them belongs to the brief and is not wired yet.
  */
 export { matchWorldBook } from './domains/world-match.js'
 export type { WorldBookEntry, WorldBookHit, WorldBookMatchReason } from './domains/world-match.js'
@@ -298,7 +298,7 @@ export type {
 /** Exported for the tool-surface contract test: it asserts the aggregate is wired. */
 export { buildTools } from './tools.js'
 /**
- * Character cards (#25): `planCharacterUpsert` is the write-side I-03 decision and
+ * Character cards: `planCharacterUpsert` is the write-side I-03 decision and
  * is a pure function precisely so it can be asserted without a disk; the card
  * reader answers "what was he at chapter 30" outside a tool call too.
  */
@@ -327,7 +327,7 @@ export type {
 } from './domains/types.js'
 
 /**
- * Index freshness (issue #5): `checkIndexFreshness` is the read-only verdict and
+ * Index freshness: `checkIndexFreshness` is the read-only verdict and
  * `ensureIndex` is the **single** place that decides to rebuild. Exported for
  * embedders and tests the same way `buildIndex` is — the tools and the panel
  * channel both go through `ensureIndex`, so this is not a test-only surface.
@@ -341,7 +341,7 @@ export type { WalkedFile } from './indexer.js'
 // do it through `ensureIndex` (which would rebuild first and hide the staleness).
 // `listChapters` serves one page (capped at `LIST_CHAPTERS_MAX`), `countChapters` is the
 // whole book, and `listAllChapters` is the unabridged read for the semantic ledger — one
-// chapter count, one source (issue #161).
+// chapter count, one source.
 export {
   LIST_CHAPTERS_DEFAULT,
   LIST_CHAPTERS_MAX,
@@ -354,14 +354,14 @@ export {
 export type { ChapterSummary, IndexMeta } from './indexer.js'
 
 /**
- * The internal channel's request-body ceiling (#115). Exported so the tests state
+ * The internal channel's request-body ceiling. Exported so the tests state
  * the number once: a save carries a whole chapter, and the old 64 KiB ceiling
  * refused a ~20k-character chapter outright.
  */
 export { MAX_INTERNAL_BODY_BYTES } from './internal.js'
 
 /**
- * Write-time compare-and-swap (issue #5): a writer may state the baseline it
+ * Write-time compare-and-swap: a writer may state the baseline it
  * expects, and a mismatch is the structured `FILE_CHANGED` error with zero
  * writes. Exported so a caller can hand a test (or the panel) the same
  * fingerprint shape the writers compare against.
@@ -370,7 +370,7 @@ export { compareExpectation, fingerprintBytes, fingerprintFile, fingerprintProje
 export type { FileChange, FileChangeField, FileExpectation, FileFingerprint } from './file-cas.js'
 
 /**
- * Write-layer API (issue #14): the single door for project file writes.
+ * Write-layer API: the single door for project file writes.
  * Exported for the tests now and for the chapter/scaffolding writers next; no
  * tool registers against it yet, so this adds no model-facing surface.
  */
@@ -401,7 +401,7 @@ export {
 } from './conventions.js'
 
 /**
- * Volume/chapter catalog (issue #15, ADR-0006 D6): a reviewable, committed
+ * Volume/chapter catalog (ADR-0006 D6): a reviewable, committed
  * projection of the `.md` structure. The read path never writes; rebuilds take
  * the project write lock and replace both files atomically; validation reports
  * drift instead of blocking. No tool registers against it yet.
@@ -424,7 +424,7 @@ export { inspectProject } from './project.js'
 export type { ProjectProbe, ProjectState } from './project.js'
 
 /**
- * Book hub (ADR-0010, issue #85): the no-session projection of the workspace
+ * Book hub (ADR-0010): the no-session projection of the workspace
  * registry. Exported because the cost contract — four judgments at a time, 2 s
  * per book, 3 s budget, 200 rows — is only testable with an injected probe, and
  * because "which books does the hub see" must be answerable without a browser.
@@ -441,7 +441,7 @@ export type {
 } from './hub.js'
 
 /**
- * Shared library (ADR-0010 D5, issue #87): the **read-only** projection of the
+ * Shared library (ADR-0010 D5): the **read-only** projection of the
  * plugin-level shared directory, and the only hub surface that reads something
  * outside the workspace registry. Exported for the same reason as the hub: the two
  * data sources (the derived manifest vs an in-memory rescan) and the cost limits are
@@ -449,7 +449,7 @@ export type {
  *
  * `sharedDir` is exported as the DEFAULT-path helper only; the root in force comes
  * from `settings.ts`'s `sharedRootOf` (`dataDir/shared` unless `sharedRoot` is
- * configured — #150).
+ * configured).
  */
 export {
   SHARED_HEAD_BYTES,
@@ -469,7 +469,7 @@ export type {
 export { sharedDir } from './config.js'
 
 /**
- * The hub's new-book wizard (ADR-0010 D4/D6, issue #86). Exported because the
+ * The hub's new-book wizard (ADR-0010 D4/D6). Exported because the
  * two properties that make it safe are only testable from outside the route
  * handler: a plan token is ONE-SHOT and TTL-bounded (so the store takes an
  * injected clock), and `apply` accepts no path at all. The routes are a thin
@@ -495,7 +495,7 @@ export type {
 } from './hub-wizard.js'
 
 /**
- * GBK mojibake detection (issue #89): a pure function over the title text, so the
+ * GBK mojibake detection: a pure function over the title text, so the
  * tests can pin the precision bar (genuine Chinese/Japanese/emoji must not trip
  * it) without building a project on disk.
  */
@@ -503,7 +503,7 @@ export { MIN_NON_ASCII_RATIO, MIN_SIGNATURE_FEATURES, describeEncodingSuspicion,
 export type { EncodingSuspicion } from './encoding.js'
 
 /**
- * Build identity (issue #88): `getLoadedBuild` is what `/status`, the status tool
+ * Build identity: `getLoadedBuild` is what `/status`, the status tool
  * and the startup log report — the generation this process is executing, the
  * disk's build time and whether the disk moved on without a restart. Exported
  * because the contract tests import `lib/index.js` only, and because any surface
@@ -513,7 +513,7 @@ export { STALE_TOLERANCE_MS, UNKNOWN_BUILD, decideStale, getLoadedBuild, summari
 export type { BuildSummary, LoadedBuild, LoadedBuildOptions } from './build-info.js'
 
 /**
- * Chapter search (issue #22): the read-only query half of `chapters_fts`.
+ * Chapter search: the read-only query half of `chapters_fts`.
  * Exported because the panel's future search box reuses it in-process, so this
  * is not a test-only surface — the tool and the tests drive the same function.
  */
@@ -529,7 +529,7 @@ export type {
 } from './search.js'
 
 /**
- * The single search entry for every kind (issue #39, roadmap X-16) and the
+ * The single search entry for every kind (roadmap X-16) and the
  * search-and-replace batch (roadmap X-17).
  *
  * Exported for the same reason as `searchChapters`: the panel's "全部类型" toggle, the
@@ -574,7 +574,7 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
 
   log.info(`ready: files-first mode, plugin state=${config.dataDir}`)
 
-  // Which generation is this, and is the disk ahead of it (issue #88)? A DSH
+  // Which generation is this, and is the disk ahead of it? A DSH
   // process keeps running the `lib/` it loaded at startup, so this line is how a
   // human tells "old generation" from "broken book" without opening the panel.
   const loaded = getLoadedBuild({ version: VERSION })
@@ -584,13 +584,13 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
       : `build ${loaded.build} loaded at ${loaded.loadedAt}`,
   )
 
-  // state.json is display-only (issue #7): it records the last project some
+  // state.json is display-only: it records the last project some
   // session touched, purely so a human can see it in the logs. It is never used
   // to resolve a project — one plugin-wide value cannot speak for a session.
   const remembered = readState(config.dataDir).lastProjectRoot
   if (remembered !== undefined) log.info(`last touched project (display only, not used for resolution): ${remembered}`)
 
-  // Writing craft (issue #21). Both halves probe for their Host service and
+  // Writing craft. Both halves probe for their Host service and
   // degrade to a single log line: a profile without `skills` / `agentPresets`
   // still gets the tools and the routes, and the skills/ files still ship.
   // Wrapped whole: a rejected registration (a duplicate provider name from a
@@ -606,7 +606,7 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
     log.warn(`writing surface skipped: ${describeError(error)}`)
   }
 
-  // Writing context (issue #20): the four facts a writing session needs before
+  // Writing context: the four facts a writing session needs before
   // its first tool call. Optional service, own degradation, and its own
   // try/catch — a broken prompt section must never cost the user their tools.
   try {
@@ -646,7 +646,7 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
 }
 
 /**
- * 卷章 CRUD（issue #16）。
+ * 卷章 CRUD。
  */
 export { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
 export type {
@@ -671,22 +671,22 @@ export type {
   VolumeView,
 } from './chapters.js'
 
-/** issue #16: new frontmatter and io helpers (one export statement each). */
+/** New frontmatter and io helpers (one export statement each). */
 export { frontmatterLine, splitFrontmatter } from './frontmatter.js'
 export type { FrontmatterPatchOptions, FrontmatterSplit } from './frontmatter.js'
 export { removeEmptyProjectDirectory, removeProjectFile, renameProjectDirectory } from './io.js'
 export type { RemoveResult, RenameResult } from './io.js'
 
 /**
- * The shared finding shape (#121, roadmap X-14): the vocabulary the audit report
- * (#33) and the repair pass (#36) both speak, plus the ordering a report needs to
+ * The shared finding shape (roadmap X-14): the vocabulary the audit report
+ * and the repair pass both speak, plus the ordering a report needs to
  * be stable between two runs on unchanged files.
  */
 export { FINDING_CODES, FINDING_GROUPS, compareFindings, findingCode, locatorKey } from './findings.js'
 export type { Finding, FindingCodeSpec, FindingGroup, FindingLocator, FindingSeverity } from './findings.js'
 
 /**
- * The quality gate (issue #44, roadmap X-24/X-26): seven checks over one chapter, the
+ * The quality gate (roadmap X-24/X-26): seven checks over one chapter, the
  * `.inkflow/audit/gate-<chapterId>.json` conclusion and its deterministic serialiser.
  * The rules live in `gate-rules.ts`; this block is the one entry point for the tool, the
  * panel route and the tests.
@@ -709,12 +709,12 @@ export type { GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds 
 export type { GateCounts, GateError, GateFileResult, GateReport, GateRequest, GateResult, GateRunOptions } from './gate.js'
 
 /**
- * The review DAG (issue #46, roadmap X-24/X-26, ADR-0022 D3): five independent dimension
+ * The review DAG (roadmap X-24/X-26, ADR-0022 D3): five independent dimension
  * nodes over one chapter, the locator/evidence chain, the `.inkflow/review/<chapterId>/
  * <runId>.json` run record, and the cross-model table. Exported together so the tool
  * surface, the panel route and the tests read the same definitions.
  *
- * The engine is four files since #193 (#46's own split): `review.ts` orchestrates and
+ * The engine is four files since its own split: `review.ts` orchestrates and
  * answers the callers, `review-nodes.ts` owns the dimensions and the node table,
  * `review-locate.ts` owns the addressing protocol, `review-store.ts` owns the record file.
  */
@@ -788,7 +788,7 @@ export {
 export type { ReviewCompare, ReviewCompareColumn, ReviewCompareRow } from './review-compare.js'
 
 /**
- * The batch job queue (#47, ADR-0023, roadmap X-26/X-30): the state machine and its records
+ * The batch job queue (ADR-0023, roadmap X-26/X-30): the state machine and its records
  * under `.inkflow/jobs/`, the panel projection, and the four tools. Re-exported for the tests
  * and for the routes' one entry point — the same arrangement as the gate, the review and the
  * proposals.
@@ -852,7 +852,7 @@ export type { BatchChapterRow, BatchCounts, BatchDetail, BatchPage } from './job
 export { jobsTools } from './jobs-tools.js'
 
 /**
- * The 批量 page's pure view model (#47). Re-exported for the same reason as `proposal-model`:
+ * The 批量 page's pure view model. Re-exported for the same reason as `proposal-model`:
  * the three states the page can be in, and the sentence that explains a disabled 续跑, are
  * claims the user reads, so the tests assert them on the built artifact.
  */
@@ -882,7 +882,7 @@ export {
 } from './private-state.js'
 
 /**
- * 设定变更的影响面与改名（#34, conventions §5.6, ADR-0014): the read-only listing
+ * 设定变更的影响面与改名（conventions §5.6, ADR-0014): the read-only listing
  * (five reference sites, the plan preview) and the one write that follows it
  * (move the file, pin the old id, rewrite nothing else).
  */
@@ -904,7 +904,7 @@ export { renameEntity } from './impact-write.js'
 export type { RenameRequest } from './impact-write.js'
 
 /**
- * The recovery bin (#35, roadmap X-9/X-10): move one file into `.inkflow/trash/`,
+ * The recovery bin (roadmap X-9/X-10): move one file into `.inkflow/trash/`,
  * list what is there, put an entry back byte-identically, or purge one entry —
  * the last only with `confirm: true`.
  */
@@ -923,7 +923,7 @@ export type {
 } from './trash.js'
 
 /**
- * The fact ledger (#32): the line format as a parse/render **pair** (ADR-0013), the
+ * The fact ledger: the line format as a parse/render **pair** (ADR-0013), the
  * interval judgement (I-23) and the "which facts hold at chapter N" query. Pure, so the
  * round-trip and the conflict rule are test-driven directly instead of through a tool.
  */
@@ -959,7 +959,7 @@ export type { ChapterIndex } from './domains/facts-query.js'
 export { MAX_SEGMENT_FACTS, factsSegment } from './domains/facts-prompt.js'
 
 /**
- * The foreshadow state machine and its computed lateness (issue #31, data-model
+ * The foreshadow state machine and its computed lateness (data-model
  * §3.2). Exported so a test can assert the **matrix** itself rather than inferring
  * it from which writes happen to be refused.
  */
@@ -980,7 +980,7 @@ export {
 } from './domains/foreshadowing-query.js'
 
 /**
- * The consistency audit (issue #33, roadmap X-14). Exported so tests can drive the engine
+ * The consistency audit (roadmap X-14). Exported so tests can drive the engine
  * directly — the report body's determinism and the locator mapping are assertions about
  * plain data, not about a tool envelope.
  */
@@ -999,7 +999,7 @@ export { auditWire, buildAudit, exportAudit, findingWire } from './audit-channel
 export type { AuditReply, AuditSource } from './audit-channel.js'
 
 /**
- * Maintenance (#36, ADR-0015): the rollback package, the 6→9 migration and the
+ * Maintenance (ADR-0015): the rollback package, the 6→9 migration and the
  * three-stage repair pass. Exported for the tests and for embedders; the two tools
  * that expose them are registered through `tools.ts` like every other built-in.
  */
@@ -1051,7 +1051,7 @@ export type {
 export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from './repair-report.js'
 
 /**
- * The shared library's take-out direction (#40, ADR-0007 C2–C6): copy snapshot,
+ * The shared library's take-out direction (ADR-0007 C2–C6): copy snapshot,
  * `origin` provenance, the stale list and the explicit per-entry update.
  *
  * Exported for the same reason as every other domain here — the behaviour IS the
@@ -1087,7 +1087,7 @@ export type {
 } from './shared-copy.js'
 export { scanSharedLibrary } from './hub-shared.js'
 export type { SharedLibraryScan } from './hub-shared.js'
-// The series sync (#49): the engine, exported so the contract tests can call `plan` and
+// The series sync: the engine, exported so the contract tests can call `plan` and
 // `apply` with a plain book on disk — no Host context, no HTTP, no session.
 export { SERIES_SYNC_KINDS, applySeriesSync, buildSeriesPlan, compareSeriesContent, seriesRunName } from './series.js'
 export type {
@@ -1111,7 +1111,7 @@ export type {
 export { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'
 
 /**
- * The ZIP container (ADR-0018 D3, issue #146): store-only by design, so a backup can
+ * The ZIP container (ADR-0018 D3): store-only by design, so a backup can
  * be opened by any tool and checked by hand. Exported for the tests and for the
  * settings/backup work that writes the package.
  */
@@ -1119,7 +1119,7 @@ export { ZipError, crc32, readZip, writeZip } from './zip.js'
 export type { ZipEntry, ZipErrorCode, ZipWriteEntry, ZipWriteOptions } from './zip.js'
 
 /**
- * The plugin's own state (#42, ADR-0018): settings (D1/D2), the diagnostics package
+ * The plugin's own state (ADR-0018): settings (D1/D2), the diagnostics package
  * (D5) and the local ZIP backups (D3/D4/D6). None of it is book data, which is why
  * these three modules sit together and write only under `dataDir`.
  */
@@ -1137,7 +1137,7 @@ export {
   sharedRootOf,
   writeSettings,
 } from './settings.js'
-// Exported for the #162 equivalence test: the route's body whitelist must stay
+// Exported for the equivalence test: the route's body whitelist must stay
 // `SETTINGS_FIELDS` + `confirm`, and a test can only compare what it can import.
 export { HUB_SETTINGS_BODY_FIELDS } from './hub-settings.js'
 export type {
@@ -1205,7 +1205,7 @@ export { settingsTools } from './settings-tools.js'
 export type { SettingsToolDeps } from './settings-tools.js'
 
 /**
- * 资料导入（#37，roadmap X-17）：字节 → 编码嗅探 → 行尾风格 → 分章的分析半，以及
+ * 资料导入（roadmap X-17）：字节 → 编码嗅探 → 行尾风格 → 分章的分析半，以及
  * 「预览 = 执行」的写入半。
  *
  * 全是纯函数或经 `chapters.ts` / `io.ts` 的写入；预览与执行共用同一份 `prepare()`，
@@ -1242,7 +1242,7 @@ export type {
   ImportPlanTarget,
 } from './import-write.js'
 
-// Semantic retrieval (#41, ADR-0009 / ADR-0020). Four layers: transport + block shape, the
+// Semantic retrieval (ADR-0009 / ADR-0020). Four layers: transport + block shape, the
 // ledger this machine keeps, the per-book job, and the one composition into X-16's search
 // entry. Exported by module so a caller cannot mistake the job for the backend or the ledger
 // for the truth.
@@ -1332,7 +1332,7 @@ export { buildHubSemantic, purgeHubSemantic, rebuildHubSemantic } from './ovk-hu
 export { maskSettingsSecrets } from './diagnostics.js'
 
 // ---------------------------------------------------------------------------
-// issue #38 — the extraction queue (X-20, ADR-0017). Exported for the tests and for
+// The extraction queue (X-20, ADR-0017). Exported for the tests and for
 // nothing else: no other module inside `src/host` may import the candidate store or the
 // accept path (a guard test in `tests/extract.test.js` scans the import graph), because
 // "one way in" is a property of the code, not of a convention.
@@ -1356,7 +1356,7 @@ export { acceptViaChannel, buildCandidates, purgeViaChannel, rejectViaChannel } 
 export type { CandidateReply, CandidateSource } from './extract-channel.js'
 
 // ---------------------------------------------------------------------------
-// issue #51 — the old-library migrator (X-29 / X-30). Exported for the tests and for
+// The old-library migrator (X-29 / X-30). Exported for the tests and for
 // nothing else inside `src/host`: the runners are the only entry, and a second importer
 // would be a second way to start a migration without its plan.
 // ---------------------------------------------------------------------------
@@ -1397,7 +1397,7 @@ export type { EtlSourceOptions, LegacyBook, LegacyProject } from './etl-source.j
 export { etlTools } from './etl-tools.js'
 
 // ---------------------------------------------------------------------------
-// issue #45 — proposals (ADR-0023, X-25 / X-26). The store, the line diff, the four
+// Proposals (ADR-0023, X-25 / X-26). The store, the line diff, the four
 // tool entries and the panel channel. Exported because the tests assert the two hard
 // properties directly: creating and deciding write no content file, and applying is
 // byte-for-byte reversible through the backup package.
@@ -1456,7 +1456,7 @@ export type { ProposalReply, ProposalSource } from './proposal-channel.js'
 export { proposalTools } from './proposal-tools.js'
 
 /**
- * The proposal tab's pure view model (#45). Re-exported for the same reason as
+ * The proposal tab's pure view model. Re-exported for the same reason as
  * `map-model`: the three states the page can be in, and the two "why the button is
  * disabled" sentences, are claims the user sees, so the tests assert them on the built
  * artifact. Pure by construction — no React, no network, no IO.
@@ -1484,7 +1484,7 @@ export {
 export type { Decision, HunkRow, ProposalPage, ProposalRow } from '../client/proposal-model.js'
 
 // ---------------------------------------------------------------------------
-// issue #50 — export (ADR-0024, X-27). One writer, one container, one directory
+// Export (ADR-0024, X-27). One writer, one container, one directory
 // outside the book. Exported because the tests assert the two properties the ADR
 // names directly: `mimetype` is the first entry and the package reads back through
 // `readZip`, and exporting changes nothing inside the book.

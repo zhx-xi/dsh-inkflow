@@ -1,5 +1,5 @@
 /**
- * Issue #46 — the cross-model comparison table: the same chapter, several models' opinion
+ * The cross-model comparison table: the same chapter, several models' opinion
  * sets, one exportable table.
  *
  * ## The line this module does not cross
@@ -81,7 +81,7 @@ export interface ReviewCompareRow {
 /**
  * The chapter a table is about — `chapterId` / `chapterTitle` / `wordCount` and nothing else.
  *
- * It is a named type because the identity has exactly ONE source (issue #205): the chapter
+ * It is a named type because the identity has exactly ONE source: the chapter
  * the caller resolved. `ReviewContextValue` (the run's own reader) is structurally one of
  * these, so the route hands its resolved chapter straight in.
  */
@@ -92,7 +92,7 @@ export interface CompareChapter {
 }
 
 /**
- * Decide the table's chapter identity — the one place that decides it (issue #205).
+ * Decide the table's chapter identity — the one place that decides it.
  *
  * Priority: **the resolved chapter wins**; the recorded runs are only a fallback for a
  * caller that holds nothing but records (the old tool path). Why it matters: the route
@@ -306,9 +306,9 @@ export function reviewCompareWire(table: ReviewCompare): Record<string, unknown>
  * Read-only, and it resolves its chapter through `buildReviewContext` — the run's own
  * reader — so "which chapter" has exactly one answer across the tool, the route and the
  * review itself. An id that matches nothing is a 404 `CHAPTER_NOT_FOUND` naming it, never a
- * fallback to the last chapter (the /brief rule, #200).
+ * fallback to the last chapter (the /brief rule).
  *
- * The resolved chapter is what the header names (#205): a chapter with zero runs still gets
+ * The resolved chapter is what the header names: a chapter with zero runs still gets
  * its own identity and the note says it has not been reviewed yet, instead of a table with
  * an empty `chapterId` and `0` words.
  */

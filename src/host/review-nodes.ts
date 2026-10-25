@@ -1,7 +1,7 @@
 /**
- * Issue #46 — the five review dimensions and their nodes.
+ * The five review dimensions and their nodes.
  *
- * Extracted from `review.ts` by #193. One file for "what a dimension is" and "what a
+ * Extracted from `review.ts` when it was split. One file for "what a dimension is" and "what a
  * node may look at", so that adding a dimension or changing what one dimension counts
  * is a local edit instead of a surgical one inside a 1700-line file.
  *
@@ -22,7 +22,7 @@
  * sentence statistics, which character names actually occur, which ledger subjects
  * exist. It reads and hands numbers to the reader; it never says "this is bad". The
  * verdict belongs to the model (X-26), and the *mechanical* verdicts over the same
- * chapter already belong to the seven quality gates (#44) — a second threshold table
+ * chapter already belong to the seven quality gates — a second threshold table
  * here would be two answers to one question.
  *
  * ## What it refuses to own

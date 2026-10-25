@@ -1,5 +1,5 @@
 /**
- * The single write door of the plugin (issue #14).
+ * The single write door of the plugin.
  *
  * Everything that may end up in the user's novel repository goes through the
  * three capabilities in this file, and nothing in the plugin is allowed to call
@@ -148,7 +148,7 @@ export interface AtomicWriteOptions {
    */
   verbatim?: boolean
   /**
-   * The style to serialise the normalised payload in (ADR-0016, issue #132).
+   * The style to serialise the normalised payload in (ADR-0016).
    *
    * Normalisation is not the end of the story: an existing chapter has a format
    * of its own (CRLF, a BOM), and rewriting it to LF turns a one-character edit
@@ -348,8 +348,8 @@ export function resolveWriteTarget(projectRoot: string, relativePath: string): R
   // `jobs/`, `review/`, `purged/`. `.inkflow/` itself and any other name under it stay
   // outside the whitelist, so the widening is a closed list of eight paths rather than
   // "a whole dot-directory the caller may shape freely" (X-18 added `candidates/`;
-  // X-25 / ADR-0023 added `proposals/` and `jobs/`; #46 added `review/`; #199 added
-  // `purged/`, the holding area for the private state the author cleaned up).
+  // X-25 / ADR-0023 added `proposals/` and `jobs/`; the review tab added `review/`; the
+  // purge area added `purged/`, the holding area for the private state the author cleaned up).
   const privateSub = dir === PRIVATE_STATE_DIR ? (segments[1] ?? '') : ''
   const inPrivateState = (PRIVATE_STATE_SUBDIRS as readonly string[]).includes(privateSub)
 

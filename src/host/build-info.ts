@@ -1,6 +1,6 @@
 /**
  * Which generation of the plugin is RUNNING, and does the disk hold a newer one?
- * (issue #88)
+ *
  *
  * THE FAILURE THIS PREVENTS. DSH loads a plugin's `lib/` exactly once, at process
  * start. HMR does not swap an already-loaded plugin, so a `pnpm run build` while

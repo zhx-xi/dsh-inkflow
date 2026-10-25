@@ -14,7 +14,7 @@
  * session directory, runs the assembly in `writing-context.ts`, and returns
  * the text — any failure is one log line plus an empty section.
  *
- * WHY THE BRIEF AND NOT THE SIX-SEGMENT CONTEXT (issue #183, ADR-0022 D1/X-23):
+ * WHY THE BRIEF AND NOT THE SIX-SEGMENT CONTEXT (ADR-0022 D1/X-23):
  * the section used to inject `buildWritingContext()`'s six segments, which meant
  * the nine-segment brief could be previewed and audited but never reached the
  * model — "the preview is what the model gets" held only for the preview itself.

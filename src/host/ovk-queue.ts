@@ -1,6 +1,6 @@
 /**
  * The semantic rebuild job — one at a time, coalesced, retried, and honest about what it
- * did not finish (#41, ADR-0009 P5/P6/P10).
+ * did not finish (ADR-0009 P5/P6/P10).
  *
  * THREE RULES, and each one exists because the naive version fails in a way the author
  * cannot see:
@@ -85,7 +85,7 @@ export interface RebuildOutcome {
  * cold cache under a full-suite run, answers EPERM/EBUSY and then succeeds on the retry.
  * The second attempt is synchronous and costs nothing on the happy path; what makes a
  * *persistent* failure harmless is not the retry but the accounting in
- * `planRebuild`/`runRebuild` (issue #207: one lost read used to drop the chapter from both
+ * `planRebuild`/`runRebuild` (one lost read used to drop the chapter from both
  * the plan and the ledger while the rebuild reported success).
  */
 export const READ_ATTEMPTS = 2
@@ -199,7 +199,7 @@ export async function runRebuild(runtime: SemanticRuntime): Promise<RebuildOutco
     projectId,
   })
   // A chapter the index lists and the disk would not give back is stale, not absent: it
-  // must be named in the summary and retried on the next run (issue #207 — the silent
+  // must be named in the summary and retried on the next run (the silent
   // version left the ledger without the chapter and the run claiming success).
   const stale = new Set<string>(plan.unreadable)
   const pending = plan.writes.length + plan.tombstones.length

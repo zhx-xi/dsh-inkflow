@@ -1,5 +1,5 @@
 /**
- * The foreshadowing domain's two model-facing tools (#31): `inkflow_foreshadow_list`
+ * The foreshadowing domain's two model-facing tools: `inkflow_foreshadow_list`
  * and `inkflow_foreshadow_upsert`.
  *
  * They live in the domain, not in `tools.ts` (roadmap X-5): a domain branch adds one

@@ -1,5 +1,5 @@
 /**
- * Issue #44 — the quality gate: seven checks over one chapter, one deterministic verdict.
+ * The quality gate: seven checks over one chapter, one deterministic verdict.
  *
  * ## What this module owns, and what it refuses to own
  *
@@ -36,7 +36,7 @@
  * *could* rewrite — the rewrite would have to live in `repair.ts` (the one repair path, which
  * dispatches on the code), and no `GATE_*` action exists there. Promising `fixable: true`
  * without that action turns 「一键修复」 into a button that does nothing while the report says
- * "N 项可自动修复" — the #143 / ADR-0015 D2 accident. The classes stay detectable now; the
+ * "N 项可自动修复" — the ADR-0015 D2 accident. The classes stay detectable now; the
  * flip to `fixable: true` belongs to the commit that teaches `repair.ts` the rewrite.
  */
 
@@ -116,7 +116,7 @@ export interface GateRequest {
 
 /**
  * A chapter body that is **not on disk yet**: what a batch job must gate before it writes
- * (issue #47, roadmap X-30).
+ * (roadmap X-30).
  *
  * Why this lives here and not in `jobs.ts`: the seven checks are one implementation, and a
  * second caller that assembled its own `GateInput` would be a second opinion about what a
@@ -141,7 +141,7 @@ export interface GateRunOptions {
   /** `false` computes without writing the conclusion file (the panel's read route). */
   readonly record?: boolean
   /**
-   * Gate this body instead of the one in the chapter file (an unsaved draft, issue #47).
+   * Gate this body instead of the one in the chapter file (an unsaved draft).
    *
    * With a draft, a chapter that does not exist yet is not an error: the input is built from
    * the draft. `record` stays `false` for a draft — the conclusion file is keyed by chapter id
@@ -398,7 +398,7 @@ export function runGate(root: string, request: GateRequest = {}, options: GateRu
   const drafted = options.draft !== undefined
   // A draft is by definition not the file, so the conclusion file would describe bytes that
   // are not on disk. Recording it is refused here rather than silently skipped: a caller that
-  // asks for both is asking for the wrong thing (issue #47 holds the verdict in the job record
+  // asks for both is asking for the wrong thing (the job record holds the verdict, and the chapter
   // and writes the chapter only after a human, or a clean verdict, says yes).
   if (drafted && options.record !== false) {
     return refuse(

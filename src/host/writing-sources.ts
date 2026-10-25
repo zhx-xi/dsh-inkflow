@@ -1,5 +1,5 @@
 /**
- * Data sources for the injected writing context (issue #20).
+ * Data sources for the injected writing context.
  *
  * Everything here is **synchronous** and **failure-tolerant**: the callers run
  * inside a prompt provider, where a rejection cannot be handled and an await is
@@ -26,7 +26,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from './conventions.js'
 import { intField, parseMarkdown, stringArrayField, stringField } from './frontmatter.js'
-// The chapter map the other read routes resolve through (#200): one definition of "which
+// The chapter map the other read routes resolve through: one definition of "which
 // chapter does this id mean" and one definition of reading order (`comparePosition`).
 import { chapterPositions } from './domains/foreshadowing-query.js'
 import { comparePosition } from './domains/foreshadowing-plan.js'
@@ -52,7 +52,7 @@ export interface ChapterHead {
   /**
    * The chapter's stable id (frontmatter `id`, else the id the index derived).
    *
-   * Added by #43: the brief's audit file is named after the chapter (`brief-<id>.json`,
+   * The brief's audit file is named after the chapter (`brief-<id>.json`,
    * ADR-0022 D4), and a name built from `seq` alone would collide across volumes — `seq`
    * is volume-local (data-model §3.2.2).
    */
@@ -136,7 +136,7 @@ function readSchemaVersion(db: DatabaseSync): number {
 // ---------------------------------------------------------------------------
 
 /**
- * How a caller names the chapter it wants described (issue #200).
+ * How a caller names the chapter it wants described.
  *
  * Two spellings, because a chapter has two kinds of address and they are not
  * interchangeable:
@@ -180,7 +180,7 @@ export function readChapterPair(root: string, address: ChapterAddress = {}): Cha
  * A path that matches nothing answers `{}` — **never another chapter**. The caller
  * resolved this path a moment ago (the channel refuses an id that matches nothing, 404
  * `CHAPTER_NOT_FOUND`), so a miss means the book moved underneath us; answering with the
- * last chapter is exactly the silent substitution issue #200 removed.
+ * last chapter is exactly the silent substitution the chapter map removed.
  */
 function readChapterPairAt(root: string, chapterPath: string): ChapterPair {
   const positions = chapterPositions(root)
@@ -196,7 +196,7 @@ function readChapterPairAt(root: string, chapterPath: string): ChapterPair {
   }
   // The heading comes from the FILE, not from the position: the position table has no
   // `status`, and a head that dropped it would render a different chapter block than the
-  // `chapterSeq` spelling does (#200 — the two spellings must answer the same brief).
+  // `chapterSeq` spelling does (the two spellings must answer the same brief).
   return {
     current: withFrontmatter(root, current.path),
     ...(previous === undefined ? {} : { previous: withFrontmatter(root, previous.path) }),
@@ -316,7 +316,7 @@ export function readTail(root: string, previous: ChapterHead | undefined): TailS
  * The chapter's own frontmatter `id`, or `undefined` when the file declares none.
  *
  * Why a separate read: the index derives an id from the path when the frontmatter has no
- * `id` (`chapters-vol-01-0002-起风.md`), which is stable but unreadable — and #43 names the
+ * `id` (`chapters-vol-01-0002-起风.md`), which is stable but unreadable — and the brief names its
  * brief's audit file after it (ADR-0022 D4). So the *declared* id is read from the file,
  * and a chapter without one falls back to `seq-<n>` instead of to a path slug.
  */

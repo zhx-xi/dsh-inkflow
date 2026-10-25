@@ -1,5 +1,5 @@
 /**
- * The import's half of the private channel (#37, roadmap X-17): one POST, two actions.
+ * The import's half of the private channel (roadmap X-17): one POST, two actions.
  *
  * Scope: `POST /inkflow/internal/library/import` with `action: 'plan' | 'apply'`. What an
  * import means lives in `import-write.ts`; this module only turns a request into one of

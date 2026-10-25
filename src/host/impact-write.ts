@@ -1,5 +1,5 @@
 /**
- * The rename write path (#34, ADR-0014, conventions §5.6).
+ * The rename write path (ADR-0014, conventions §5.6).
  *
  * A rename is **one file's write**: the file moves to its new name and the *old*
  * id is pinned into its frontmatter. Nothing else is touched — relations keep
@@ -81,7 +81,7 @@ interface PinResult {
  * `pinId === undefined` means the file is **not moving**: only a rename pins the id
  * (conventions §5.6, ADR-0014 §4 — "只有「改名」写 `id`"). A title-only edit on a
  * file that never had an `id:` must not grow one, or the file would claim to be a
- * renamed entry it is not, and #33's audit would list it as `ID_PATH_DIVERGED`.
+ * renamed entry it is not, and the audit would list it as `ID_PATH_DIVERGED`.
  *
  * `patchFrontmatter` is the same line-level patcher the library editor uses, so key
  * order, comments, quoting, unknown keys and line endings survive. Two deviations

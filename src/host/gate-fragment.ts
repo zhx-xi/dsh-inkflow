@@ -1,5 +1,5 @@
 /**
- * Issue #214 (B 块) — item 3's third direction: **太碎**.
+ * Item 3's third direction: **太碎**.
  *
  * The six dimensions judged prose that is too long and too even. All three detectors here judge
  * the opposite — prose that has been chopped up — and they exist because nothing did:
@@ -10,7 +10,7 @@
  *
  * ## 为什么单开一个文件（而不是塞进 `gate-rules.ts`）
  *
- * 同一个理由让 #212 的退化检测单开：`gate-rules.ts` 拥有前七项的字数/钩子/一致性/敏感/平台
+ * 同一个理由让退化检测单开：`gate-rules.ts` 拥有前七项的字数/钩子/一致性/敏感/平台
  * 判定，而这三个判据是**同一个 check 里的另一族判据**，各有自己的阈值表与豁免规则（引号内
  * 豁免、密度下限、段落作为单位）。词表仍在 `gate-vocabulary.ts` 的 `FRAGMENT`（ADR-0027 D5
  * 的单一来源），本文件只写判定。

@@ -1,5 +1,5 @@
 /**
- * The shared library's **write** surface on the hub channel (#40): copy, update and
+ * The shared library's **write** surface on the hub channel: copy, update and
  * the "what is stale" list, for the book hub's 共享内容 page.
  *
  * WHY THIS IS A THIN LAYER. Everything that decides what a copy is (destination,
@@ -17,7 +17,7 @@
  * Within a registered book the four-state gate still decides: only `usable` is
  * writable, and a non-usable book answers the same checklist the tools answer.
  *
- * THE WRITE GUARDS are the channel's, not this file's (ADR-0010 D6 #6): a non-GET
+ * THE WRITE GUARDS are the channel's, not this file's (ADR-0010 D6 guard 6): a non-GET
  * hub route already requires an `Origin` that is same-origin with `Host`, a JSON
  * body, and a body-field allowlist. Here that allowlist is `book`/`entryId`/`mode`/
  * `confirm` for a copy and `book`/`entryId`/`file`/`confirm` for an update — no

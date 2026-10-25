@@ -59,7 +59,7 @@ export interface WorkspacePlan {
   existingCount: number
   /**
    * `inkflow.json` as it is right now (`null` = absent), so a plan → apply round
-   * trip can carry the baseline it planned against (issue #5: two sessions
+   * trip can carry the baseline it planned against (two sessions
    * initialising the same directory must not overwrite each other's meta).
    */
   metaFingerprint: FileFingerprint | null
@@ -131,7 +131,7 @@ export type WorkspaceErrorCode =
   | 'APPLY_FAILED'
 
 /**
- * Non-blocking findings about `inkflow.json` after a successful apply (issue #89).
+ * Non-blocking findings about `inkflow.json` after a successful apply.
  *
  * These are not errors: the call did what it promised, and reporting a problem
  * the user can fix is better than pretending the file is fine. Two shapes:
@@ -161,7 +161,7 @@ export interface WorkspaceApplyInput {
   title?: string
   author?: string
   /**
-   * The `inkflow.json` baseline the caller planned against (issue #5). Pass
+   * The `inkflow.json` baseline the caller planned against. Pass
    * `{ absent: true }` when the plan reported `metaFingerprint: null`, or the
    * plan's `metaFingerprint` itself; a mismatch is `FILE_CHANGED`, zero writes.
    */
@@ -184,7 +184,7 @@ export interface WorkspaceApplyResult {
   notices: string[]
   /**
    * `inkflow.json` read back after the call, compared with the title this call
-   * asked for (issue #89). `undefined` when no title was asked for: nothing to
+   * asked for. `undefined` when no title was asked for: nothing to
    * verify, and saying `true` would be a claim that was never tested.
    */
   metaVerified?: boolean
@@ -246,7 +246,7 @@ function echoTitle(value: string): string {
 }
 
 /**
- * Comparison form of a title (issue #89).
+ * Comparison form of a title.
  *
  * Reformatting is not renaming: a trailing newline, doubled spaces, a full-width
  * space from a Chinese IME or a different Unicode normalisation must not read as
@@ -257,7 +257,7 @@ function normalizeMetaTitle(value: string): string {
 }
 
 /**
- * Re-read `inkflow.json` and report what actually landed (issue #89).
+ * Re-read `inkflow.json` and report what actually landed.
  *
  * The plugin's own writer is UTF-8, so a mismatch means either another writer
  * (a session, a shell, the author) moved the file, or the bytes on disk are not
@@ -365,7 +365,7 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
   let createdGit = false
 
   /**
-   * Issue #5: `inkflow.json` is the one file this wizard may *overwrite*, and it
+   * `inkflow.json` is the one file this wizard may *overwrite*, and it
    * is also the file two concurrently initialising sessions both want to write.
    * So the baseline is taken now, checked against whatever the caller planned
    * against, and re-checked immediately before the overwrite — a lost race is
@@ -439,7 +439,7 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
         // inkflow.json this plugin cannot use, only after the caller confirmed,
         // and the old text stays available in the confirm round via metaRaw.
         //
-        // Issue #5: `git init` above can take long enough for another session to
+        // `git init` above can take long enough for another session to
         // finish its own initialisation, so the baseline is re-checked here, at
         // the last moment before the overwrite. A lost race rolls back to the
         // pre-call tree and reports `FILE_CHANGED`.
@@ -538,7 +538,7 @@ export function applyWorkspace(root: string, input: WorkspaceApplyInput = {}): W
     (item) => !createdSet.has(item) && !updatedSet.has(item) && existsSync(join(absolute, item)),
   )
 
-  // Issue #89: read the meta back and report what landed. Never a failure, never
+  // Read the meta back and report what landed. Never a failure, never
   // a rewrite — the author's file stays theirs, and the caller gets the evidence.
   const verification = verifyWrittenMeta(absolute, title)
 

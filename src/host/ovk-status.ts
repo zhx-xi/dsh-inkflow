@@ -1,5 +1,5 @@
 /**
- * The three semantic operations as plain functions (#41), so the tool surface and the
+ * The three semantic operations as plain functions, so the tool surface and the
  * settings panel answer from ONE implementation.
  *
  * Why this module exists: the same three questions are asked on two channels — the model

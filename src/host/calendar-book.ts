@@ -1,5 +1,5 @@
 /**
- * The book's calendar, as a file (issue #48 / roadmap X-28).
+ * The book's calendar, as a file (roadmap X-28).
  *
  * `calendar.ts` owns the arithmetic and is deliberately free of disk and clock. This
  * module owns the other half: where the table lives and what a *missing* or *broken*

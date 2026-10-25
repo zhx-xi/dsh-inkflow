@@ -1,7 +1,7 @@
 /**
- * The consistency audit tool (split out of `tools.ts`, #193): `inkflow_project_audit`
- * (#33, roadmap X-14). Read-only unless `export: true`, and the export is the one
- * action that writes — under `.inkflow/audit/` (ADR-0012 #6).
+ * The consistency audit tool (split out of `tools.ts`): `inkflow_project_audit`
+ * (roadmap X-14). Read-only unless `export: true`, and the export is the one
+ * action that writes — under `.inkflow/audit/` (ADR-0012 decision 6).
  */
 
 import type { ContentBlock, ToolDefinition } from '../context.js'
@@ -29,8 +29,8 @@ function renderAuditFailure(value: Json): ContentBlock[] {
 
 export function auditTools(deps: ToolDeps): ToolDefinition[] {
   /**
-   * The consistency audit (#33, roadmap X-14). Read-only unless `export: true`, and the
-   * export is the one action here that writes — under `.inkflow/audit/` (ADR-0012 #6).
+   * The consistency audit (roadmap X-14). Read-only unless `export: true`, and the
+   * export is the one action here that writes — under `.inkflow/audit/` (ADR-0012 decision 6).
    *
    * Why the reply carries only the first `limit` findings plus the counts: a 500-chapter
    * book can produce hundreds of findings, and a tool reply is context the model pays for.

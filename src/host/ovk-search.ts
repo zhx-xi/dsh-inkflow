@@ -1,5 +1,5 @@
 /**
- * Semantic retrieval plugged into the ONE search entry (#41, roadmap X-16, ADR-0009 P7/P8).
+ * Semantic retrieval plugged into the ONE search entry (roadmap X-16, ADR-0009 P7/P8).
  *
  * WHAT THIS FILE DECIDES, in order:
  *

@@ -1,6 +1,6 @@
 /**
  * The private purge area's **actions**: clean one thing up, and (below) put one thing back
- * (#199, [ADR-0026](../../../.agents/adrs/0026-private-purge-area.md)).
+ * ([ADR-0026](../../../.agents/adrs/0026-private-purge-area.md)).
  *
  * Split from `private-purge.ts`, and not only because a new file must stay under 600 lines:
  * the seam is what a reader needs. That file owns the **shape** (the layout, the manifest row,
@@ -257,7 +257,7 @@ function moveIntoArea(
     return { ok: false, error: { ...recorded.error, nothingWritten: true } }
   }
 
-  // The ignore line appears when the area is first used, not from the gate (ADR-0012 #2).
+  // The ignore line appears when the area is first used, not from the gate (ADR-0012 decision 2).
   ensurePrivateStateIgnored(root)
 
   for (const file of staged) {
@@ -386,7 +386,7 @@ export function cleanUpProposal(
  *
  * `confirm` is checked here rather than in the channel so no second caller can forget it: this
  * is the only move that takes bytes out of the state the panels read, and `confirm: true` is
- * the second click ADR-0012 #4 asks for.
+ * the second click ADR-0012 decision 4 asks for.
  */
 export function cleanUp(projectRoot: string, input: CleanUpInput): CleanUpResult {
   const root = projectRoot

@@ -1,6 +1,6 @@
 /**
- * The shared-library tools (split out of `tools.ts`, #193): `inkflow_shared_list`,
- * `inkflow_shared_copy`, `inkflow_shared_update` (#40, ADR-0007). Three tools, one
+ * The shared-library tools (split out of `tools.ts`): `inkflow_shared_list`,
+ * `inkflow_shared_copy`, `inkflow_shared_update` (ADR-0007). Three tools, one
  * direction: they read the plugin-level library (`dataDir/shared`) and copy OUT of it
  * into the current book. Nothing here writes the library — the manifest is derived and
  * there is no "push" direction (ADR-0007 C6).
@@ -37,7 +37,7 @@ function renderSharedFailure(verb: string, value: Json): ContentBlock[] {
 
 export function sharedLibraryTools(deps: ToolDeps): ToolDefinition[] {
   /**
-   * The shared library (#40, ADR-0007). Three tools, one direction: they read the
+   * The shared library (ADR-0007). Three tools, one direction: they read the
    * plugin-level library (`dataDir/shared`) and copy OUT of it into the current
    * book. Nothing here writes the library — the manifest is derived and there is no
    * "push" direction (ADR-0007 C6).

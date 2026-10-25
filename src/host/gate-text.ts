@@ -1,5 +1,5 @@
 /**
- * Issue #44 — the text helpers the seven quality gates share.
+ * The text helpers the seven quality gates share.
  *
  * Every one of them exists because two rules needed the same answer and a second copy would
  * drift: "which line is this offset on" (all line-anchored findings), "what counts as a
@@ -149,7 +149,7 @@ export function stripQuoted(text: string): string {
  * for *this* chapter.
  *
  * The rate is a density (0.6/千字 for dashes), but the unit a model actually works in is a
- * chapter (#214 A 块: the skills used to say 「一章 0–1 处」, a different rule with a different
+ * chapter (the skills used to say 「一章 0–1 处」, a different rule with a different
  * answer). Rounding the rate down and keeping a floor of one turns the configured ratio into
  * "one per 1667 characters, at least one" — so a 2500-character chapter with one dash is fine,
  * a 400-character chapter with one dash is not a punctuation problem, and neither needed a

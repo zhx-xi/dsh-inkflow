@@ -1,7 +1,7 @@
 /**
- * Issue #212 — item 8 of the quality gate: degeneration detection.
+ * Item 8 of the quality gate: degeneration detection.
  *
- * The seven checks of #44 judge **how well** the chapter is written. None of them notices
+ * The seven quality checks judge **how well** the chapter is written. None of them notices
  * that the model wrote it *wrong*, and in a batch job that gap is expensive: a paragraph
  * repeated verbatim, a body cut off by `max_tokens`, a draft still carrying
  * 「（此处继续展开）」, or `TODO` in the prose all pass every one of them, and the author only

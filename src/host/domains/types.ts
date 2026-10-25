@@ -9,7 +9,7 @@
  *
  * The imports below are type-only on purpose: `indexer.ts` imports the registry at
  * run time, so the reverse edge must be erased at build time (no runtime cycle).
- * Lifting these types into this file is part of the index rewrite (#23), not #101.
+ * Lifting these types into this file is part of the index rewrite, not of the domain contract.
  */
 
 import type { ContentDir } from '../conventions.js'
@@ -75,7 +75,7 @@ export interface DomainEntityRef {
   /** Project-relative path, forward slashes. */
   readonly path: string
   readonly title: string
-  /** Normalised name for uniqueness checks — always from `domains/naming.ts` (X-1; that module lands with #23). */
+  /** Normalised name for uniqueness checks — always from `domains/naming.ts` (X-1; that module lands with the index rewrite). */
   readonly nameKey?: string
   readonly category?: string
   readonly parent?: string
@@ -131,7 +131,7 @@ export interface DomainValidateInput {
   readonly scan: DomainScanResult
   /**
    * Every module's projection rows, for cross-domain checks (dangling refs,
-   * cross-class duplicate ids). Assembled by `indexer.ts` (`scanProject`, #23),
+   * cross-class duplicate ids). Assembled by `indexer.ts` (`scanProject`),
    * never by a single domain — and on the write path it is likewise already
    * post-write, so `I-04` does not report an in-place update as a duplicate id.
    */
@@ -147,11 +147,11 @@ export interface DomainValidateInput {
    *
    * Scope (X-4): this covers **create and update** of one file — the write always
    * has content at a known path. A delete or a move has no content to judge, so it
-   * is validated by the trash/move paths (#35, `moveChapter`) instead; when those
+   * is validated by the trash/move paths (`moveChapter`) instead; when those
    * need a pre-write check they must pass the destination as a candidate too.
    *
    * Status: no production caller sets this yet — the write side is wired by the domain
-   * tools (#24 onward). Until then `validate()` is only reached through a rebuild, and
+   * tools (and later schema versions). Until then `validate()` is only reached through a rebuild, and
    * that is why the write paths still keep their own argument checks.
    */
   readonly candidate?: { readonly path: string }
@@ -189,7 +189,7 @@ export interface DomainSchema {
  * read, `validate()` judges, `schema()` describes, `tools()` declares. Nothing here
  * writes a project file — writes still go through `io.ts`.
  *
- * `scan()` is assembled by the caller (`indexer.ts`, #23) from one `walkProjectFiles`
+ * `scan()` is assembled by the caller (`indexer.ts`) from one `walkProjectFiles`
  * pass, exactly like `entities`.
  *
  * Write path (X-4), in order, all before anything lands:

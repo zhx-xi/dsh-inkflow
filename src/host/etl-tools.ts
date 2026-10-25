@@ -1,5 +1,5 @@
 /**
- * The migration tool surface (#51): `inkflow_etl_plan` and `inkflow_etl_apply`.
+ * The migration tool surface: `inkflow_etl_plan` and `inkflow_etl_apply`.
  *
  * Two tools, and the split is the whole safety story:
  *

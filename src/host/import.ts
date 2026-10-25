@@ -1,5 +1,5 @@
 /**
- * Reading an old manuscript (issue #37, roadmap X-17): bytes → one analysable text.
+ * Reading an old manuscript (roadmap X-17): bytes → one analysable text.
  *
  * Everything here is a pure function over a `Buffer`. The write side (chapter files,
  * the backup package, the library copy) lives in `import-write.ts`; this module never

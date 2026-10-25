@@ -125,7 +125,7 @@ function scanDocument(text: string): DocumentScan {
  *
  * conventions.md's own examples put `# 可选` after a value, so keeping the whole
  * rest as the value polluted ids/volumes/statuses (`c-1   # inline comment`
- * became the id). A comment starts at line start or after whitespace — `c#1`
+ * became the id). A comment starts at line start or after whitespace — `c#N`
  * and URLs keep their `#` — and only outside quotes, so a title like
  * `"第 1 章 # 入山"` survives. Escapes follow the quote style: `\"` in double
  * quotes, `''` in single quotes.

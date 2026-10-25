@@ -1,5 +1,5 @@
 /**
- * Relation domain (`relations/`) — issue #27, data-model §3.1/§3.3/§5 (I-08).
+ * Relation domain (`relations/`), data-model §3.1/§3.3/§5 (I-08).
  *
  * Why relations get their own directory: an edge used to be a frontmatter field on
  * a character file, so the same fact lived in two places (the character's field and
@@ -17,7 +17,7 @@
  * One diagnostic is deliberately **rebuild-only** (`RELATION_FIELD_DEPRECATED`): a
  * character file that still carries its old relation fields is not broken — the
  * field is simply ignored now — and batch migration of existing books belongs to
- * the migration issues (#34/#36), not to a single write. The write path therefore
+ * the migration issues, not to a single write. The write path therefore
  * never sees it (see the `candidate` gate in `validate()`): a warning must never
  * block an edit.
  *
@@ -258,7 +258,7 @@ export const relationDomain: DomainModule = {
       }
     }
 
-    // The knowledge graph's second invariant (#48): the same pair + kind claimed in
+    // The knowledge graph's second invariant: the same pair + kind claimed in
     // contradictory directions. Blocking on both nets — a write that would create one is
     // refused, and a rebuild reports the pair, so a hand-written pair of files is visible
     // instead of silently overriding each other.
@@ -266,7 +266,7 @@ export const relationDomain: DomainModule = {
       issues.push({ code: conflict.code, path: conflict.path, detail: conflict.detail })
     }
 
-    // The knowledge graph's third invariant (#188): `since`/`until` windows that cannot hold
+    // The knowledge graph's third invariant: `since`/`until` windows that cannot hold
     // — one file contradicting itself, or two files writing two windows for one relation.
     // Chapter order comes from the projection this validate already received (id + path +
     // `orderIndex`), which is the same channel the ledger resolves I-23 through, so the

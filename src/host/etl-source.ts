@@ -1,5 +1,5 @@
 /**
- * Reading the **old** InkFlow database (issue #51, roadmap X-29).
+ * Reading the **old** InkFlow database (roadmap X-29).
  *
  * The legacy library is a 43-table SQLite file (`D:\小说\inkflow\inkflow.db` on this
  * machine: 12.6 MB, 59 万字, 106 projects). This module reads the **13 content tables**
@@ -25,7 +25,7 @@
 
 import { DatabaseSync } from 'node:sqlite'
 
-/** The 13 legacy tables that carry content for one book (issue #51: 「13 核心表」). */
+/** The 13 legacy tables that carry content for one book (「13 核心表」). */
 export const ETL_TABLES = [
   'volumes',
   'chapters',

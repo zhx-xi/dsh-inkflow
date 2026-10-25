@@ -1,5 +1,5 @@
 /**
- * Shared plumbing for the built-in tool surface (split out of `tools.ts`, #193).
+ * Shared plumbing for the built-in tool surface (split out of `tools.ts`).
  *
  * Why this module exists: `tools.ts` was a 2269-line file holding every built-in tool
  * plus the reply envelope every one of them returns. The tools now live in one file per
@@ -38,7 +38,7 @@ const OBJECT_SCHEMA: JsonSchemaNode = { type: 'object', additionalProperties: tr
 
 /**
  * The model-facing shape of a failed rebuild. The index is a cache, so a failed
- * rebuild is reported as data — never as a thrown stack trace (issue #4).
+ * rebuild is reported as data — never as a thrown stack trace.
  */
 export function indexBuildFailure(cause: unknown, root: string): Json {
   const failure = describeIndexBuildFailure(cause)
@@ -58,7 +58,7 @@ export function indexBuildFailure(cause: unknown, root: string): Json {
 }
 
 /**
- * A caller-supplied write baseline (issue #5, `FILE_CHANGED`).
+ * A caller-supplied write baseline (`FILE_CHANGED`).
  *
  * Accepted as a plain object on `inkflow_chapter_write` / `_move` / `_delete`
  * and on `inkflow_project_init`; every field that is present must match, so

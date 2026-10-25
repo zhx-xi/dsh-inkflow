@@ -1,7 +1,7 @@
 /**
- * Issue #46 — addressing: from a model's position hint to a verified `path#L<n>` anchor.
+ * Addressing: from a model's position hint to a verified `path#L<n>` anchor.
  *
- * Extracted from `review.ts` by #193. The bytes of the logic did not change; what changed
+ * Extracted from `review.ts` when it was split. The bytes of the logic did not change; what changed
  * is that the one thing a review cannot fake now lives in a file whose whole subject is
  * that one thing.
  *
@@ -414,7 +414,7 @@ export function readChapter(
       }
     }
   } else {
-    // No address: the last chapter in reading order, the same default #44 uses.
+    // No address: the last chapter in reading order, the same default the gate uses.
     const positions = chapterPositionsFromFiles(root)
     let bestKey: [number, number] = [-1, -1]
     for (const file of chapters) {
