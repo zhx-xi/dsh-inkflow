@@ -30,7 +30,9 @@ export function gateTools(deps: ToolDeps): ToolDefinition[] {
     description:
       'Run the eight quality gates over one chapter: word count against the target range, the chapter-end hook, the six ' +
       'de-AI dimensions (sentence length, dash/ellipsis density, parallel structure, explanatory narration, modifier ' +
-      'density, paragraph-end clichés), consistency with the setting library (pov, ledger values that no longer hold), ' +
+      'density, paragraph-end clichés) plus the three fragmentation bounds that judge the opposite failure (telegram-style ' +
+      'runs of very short sentences, a chapter with no causal or adversative link at all, an over-long single paragraph), ' +
+      'consistency with the setting library (pov, ledger values that no longer hold), ' +
       'a sensitive-word self-check, platform form rules (pasted-in residue, off-site promotion), mechanical ' +
       'proofreading (punctuation pairing, half/full-width mixing, doubled words, near-miss character names, mixed ' +
       'appellations, Arabic numbers with Chinese measure words) and degeneration detection (verbatim repetition, a ' +

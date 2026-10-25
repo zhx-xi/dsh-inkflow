@@ -48,38 +48,13 @@
  */
 
 import type { Finding } from './findings.js'
-import { lineLocator, paragraphsOf } from './gate-text.js'
+import { lineLocator, maskQuoted, paragraphsOf, stripQuoted, visibleLength } from './gate-text.js'
 import { DEGENERATION, gateFinding } from './gate-vocabulary.js'
 import type { DegenerationPattern, GateInput } from './gate-vocabulary.js'
 
 // ---------------------------------------------------------------------------
 // 8 退化检测
 // ---------------------------------------------------------------------------
-
-/**
- * What counts as a visible character: Han, Latin letters and digits. Punctuation and
- * whitespace are excluded because they are what a model produces *for free* while looping —
- * a repeated 「……」 run is not a repeated sentence.
- */
-const VISIBLE = /[\u4e00-\u9fff\u3400-\u4dbfA-Za-z0-9]/gu
-
-function visibleLength(text: string): number {
-  return text.match(VISIBLE)?.length ?? 0
-}
-
-/** Replace every paired quoted span with spaces of the same length, so the line keeps shape. */
-function masked(text: string): string {
-  let out = text
-  for (const source of DEGENERATION.quotedSpanSources) out = out.replace(new RegExp(source, 'gu'), (match) => ' '.repeat(match.length))
-  return out
-}
-
-/** Drop paired quoted spans: what is left is the narration around a line of dialogue. */
-function stripped(text: string): string {
-  let out = text
-  for (const source of DEGENERATION.quotedSpanSources) out = out.replace(new RegExp(source, 'gu'), '')
-  return out
-}
 
 /** A finding's excerpt: short enough to read in a table, long enough to recognize. */
 function excerpt(text: string): string {
@@ -120,7 +95,7 @@ function findRepeat(input: GateInput): Finding[] {
     const before = paragraphs[at - 1]
     if (here === undefined || before === undefined) continue
     if (here.text !== before.text) continue
-    if (visibleLength(stripped(here.text)) < DEGENERATION.repeatLineMinChars) continue
+    if (visibleLength(stripQuoted(here.text)) < DEGENERATION.repeatLineMinChars) continue
     out.push(
       gateFinding(
         'GATE_DEGEN_REPEAT',
@@ -138,7 +113,7 @@ function findRepeat(input: GateInput): Finding[] {
   // repeated dialogue-heavy line stays exempt (its narration is what the threshold measures).
   const blocks = new Map<string, { count: number; first: number; second: number | undefined }>()
   for (const paragraph of paragraphs) {
-    if (visibleLength(stripped(paragraph.text)) < DEGENERATION.repeatBlockMinChars) continue
+    if (visibleLength(stripQuoted(paragraph.text)) < DEGENERATION.repeatBlockMinChars) continue
     const entry = blocks.get(paragraph.text)
     if (entry === undefined) {
       blocks.set(paragraph.text, { count: 1, first: paragraph.line, second: undefined })
@@ -162,7 +137,7 @@ function findRepeat(input: GateInput): Finding[] {
   // (3) 同句连发：同一句长句出现 ≥3 次。
   const clauses = new Map<string, { count: number; line: number }>()
   for (const paragraph of paragraphs) {
-    for (const clause of clausesOf(stripped(paragraph.text))) {
+    for (const clause of clausesOf(stripQuoted(paragraph.text))) {
       if (visibleLength(clause) < DEGENERATION.repeatSentenceMinChars) continue
       const entry = clauses.get(clause)
       if (entry === undefined) {
@@ -233,7 +208,7 @@ function scanLines(input: GateInput, code: string, patterns: readonly Degenerati
   const limit = input.thresholds.maxFindingsPerRule
   for (const paragraph of paragraphsOf(input.chapter.body)) {
     if (out.length >= limit) break
-    const narration = masked(paragraph.text)
+    const narration = maskQuoted(paragraph.text)
     for (const pattern of patterns) {
       const match = new RegExp(pattern.source, 'iu').exec(narration)
       if (match === null) continue

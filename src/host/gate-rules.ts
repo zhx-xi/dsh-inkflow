@@ -44,6 +44,7 @@
 
 import type { Finding } from './findings.js'
 import { checkDegeneration } from './gate-degeneration.js'
+import { checkFragment } from './gate-fragment.js'
 import { checkProofread } from './gate-proofread.js'
 import {
   charLength,
@@ -260,6 +261,16 @@ function checkAiFlavor(input: GateInput): Finding[] {
   return out
 }
 
+/**
+ * Item 3 as the report walks it: the six dimensions above **plus** the three 太碎 detectors
+ * (#214 B 块). They share one check id and one severity because they are one judgement — 「这段
+ * 读着像不像人写的」 — and keeping them in one row means the check table stays eight rows
+ * (`GATE_CHECK_IDS` is a published order; a ninth would be a contract change, not a bug fix).
+ */
+function checkAiFlavorAll(input: GateInput): Finding[] {
+  return [...checkAiFlavor(input), ...checkFragment(input)]
+}
+
 // ---------------------------------------------------------------------------
 // 4 一致性
 // ---------------------------------------------------------------------------
@@ -432,7 +443,7 @@ export interface GateCheck {
 export const GATE_CHECKS: readonly GateCheck[] = [
   { id: 'wordCount', label: GATE_CHECK_LABELS.wordCount, run: checkWordCount },
   { id: 'hook', label: GATE_CHECK_LABELS.hook, run: checkHook },
-  { id: 'aiFlavor', label: GATE_CHECK_LABELS.aiFlavor, run: checkAiFlavor },
+  { id: 'aiFlavor', label: GATE_CHECK_LABELS.aiFlavor, run: checkAiFlavorAll },
   { id: 'consistency', label: GATE_CHECK_LABELS.consistency, run: checkConsistency },
   { id: 'sensitive', label: GATE_CHECK_LABELS.sensitive, run: checkSensitive },
   { id: 'platform', label: GATE_CHECK_LABELS.platform, run: checkPlatform },

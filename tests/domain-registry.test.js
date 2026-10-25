@@ -49,7 +49,9 @@ const BUILT_IN_TOOLS = [
   // `.inkflow/audit/` (ADR-0022 D4). A built-in, not a domain tool: it reads the chapter
   // and two setting directories and judges the prose, so no content directory owns it.
   // #212 改了 description（七项→八项，补退化检测）：基线由 `node scripts/surface-hash.mjs` 重算。
-  ['inkflow_gate_check', 'ef0058b5'],
+  // #214 又补了一句：去 AI 味这一项多了三类「太碎」判据，description 不跟着说，模型就会以为
+  // 那一项只管「长而匀」。项数仍是八（`GATE_CHECK_IDS` 是已发布顺序，不新增 check）。
+  ['inkflow_gate_check', '166a6048'],
   // #37: importing an old manuscript. A built-in rather than a domain tool: it writes
   // chapters *and* a `library/` copy, so no single content directory owns it.
   ['inkflow_library_import', '39f228ea'],

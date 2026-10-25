@@ -501,7 +501,10 @@ origin:
 | `GATE_AI_PARALLEL` | 六维去 AI 味 | 「不是…而是…」或连续三句同构 | `catalog` | false |
 | `GATE_AI_NARRATION` | 六维去 AI 味 | 解释性旁白模板（心中一沉 / 感到愤怒 / 五味杂陈） | `catalog` | false |
 | `GATE_AI_MODIFIER` | 六维去 AI 味 | 「的/地」+ 程度副词每千字密度超上限 | `catalog` | false |
-| `GATE_AI_TEMPLATE` | 六维去 AI 味 | 段末命中套路话词表 | `catalog` | false |
+| `GATE_AI_TEMPLATE` | 去 AI 味 | 段末命中套路话词表 | `catalog` | false |
+| `GATE_AI_STUTTER` | 去 AI 味（太碎） | 电报体：连续 `stutterRun`=6 句都 ≤ `stutterSentenceMax`=5 可见字；只判**引号外叙述**，台词不计（`gate-fragment.ts`） | `catalog` | false |
+| `GATE_AI_LOW_LINK` | 去 AI 味（太碎） | 连接词密度低于 `lowLinkPer1000`=0.5/千字（长章才判，`GATE_DENSITY_FLOOR`=1000 字）；「但/却/因为/于是」一族任一处即可安静 | `catalog` | false |
+| `GATE_AI_LONG_PARA` | 去 AI 味（太碎） | 单段可见字 > `longParaChars`=200（砌成墙，中间没有换气处） | `catalog` | false |
 | `GATE_CONSISTENCY_POV_UNKNOWN` | 一致性 | frontmatter `pov` 不匹配任何角色卡的 id / name / alias | `structure` | false |
 | `GATE_CONSISTENCY_FACT_STALE` | 一致性 | 账本里 `until` 已过去的取值，在本章同段与主体名同现 | `ledger` | false |
 | `GATE_SENSITIVE_WORD` | 敏感自查 | 命中敏感词表（词面与出现次数） | `catalog` | false |

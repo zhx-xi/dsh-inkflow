@@ -43,7 +43,8 @@ export type GateCheckId = (typeof GATE_CHECK_IDS)[number]
 export const GATE_CHECK_LABELS: Readonly<Record<GateCheckId, string>> = {
   wordCount: '字数',
   hook: '章末钩子',
-  aiFlavor: '六维去 AI 味',
+  // #214 起这一项不止六维：三个「太碎」判据（`FRAGMENT`）也归它，见 `GATE_CODES`。
+  aiFlavor: '去 AI 味',
   consistency: '一致性',
   sensitive: '敏感自查',
   platform: '平台规则',
@@ -187,6 +188,100 @@ export const DEGENERATION: DegenerationVocabulary = {
   ],
 }
 
+// ---------------------------------------------------------------------------
+// 太碎（#214 B 块）的阈值与词表
+// ---------------------------------------------------------------------------
+
+/**
+ * The third direction of the same de-AI judgement: **too chopped**.
+ *
+ * The six dimensions of item 3 only ever looked at prose that is too long and too even
+ * (mean sentence length, coefficient of variation, modifier density). None of them notices the
+ * opposite failure — a chapter of five-character sentences, a chapter with no causal or
+ * adversative link anywhere, one 300-character paragraph with no place to breathe — and the
+ * polisher skill explicitly tells the model not to chop every long sentence, so the gate and
+ * the skill disagreed about the direction as well as about the number (#214 A 块).
+ *
+ * ## 出处（ADR-0027）
+ *
+ * 类别划分参考 `zenstory-ai/oh-story-claudecode` 的 `check-ai-patterns.js`（MIT）里「太碎」
+ * 方向的三类指纹（短句连发 / 无连接词 / 超长段）。按 ADR-0027 的分档：
+ *
+ *   * **D2（数据表可引用）**：只借「这三类值得判」这个分类，不借任何数字；
+ *   * **D5（数字必须可追溯、阈值单一来源）**：下面每个值都是**本项目自标**，标定语料就是
+ *     本仓自己的正文样本——`tests/quality-gate.test.js` 的 `CLEAN` / `CLEAN_LONG` /
+ *     `LONG_SCENE` 与 7 条 `clean-*` 人工标注。实测：最长「连续 ≤5 可见字句」的 run = 2、
+ *     最长单段可见字 = 70、最稀疏的连接词密度 = 1.36/千字（`CLEAN_LONG`：872 字 1 个）。
+ *     三个阈值分别取 6 / 200 / 0.5，都留出了成倍的余量，理由写在各字段注释里；
+ *   * **D3（代码）**：判定按本仓形状重写在 `gate-fragment.ts`，Finding 走 `gateFinding()`。
+ *
+ * 与 `DEGENERATION` 同样的两个理由让本表**不进** `GateThresholds`：①它是代码里的固定判据，
+ * 调用方不能改（那份表是「判决要能复现」的落盘参数，ADR-0022 D4）；②把恒不变的键写进结论
+ * 文件只会让文件多出五个噪声键。作者级的豁免与按书调参是 #226 的事（先落 ADR）。
+ */
+export interface FragmentVocabulary {
+  /**
+   * 「短句」的分界：可见字 ≤ 这个数的一句算短句。自标：5。
+   *
+   * 标定理由：中文里把一件事说清楚通常要 8 字以上，4–5 字的多是顿呼、单动作或景物顿笔——
+   * 偶尔出现是节奏，连成串才是毛病（见下一项）。clean 语料里最短的**叙述**句是 4 字
+   * （`CLEAN` 的「她停下脚步」），所以 5 把这类句子框进来，靠 run 的长度而不是单句长度判定。
+   */
+  readonly stutterSentenceMax: number
+  /** 连续几句都算短句才算电报体。自标：6（clean 语料实测最长 run = 2，留 3 倍余量）。 */
+  readonly stutterRun: number
+  /**
+   * 连接词密度下界（每千字）。自标：0.5——只为抓「整章一处都没有」。
+   *
+   * 为什么不贴近语料实测值 1.36：下界越低，越容得下作者的短句/冷叙述风格，而这条规则本来
+   * 只需要区分「模型没写过连接」与「作者选择不写」。0.5 意味着 2000 字以内出现一处
+   * 「但/却/因为」就安静。密度类判据照 `GATE_DENSITY_FLOOR` 只在长章上判（见
+   * `gate-fragment.ts`），短摘录不判——与修饰密度同一条规矩。
+   */
+  readonly lowLinkPer1000: number
+  /** 单段可见字上限。自标：200（clean 语料最长段 70 字，留近 3 倍余量）。 */
+  readonly longParaChars: number
+  /** 算作「连接」的词：因果 / 转折 / 递进 / 承接。只有这一族——代词与时态词不算。 */
+  readonly lowLinkWords: readonly string[]
+}
+
+export const FRAGMENT: FragmentVocabulary = {
+  stutterSentenceMax: 5,
+  stutterRun: 6,
+  lowLinkPer1000: 0.5,
+  longParaChars: 200,
+  // 长词在前：「但是」不该被「但」二次计数（`gate-fragment.ts` 按长度降序匹配并在命中后遮掉）。
+  lowLinkWords: [
+    '因为',
+    '所以',
+    '因此',
+    '于是',
+    '但是',
+    '然而',
+    '不过',
+    '只是',
+    '而且',
+    '并且',
+    '虽然',
+    '如果',
+    '若是',
+    '既然',
+    '除非',
+    '否则',
+    '反而',
+    '甚至',
+    '况且',
+    '何况',
+    '接着',
+    '然后',
+    '随即',
+    '随之',
+    '结果',
+    '但',
+    '却',
+  ],
+}
+
 /** One character card as the gates read it: names only — the gates never judge a card. */
 export interface GateRosterEntry {
   readonly id: string
@@ -258,11 +353,17 @@ export const GATE_CODES: readonly GateCodeSpec[] = [
   // 3 六维去 AI 味 — one code per dimension (open-questions Q4), so a report row names the
   // dimension instead of "AI 味" in general.
   { code: 'GATE_AI_SENTENCE', check: 'aiFlavor', severity: 'info', hint: '动作段用短句（10–25 字），把成串的长句切开' },
-  { code: 'GATE_AI_PUNCT', check: 'aiFlavor', severity: 'info', hint: '破折号一章 0–1 处；省略号不要用来拖节奏' },
+  // 数字有意不写进 hint：阈值在 `GATE_DEFAULTS`，写进提示语就是同一事实的第二份（#214 A 块）。
+  { code: 'GATE_AI_PUNCT', check: 'aiFlavor', severity: 'info', hint: '破折号与省略号按每千字密度判超限：删到一两处，或改成逗号与句读' },
   { code: 'GATE_AI_PARALLEL', check: 'aiFlavor', severity: 'info', hint: '「不是…而是…」与连续同构句只在真需要排比处使用' },
   { code: 'GATE_AI_NARRATION', check: 'aiFlavor', severity: 'info', hint: '删掉动作之后的情绪结论，让读者从动作里读出来' },
   { code: 'GATE_AI_MODIFIER', check: 'aiFlavor', severity: 'info', hint: '少堆「的/地」与程度副词，改写成具体动作或细节' },
   { code: 'GATE_AI_TEMPLATE', check: 'aiFlavor', severity: 'info', hint: '换掉套路句：写具体的动作、声音或触感' },
+  // 太碎（#214 B 块）—— 与上面六维同一个 check、同一个严重级：都是「写得像不像人」，
+  // 都不拦写盘。三条判据的阈值在 `FRAGMENT`，判据本身在 `gate-fragment.ts`。
+  { code: 'GATE_AI_STUTTER', check: 'aiFlavor', severity: 'info', hint: '电报体：把连续短句并回一句，一段里留一处能读完的长句' },
+  { code: 'GATE_AI_LOW_LINK', check: 'aiFlavor', severity: 'info', hint: '整章没有因果/转折/递进：把并列的描写用「但/因为/于是」接起来' },
+  { code: 'GATE_AI_LONG_PARA', check: 'aiFlavor', severity: 'info', hint: '单段太长：在动作或对话转换处断开，一段只做一件事' },
 
   // 4 一致性 — cross-checks against the setting library (never a second opinion about the
   // library itself: the library is the truth, the prose is what disagrees with it).
