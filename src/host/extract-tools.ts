@@ -94,6 +94,8 @@ function candidateView(record: CandidateRecord): Json {
     submittedAt: record.submittedAt,
     // #175: present only when accept would refuse this candidate right now.
     ...(proposal.willFail === undefined ? {} : { willFail: { ...proposal.willFail } }),
+    // #178: present when the same identity exists with different content.
+    ...(proposal.duplicate === undefined ? {} : { duplicate: { ...proposal.duplicate } }),
   }
 }
 
@@ -185,6 +187,19 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
           const failing = verdict === undefined ? '' : ` — will FAIL on accept: ${String(verdict['code'] ?? 'unknown')}`
           lines.push(`- ${String(item['candidateId'])} (${String(item['kind'])}) ${label} — ${String(item['evidence'])}${failing}`)
         }
+        const skippedList = Array.isArray(v['skipped']) ? (v['skipped'] as Json[]) : []
+        for (const item of skippedList) {
+          lines.push(`- skipped (already identical): ${String(item['label'] ?? '')} — ${String(item['path'] ?? '')}`)
+        }
+        const duplicates = [...created, ...updated].filter((item) => item['duplicate'] !== undefined)
+        for (const item of duplicates) {
+          const mark = asRecord(item['duplicate'])
+          const changed = Array.isArray(mark['changedFields']) ? (mark['changedFields'] as unknown[]).map(String) : []
+          lines.push(
+            `- ${String(item['candidateId'])} already exists with different content — ${String(mark['path'] ?? '')}` +
+              ` (differs: ${changed.join(', ') || 'body'}); accepting needs overwrite: true`,
+          )
+        }
         const doomed = [...created, ...updated].filter((item) => item['willFail'] !== undefined).length
         if (doomed > 0) {
           lines.push(
@@ -229,11 +244,44 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
       // accept re-scans per candidate (a write may have landed in between).
       const scan = scanProject(root)
       const view = { scan: { tables: scan.tables, entities: scan.entities, issues: scan.issues }, entities: scan.entities }
+      // #178: what the book already holds decides the fate of each candidate —
+      // identical content is dropped here (nothing to review, nothing to write), while
+      // different content is kept and marked so the panel can ask about overwriting.
+      const skipped: Array<{ label: string; path: string; changedFields: readonly string[] }> = []
+      const kept: unknown[] = []
+      for (const item of raw) {
+        const record = asRecord(item)
+        const fields = asRecord(record['fields'])
+        const judged = judgeCandidate({ root, kind: kind as ExtractKind, fields, view })
+        if (judged.ok && judged.existing?.state === 'identical') {
+          skipped.push({
+            label: String(fields['name'] ?? fields['title'] ?? fields['source'] ?? ''),
+            path: judged.existing.path,
+            changedFields: [],
+          })
+          continue
+        }
+        kept.push(record)
+      }
+      // Every candidate was already in the book word for word: there is no batch to write,
+      // and `proposeCandidates` rightly refuses an empty one — so answer directly (#178).
+      if (kept.length === 0) {
+        return {
+          ok: true,
+          root,
+          file: null,
+          submittedAt: null,
+          created: [],
+          updated: [],
+          skipped: skipped.map((entry) => ({ ...entry })),
+          fieldNames: candidateFieldNames(kind as ExtractKind),
+        }
+      }
       const result = proposeCandidates(root, {
         kind: kind as ExtractKind,
         chapters,
-        proposals: raw.map((item) => {
-          const record = asRecord(item)
+        proposals: kept.map((rawItem) => {
+          const record = asRecord(rawItem)
           const judged = judgeCandidate({ root, kind: kind as ExtractKind, fields: asRecord(record['fields']), view })
           return {
             ...(optionalString(record['candidateId']) === undefined ? {} : { candidateId: optionalString(record['candidateId']) ?? '' }),
@@ -244,6 +292,16 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
             // A field error is not a "will fail" warning: `proposeCandidates` refuses the
             // whole batch for it below, so only real conflicts reach the queue.
             ...(judged.ok ? {} : { willFail: judged.error }),
+            ...(judged.ok && judged.existing?.state === 'different'
+              ? {
+                  duplicate: {
+                    state: 'different',
+                    path: judged.existing.path,
+                    ...(judged.existing.digest === undefined ? {} : { digest: judged.existing.digest }),
+                    changedFields: judged.existing.changedFields,
+                  },
+                }
+              : {}),
           }
         }),
       })
@@ -258,6 +316,8 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
         submittedAt: result.value.submittedAt,
         created: result.value.created.map((proposal: CandidateProposal) => ({ ...proposal })),
         updated: result.value.updated.map((proposal: CandidateProposal) => ({ ...proposal })),
+        // Content the book already had word for word: dropped on the spot (#178).
+        skipped: skipped.map((entry) => ({ ...entry })),
         fieldNames: candidateFieldNames(kind as ExtractKind),
       }
     },
@@ -362,6 +422,11 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
           items: { type: 'string' },
           description: 'The candidates to accept, one by one (`ex-<8 hex>` each).',
         },
+        overwrite: {
+          type: 'boolean',
+          description:
+            'Set true only for candidates the author agreed to overwrite: their entity exists with different content, so accepting replaces that file (a replace backup package is written first). Without it such a candidate is refused with OVERWRITE_REQUIRED and nothing is written.',
+        },
         confirm: CONFIRM_PARAM,
       },
       required: ['candidateIds', 'confirm'],
@@ -421,7 +486,7 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
           error: { code: 'CANDIDATE_ID_INVALID', message: 'candidateIds must name at least one candidate' },
         }
       }
-      const accepted = acceptCandidates(root, ids)
+      const accepted = acceptCandidates(root, ids, undefined, { overwrite: a['overwrite'] === true })
       if (!accepted.ok) return { ok: false, root, error: { ...accepted.error } }
 
       let indexRebuilt = false
@@ -443,6 +508,8 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
           kind: outcome.kind,
           accepted: outcome.accepted,
           ...(outcome.path === undefined ? {} : { path: outcome.path }),
+          ...(outcome.overwritten === true ? { overwritten: true } : {}),
+          ...(outcome.unchanged === true ? { unchanged: true } : {}),
           ...(outcome.error === undefined ? {} : { error: { ...outcome.error } }),
         })),
         indexRebuilt,

@@ -28,6 +28,7 @@
 | [0018](0018-settings-backup-diagnostics.md) | **设置写 `$DSH_HOME/inkflow/settings.json`**（不写书）、**备份 = store-only ZIP**（自写 CRC32，保留 5 份）、**诊断包白名单**（不含正文/密钥） | 设置写书会进 git；自研 deflate 出错时坏的是唯一备份；诊断包是要发出去的 |
 | [0019](0019-one-level-nested-frontmatter.md) | frontmatter 支持一层嵌套映射（只为 `origin` 这类对象字段） | 已采纳 | 2026-10-24 |
 | [0020](0020-ovk-endpoint-from-settings.md) | 语义后端的连接来自插件设置，不去挖 OVK 的配置文件 | 已采纳 | 2026-10-24 |
+| [0021](0021-candidate-duplicate-and-overwrite.md) | 候选遇到既有实体：同身份同内容→跳过、同身份异内容→问作者是否覆盖、异身份→硬冲突 | 已采纳 | 2026-10-25 |
 | [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（三段式 + 可回滚备份包） | 已采纳 | 2026-10-24 |
 | [0017](0017-extraction-by-session-model.md) | 提取由「会话里的模型」产出，插件只做队列与落地 | 已采纳 | 2026-10-24 |
 | [0018](0018-settings-backup-diagnostics.md) | 全局设置 + store-only ZIP 备份 + 白名单诊断包 | 已采纳 | 2026-10-24 |
@@ -35,6 +36,7 @@
 | [0020](0020-ovk-endpoint-from-settings.md) | **语义后端连哪由设置说**：`settings.json` 的 `semanticSearch`(boolean) + `semanticEndpoint` + `semanticApiKey?`（**平铺追加**，不改已有 boolean 的形状）；peer 仍只读工作区配置；缺什么降级什么（六种 `degradedReason`）。**S1**：块写 `viking://resources/inkflow/<projectId>/chapters/<chapterId>/<index>.md`（peer 子树只读）；**S2**：tombstone 账本放 `dataDir/semantic/`（派生索引推不出来） | 读 `ov.conf` 等于把 OVK 的凭据面搬进插件、且它一改字段就静默失效；env 在桌面版被 scrub、且不随书走；嵌套对象会让老读者把开关读成关；peer 子树只读会把「能用」换成「更整齐」 |
 | [0015](0015-repair-and-migration.md) | 一键修复与 6→9 迁移（检测/预览/修复三段 + 可回滚备份包） | 已采纳 | 2026-10-24 |
 | [0016](0016-preserve-file-eol-on-edit.md) | 编辑既有文件时保留该文件的行尾与 BOM（新文件仍归一 LF / 无 BOM） | 已采纳 | 2026-10-24 |
+| [0021](0021-candidate-duplicate-and-overwrite.md) | **候选遇到既有实体三选一**（`judgeCandidate()` 是唯一判定，propose 与 accept 共用）：同身份 + 内容一致 → 提交时**直接跳过**（不建候选、零写盘）；同身份 + 内容不一致 → 建候选并带 `duplicate{path,digest,changedFields}`，采纳需显式 `overwrite: true`，替换前写 `replace` 备份包、CAS 基线用**propose 时**的 digest；跨类 id 等才是硬冲突。面板逐条问「已存在，内容不一致——是否覆盖？」，**批量永不覆盖** | 重复提取是常态，一致的那些让作者手工拒绝一半是把无意义工作留给用户；不一致自动覆盖会静默重写手写正文（ADR-0012/0015 的一贯口径是破坏性动作要显式确认）；按字节比「一致」在手写卡与渲染文档之间永远判成不一致；用采纳瞬间的 digest 做 CAS 会覆盖作者在两次点击之间的修改 |
 
 ### 1.2 决策速览（一行一条）
 

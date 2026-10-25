@@ -69,7 +69,7 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
 }
 
 /** The body fields each action may carry (`sessionId` is always allowed). */
-export const CANDIDATES_ACCEPT_BODY_FIELDS = ['candidateIds', 'confirm'] as const
+export const CANDIDATES_ACCEPT_BODY_FIELDS = ['candidateIds', 'confirm', 'overwrite'] as const
 export const CANDIDATES_REJECT_BODY_FIELDS = ['candidateIds', 'reason'] as const
 export const CANDIDATES_PURGE_BODY_FIELDS = ['candidateIds', 'confirm'] as const
 
@@ -179,6 +179,8 @@ export function buildCandidates(
           submittedAt: record.submittedAt,
           // #175: the panel shows this as a badge and keeps the row out of a batch.
           ...(record.proposal.willFail === undefined ? {} : { willFail: { ...record.proposal.willFail } }),
+          // #178: same identity, different content — the row asks about overwriting.
+          ...(record.proposal.duplicate === undefined ? {} : { duplicate: { ...record.proposal.duplicate } }),
         })),
       },
     },
@@ -205,7 +207,11 @@ export async function acceptViaChannel(source: CandidateSource, version: string,
   if (ids === undefined) {
     return refused(400, 'CANDIDATE_ID_INVALID', { field: 'candidateIds', hint: 'send the candidateIds to accept' })
   }
-  const accepted = acceptCandidates(source.root, ids)
+  const overwrite = body['overwrite']
+  if (overwrite !== undefined && typeof overwrite !== 'boolean') {
+    return refused(400, 'invalid-field', { field: 'overwrite', hint: 'send overwrite: true only for the rows the author agreed to replace' })
+  }
+  const accepted = acceptCandidates(source.root, ids, undefined, { overwrite: overwrite === true })
   if (!accepted.ok) {
     const status = STATUS_BY_CODE[accepted.error.code] ?? 400
     return refused(status, accepted.error.code, {
@@ -237,6 +243,8 @@ export async function acceptViaChannel(source: CandidateSource, version: string,
           kind: outcome.kind,
           accepted: outcome.accepted,
           ...(outcome.path === undefined ? {} : { path: outcome.path }),
+          ...(outcome.overwritten === true ? { overwritten: true } : {}),
+          ...(outcome.unchanged === true ? { unchanged: true } : {}),
           ...(outcome.error === undefined ? {} : { error: { ...outcome.error } }),
         })),
         indexRebuilt,

@@ -67,6 +67,14 @@ export interface CandidateVerdict {
   path: string | null
 }
 
+/** Same identity, different content (#178): the row the author has to decide about. */
+export interface DuplicateMark {
+  state: 'different'
+  path: string
+  digest: string | null
+  changedFields: string[]
+}
+
 export interface CandidateRow {
   candidateId: string
   kind: string
@@ -80,6 +88,8 @@ export interface CandidateRow {
   submittedAt: string
   /** What `accept` would refuse right now (#175); null when the Host saw no conflict. */
   willFail: CandidateVerdict | null
+  /** The entity this would replace (#178); null when nothing of that identity exists. */
+  duplicate: DuplicateMark | null
 }
 
 export interface CandidateCounts {
@@ -145,7 +155,22 @@ function asRow(value: unknown): CandidateRow | undefined {
     file: text(record['file']),
     submittedAt: text(record['submittedAt']),
     willFail: asVerdict(record['willFail']),
+    duplicate: asDuplicate(record['duplicate']),
   }
+}
+
+/** A `duplicate` mark off the wire, or null (only `different` is meaningful). */
+function asDuplicate(value: unknown): DuplicateMark | null {
+  const record = asRecord(value)
+  if (record === undefined) return null
+  if (record['state'] !== 'different') return null
+  const path = text(record['path'])
+  if (path === '') return null
+  const digest = text(record['digest'])
+  const changed = Array.isArray(record['changedFields'])
+    ? (record['changedFields'] as unknown[]).filter((item): item is string => typeof item === 'string')
+    : []
+  return { state: 'different', path, digest: digest === '' ? null : digest, changedFields: changed }
 }
 
 /** A `willFail` off the wire, or null. A half-shaped one is dropped, not repaired. */
@@ -302,8 +327,28 @@ export function waitingCount(counts: CandidateCounts | null): number {
  */
 export function actionableIds(rows: readonly CandidateRow[], selected: ReadonlySet<string>): string[] {
   return rows
-    .filter((row) => row.status === 'proposed' && row.willFail === null && selected.has(row.candidateId))
+    .filter((row) => row.status === 'proposed' && row.willFail === null && row.duplicate === null && selected.has(row.candidateId))
     .map((row) => row.candidateId)
+}
+
+/**
+ * Ticked waiting rows a batch skips because they would REPLACE an existing entity (#178).
+ *
+ * Overwriting is per-row on purpose: "the same person, other details" is a judgement about
+ * one entity, and a batch that silently replaced twelve files would be a very expensive
+ * mis-click.
+ */
+export function duplicateIds(rows: readonly CandidateRow[], selected: ReadonlySet<string>): string[] {
+  return rows
+    .filter((row) => row.status === 'proposed' && row.duplicate !== null && selected.has(row.candidateId))
+    .map((row) => row.candidateId)
+}
+
+/** `已存在，内容不一致（body, title）—— 是否覆盖？` or null. */
+export function duplicateLabel(row: CandidateRow): string | null {
+  if (row.duplicate === null) return null
+  const fields = row.duplicate.changedFields.length === 0 ? '' : `（${row.duplicate.changedFields.join(', ')}）`
+  return `已存在，内容不一致${fields} —— 是否覆盖？`
 }
 
 /** Ticked waiting rows the batch will skip because `willFail` says so. */
@@ -332,7 +377,9 @@ export function toggleSelected(selected: ReadonlySet<string>, candidateId: strin
 export function toggleAll(rows: readonly CandidateRow[], selected: ReadonlySet<string>): Set<string> {
   // Only rows a batch can act on: ticking a doomed row would promise something the batch
   // skips (#175).
-  const waiting = rows.filter((row) => row.status === 'proposed' && row.willFail === null).map((row) => row.candidateId)
+  const waiting = rows
+    .filter((row) => row.status === 'proposed' && row.willFail === null && row.duplicate === null)
+    .map((row) => row.candidateId)
   if (waiting.length === 0) return new Set(selected)
   const allSelected = waiting.every((id) => selected.has(id))
   const next = new Set(selected)

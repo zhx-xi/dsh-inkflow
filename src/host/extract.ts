@@ -76,6 +76,28 @@ export interface CandidateProposal {
    * trusted forever.
    */
   readonly willFail?: CandidateVerdict
+  /**
+   * The entity this candidate would replace, when the same identity already exists with
+   * **different** content (#178).
+   *
+   * A candidate whose content is identical is never stored — there is nothing to review.
+   * This marker is what turns the row into a question ("已存在，但内容不一致，是否覆盖？")
+   * instead of an automatic write: `accept` refuses without `overwrite: true`, and the
+   * digest is the CAS baseline that stops a late edit from being clobbered.
+   */
+  readonly duplicate?: DuplicateMark
+}
+
+/** Same identity, other content: the row the author has to decide about (#178). */
+export interface DuplicateMark {
+  /** Always `different` — identical candidates are dropped at submit time. */
+  readonly state: 'different'
+  /** The file that already holds this identity. */
+  readonly path: string
+  /** sha256 of that file when the verdict was made. */
+  readonly digest?: string
+  /** Which of the candidate's fields differ, so the row can say what would change. */
+  readonly changedFields: readonly string[]
 }
 
 /** A refusal in the shape the accept path reports, so the two can be compared (D…). */
@@ -544,6 +566,7 @@ function parseProposal(value: unknown): CandidateProposal | undefined {
   if (!(CONFIDENCES as readonly unknown[]).includes(confidence)) return undefined
   const fields = isRecord(value['fields']) ? value['fields'] : {}
   const willFail = parseVerdict(value['willFail'])
+  const duplicate = parseDuplicate(value['duplicate'])
   return {
     candidateId,
     kind,
@@ -553,6 +576,27 @@ function parseProposal(value: unknown): CandidateProposal | undefined {
     confidence: confidence as Confidence,
     status: status as CandidateStatus,
     ...(willFail === undefined ? {} : { willFail }),
+    ...(duplicate === undefined ? {} : { duplicate }),
+  }
+}
+
+/**
+ * A stored `duplicate` mark, sanitized. Only `state: 'different'` is accepted: an
+ * `identical` mark would mean "this candidate is nothing new", and such a candidate is
+ * never written, so a file carrying one is malformed — it is dropped, not repaired.
+ */
+function parseDuplicate(value: unknown): DuplicateMark | undefined {
+  if (!isRecord(value)) return undefined
+  if (value['state'] !== 'different') return undefined
+  const path = value['path']
+  if (typeof path !== 'string' || path.trim() === '') return undefined
+  const digest = value['digest']
+  const changed = value['changedFields']
+  return {
+    state: 'different',
+    path: path.trim(),
+    ...(typeof digest === 'string' && digest.trim() !== '' ? { digest: digest.trim() } : {}),
+    changedFields: Array.isArray(changed) ? changed.filter((item): item is string => typeof item === 'string') : [],
   }
 }
 
@@ -648,6 +692,7 @@ function serializeBatch(batch: CandidateBatch): string {
     // Written only when present: a clean candidate's file stays byte-identical to what
     // 0.4.0 wrote, and an older plugin reading the queue sees the fields it knows.
     ...(proposal.willFail === undefined ? {} : { willFail: proposal.willFail }),
+    ...(proposal.duplicate === undefined ? {} : { duplicate: proposal.duplicate }),
   }))
   const text = JSON.stringify(
     { schemaVersion: batch.schemaVersion, submittedAt: batch.submittedAt, source: { chapters: [...batch.source.chapters] }, proposals },
@@ -715,6 +760,8 @@ export interface ProposeProposalInput {
    * malformed is dropped by `parseVerdict`, exactly as a hand-edited file would be.
    */
   readonly willFail?: unknown
+  /** The duplicate verdict from `judgeCandidate()`; only `different` reaches the queue. */
+  readonly duplicate?: unknown
 }
 
 export interface ProposeInput {
@@ -827,6 +874,10 @@ export function proposeCandidates(root: string, input: ProposeInput): { ok: true
         ...(() => {
           const verdict = parseVerdict(proposal.willFail)
           return verdict === undefined ? {} : { willFail: verdict }
+        })(),
+        ...(() => {
+          const mark = parseDuplicate(proposal.duplicate)
+          return mark === undefined ? {} : { duplicate: mark }
         })(),
       },
       ...(byId.get(candidateId) === undefined ? {} : { file: byId.get(candidateId)?.file ?? '' }),

@@ -80,7 +80,7 @@ const BUILT_IN_TOOLS = [
   // `extract-accept.ts` instead of inside a domain module.
   ['inkflow_extract_propose', '9a66e773'],
   ['inkflow_extract_list', 'af0ff41f'],
-  ['inkflow_extract_accept', '0bdd27f8'],
+  ['inkflow_extract_accept', '1631899a'],
   ['inkflow_extract_reject', '483c26c2'],
   ['inkflow_extract_purge', '4d5d5d6e'],
   // #41: semantic retrieval — status (read-only), rebuild (writes blocks into OVK) and
