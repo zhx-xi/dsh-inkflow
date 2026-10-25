@@ -118,7 +118,7 @@ const BUILT_IN_TOOLS = [
   // directory, and the plugin embeds no model client to draft the chapters it queues (X-26).
   ['inkflow_batch_enqueue', '606e03fb'],
   ['inkflow_batch_take', '70f2b3be'],
-  ['inkflow_batch_complete', 'a5d82c2a'],
+  ['inkflow_batch_complete', '333871dc'],
   ['inkflow_batch_approve', '289befc4'],
   // Export — one tool for EPUB / DOCX / Markdown / TXT. A built-in rather than a domain
   // tool: it reads every content directory at once and writes the artifact outside the book
