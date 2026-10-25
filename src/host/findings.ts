@@ -188,6 +188,11 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'GATE_AI_NARRATION', group: 'catalog', fixable: false, meaning: '解释性旁白：动作之后补写情绪结论' },
   { code: 'GATE_AI_MODIFIER', group: 'catalog', fixable: false, meaning: '形容词/副词（的、地、程度副词）密度过高' },
   { code: 'GATE_AI_TEMPLATE', group: 'catalog', fixable: false, meaning: '段尾套路话（空气仿佛凝固一类）' },
+  // #214 B 块：同一项的反方向——「太碎」。判据与阈值见 `gate-fragment.ts` / `FRAGMENT`，
+  // 严重级与上面六维一致（info，不拦写盘）：它们说的是「读着像不像人写的」，不是「写错了」。
+  { code: 'GATE_AI_STUTTER', group: 'catalog', fixable: false, meaning: '电报体：连续 N 句都 ≤5 可见字' },
+  { code: 'GATE_AI_LOW_LINK', group: 'catalog', fixable: false, meaning: '整章没有一处因果/转折/递进连接词' },
+  { code: 'GATE_AI_LONG_PARA', group: 'catalog', fixable: false, meaning: '单段可见字超过上限（砌成墙）' },
   // 4 一致性（与设定库对账，不重判设定本身）
   { code: 'GATE_CONSISTENCY_POV_UNKNOWN', group: 'structure', fixable: false, meaning: '本章 frontmatter 的 pov 不在角色库里' },
   { code: 'GATE_CONSISTENCY_FACT_STALE', group: 'ledger', fixable: false, meaning: '账本里已失效的取值仍出现在本章正文' },

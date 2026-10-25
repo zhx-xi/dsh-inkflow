@@ -136,6 +136,9 @@ function emittedValidationCodes() {
     // emits this" and the gate codes would have to be excused as reservations.
     join(repoRoot, 'src/host/gate.ts'),
     join(repoRoot, 'src/host/gate-rules.ts'),
+    // #214: 太碎三码的判定在 `gate-fragment.ts`，词表行在 `gate-vocabulary.ts`——两处都在扫描面里，
+    // 否则「码写出来了但词表里没有」这条要等到人肉评审才发现。
+    join(repoRoot, 'src/host/gate-fragment.ts'),
     join(repoRoot, 'src/host/gate-proofread.ts'),
     join(repoRoot, 'src/host/gate-vocabulary.ts'),
     // #46: the review DAG emits `REVIEW_*` (one code per dimension) from the same

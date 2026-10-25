@@ -86,6 +86,10 @@ jobs:
       - run: node scripts/check-docs.mjs
       - run: node scripts/check-module-table.mjs
       - run: node scripts/check-tool-names.mjs
+      # #214: every gate number a `SKILL.md` quotes must equal `gate-vocabulary.ts`'s value.
+      # Same reason as the note above — a gate that only runs locally is half a gate, and the
+      # skill text is precisely what the model reads instead of the code.
+      - run: node scripts/check-skill-numbers.mjs
 
   package:
     name: package

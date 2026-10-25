@@ -60,7 +60,7 @@
     "lint": "node scripts/lint.mjs",
     "test": "node --test \"tests/*.test.js\"",
     "check:links": "node scripts/check-links.mjs",
-    "check:docs": "node scripts/check-docs.mjs && node scripts/check-module-table.mjs && node scripts/check-tool-names.mjs",
+    "check:docs": "node scripts/check-docs.mjs && node scripts/check-module-table.mjs && node scripts/check-tool-names.mjs && node scripts/check-skill-numbers.mjs",
     "check:guards": "node scripts/check-guards.mjs",
     "check:package": "node scripts/check-package.mjs",
     "check:branch-protection": "node scripts/branch-protection.mjs check --tolerant",

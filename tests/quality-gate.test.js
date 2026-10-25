@@ -172,6 +172,65 @@ const LONG_SCENE = [
   '「带的东西不多。」她说，「够用。你要试试吗？」',
 ].join('\n\n')
 
+// --- 太碎（#214 B 块）的夹具 -------------------------------------------------
+//
+// 六维只抓「长而匀」，反方向的三种毛病（电报体、一句连接词都没有、一段砌成墙）
+// 此前零覆盖。下面每组都是**一对**：一份确实有毛病，一份是同样写法下的正常正文。
+
+/** 电报体：连续 8 句都 ≤5 可见字，一处转折都没有。 */
+const STUTTER = ['雨停了。', '他起身。', '推开门。', '风很大。', '他下楼。', '街上没人。', '她没来。', '他站着。'].join('')
+
+/** 短句对话：台词本身短，但它们在引号里，是角色在说话，不是叙述在跳字。 */
+const SHORT_DIALOGUE = [
+  '「走。」他说。',
+  '「去哪？」她问。',
+  '「山门。」',
+  '「现在？」',
+  '「嗯。」',
+  '她把伞收起来，跟着他出了院子，雨还在下。',
+].join('\n\n')
+
+/** 短促的叙述爆发：紧张段连用三四个短句是手法，不该被当成电报体。 */
+const SHORT_BURST = '他拔刀。刀出鞘。血溅在门框上。整条巷子安静下来，只有远处的狗还在叫。'
+
+/** 一段砌成墙：单段 280 字上下，读的时候找不到换气的地方。 */
+const OVERLONG_PARA = Array.from(
+  { length: 8 },
+  (_, at) => `第${'一二三四五六七八'[at]}段路上没有人，屋檐的水一直落，落在石板上，溅起来，又落回去，落得人心里发闷。`,
+).join('')
+
+/** 单句成段的写法：段落短，份量在句子本身——不是「超长段」。 */
+const ONE_SENTENCE_PARAS = [
+  '雾还没散。',
+  '清音把药篓往肩上提了提。',
+  '亭子里的人手里转着一枚铜钱，铜钱翻过指缝时，光一闪。',
+  '「你迟了。」',
+  '她停下脚步，把伞往檐下收了半尺。',
+].join('\n\n')
+
+/**
+ * 无连接词的长正文（≥1000 字）：整章只有并列的静态描写，因果、转折、递进一个都没有。
+ * 写法刻意不用「因为/但/却/于是/只是」这一族词，所以它不是「正常正文」，而是这一类毛病本身。
+ */
+const PLACES = ['屋檐', '石阶', '松枝', '灯下', '院墙', '青砖', '廊柱', '窗纸', '灶台', '门槛', '水缸', '竹匾', '药案', '巷口', '照壁', '山道', '钟楼', '井台', '药篓', '伞骨', '钟绳']
+const UNLINKED = PLACES.map(
+  (place) => `${place}上的水落下来，落在青石板上，溅起一线细白。${place}的影子在雨里散了形，颜色比周围深一块，像谁用手按过。`,
+).join('\n\n')
+
+/** 同一份正文补上三处连接词：写作层面就已经不是那类毛病了。 */
+const LINKED = [
+  UNLINKED,
+  ['因为雨大，巷子里没有人。', '水退下去了，但青苔还湿着。', '于是她把门闩推上去，声音在雨里散开。'].join('\n\n'),
+].join('\n\n')
+
+/** 无连接词的意识流摘录：不足千字，密度类判据按 `GATE_DENSITY_FLOOR` 不判（与修饰密度同一条规矩）。 */
+const STREAM_SHORT = [
+  '雨。石板。手里的伞柄冰凉。',
+  '巷子尽头有人在喊，声音被雨吃掉一半。',
+  '她往前走，走了几步停下来，回头看。',
+  '身后什么都没有。只有水，只有灯，只有一条湿透的路，路尽头又是一盏灯。',
+].join('\n\n')
+
 // ---------------------------------------------------------------------------
 // 1. Every check can block something (positive cases)
 // ---------------------------------------------------------------------------
@@ -295,6 +354,54 @@ test('质量门禁：干净正文不报（负例，逐项）', async (t) => {
     assert.equal(codesOf(gateBody('他笑起来，哈哈哈哈，笑得直不起腰。\n')).includes('GATE_PROOF_REPEAT_WORD'), false)
     // 汉语用「一声一声」「一步一步」「很久很久」做节奏，这是正常写法（规则只报 3–4 字的连写）。
     assert.equal(codesOf(gateBody('她一步一步往上走，很久很久没有说话。\n')).includes('GATE_PROOF_REPEAT_WORD'), false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 2b. 太碎（#214 B 块）—— 六维只抓「长而匀」，这一组抓反方向
+// ---------------------------------------------------------------------------
+
+test('质量门禁：太碎三码各自拦得住（正例）', async (t) => {
+  await t.test('电报体 —— 连续 6 句都 ≤5 字', () => {
+    const codes = codesOf(gateBody(STUTTER))
+    assert.ok(codes.includes('GATE_AI_STUTTER'), `电报体没有报出来：${codes.join(',')}`)
+  })
+
+  await t.test('无连接词 —— 整章一处因果/转折/递进都没有', () => {
+    const codes = codesOf(gateBody(UNLINKED))
+    assert.ok(codes.includes('GATE_AI_LOW_LINK'), `无连接词正文没有报出来：${codes.join(',')}`)
+  })
+
+  await t.test('超长段 —— 单段砌成墙', () => {
+    const codes = codesOf(gateBody(OVERLONG_PARA))
+    assert.ok(codes.includes('GATE_AI_LONG_PARA'), `超长段没有报出来：${codes.join(',')}`)
+  })
+})
+
+test('质量门禁：太碎三码的负例（正常写法不报）', async (t) => {
+  await t.test('短句对话 —— 台词短、但在引号里，不算电报体', () => {
+    assert.equal(codesOf(gateBody(SHORT_DIALOGUE)).includes('GATE_AI_STUTTER'), false)
+  })
+
+  await t.test('短促爆发 —— 三四个短句连用是手法，不算电报体', () => {
+    assert.equal(codesOf(gateBody(SHORT_BURST)).includes('GATE_AI_STUTTER'), false)
+  })
+
+  await t.test('单句成段 —— 段落短，不是超长段', () => {
+    assert.equal(codesOf(gateBody(ONE_SENTENCE_PARAS)).includes('GATE_AI_LONG_PARA'), false)
+  })
+
+  await t.test('补上连接词的同长度正文 —— 不再算无连接词', () => {
+    assert.equal(codesOf(gateBody(LINKED)).includes('GATE_AI_LOW_LINK'), false)
+  })
+
+  await t.test('无连接词的意识流摘录 —— 不足千字，密度类判据不判', () => {
+    assert.equal(codesOf(gateBody(STREAM_SHORT)).includes('GATE_AI_LOW_LINK'), false)
+  })
+
+  await t.test('干净长样本（CLEAN_LONG）三码全静默', () => {
+    const codes = codesOf(gateBody(CLEAN_LONG, { thresholds: WIDE }))
+    assert.deepEqual(codes.filter((code) => /^GATE_AI_(STUTTER|LOW_LINK|LONG_PARA)$/u.test(code)), [])
   })
 })
 
