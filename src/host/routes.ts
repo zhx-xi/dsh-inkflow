@@ -165,6 +165,7 @@ import {
   resumeViaChannel as resumeBatchViaChannel,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
+import { PRIVATE_PURGE_ROUTES } from './private-purge-routes.js'
 import { KNOWN_METHODS } from './route-types.js'
 import type { HttpMethod, InternalRoute, RouteInput, RouteReply } from './route-types.js'
 import { MAX_QUERY_CHARS } from './search.js'
@@ -402,6 +403,11 @@ const ROUTES: readonly InternalRoute[] = [
     body: TRASH_RESTORE_BODY_FIELDS,
     handle: ({ target, version, body }) => restoreTrashReply(target, version, body),
   },
+  // The purge area's three routes (#199): `GET /purged`, `POST /purged/clean`,
+  // `POST /purged/restore`. Their descriptors live in `private-purge-routes.ts` — this file is
+  // exactly on its line budget, and they are dispatched through the same guards as every entry
+  // above (the table is one list; where a row was written changes nothing).
+  ...PRIVATE_PURGE_ROUTES,
   {
     // Forever: copy plus entry. `confirm: true` is required in the body — the
     // panel asks twice, and this is the net under that (ADR-0012 #4).

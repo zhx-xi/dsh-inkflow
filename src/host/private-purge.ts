@@ -34,14 +34,14 @@
  *
  *   * reading a proposal's own metadata or a run record: they belong to `proposal.ts` /
  *     `review-store.ts`, and the status check that keeps `open` un-cleanable asks them;
- *   * the delete record under `.inkflow/audit/` (归 `private-purge-channel.ts`) and the
- *     channel replies;
+ *   * the channel replies (归 `private-purge-channel.ts`), the moves themselves and the
+ *     `.inkflow/audit/purge-<stamp>.md` record (归 `private-purge-actions.ts`): this file is
+ *     the area's shape, those are its verbs;
  *   * the recovery bin's ban on `.inkflow/` sources (ADR-0012): unchanged, untouched.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 
-import { removeEmptyProjectDirectory } from './io.js'
 import {
   absoluteOf,
   digestBytes,
@@ -52,7 +52,7 @@ import {
   writePrivateManifest,
 } from './private-manifest.js'
 import type { PrivateManifestFailure, PrivateManifestSpec } from './private-manifest.js'
-import { privateStateDirRelative, privateStateRelative } from './private-state.js'
+import { PRIVATE_STATE_DIR, privateStateRelative } from './private-state.js'
 
 /** The manifest file, project-relative (forward slashes). */
 export const PURGE_MANIFEST_RELATIVE = privateStateRelative('purged', 'index.json')
@@ -179,6 +179,27 @@ export function purgedPathOf(path: string): string {
   return privateStateRelative('purged', path)
 }
 
+/**
+ * `.inkflow/review/a/b.json` → `review/a/b.json`: the form `files[].path` is written in.
+ *
+ * The manifest stores paths **relative to `.inkflow/`**, not to the book: that is the form
+ * `restoreTargetOf` judges ("inside `review/` or `proposals/`"), and keeping the book-root form
+ * would make the restore guard a prefix test on a string that also contains the state directory
+ * — the one thing a hand-edited manifest could then point at.
+ */
+export function privateRelativeOf(projectRelative: string): string | undefined {
+  const normalised = projectRelative.replaceAll('\\', '/').replace(/^\.\/+/u, '').replace(/^\/+/u, '')
+  const prefix = `${PRIVATE_STATE_DIR}/`
+  if (!normalised.startsWith(prefix)) return undefined
+  const rest = normalised.slice(prefix.length)
+  return rest === '' ? undefined : rest
+}
+
+/** `review/a/b.json` → `.inkflow/review/a/b.json`: the project-relative form of a state file. */
+export function projectRelativeOf(privatePath: string): string {
+  return `${PRIVATE_STATE_DIR}/${privatePath.replace(/^\/+/u, '')}`
+}
+
 /** Where one entry's bytes live, as a project-relative path (the directory, for a proposal). */
 export function purgedLocationOf(entry: PurgeEntry): string {
   if (entry.kind === 'proposal') return purgedPathOf(`proposals/${entry.target}`)
@@ -236,21 +257,26 @@ const PURGE_MANIFEST: PrivateManifestSpec<PurgeEntry> = {
   parse: readEntry,
 }
 
-function readManifest(root: string): { ok: true; entries: PurgeEntry[]; exists: boolean } | PrivateManifestFailure {
+/** The area's manifest, read back. Exported for `private-purge-actions.ts`, which owns the moves. */
+export function readManifest(root: string): { ok: true; entries: PurgeEntry[]; exists: boolean } | PrivateManifestFailure {
   return readPrivateManifest(root, PURGE_MANIFEST)
 }
 
-function writeManifest(root: string, entries: readonly PurgeEntry[]): { ok: true } | PrivateManifestFailure {
+/** The area's manifest, written whole (the caller owns the merge). */
+export function writeManifest(root: string, entries: readonly PurgeEntry[]): { ok: true } | PrivateManifestFailure {
   return writePrivateManifest(root, PURGE_MANIFEST, entries)
 }
 
 /**
  * Every file under one private-state directory, recursively, as `path`/`bytes`/`sha256`.
  *
+ * `privateRelative` is the **project-relative** directory to walk (`proposal.ts` hands out
+ * `.inkflow/proposals/<id>`), and the returned `path` values are the `.inkflow/`-relative form
+ * the manifest stores (`proposals/<id>/meta.json`) — see `privateRelativeOf`.
+ *
  * A file that cannot be read is skipped rather than aborting: the caller uses this to decide
  * what a cleanup would move, and "one unreadable file" must not be reported as "nothing to
- * clean up" (it is reported as an absence from the list, and the cleanup's own copy step
- * compares the totals).
+ * clean up" (the copy step re-reads every file, so a skipped one shows up as a refusal).
  */
 export function filesUnder(root: string, privateRelative: string): PurgedFile[] {
   const base = privateRelative.replace(/\/+$/u, '')
@@ -276,9 +302,11 @@ export function filesUnder(root: string, privateRelative: string): PurgedFile[] 
         walk(child)
         continue
       }
+      const statePath = privateRelativeOf(child)
+      if (statePath === undefined) continue
       try {
         const bytes = readFileSync(absoluteOf(root, child))
-        out.push({ path: child, bytes: bytes.byteLength, sha256: digestBytes(bytes) })
+        out.push({ path: statePath, bytes: bytes.byteLength, sha256: digestBytes(bytes) })
       } catch {
         continue
       }
@@ -311,16 +339,5 @@ export function listPurged(projectRoot: string): PurgeListResult {
     total: entries.length,
     bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
     entries,
-  }
-}
-
-/** Remove now-empty directories inside the area, deepest first, stopping at the area itself. */
-export function pruneEmptyAreaDirs(root: string, projectRelativeFile: string): void {
-  const floor = privateStateDirRelative('purged')
-  let directory = projectRelativeFile.replaceAll('\\', '/').split('/').slice(0, -1).join('/')
-  while (directory.startsWith(`${floor}/`)) {
-    const removed = removeEmptyProjectDirectory(root, directory)
-    if (!removed.ok) return
-    directory = directory.split('/').slice(0, -1).join('/')
   }
 }
