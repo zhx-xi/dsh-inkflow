@@ -78,6 +78,40 @@ export interface ReviewCompareRow {
   readonly status: 'ok' | 'failed' | 'skipped'
 }
 
+/**
+ * The chapter a table is about — `chapterId` / `chapterTitle` / `wordCount` and nothing else.
+ *
+ * It is a named type because the identity has exactly ONE source (issue #205): the chapter
+ * the caller resolved. `ReviewContextValue` (the run's own reader) is structurally one of
+ * these, so the route hands its resolved chapter straight in.
+ */
+export interface CompareChapter {
+  readonly chapterId: string
+  readonly chapterTitle: string
+  readonly wordCount: number
+}
+
+/**
+ * Decide the table's chapter identity — the one place that decides it (issue #205).
+ *
+ * Priority: **the resolved chapter wins**; the recorded runs are only a fallback for a
+ * caller that holds nothing but records (the old tool path). Why it matters: the route
+ * resolves the chapter before it reads a single run, so "this chapter has no review yet"
+ * still has a name; deriving the header from `first?.chapterId` instead gave an EMPTY
+ * identity exactly when the page was asking "which chapter am I looking at?", and let a
+ * hand-moved or renamed record relabel the whole table.
+ */
+export function compareChapterIdentity(chapter: CompareChapter | undefined, newest: ReviewRunRecord | undefined): CompareChapter {
+  if (chapter !== undefined && chapter.chapterId !== '') {
+    return { chapterId: chapter.chapterId, chapterTitle: chapter.chapterTitle, wordCount: chapter.wordCount }
+  }
+  return {
+    chapterId: newest?.chapterId ?? '',
+    chapterTitle: newest?.chapterTitle ?? '',
+    wordCount: newest?.wordCount ?? 0,
+  }
+}
+
 export interface ReviewCompare {
   readonly chapterId: string
   readonly chapterTitle: string
@@ -115,18 +149,22 @@ function scoreOf(run: ReviewRunRecord, dimension: ReviewDimension): number | nul
 /**
  * Build the table from one chapter's run records.
  *
+ * `chapter` is the chapter the caller resolved (route: `buildReviewContext`; tool: the same
+ * reader) and it decides the header — see `compareChapterIdentity`. Omitting it falls back to
+ * the newest record's chapter, which is what a caller holding only records can offer.
+ *
  * Rows are per (run, dimension) plus one `total` row per run, so a model's five dimensions
  * and its whole pass are both visible without a second table. The total row's `modelScore`
  * is the **arithmetic mean of the scores that were given** (null when none was) — averaging
  * numbers the model handed in is bookkeeping, not a judgement, and it is stated here so
  * nobody has to guess whether a total was scored or summed.
  */
-export function compareReviewRuns(runs: readonly ReviewRunRecord[]): ReviewCompare {
+export function compareReviewRuns(runs: readonly ReviewRunRecord[], chapter?: CompareChapter): ReviewCompare {
   const ordered = [...runs].sort((left, right) => (left.runId < right.runId ? 1 : left.runId > right.runId ? -1 : 0))
   const reviewers: string[] = []
   for (const run of ordered) if (!reviewers.includes(run.reviewer)) reviewers.push(run.reviewer)
-  const first = ordered[0]
-  const wordCount = first?.wordCount ?? 0
+  const identity = compareChapterIdentity(chapter, ordered[0])
+  const wordCount = identity.wordCount
   const rows: ReviewCompareRow[] = []
 
   for (const run of ordered) {
@@ -185,8 +223,8 @@ export function compareReviewRuns(runs: readonly ReviewRunRecord[]): ReviewCompa
 
   const comparable = reviewers.length >= 2
   return {
-    chapterId: first?.chapterId ?? '',
-    chapterTitle: first?.chapterTitle ?? '',
+    chapterId: identity.chapterId,
+    chapterTitle: identity.chapterTitle,
     wordCount,
     reviewers,
     columns: REVIEW_COMPARE_COLUMNS,
@@ -194,7 +232,9 @@ export function compareReviewRuns(runs: readonly ReviewRunRecord[]): ReviewCompa
     comparable,
     note: comparable
       ? '同一章、多个模型的意见集：模型自评来自各次运行传入的 scores，其余列为插件按定义算出的计数与比率'
-      : '只有 1 个模型的运行记录：表已列出，横评需要同一章至少 2 个模型各跑一次',
+      : ordered.length === 0
+        ? '这一章还没有审稿运行：横评需要同一章至少 2 个模型各跑一次（inkflow_review_run）'
+        : '只有 1 个模型的运行记录：表已列出，横评需要同一章至少 2 个模型各跑一次',
   }
 }
 
@@ -265,7 +305,12 @@ export function reviewCompareWire(table: ReviewCompare): Record<string, unknown>
  *
  * Read-only, and it resolves its chapter through `buildReviewContext` — the run's own
  * reader — so "which chapter" has exactly one answer across the tool, the route and the
- * review itself.
+ * review itself. An id that matches nothing is a 404 `CHAPTER_NOT_FOUND` naming it, never a
+ * fallback to the last chapter (the /brief rule, #200).
+ *
+ * The resolved chapter is what the header names (#205): a chapter with zero runs still gets
+ * its own identity and the note says it has not been reviewed yet, instead of a table with
+ * an empty `chapterId` and `0` words.
  */
 export function buildReviewCompare(
   source: { readonly sessionId: string; readonly root: string },
@@ -285,7 +330,7 @@ export function buildReviewCompare(
   const cap = options.limit === undefined || options.limit <= 0 ? REVIEW_LIST_LIMIT : Math.trunc(options.limit)
   const listed = listReviewRuns(source.root, resolved.value.chapterId)
   const runs = listed.runs.slice(0, cap)
-  const table = compareReviewRuns(runs)
+  const table = compareReviewRuns(runs, resolved.value)
   return {
     status: 200,
     body: {
@@ -294,10 +339,11 @@ export function buildReviewCompare(
         pluginVersion: version,
         sessionId: source.sessionId,
         root: source.root,
-        chapterId: resolved.value.chapterId,
         runCount: runs.length,
         truncated: listed.runs.length > runs.length,
         skippedFiles: listed.skippedFiles,
+        // `chapterId` / `chapterTitle` / `wordCount` come from the one identity the table
+        // computed — never a second copy that could disagree with it.
         ...reviewCompareWire(table),
       },
     },
