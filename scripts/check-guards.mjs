@@ -78,6 +78,38 @@ check('cordis.patch.yml uses insert rows', () => {
   if (!text.includes('id: dsh-inkflow')) throw new Error('row id `dsh-inkflow` is missing')
 })
 
+/**
+ * Conflict markers must never be committed (#189).
+ *
+ * WHY this exists: a rebase resolution left `<<<<<<< HEAD` / `=======` / `>>>>>>>` inside
+ * `architecture.md` and `docs/user-guide.md`, those files were `git add -A`-ed, and every
+ * gate stayed green — check-links only resolves links, check-tool-names read just the first
+ * copy of the count sentence, check-module-table only asks whether a module name appears
+ * somewhere in §6. The repo shipped a spec file that a human cannot read and a guide that
+ * declared three different tool counts. This guard is the mechanical answer: markers in any
+ * tracked text file are a hard failure, whatever the file is for.
+ */
+check('no conflict markers in tracked text files', () => {
+  const listed = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'buffer' })
+  if (listed.status !== 0) throw new Error('git ls-files failed (run inside the repository)')
+  const names = listed.stdout.toString('utf8').split('\u0000').filter(Boolean)
+  const textExt = /\.(md|ts|tsx|mjs|js|json|yml|yaml|css|txt)$/
+  const offenders = []
+  for (const name of names) {
+    if (!textExt.test(name)) continue
+    const abs = join(ROOT, name)
+    if (!existsSync(abs) || !statSync(abs).isFile()) continue
+    const lines = readFileSync(abs, 'utf8').split('\n')
+    for (const [index, line] of lines.entries()) {
+      if (/^<<<<<<< |^>>>>>>> /.test(line) || /^=======$/.test(line)) {
+        offenders.push(`${name}:${String(index + 1)}`)
+        break
+      }
+    }
+  }
+  if (offenders.length > 0) throw new Error(`conflict markers committed: ${offenders.join(', ')}`)
+})
+
 check('no UTF-8 BOM in tracked text files', () => {
   const listed = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'buffer' })
   if (listed.status !== 0) throw new Error('git ls-files failed (run inside the repository)')
