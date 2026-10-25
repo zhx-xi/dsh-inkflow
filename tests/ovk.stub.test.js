@@ -31,6 +31,7 @@ import {
   purgeApply,
   runRebuild,
   searchWithSemantic,
+  semanticSlugOf,
   semanticStatusOf,
   writeSettings,
 } from '../lib/index.js'
@@ -256,6 +257,30 @@ function writeCalls(stub) {
 
 function deleteCalls(stub) {
   return stub.state.requests.filter((request) => request.method === 'DELETE')
+}
+
+/**
+ * The book's ledger file, addressed the way the plugin addresses it (issue #207).
+ *
+ * `semanticSlugOf` + "exactly one file" instead of `readdirSync(...)[0]`: the listing order
+ * of a directory is not part of any contract, and a leftover `.tmp-` file from an
+ * interrupted write must read as a named failure rather than as "the ledger happened to be
+ * some other file whose records are missing".
+ */
+function ledgerOf(dataDir, root) {
+  const ledgerDir = join(dataDir, 'semantic')
+  const files = readdirSync(ledgerDir)
+  assert.deepEqual(files, [`${semanticSlugOf(root)}.json`], 'exactly one ledger file, named after the book')
+  const path = join(ledgerDir, files[0])
+  return { path, ledger: JSON.parse(readFileSync(path, 'utf8')) }
+}
+
+/** A rebuild's accounting, spelled out: three chapters in, three records out. */
+function assertFullyRead(outcome, expected) {
+  const detail = JSON.stringify(outcome.summary)
+  assert.deepEqual(outcome.staleChapters, [], `the rebuild must have read every chapter: ${detail}`)
+  assert.equal(outcome.summary.written, expected, `chapters written this run: ${detail}`)
+  assert.equal(outcome.summary.stale, 0, `nothing may be left stale: ${detail}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -588,14 +613,18 @@ test('a ledger record marked deleted is never recalled, even while the chapter f
   const stub = await startStub()
   try {
     const { root, dataDir } = await wired(dir, stub)
-    await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    const rebuilt = await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    // The precondition of everything below, stated instead of assumed (issue #207): the
+    // ledger this test is about to edit must be the complete one. A rebuild that could not
+    // read a chapter says so in `staleChapters`; reading the missing record anyway is what
+    // turned that into `Cannot read properties of undefined (reading 'deleted')`.
+    assertFullyRead(rebuilt, 3)
     // The state an interrupted delete leaves behind: the ledger still holds the chapter as a
     // tombstone record while the file itself is present again (restored from `.inkflow/trash/`,
     // or the rebuild that would have re-indexed it never ran). The recall must drop it on the
     // ledger's flag alone — otherwise a deleted chapter comes back the moment the file does.
-    const slug = readdirSync(join(dataDir, 'semantic'))[0]
-    const ledgerPath = join(dataDir, 'semantic', slug)
-    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'))
+    const { path: ledgerPath, ledger } = ledgerOf(dataDir, root)
+    assert.deepEqual(Object.keys(ledger.chapters).sort(), ['ch-0001', 'ch-0002', 'ch-0003'], 'every chapter has a record')
     assert.equal(ledger.chapters['ch-0002'].deleted, false)
     ledger.chapters['ch-0002'].deleted = true
     writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8')
@@ -605,6 +634,69 @@ test('a ledger record marked deleted is never recalled, even while the chapter f
     assert.equal(recall.semanticHits, 0, 'the deleted flag alone must keep it out of the answer')
     assert.equal(recall.tombstoneHits, 1)
     assert.equal(recall.staleHits, 0)
+  } finally {
+    await stub.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a first build that cannot read a chapter names it stale instead of leaving a silent gap', async () => {
+  const dir = workdir()
+  const stub = await startStub()
+  try {
+    const { root, dataDir } = await wired(dir, stub)
+    // The shape issue #207 caught: the index lists three chapters, and for one of them the
+    // disk answers "no" this instant (a transient EPERM/EBUSY under a loaded runner, an
+    // antivirus holding the freshly written file, a cloud placeholder). Removing the file
+    // makes that read fail deterministically — same code path, no sleep, no load needed.
+    rmSync(join(root, 'chapters/vol-01/0002-长街.md'))
+
+    const outcome = await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    assert.deepEqual(outcome.staleChapters, ['ch-0002'], `the unreadable chapter must be named: ${JSON.stringify(outcome.summary)}`)
+    assert.equal(outcome.summary.stale, 1, 'and counted, so the next run retries it')
+    assert.equal(outcome.summary.written, 2, 'the chapters that could be read are still written')
+    assert.equal(outcome.status, 'written')
+    const { ledger } = ledgerOf(dataDir, root)
+    assert.deepEqual(Object.keys(ledger.chapters).sort(), ['ch-0001', 'ch-0003'], 'no record for a chapter that was never written')
+    assert.deepEqual(ledger.lastRebuild.staleChapters, ['ch-0002'], 'the status surface names the gap')
+
+    // A stale chapter is a retry, not a dead end: with the file readable again the next run
+    // picks it up and the book is complete.
+    chapter(root, 'chapters/vol-01/0002-长街.md', 'ch-0002', 2, '第二章 长街', '长街尽头有一盏灯。\n\n少年没有回头。')
+    const retried = await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    assertFullyRead(retried, 1)
+    const after = ledgerOf(dataDir, root).ledger
+    assert.equal(after.chapters['ch-0002'].deleted, false)
+    assert.equal(after.chapters['ch-0002'].blocks.length, 1)
+  } finally {
+    await stub.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a chapter the disk will not read back is not a tombstone: its blocks keep their prose', async () => {
+  const dir = workdir()
+  const stub = await startStub()
+  try {
+    const { root, dataDir } = await wired(dir, stub)
+    const first = await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    assertFullyRead(first, 3)
+    const uri = 'viking://resources/inkflow/proj-test/chapters/ch-0002/0.md'
+    const prose = String(stub.state.blocks.get(uri)?.content)
+    assert.equal(prose.includes('长街尽头有一盏灯'), true)
+
+    // The chapter is in the ledger AND in the book; only this run's read fails. A tombstone
+    // here would overwrite the live blocks with a deleted marker and drop a chapter the
+    // author never deleted out of recall (the worse half of issue #207).
+    rmSync(join(root, 'chapters/vol-01/0002-长街.md'))
+    const outcome = await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    assert.deepEqual(outcome.staleChapters, ['ch-0002'])
+    assert.equal(outcome.summary.tombstoned, 0, 'an unreadable body is not a deletion')
+    assert.equal(outcome.summary.written, 0)
+    assert.equal(String(stub.state.blocks.get(uri)?.content), prose, 'the blocks were not overwritten')
+    assert.equal(deleteCalls(stub).length, 0)
+    const { ledger } = ledgerOf(dataDir, root)
+    assert.equal(ledger.chapters['ch-0002'].deleted, false, 'the record still says live')
   } finally {
     await stub.close()
     rmSync(dir, { recursive: true, force: true })

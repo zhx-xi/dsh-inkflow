@@ -77,18 +77,34 @@ export interface RebuildOutcome {
   staleChapters: string[]
 }
 
+/**
+ * How many times one chapter body is read before the chapter is called unreadable.
+ *
+ * A `readFileSync` on a file this process may have written milliseconds ago is allowed to
+ * fail once: on Windows an antivirus scanning the temp directory as the file appears, or a
+ * cold cache under a full-suite run, answers EPERM/EBUSY and then succeeds on the retry.
+ * The second attempt is synchronous and costs nothing on the happy path; what makes a
+ * *persistent* failure harmless is not the retry but the accounting in
+ * `planRebuild`/`runRebuild` (issue #207: one lost read used to drop the chapter from both
+ * the plan and the ledger while the rebuild reported success).
+ */
+export const READ_ATTEMPTS = 2
+
 /** Chapter prose as the book holds it: one reader, so hash and chunks cannot disagree. */
 export function readChapterBody(root: string, chapter: ChapterSource): { text: string; hash: string } | undefined {
-  let raw: string
-  try {
-    raw = readFileSync(join(root, chapter.path), 'utf8')
-  } catch {
-    return undefined
+  for (let attempt = 1; attempt <= READ_ATTEMPTS; attempt += 1) {
+    let raw: string
+    try {
+      raw = readFileSync(join(root, chapter.path), 'utf8')
+    } catch {
+      continue // see READ_ATTEMPTS: one lost read is a hiccup, not a deletion
+    }
+    // `parseMarkdown` strips the BOM and normalises CRLF (ADR-0016), which is what the
+    // index stores as the body too — offsets therefore mean the same thing in both places.
+    const body = parseMarkdown(raw).body
+    return { text: body, hash: contentHashOf(body) }
   }
-  // `parseMarkdown` strips the BOM and normalises CRLF (ADR-0016), which is what the
-  // index stores as the body too — offsets therefore mean the same thing in both places.
-  const body = parseMarkdown(raw).body
-  return { text: body, hash: contentHashOf(body) }
+  return undefined
 }
 
 function retryable(reason: string): boolean {
@@ -171,13 +187,9 @@ export async function runRebuild(runtime: SemanticRuntime): Promise<RebuildOutco
   // see a file the author just saved, and then the hash would describe text that is not
   // what was written.
   const bodies = new Map<string, { text: string; hash: string }>()
-  const missing: ChapterSource[] = []
   for (const chapter of sources) {
     const body = readChapterBody(runtime.root, chapter)
-    if (body === undefined) {
-      missing.push(chapter)
-      continue
-    }
+    if (body === undefined) continue
     bodies.set(chapter.id, body)
   }
 
@@ -186,15 +198,18 @@ export async function runRebuild(runtime: SemanticRuntime): Promise<RebuildOutco
     overlap: OVK_BLOCK_OVERLAP,
     projectId,
   })
+  // A chapter the index lists and the disk would not give back is stale, not absent: it
+  // must be named in the summary and retried on the next run (issue #207 — the silent
+  // version left the ledger without the chapter and the run claiming success).
+  const stale = new Set<string>(plan.unreadable)
   const pending = plan.writes.length + plan.tombstones.length
-  if (pending === 0) {
+  if (pending === 0 && stale.size === 0) {
     summary.unchanged = plan.unchanged
     ledger.lastRebuild = summary
     writeLedger(runtime.dataDir, slug, ledger)
     return { status: 'summary', pending: 0, summary, ledger, staleChapters: [] }
   }
 
-  const stale = new Set<string>()
   let fatal: { reason: string; detail: string } | undefined
 
   for (const chapterPlan of plan.writes) {
