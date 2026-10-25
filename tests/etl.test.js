@@ -38,6 +38,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import {
   ETL_IDMAP_RELATIVE,
+  apply,
   applyEtl,
   etlTools,
   hasFrontmatterBlock,
@@ -755,6 +756,129 @@ test('PROJECT_BUSY names the lock holder and writes nothing (X-30)', async () =>
     assert.deepEqual(countFiles(root, 'chapters'), [])
   } finally {
     holder.kill()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 11. Through the registered surface: the model's actual path
+// ---------------------------------------------------------------------------
+
+function createHarness(workspace) {
+  const tools = new Map()
+  const ctx = {
+    effect(setup) {
+      const dispose = setup()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    },
+    inject(_deps, callback) {
+      callback(ctx)
+    },
+    get(name) {
+      if (name === 'workingDirectory') return { ensure: async () => workspace }
+      return undefined
+    },
+    logger() {
+      return { debug() {}, info() {}, warn() {}, error() {} }
+    },
+    tools: {
+      register(definition) {
+        tools.set(definition.name, definition)
+        return () => {}
+      },
+    },
+    webServer: {
+      register() {
+        return () => {}
+      },
+    },
+  }
+  return { ctx, tools }
+}
+
+function makeTools(workspace) {
+  const harness = createHarness(workspace)
+  apply(harness.ctx, { dataDir: join(workspace, '.plugin-state') })
+  return harness
+}
+
+async function callTool(harness, name, args) {
+  const tool = harness.tools.get(name)
+  assert.ok(tool, `tool ${name} must be registered`)
+  return tool.execute(args, { signal: AbortSignal.timeout(20_000), agent: { id: 'test-session' } })
+}
+
+/** Render through the tool's own renderer, exactly as the host does on every result. */
+function rendered(harness, name, args, value) {
+  const tool = harness.tools.get(name)
+  const blocks = tool.output.render(args, value)
+  assert.ok(Array.isArray(blocks) && blocks.length > 0)
+  const text = blocks.map((block) => String(block.text ?? '')).join('\n')
+  assert.ok(text.trim() !== '', 'the renderer must produce text')
+  return text
+}
+
+test('the two tools work through the registered surface, renderers included', async () => {
+  const root = book()
+  const db = legacyDb(join(workdir('inkflow-etl-db-'), 'inkflow.db'))
+  try {
+    const harness = makeTools(root)
+
+    // 1. The preview: ok, and its renderer must not throw on the real payload.
+    const planned = await callTool(harness, 'inkflow_etl_plan', { sourcePath: db })
+    assert.equal(planned.ok, true, JSON.stringify(planned.error))
+    const planText = rendered(harness, 'inkflow_etl_plan', { sourcePath: db }, planned)
+    assert.match(planText, /13|旧库表/u)
+    assert.match(planText, /章号断层/u)
+
+    // 2. Apply without confirm is refused, and that refusal renders too.
+    const refused = await callTool(harness, 'inkflow_etl_apply', { action: 'apply', sourcePath: db, confirm: false })
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error.code, 'CONFIRM_REQUIRED')
+    assert.match(rendered(harness, 'inkflow_etl_apply', {}, refused), /CONFIRM_REQUIRED/u)
+    assert.deepEqual(countFiles(root, 'chapters'), [])
+
+    // 3. Apply for real: the parameters the model passes (`action`, `planToken`, `batchSize`)
+    //    all reach the implementation.
+    const applied = await callTool(harness, 'inkflow_etl_apply', {
+      action: 'apply',
+      sourcePath: db,
+      confirm: true,
+      batchSize: 3,
+      planToken: planned.plan.planToken,
+    })
+    assert.equal(applied.ok, true, JSON.stringify(applied.error))
+    assert.equal(applied.batchSize, 3)
+    assert.ok(countFiles(root, 'chapters').length > 0)
+    const appliedText = rendered(harness, 'inkflow_etl_apply', {}, applied)
+    assert.match(appliedText, /备份包/u)
+    assert.match(appliedText, /git add -A && git commit/u)
+
+    // 4. Rollback through the same tool, and a second rollback is refused by the package.
+    const undone = await callTool(harness, 'inkflow_etl_apply', {
+      action: 'rollback',
+      confirm: true,
+      backup: applied.backup.dir,
+    })
+    assert.equal(undone.ok, true, JSON.stringify(undone.error))
+    assert.match(rendered(harness, 'inkflow_etl_apply', {}, undone), /已回滚/u)
+    assert.deepEqual(countFiles(root, 'chapters').filter((path) => path.endsWith('.md')), [])
+
+    // 5. The gate still answers first: a directory that is not a usable book is refused
+    //    before the source is opened at all (the old file may be 12 MB of SQLite).
+    const plain = workdir('inkflow-etl-plain-')
+    try {
+      writeFileSync(join(plain, 'inkflow.json'), '{}\n', 'utf8')
+      const gated = await callTool(makeTools(plain), 'inkflow_etl_plan', { sourcePath: db })
+      assert.equal(gated.ok, false)
+      assert.ok(['NOT_AN_INKFLOW_PROJECT', 'PROJECT_NEEDS_REPAIR'].includes(gated.error.code), gated.error.code)
+      assert.equal(typeof gated.error.state, 'string')
+    } finally {
+      rmSync(plain, { recursive: true, force: true })
+    }
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
