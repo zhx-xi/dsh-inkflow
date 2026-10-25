@@ -144,6 +144,46 @@ check('no hook is called after an early return (client components)', () => {
 })
 
 /**
+ * Every test file owns its stub server, its port and its lifetime (#207).
+ *
+ * WHY this is a mechanism: the full suite runs ~32 test files at once, each in its own
+ * process, so a stub that shares a port or outlives its test fails *some other* test — at
+ * random, on a loaded machine, never on the machine of whoever wrote it. That is exactly
+ * how issue #207 presented ("first full run in a fresh worktree goes red, ten reruns are
+ * green"). The stub in `tests/ovk.stub.test.js` turned out to be innocent — it already
+ * listens on port 0 and keeps its state in a local `const` — but the two facts that make it
+ * innocent are greppable, so they are checked here instead of trusted to the next copy-paste.
+ *
+ *   * `listen(0)`: a literal port collides with anything else on the machine, and with a
+ *     second run of the same suite (an agent running two worktrees at once is normal here).
+ *   * no module-level `server`: a server declared at file scope is created once and shared
+ *     by every test in the file, so the state one test mutates is the state the next one
+ *     asserts against.
+ *
+ * NOT checked here, and deliberately so: four files still use a fixed state directory under
+ * %TEMP% (`dataDir: tmpdir()` / `join(tmpdir(), 'inkflow-x-state')` in domain-registry,
+ * proposal, series and tool-schema). That is the same class of defect and wants its own
+ * change with its own evidence, not a silent addition to this guard.
+ */
+check('test files bind port 0 and declare no module-level server', () => {
+  const dir = join(ROOT, 'tests')
+  const offenders = []
+  const lineOf = (text, index) => text.slice(0, index).split('\n').length
+  for (const entry of readFileSyncDir(dir)) {
+    if (!entry.isFile() || !/\.(js|mjs|cjs)$/.test(entry.name)) continue
+    const name = `tests/${entry.name}`
+    const text = readFileSync(join(dir, entry.name), 'utf8')
+    for (const match of text.matchAll(/\.listen\(\s*([1-9]\d*)/gu)) {
+      offenders.push(`${name}:${String(lineOf(text, match.index))} binds the fixed port ${match[1]} — use listen(0)`)
+    }
+    for (const match of text.matchAll(/^(?:const|let|var)\s+server\b.*$/gmu)) {
+      offenders.push(`${name}:${String(lineOf(text, match.index))} declares a module-level server — build it inside the test and close it there`)
+    }
+  }
+  if (offenders.length > 0) throw new Error(offenders.join('; '))
+})
+
+/**
  * No source file may grow past 600 lines (#193).
  *
  * WHY this is a mechanism and not a style note: `AGENTS.md` §10.5 has said "单文件 >600 行先
