@@ -98,7 +98,7 @@ export interface ReviewFileResult {
   readonly ignoreLineAdded: boolean
 }
 
-export function sha256(text: string): string {
+function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex')
 }
 
@@ -156,7 +156,7 @@ export function sortOpinions(opinions: readonly ReviewOpinion[]): ReviewOpinion[
   })
 }
 
-export type RecordOutcome =
+type RecordOutcome =
   | { readonly ok: true; readonly file: ReviewFileResult }
   | { readonly ok: false; readonly error: ReviewError }
 

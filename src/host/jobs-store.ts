@@ -134,7 +134,7 @@ export function isPausePolicy(value: unknown): value is PausePolicy {
 }
 
 /** `chapters/*.json` → records ordered by `seq` (the file name is the address, not the order). */
-export function readChapters(root: string, jobId: string): JobResult<JobChapter[]> {
+function readChapters(root: string, jobId: string): JobResult<JobChapter[]> {
   const dir = absoluteOf(root, privateStateRelative('jobs', `${jobId}/${JOB_CHAPTERS_DIR}`))
   let names: string[]
   try {
@@ -346,7 +346,7 @@ export function readJob(root: string, requested?: string): JobResult<JobState> {
 // ---------------------------------------------------------------------------
 // Status, roll-up, saving
 
-export function refOf(chapter: JobChapter): JobChapterRef {
+function refOf(chapter: JobChapter): JobChapterRef {
   return {
     seq: chapter.seq,
     chapterId: chapter.chapterId,
