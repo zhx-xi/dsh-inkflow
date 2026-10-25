@@ -42,6 +42,7 @@ import {
   foreshadowTransitionAllowed,
   listEntities,
 } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const HOST = '127.0.0.1:2149'
@@ -1110,6 +1111,8 @@ test('foreshadow: conventions §3.9 names exactly the fields data-model §3.2 de
 // Harness helpers (the channel pair is the one internal-channel.test.js uses)
 // ---------------------------------------------------------------------------
 
+const STATE_DIR = createStateDir('inkflow-foreshadow-state')
+
 function createHarness({ workspace, sessionId = 'session-1' }) {
   const routes = []
   const ctx = {
@@ -1142,7 +1145,7 @@ function createHarness({ workspace, sessionId = 'session-1' }) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-foreshadow-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

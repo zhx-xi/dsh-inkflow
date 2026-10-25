@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { CONTENT_DIRS, DOMAIN_MODULES, apply, applyCandidate, buildTools, domainTools } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 /**
  * The built-in tool surface before the seam existed. Order is the declaration
@@ -131,8 +132,10 @@ const BUILT_IN_TOOLS = [
   ['inkflow_series_apply', '8ef6f2a2'],
 ]
 
+const STATE_DIR = createStateDir('inkflow-domains-state')
+
 /** The seam passes the session context through; a tool factory may read it at call time. */
-const TEST_DEPS = { ctx: {}, dataDir: tmpdir(), version: 'test' }
+const TEST_DEPS = { ctx: {}, dataDir: STATE_DIR, version: 'test' }
 
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
@@ -280,7 +283,7 @@ test('buildTools actually consults the registry', () => {
   // wired in. Injection instead of pushing onto `DOMAIN_MODULES` keeps the
   // production registry untouched (X-5 says it is only ever appended to).
   const tools = buildTools(
-    { ctx: {}, dataDir: tmpdir(), version: 'test' },
+    { ctx: {}, dataDir: STATE_DIR, version: 'test' },
     [stubModule('inkflow_stub_wired')],
   )
   assert.ok(

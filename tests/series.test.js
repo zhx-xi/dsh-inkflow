@@ -55,6 +55,9 @@ import { dirname, join, resolve } from 'node:path'
 import { findColorLiterals } from './color-guard.mjs'
 import { hashTree } from './hash-tree.mjs'
 import { apply, applySeriesSync, buildSeriesPlan, buildTools, compareSeriesContent, copySharedEntry } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
+
+const STATE_DIR = createStateDir('inkflow-series-state')
 
 const ROOT = resolve(import.meta.dirname, '..')
 const require = createRequire(import.meta.url)
@@ -522,7 +525,7 @@ test('系列同步：world/ 是指向书外的 junction 时写入被拒，书外
 // ---------------------------------------------------------------------------
 
 test('系列同步：工具面注册两个工具，apply 的 schema 要求 expected/decisions/confirm', () => {
-  const tools = buildTools({ ctx: {}, dataDir: tmpdir(), version: 'test' })
+  const tools = buildTools({ ctx: {}, dataDir: STATE_DIR, version: 'test' })
   const byName = new Map(tools.map((tool) => [tool.name, tool]))
   const plan = byName.get('inkflow_series_plan')
   const applyTool = byName.get('inkflow_series_apply')

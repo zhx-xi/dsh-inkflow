@@ -48,6 +48,7 @@ import {
   serializeBriefAudit,
   writeBriefAudit,
 } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const HOST = '127.0.0.1:2149'
 const INTERNAL = '/inkflow/internal'
@@ -642,6 +643,8 @@ test('brief: over-long marker lines are clipped with the segment kept, never tri
 // 6. The channel: preview route and the confirm-gated audit write
 // ---------------------------------------------------------------------------
 
+const STATE_DIR = createStateDir('inkflow-brief-state')
+
 function createHarness({ workspace, sessionId = 'session-1' }) {
   const routes = []
   const ctx = {
@@ -674,7 +677,7 @@ function createHarness({ workspace, sessionId = 'session-1' }) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-brief-state'), serveHttp: true })
+  apply(ctx, { dataDir: STATE_DIR, serveHttp: true })
   return { ctx, routes }
 }
 

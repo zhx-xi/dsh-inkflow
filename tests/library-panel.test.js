@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { apply } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
@@ -41,6 +42,8 @@ const PANEL_KINDS = ['characters', 'world', 'outlines', 'foreshadowing', 'timeli
 // ---------------------------------------------------------------------------
 // Harness (same shape as internal-channel.test.js / internal-write.test.js)
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-library-state')
 
 function createHarness({ sessionId = 'session-1', workspace, sessions, workspaces } = {}) {
   const routes = []
@@ -96,7 +99,7 @@ function createHarness({ sessionId = 'session-1', workspace, sessions, workspace
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-library-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 
