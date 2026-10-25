@@ -46,7 +46,7 @@
 import { Buffer } from 'node:buffer'
 import { basename } from 'node:path'
 
-import { charactersInChapter, voiceInChapter } from './brief-sources.js'
+import { charactersInChapter, taggedOutlineSegment, voiceInChapter } from './brief-sources.js'
 import { MAX_OUTLINE_CHARS, SECTION_HEADING, clipHead, clipTail, renderBriefHeader, renderChapter, renderProject, renderTail, renderTrimMarker, renderWorld } from './writing-context-render.js'
 import { factsSegment } from './domains/facts-prompt.js'
 import { foreshadowSegment } from './domains/foreshadowing-query.js'
@@ -504,11 +504,10 @@ export const BRIEF_LABELS: Readonly<Record<BriefSegmentId, string>> = {
  * Per-segment budget share, as a fraction of `budgetTokens` (`floor(ratio × budget)`
  * characters — the unit the ledger and the foreshadow reminder already use).
  *
- * `0` means "this segment's cap is its own definition, not a share of the budget": the
- * outline keeps `MAX_OUTLINE_CHARS`, the world book keeps `MAX_WORLD_SHOWN` entries, the
- * tail keeps `tailChars`, and the two unsourced segments carry nothing at all. The shares
- * do not add up to 1 and must not: a cap is a ceiling, not a reservation, and the ladder —
- * not the sum — decides what is dropped.
+ * `0` means "this segment's cap is its own definition, not a share of the budget": `outline`
+ * keeps `MAX_OUTLINE_CHARS`, `world` keeps `MAX_WORLD_SHOWN`, `prevTail` keeps `tailChars`,
+ * the markers (`promise`/`anchors`) keep `MAX_TAGGED_CHARS`. The shares do not add up to 1
+ * and must not: a cap is a ceiling, not a reservation — the ladder decides what is dropped.
  */
 export const BRIEF_CAP_RATIOS: Readonly<Record<BriefSegmentId, number>> = {
   outline: 0,
@@ -606,9 +605,9 @@ interface RenderedBrief {
  * Deterministic for a given tree — no cache, no clock, no random id (ADR-0022 D4), which
  * is why the audit file can be `git diff`ed.
  *
- * No-source segments are `missing: true` with empty text: `promise` and `anchors` are
- * produced by the **session's model** under X-26 and have no file to read yet, and a
- * placeholder would put invented instructions in front of the writer — worse than a gap.
+ * No-source segments are `missing: true` with empty text — never placeholder prose, which
+ * would put invented instructions in front of the writer. `promise`/`anchors` are the
+ * author's own marker bullets in THIS chapter's outline node (#213); none written = missing.
  */
 export function buildWritingBrief(root: string, options: WritingContextOptions = {}): WritingBrief {
   const budgetTokens = clampInt(options.budgetTokens, DEFAULT_BUDGET_TOKENS, 1, 200_000)
@@ -652,9 +651,11 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
   } else {
     built.set('outline', { text: '', truncated: false, missing: true })
   }
-  // No source yet (X-26: the session's model produces these; the plugin only assembles).
-  built.set('promise', { text: '', truncated: false, missing: true })
-  built.set('anchors', { text: '', truncated: false, missing: true })
+  // #213: the two marker bullets in THIS chapter's outline node are their only source.
+  for (const id of ['promise', 'anchors'] as const) {
+    const tagged = taggedOutlineSegment(outline?.body ?? '', id, BRIEF_LABELS[id])
+    built.set(id, tagged === undefined ? { text: '', truncated: false, missing: true } : { ...tagged, missing: false })
+  }
 
   const cast = charactersInChapter({
     root: probe.root,
@@ -672,8 +673,7 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
   })
   built.set('voice', voices === undefined ? { text: '', truncated: false, missing: true } : { text: voices.text, truncated: voices.truncated, missing: false })
 
-  // The two registered extras keep their own builders and their own caps (X-13): the
-  // brief does not get a second opinion about what a ledger line looks like.
+  // The registered extras keep their own builders and caps (X-13): no second opinion here.
   for (const id of ['facts', 'foreshadow'] as const) {
     const spec = EXTRA_SEGMENTS.find((entry) => entry.name === id)
     if (spec === undefined) {

@@ -33,6 +33,7 @@ import {
   BRIEF_SEGMENT_ORDER,
   BRIEF_TRIM_ORDER,
   EXTRA_SEGMENTS,
+  MAX_TAGGED_CHARS,
   apply,
   briefAuditPath,
   briefAuditRecord,
@@ -453,6 +454,183 @@ test('brief: a segment with no source is missing, never a placeholder', async ()
     assert.equal(nothing.segments.every((segment) => segment.missing || segment.text === ''), true)
     assert.equal(nothing.text.trim(), '', 'no heading, no filler')
     assert.equal(nothing.overBudget, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 5b. The two marker segments: `[承诺]` / `[锚点]` in the chapter's own outline (#213)
+// ---------------------------------------------------------------------------
+
+/**
+ * #213 gives `promise` and `anchors` a source: two marker lines the author writes in the
+ * chapter-level outline node (`outlines/ch-<seq>.md`, the same file the `outline` segment
+ * renders). `[承诺]` / `[锚点]` join `[故事线]` as plot-point tags, so no frontmatter field
+ * and no new file type is involved (ADR-0019's read-back contract is untouched).
+ *
+ * The honesty rule survives the new source: lines that are not in **this** chapter's node
+ * leave the segment `missing`, and the marker itself is not content.
+ */
+test('brief: the chapter outline writes [承诺] / [锚点] lines and the two segments carry them (#213)', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    writeMarkdown(
+      root,
+      'outlines/ch-0002.md',
+      ['id: oc-2', 'kind: chapter', 'title: 起风', 'parent: overall'],
+      [
+        '- [故事线] 起风：清音在青萍宗后山见到信物。',
+        '- [承诺] 断剑的来历这一章必须露一角。',
+        '- 普通的细纲条目，不带标记。',
+        '- [锚点] 复沓句「剑未出鞘，雨先落」。',
+        '',
+      ].join('\n'),
+    )
+    await buildIndex(root)
+    const brief = buildWritingBrief(root, { budgetTokens: 20_000 })
+
+    const promise = brief.segments.find((segment) => segment.id === 'promise')
+    const anchors = brief.segments.find((segment) => segment.id === 'anchors')
+    assert.ok(promise !== undefined && anchors !== undefined)
+    assert.equal(promise.missing, false, 'the chapter wrote a [承诺] line')
+    assert.equal(promise.truncated, false)
+    assert.match(promise.text, /断剑的来历这一章必须露一角。/, 'the words are the author\'s, not a summary')
+    assert.equal(promise.text.includes('[承诺]'), false, 'the marker is a marker, not content')
+    assert.equal(promise.text.includes('普通的细纲条目'), false, 'a bullet without the tag is not a promise')
+
+    assert.equal(anchors.missing, false)
+    assert.equal(anchors.truncated, false)
+    assert.match(anchors.text, /剑未出鞘，雨先落/)
+    assert.equal(anchors.text.includes('[锚点]'), false)
+
+    // D2 order on the wire: right after the chapter block, and last of the nine.
+    const at = (needle) => brief.text.indexOf(needle)
+    assert.ok(at('### 当前章') >= 0)
+    assert.ok(at(`### ${BRIEF_LABELS.promise}`) > at('### 当前章'), 'promise sits after outline')
+    assert.ok(at(`### ${BRIEF_LABELS.promise}`) < at('### 本章人物'), 'promise sits before characters')
+    assert.ok(at(`### ${BRIEF_LABELS.anchors}`) > at('### 上一章结尾'), 'anchors closes the nine')
+
+    // The three surfaces are one computation (X-23): preview twice, injected text, audit file.
+    const again = buildWritingBrief(root, { budgetTokens: 20_000 })
+    assert.equal(again.text, brief.text, 'two assemblies of one tree are the same bytes')
+    assert.deepEqual(again.segments, brief.segments)
+    assert.ok(brief.text.includes(`### ${BRIEF_LABELS.promise}`), 'the injected text carries the segment')
+
+    const written = writeBriefAudit(root, brief)
+    assert.equal(written.ok, true, written.ok ? '' : written.message)
+    const auditFile = join(root, '.inkflow', 'audit', 'brief-ch-0002.json')
+    const firstBytes = readFileSync(auditFile, 'utf8')
+    const parsed = JSON.parse(firstBytes)
+    for (const id of ['promise', 'anchors']) {
+      const fromFile = parsed.segments.find((segment) => segment.id === id)
+      const fromPreview = briefWire(brief).segments.find((segment) => segment.id === id)
+      // Same six fields, same values: the file records what the preview showed (D1).
+      assert.deepEqual(
+        fromFile,
+        {
+          id: fromPreview.id,
+          label: fromPreview.label,
+          bytes: fromPreview.bytes,
+          tokens: fromPreview.tokens,
+          truncated: fromPreview.truncated,
+          missing: fromPreview.missing,
+        },
+        `${id}: the audit row is the preview row`,
+      )
+      assert.equal(fromFile.bytes, Buffer.byteLength(fromPreview.text, 'utf8'), `${id}: bytes describe the text the model sees`)
+      assert.equal(fromFile.missing, false)
+    }
+    writeBriefAudit(root, buildWritingBrief(root, { budgetTokens: 20_000 }))
+    assert.equal(readFileSync(auditFile, 'utf8'), firstBytes, 'same input, same file bytes')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: markers written in another chapter do not fill this one, and a card is no fallback (#213)', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    // Last chapter's node carries both markers; this chapter's node carries neither.
+    writeMarkdown(
+      root,
+      'outlines/ch-0001.md',
+      ['id: oc-1', 'kind: chapter', 'title: 开端', 'parent: overall'],
+      ['- [承诺] 上一章的承诺。', '- [锚点] 上一章的锚点。', ''].join('\n'),
+    )
+    // A card that reads like a promise: still not a source (the card is a card).
+    writeMarkdown(
+      root,
+      'characters/清音.md',
+      ['id: c-qingyin', 'name: 清音', 'role: 主角', 'firstAppearance: 1', 'states: [2: 代掌门]'],
+      '承诺：她会带着断剑回来。\n',
+    )
+    await buildIndex(root)
+
+    // The fixture is live: chapter 1's own node DOES fill both segments, so the
+    // "missing" assertion below is about this chapter, not about a dead file name.
+    const first = buildWritingBrief(root, { budgetTokens: 20_000, chapterSeq: 1 })
+    assert.match(first.segments.find((entry) => entry.id === 'promise').text, /上一章的承诺/)
+    assert.match(first.segments.find((entry) => entry.id === 'anchors').text, /上一章的锚点/)
+
+    const brief = buildWritingBrief(root, { budgetTokens: 20_000 })
+    assert.equal(brief.chapterSeq, 2, 'the brief is about the chapter that was asked for')
+
+    for (const id of ['promise', 'anchors']) {
+      const segment = brief.segments.find((entry) => entry.id === id)
+      assert.deepEqual(
+        segment,
+        { id, label: BRIEF_LABELS[id], text: '', bytes: 0, tokens: 0, truncated: false, missing: true },
+        `${id}: this chapter wrote no marker, so it stays honestly missing`,
+      )
+      assert.equal(brief.text.includes(BRIEF_LABELS[id]), false, `${id}: no heading on the wire either`)
+    }
+    assert.equal(brief.text.includes('上一章的承诺'), false, 'never borrowed from the previous chapter')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: over-long marker lines are clipped with the segment kept, never trimmed by the ladder (#213)', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    const longPromise = `承诺开头${'要'.repeat(600)}`
+    const longAnchor = `锚点开头${'回'.repeat(600)}`
+    writeMarkdown(
+      root,
+      'outlines/ch-0002.md',
+      ['id: oc-2', 'kind: chapter', 'title: 起风', 'parent: overall'],
+      [`- [承诺] ${longPromise}`, `- [锚点] ${longAnchor}`, ''].join('\n'),
+    )
+    await buildIndex(root)
+
+    // A generous budget: the cap, not the ladder, is what shortens these two.
+    const roomy = buildWritingBrief(root, { budgetTokens: 20_000 })
+    for (const [id, head] of [['promise', '承诺开头'], ['anchors', '锚点开头']]) {
+      const segment = roomy.segments.find((entry) => entry.id === id)
+      assert.equal(segment.missing, false, `${id}: there is a source, so it is not missing`)
+      assert.equal(segment.truncated, true, `${id}: the cap had to shorten it`)
+      assert.ok(segment.text.length <= MAX_TAGGED_CHARS, `${id}: the segment stays inside its cap`)
+      assert.ok(segment.text.includes(head), `${id}: the head survives (clipHead, not clipTail)`)
+      assert.ok(segment.text.includes('…（截断）'), `${id}: a clipped body says so`)
+      assert.deepEqual(roomy.trims.map((trim) => trim.segment), [], 'a roomy budget trims nothing')
+    }
+
+    // A tiny budget: over budget is reported, and these two segments are still there —
+    // `promise` / `anchors` are on the never-trim side of D2.
+    const squeezed = buildWritingBrief(root, { budgetTokens: 20 })
+    assert.equal(squeezed.overBudget, true)
+    for (const id of ['promise', 'anchors']) {
+      const segment = squeezed.segments.find((entry) => entry.id === id)
+      assert.equal(segment.missing, false, `${id}: shrunk is not dropped`)
+      assert.ok(segment.text.length > 0, `${id}: the words are still on the wire`)
+    }
+    const trimmed = new Set(squeezed.trims.map((trim) => trim.segment))
+    assert.equal(trimmed.has('promise'), false, 'promise is never trimmed')
+    assert.equal(trimmed.has('anchors'), false, 'anchors is never trimmed')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
