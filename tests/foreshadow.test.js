@@ -809,7 +809,7 @@ test('foreshadow: the domain publishes the table, the entity rows and the module
       { id: 'fs-future', path: 'foreshadowing/玉佩.md', status: 'planted', due_by: 'vol-02' },
       { id: 'fs-overdue', path: 'foreshadowing/断剑.md', status: 'planted', due_by: 'ch-1' },
     ])
-    assert.equal(INDEX_SCHEMA_VERSION, 8, 'a new table is a new schema version, never an ALTER')
+    assert.equal(INDEX_SCHEMA_VERSION, 9, 'a new table is a new schema version, never an ALTER')
 
     const entities = listEntities(root, { kind: 'foreshadowing' })
     assert.deepEqual(entities.map((entity) => entity.id).sort(), ['fs-duenow', 'fs-future', 'fs-overdue'])

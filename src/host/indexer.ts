@@ -15,6 +15,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
+import { calendarFingerprint } from './calendar-book.js'
 import { CHAPTERS_DIR, CONTENT_DIRS, INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from './conventions.js'
 import { boolField, parseMarkdown, stringField } from './frontmatter.js'
 import type { ProjectProbe } from './project.js'
@@ -384,6 +385,11 @@ CREATE TABLE validation_issues (seq INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT
     insertMeta.run('indexSchemaVersion', String(INDEX_SCHEMA_VERSION))
     insertMeta.run('fileCount', String(counts.files))
     insertMeta.run('entityCount', String(entities.length))
+    // #48: the book's calendar is not a content directory, so `files` cannot see an edit
+    // to it. Its fingerprint is stored here instead, and `checkIndexFreshness()` compares
+    // it — otherwise every derived `world_absolute_day` would silently keep describing
+    // the old table after `inkflow.json` changed.
+    insertMeta.run('calendarFingerprint', calendarFingerprint(root))
     db.exec(`PRAGMA user_version = ${INDEX_SCHEMA_VERSION}`)
     db.exec('COMMIT')
     return builtAt

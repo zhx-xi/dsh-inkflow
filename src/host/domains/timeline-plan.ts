@@ -25,11 +25,33 @@
  * object of data-model §3.4: `frontmatter.ts` reads scalars, inline arrays and block
  * arrays only — a nested mapping would be read back as an opaque string — and the
  * `precision` of the object form is exactly "how many components the author wrote".
- * Multi-era calendars (the `era` field and cross-era comparison) are #48's scope.
+ *
+ * ## Multi-era (issue #48, ADR-0025)
+ *
+ * The scalar stays; only its **interpretation** became configurable. An event names the
+ * era it is written in with `era: <id>` (data-model §3.4); without one, the date is read
+ * in the calendar's last era — the one the book is currently in (`calendar-book.ts`).
+ * Every row then carries the date in the two forms a reader needs: the author's own text
+ * (`worldTime`) and the derived absolute day (`worldAbsoluteDay`), an integer on the one
+ * axis all eras share.
+ *
+ * Why the absolute day lives on the row instead of being computed where it is compared:
+ * it is what makes two eras comparable at all, and there are five consumers (both axes,
+ * the slot rule, the reversal rule, the index column). Computing it once at parse time is
+ * also the only way the index and the tools can be *proven* to agree — see
+ * `tests/timeline-calendar.test.js`, which asserts the stored column equals
+ * `toAbsolute()` of the file's own text, row by row.
+ *
+ * The leap/月长 arithmetic lives in `../calendar.js` and nowhere else (ADR-0025 D1): a
+ * second copy of the Gregorian rules is exactly how one date ends up a day off in one
+ * place and correct in the other.
  */
 
 import { basename, extname } from 'node:path'
 
+import { toAbsolute } from '../calendar.js'
+import type { CalendarSpec } from '../calendar.js'
+import { defaultEraOf } from '../calendar-book.js'
 import { intField, parseMarkdown, stringArrayField, stringField } from '../frontmatter.js'
 import { rowsBucket } from './types.js'
 import type { DomainEntityRef, DomainFileParse, ValidationIssue } from './types.js'
@@ -52,6 +74,13 @@ export interface TimelineRow {
   readonly path: string
   readonly title: string
   readonly worldTime?: string
+  /** The era `worldTime` is written in (data-model §3.4). Absent when the file omits it. */
+  readonly worldEra?: string
+  /**
+   * Derived: the day number `worldTime` names on the calendar's shared axis, or absent
+   * when the date is unreadable (reported as `TIMELINE_TIME_INVALID`) or absent.
+   */
+  readonly worldAbsoluteDay?: number
   readonly narrativeOrder?: number
   readonly chapter?: string
   readonly participants?: readonly string[]
@@ -66,57 +95,99 @@ export interface TimelineRow {
 export interface WorldTime {
   /** As written, so a tool can echo the author's own text back. */
   readonly raw: string
+  readonly era: string
   readonly year: number
   readonly month?: number
   readonly day?: number
   readonly precision: 'year' | 'month' | 'day'
+  /** `toAbsolute()` of the same date — the comparable form (ADR-0025 D3). */
+  readonly absDay: number
 }
 
-const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const
+/** The written shape only: `1710` / `1710-03` / `1710-03-05`, and nothing else. */
+const WORLD_TIME_SHAPE = /^(\d{1,6})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/u
 
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
-}
-
-function daysInMonth(year: number, month: number): number {
-  if (month === 2 && isLeapYear(year)) return 29
-  return MONTH_DAYS[month - 1] ?? 0
+function writtenParts(raw: string): { year: number; month?: number; day?: number } | undefined {
+  const match = WORLD_TIME_SHAPE.exec(raw)
+  const yearText = match?.[1]
+  if (match === null || yearText === undefined) return undefined
+  const month = match[2] === undefined ? undefined : Number(match[2])
+  const day = match[3] === undefined ? undefined : Number(match[3])
+  return { year: Number(yearText), ...(month === undefined ? {} : { month }), ...(day === undefined ? {} : { day }) }
 }
 
 /**
  * `1710` / `1710-03` / `1710-03-05` → a comparable value; anything else → `undefined`.
  *
+ * Whether the date *exists* is the calendar's answer, not this function's: a 13-month
+ * era makes `1710-13-01` a real day, and `every 4 years` decides which year gets the
+ * extra day. So the shape is checked here and the arithmetic is `toAbsolute()`'s.
+ *
  * "Anything else" is not thrown away: a confirmed event whose `worldTime` cannot be
  * read is reported as `TIMELINE_TIME_INVALID` and stays in the index (the issue's
  * acceptance criterion: an illegal date lands in `validation_issues` and blocks
- * nothing). The write side is stricter — it owns the input and refuses the format.
+ * nothing). The write side is stricter — it owns the input and refuses the format,
+ * naming the era that refused it.
  */
-export function parseWorldTime(value: string | undefined): WorldTime | undefined {
+export function parseWorldTime(
+  value: string | undefined,
+  calendar: CalendarSpec,
+  era?: string,
+): WorldTime | undefined {
   const raw = (value ?? '').trim()
-  const match = /^(\d{1,6})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/u.exec(raw)
-  const yearText = match?.[1]
-  if (match === null || yearText === undefined) return undefined
-  const year = Number(yearText)
-  const month = match[2] === undefined ? undefined : Number(match[2])
-  const day = match[3] === undefined ? undefined : Number(match[3])
-  if (month !== undefined && (month < 1 || month > 12)) return undefined
-  if (day !== undefined && (day < 1 || day > daysInMonth(year, month ?? 1))) return undefined
+  const parts = writtenParts(raw)
+  if (parts === undefined) return undefined
+  // A bare date is the era the book is in; an event in an older era must say so, and an
+  // unknown era id is refused by `toAbsolute` exactly like a date the era cannot express.
+  const eraId = (era ?? '').trim() === '' ? defaultEraOf(calendar).id : (era ?? '').trim()
+  const absolute = toAbsolute(calendar, { era: eraId, y: parts.year, m: parts.month ?? 1, d: parts.day ?? 1 })
+  if (!absolute.ok) return undefined
   return {
     raw,
-    year,
-    ...(month === undefined ? {} : { month }),
-    ...(day === undefined ? {} : { day }),
-    precision: day !== undefined ? 'day' : month !== undefined ? 'month' : 'year',
+    era: eraId,
+    year: parts.year,
+    ...(parts.month === undefined ? {} : { month: parts.month }),
+    ...(parts.day === undefined ? {} : { day: parts.day }),
+    precision: parts.day !== undefined ? 'day' : parts.month !== undefined ? 'month' : 'year',
+    absDay: absolute.value,
   }
 }
 
 /**
- * Earlier first. A year-only event sorts before a dated one in the same year: the
- * author stated a coarser moment, and that is the earliest moment it can be.
+ * The comparable moment of an indexed/parsed row, from the fields the row already
+ * carries — no calendar needed, so a row read back from the index compares exactly the
+ * way it did at build time.
+ */
+export function momentOf(row: Pick<TimelineRow, 'worldTime' | 'worldAbsoluteDay' | 'worldEra'>): WorldTime | undefined {
+  const raw = (row.worldTime ?? '').trim()
+  const absDay = row.worldAbsoluteDay
+  if (absDay === undefined) return undefined
+  const parts = writtenParts(raw)
+  if (parts === undefined) return undefined
+  return {
+    raw,
+    era: row.worldEra ?? '',
+    year: parts.year,
+    ...(parts.month === undefined ? {} : { month: parts.month }),
+    ...(parts.day === undefined ? {} : { day: parts.day }),
+    precision: parts.day !== undefined ? 'day' : parts.month !== undefined ? 'month' : 'year',
+    absDay,
+  }
+}
+
+/**
+ * Earlier first, **across eras too**.
+ *
+ * Primary key is the absolute day (the only value two eras share); the written
+ * granularity breaks a tie so a year-only event still sorts before the same year's
+ * January 1st — "the author stated a coarser moment, and that is the earliest moment it
+ * can be". Inside one era this is a refinement of the pre-#48 key `(year, month ?? 0,
+ * day ?? 0)` and returns exactly the same verdicts, which is what keeps
+ * `TIMELINE_WORLD_TIME_REVERSED` and `TIMELINE_ORDER_CONFLICT` meaning what they meant.
  */
 export function compareWorldTime(left: WorldTime, right: WorldTime): number {
+  if (left.absDay !== right.absDay) return left.absDay < right.absDay ? -1 : 1
   const keys: ReadonlyArray<readonly [number, number]> = [
-    [left.year, right.year],
     [left.month ?? 0, right.month ?? 0],
     [left.day ?? 0, right.day ?? 0],
   ]
@@ -196,11 +267,11 @@ export function timelineConflicts(rows: readonly TimelineRow[]): TimelineConflic
       })
       continue
     }
-    if (parseWorldTime(written) === undefined) {
+    if (momentOf(row) === undefined) {
       findings.push({
         code: 'TIMELINE_TIME_INVALID',
         path: row.path,
-        detail: `worldTime "${written}" is not a real YYYY[-MM[-DD]] date`,
+        detail: `worldTime "${written}"${row.worldEra === undefined ? '' : ` (era ${row.worldEra})`} is not a real date on this book's calendar`,
       })
     }
   }
@@ -239,10 +310,10 @@ function slotConflicts(bucket: readonly TimelineRow[]): TimelineConflict[] {
     if (sameSlot.length < 2) continue
     const sorted = [...sameSlot].sort(byPath)
     const reference = sorted[0]
-    const referenceTime = parseWorldTime(reference?.worldTime)
+    const referenceTime = reference === undefined ? undefined : momentOf(reference)
     if (reference === undefined || referenceTime === undefined) continue
     for (const other of sorted.slice(1)) {
-      const otherTime = parseWorldTime(other.worldTime)
+      const otherTime = momentOf(other)
       if (otherTime === undefined) continue
       if (compareWorldTime(referenceTime, otherTime) === 0) continue
       findings.push({
@@ -260,7 +331,7 @@ function slotConflicts(bucket: readonly TimelineRow[]): TimelineConflict[] {
 function reversalConflicts(bucket: readonly TimelineRow[]): TimelineConflict[] {
   const placed: Array<{ readonly row: TimelineRow; readonly order: number; readonly time: WorldTime }> = []
   for (const row of bucket) {
-    const time = parseWorldTime(row.worldTime)
+    const time = momentOf(row)
     if (row.narrativeOrder === undefined || time === undefined) continue
     placed.push({ row, order: row.narrativeOrder, time })
   }
@@ -432,7 +503,7 @@ export function planTimelineView(rows: readonly TimelineRow[]): TimelineView {
 
   const placed: Array<{ readonly row: TimelineRow; readonly time: WorldTime }> = []
   for (const row of confirmed) {
-    const time = parseWorldTime(row.worldTime)
+    const time = momentOf(row)
     if (time !== undefined) placed.push({ row, time })
   }
   placed.sort((left, right) => {
@@ -475,15 +546,31 @@ export interface ParsedTimeline {
 /**
  * One event file → one row, exactly as `scan()` would read it.
  *
+ * `calendar` is **required** rather than defaulted (ADR-0025 D1): a silent fall back to
+ * `DEFAULT_CALENDAR` is the failure mode the whole module exists to prevent — every date
+ * in a book with a custom table would quietly be re-read in the Gregorian one, and
+ * nothing would report it. The caller resolves it once per scan
+ * (`readBookCalendar(root)`), so an unreadable table is one structured error at the
+ * domain level instead of a per-file surprise.
+ *
  * Non-`.md` files are skipped silently, the same policy `world.ts` applies: the
  * directory is for events, and a stray name is not a parsing error worth a line in
  * `validation_issues` on every rebuild.
  */
-export function parseTimelineFile(path: string, text: string): ParsedTimeline {
+export function parseTimelineFile(path: string, text: string, calendar: CalendarSpec | undefined): ParsedTimeline {
   if (extname(path).toLowerCase() !== '.md') return { issues: [] }
 
   const parsed = parseMarkdown(text)
   const issues: ValidationIssue[] = parsed.issues.map((issue) => ({ code: 'FRONTMATTER_ISSUE', path, detail: issue }))
+  const written = optionalWorldTime(stringField(parsed.data, 'worldTime'))
+  const era = optionalText(stringField(parsed.data, 'era'))
+  // `worldAbsoluteDay` is derived here and only here: `toAbsolute` is the one arithmetic
+  // implementation (ADR-0025 D1), and storing the answer is what makes the index and the
+  // tools provably read the same day (see `momentOf`).
+  const moment =
+    written.worldTime === undefined || calendar === undefined
+      ? undefined
+      : parseWorldTime(written.worldTime, calendar, era.text)
 
   return {
     issues,
@@ -491,7 +578,9 @@ export function parseTimelineFile(path: string, text: string): ParsedTimeline {
       id: stringField(parsed.data, 'id') ?? path,
       path,
       title: stringField(parsed.data, 'title') ?? basename(path).replace(/\.md$/u, ''),
-      ...optionalWorldTime(stringField(parsed.data, 'worldTime')),
+      ...written,
+      ...(era.text === undefined ? {} : { worldEra: moment?.era ?? era.text }),
+      ...(moment === undefined ? {} : { worldAbsoluteDay: moment.absDay }),
       ...optionalOrder(intField(parsed.data, 'narrativeOrder')),
       ...optionalChapter(stringField(parsed.data, 'chapterId') ?? stringField(parsed.data, 'chapter')),
       participants: readParticipants(parsed.data),
@@ -509,9 +598,15 @@ function optionalOrder(value: number | undefined): { narrativeOrder?: number } {
   return value === undefined ? {} : { narrativeOrder: value }
 }
 
-function optionalChapter(value: string | undefined): { chapter?: string } {
+/** A trimmed, non-empty single-line string field (the shape `era` and `chapter` share). */
+function optionalText(value: string | undefined): { text?: string } {
   const trimmed = value?.trim()
-  return trimmed === undefined || trimmed === '' ? {} : { chapter: trimmed }
+  return trimmed === undefined || trimmed === '' ? {} : { text: trimmed }
+}
+
+function optionalChapter(value: string | undefined): { chapter?: string } {
+  const trimmed = optionalText(value).text
+  return trimmed === undefined ? {} : { chapter: trimmed }
 }
 
 function readParticipants(data: Record<string, unknown>): string[] {
@@ -549,8 +644,8 @@ export function timelineEntity(row: TimelineRow): DomainEntityRef {
  * module (which imports the tools back: a runtime cycle). `timeline.ts` delegates to
  * this function, so there is one implementation, not two (X-4).
  */
-export function timelineFileParse(path: string, text: string): DomainFileParse {
-  const parsed = parseTimelineFile(path, text)
+export function timelineFileParse(path: string, text: string, calendar: CalendarSpec | undefined): DomainFileParse {
+  const parsed = parseTimelineFile(path, text, calendar)
   const row = parsed.row
   return {
     path,

@@ -479,19 +479,27 @@ export function listEntityIds(root: string): Set<string> | undefined {
  * `chapter` and `participants` are timeline fields and are deliberately not columns of
  * the projection (X-1 fixes that column set), so the projection cannot answer "what
  * happened before some date".
+ *
+ * `world_era` / `world_absolute_day` come straight out of the row (#48): they were
+ * derived once at build time from the book's calendar, so a reader that gets a row back
+ * never re-derives (and cannot re-derive differently) which day the author meant.
  */
 export function listTimelineEvents(root: string): TimelineRow[] | undefined {
   const db = openIndex(root)
   if (db === undefined) return undefined
   try {
     const rows = db
-      .prepare('SELECT id, path, title, world_time, narrative_order, chapter, participants, status FROM timeline_events ORDER BY path')
+      .prepare(
+        'SELECT id, path, title, world_time, world_era, world_absolute_day, narrative_order, chapter, participants, status FROM timeline_events ORDER BY path',
+      )
       .all() as unknown as Array<Record<string, unknown>>
     return rows.map((row) => ({
       id: String(row['id'] ?? ''),
       path: String(row['path'] ?? ''),
       title: String(row['title'] ?? ''),
       ...(typeof row['world_time'] === 'string' && row['world_time'] !== '' ? { worldTime: row['world_time'] } : {}),
+      ...(typeof row['world_era'] === 'string' && row['world_era'] !== '' ? { worldEra: row['world_era'] } : {}),
+      ...(typeof row['world_absolute_day'] === 'number' ? { worldAbsoluteDay: row['world_absolute_day'] } : {}),
       ...(typeof row['narrative_order'] === 'number' ? { narrativeOrder: row['narrative_order'] } : {}),
       ...(typeof row['chapter'] === 'string' && row['chapter'] !== '' ? { chapter: row['chapter'] } : {}),
       participants: splitTerms(typeof row['participants'] === 'string' ? row['participants'] : undefined),

@@ -184,7 +184,7 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 
 ### 5.2 对 AI 说人话就行
 
-插件提供 50 个工具（34 个内置 + 16 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
+插件提供 52 个工具（34 个内置 + 18 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
 
 **项目与索引**
 
@@ -227,7 +227,9 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_relation_list` | 查一个实体两个方向的关系边 | 「清音和白云观是什么关系」 |
 | `inkflow_relation_upsert` | 建或改关系边：两端必须存在、禁自环、同源同目标同类型不许重复 | 「记一条：清音与白云观是旧识」 |
 | `inkflow_timeline_list` | 时间线双轴（世界时间 / 叙事顺序），可只看某一章、也可列待确认事件 | 「这本书里的大事按时间排一下」/「哪些事件还没定时间」 |
-| `inkflow_timeline_upsert` | 建或改时间线事件；`confirmed` 必须带世界时间，同槽位不许两个时间 | 「记一笔：开元十三年冬，破庙相遇」 |
+| `inkflow_timeline_upsert` | 建或改时间线事件；`confirmed` 必须带世界时间，同槽位不许两个时间；多纪元书里用 `era` 说明这是哪个纪元的日子 | 「记一笔：开元十三年冬，破庙相遇」 |
+| `inkflow_calendar_get` | 读这本书的历法表（纪元、各纪元起点的绝对日、月长、闰规则），也可换算一个日期 | 「这本书用的是哪套历法」/「开元十三年换算成绝对日是第几天」 |
+| `inkflow_calendar_set` | 改历法表（写进 `inkflow.json` 的 `calendar`），改完重建索引；非法表直接拒，**不会**悄悄退回默认历法 | 「这本书有两个纪元，人界与天界各一套年号」 |
 | `inkflow_foreshadow_list` | 列伏笔（按状态 / 只看超期 / 按关联实体筛），超期是**算出来的**（`dueBy` 已越过当前章/卷且未回收） | 「哪些伏笔该收了」/「有没有超期没回收的」 |
 | `inkflow_foreshadow_upsert` | 建或改伏笔并推进状态：`planted → advanced → resolved`，`resolved` 是终态；非法跳变直接拒 | 「埋个伏笔：断剑，打算在第 20 章收」/「断剑这章推进一下」 |
 | `inkflow_facts_append` | 往账本追加一条事实（截至某章、某属性等于某值），写前先过区间冲突校验 | 「记下来：到第 12 章清音的境界是筑基后期」 |

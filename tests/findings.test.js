@@ -73,6 +73,14 @@ const WRITE_SIDE_CODES = new Set([
   'FORESHADOW_FIELD_INVALID',
   'FORESHADOW_STATUS_INVALID',
   'FORESHADOW_UPSERT_REQUIRES_CONFIRMATION',
+  // #48: the calendar is a *parameter* of the date readers, not a content invariant
+  // (ADR-0025 D1 spells that out: `CALENDAR_*` are refusal codes like `PATH_*`, and the
+  // `CALENDAR_INVALID_SPEC` refusal names a table the caller handed in). A table the
+  // book itself carries is reported as `TIMELINE_TIME_INVALID` instead, which is already
+  // in the catalogue — a broken table makes every date unplaceable, and that is the code
+  // the timeline already owns.
+  'CALENDAR_INVALID_SPEC',
+  'CALENDAR_SET_REQUIRES_CONFIRMATION',
   'ORDER_INVALID',
   'PRIORITY_INVALID',
   'SLUG_INVALID',

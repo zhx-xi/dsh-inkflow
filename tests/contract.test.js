@@ -207,6 +207,10 @@ test('registers the thirty-one built-ins, the tools of every registered domain, 
       // content directory).
       'inkflow_backup_create',
       'inkflow_backup_restore',
+      // #48: the book's calendar, read and written through the timeline domain (it is a
+      // key in `inkflow.json`, not a content directory).
+      'inkflow_calendar_get',
+      'inkflow_calendar_set',
       // Built-ins in `tools.ts`…
       'inkflow_chapter_create',
       'inkflow_chapter_delete',

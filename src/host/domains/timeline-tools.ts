@@ -24,6 +24,9 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { ToolDefinition } from '../context.js'
+import { DEFAULT_CALENDAR, validateCalendarSpec } from '../calendar.js'
+import type { CalendarSpec } from '../calendar.js'
+import { BOOK_CALENDAR_KEY, readBookCalendar, writeBookCalendar } from '../calendar-book.js'
 import { buildIndex, describeIndexBuildFailure } from '../index-build.js'
 import { ensureIndex } from '../index-freshness.js'
 import { scanProject } from '../indexer.js'
@@ -71,6 +74,11 @@ function eventJson(row: TimelineRow): Json {
     title: row.title,
     file: row.path,
     worldTime: row.worldTime ?? null,
+    era: row.worldEra ?? null,
+    // #48: the derived day number on the calendar's shared axis. Present only when the
+    // date is readable under this book's table — that absence *is* the answer for an
+    // event whose `worldTime` no era can express.
+    worldAbsoluteDay: row.worldAbsoluteDay ?? null,
     narrativeOrder: row.narrativeOrder ?? null,
     chapter: row.chapter ?? null,
     participants: [...(row.participants ?? [])],
@@ -250,6 +258,13 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
             'chapter). It may disagree with worldTime — that is a flashback, and it is allowed.',
         },
         chapter: { type: 'string', description: 'Chapter id this event is told in (written as `chapterId`).' },
+        era: {
+          type: 'string',
+          description:
+            'Era this date is written in (`era` in the file): an era id from the book\'s calendar ' +
+            '(inkflow_calendar_get lists them). Omit to read the date in the newest era, which is what a bare year ' +
+            'means; an older era must be named.',
+        },
         participants: {
           type: 'array',
           items: { type: 'string' },
@@ -361,14 +376,34 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
         }
 
         const worldTimeArg = optionalString(a['worldTime'])
-        if (worldTimeArg !== undefined && parseWorldTime(worldTimeArg) === undefined) {
+        const eraArg = optionalString(a['era'])
+        // The calendar is resolved once per call and passed down, never defaulted here:
+        // a book whose table does not validate must say so instead of having its dates
+        // re-read in the Gregorian table (ADR-0025 D1).
+        const calendar = readBookCalendar(root)
+        if (!calendar.ok) {
+          return {
+            ok: false,
+            root,
+            error: {
+              code: calendar.error.code,
+              message: calendar.error.message,
+              hint: 'nothing was written; the book\'s `inkflow.json` `calendar` table must be fixed first (inkflow_calendar_set writes a valid one)',
+            },
+          }
+        }
+        const spec = calendar.value.spec
+        if (worldTimeArg !== undefined && parseWorldTime(worldTimeArg, spec, eraArg) === undefined) {
+          const eras = spec.eras.map((era) => era.id).join(', ')
           return {
             ok: false,
             root,
             error: {
               code: 'TIMELINE_TIME_INVALID',
-              message: `worldTime "${worldTimeArg}" is not a real YYYY[-MM[-DD]] date`,
-              hint: 'give a year (1710), a month (1710-03) or a day (1710-03-05); omit it for an unconfirmed event',
+              message: `worldTime "${worldTimeArg}"${eraArg === undefined ? '' : ` (era ${eraArg})`} is not a real date on this book's calendar`,
+              hint:
+                'give a year (1710), a month (1710-03) or a day (1710-03-05); omit it for an unconfirmed event. ' +
+                `Eras: ${eras}${eraArg === undefined ? ' (no era given: the newest one is assumed)' : ''}`,
             },
           }
         }
@@ -386,16 +421,23 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
         const existing = rows.find((row) => row.path === path)
         const id = optionalString(a['id']) ?? existing?.id ?? path
         const worldTime = worldTimeArg ?? existing?.worldTime
+        const era = eraArg ?? existing?.worldEra
         const narrativeOrder = (typeof rawOrder === 'number' ? rawOrder : undefined) ?? existing?.narrativeOrder
         const chapter = optionalString(a['chapter']) ?? existing?.chapter
         const participants = a['participants'] === undefined ? existing?.participants : participantsRead?.ids
         const resolvedStatus = status ?? existing?.status ?? 'confirmed'
+        // Derived once, here, from the same `toAbsolute()` the rebuild uses: the candidate
+        // the rules judge must carry the same absolute day its file will produce, or the
+        // write gate would be judging a different date than the one being written.
+        const moment = worldTime === undefined ? undefined : parseWorldTime(worldTime, spec, era)
 
         const candidate: TimelineUpsertCandidate = {
           id,
           path,
           title,
           ...(worldTime === undefined ? {} : { worldTime }),
+          ...(era === undefined ? {} : { worldEra: moment?.era ?? era }),
+          ...(moment === undefined ? {} : { worldAbsoluteDay: moment.absDay }),
           ...(narrativeOrder === undefined ? {} : { narrativeOrder }),
           ...(chapter === undefined ? {} : { chapter }),
           participants: participants ?? [],
@@ -425,6 +467,7 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
           title,
           status: resolvedStatus,
           ...(worldTime === undefined ? {} : { worldTime }),
+          ...(era === undefined ? {} : { era }),
           ...(narrativeOrder === undefined ? {} : { narrativeOrder }),
           ...(chapter === undefined ? {} : { chapter }),
           participants: participants ?? [],
@@ -453,7 +496,7 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
 
         // X-4, in order: parse the candidate, fold it into the post-write view, judge
         // that view with the same rules a rebuild runs, and only then write.
-        const parsedFile = timelineFileParse(path, content)
+        const parsedFile = timelineFileParse(path, content, spec)
         const parseIssue = parsedFile.issues[0]
         if (parseIssue !== undefined) {
           return {
@@ -515,6 +558,249 @@ function timelineUpsertTool(deps: DomainToolDeps): ToolDefinition {
   }
 }
 
+/**
+ * The calendar a book reads its dates in — read and write (#48, roadmap X-28).
+ *
+ * They live beside the timeline tools because the timeline is the only consumer: the
+ * calendar is not a content directory (it is a key in `inkflow.json`), so no domain can
+ * own it, and putting it here keeps the write surface at one place a reader can find.
+ *
+ * `inkflow_calendar_get` is read-only and always answers the table **in force**: the
+ * book's own, or the default one when the book never set any (with `source` saying
+ * which). `inkflow_calendar_set` validates first, writes atomically, then rebuilds the
+ * index — every derived `worldAbsoluteDay` in the index is a function of this table, so
+ * leaving the index alone would mean the timeline kept describing the old calendar.
+ */
+function calendarGetTool(deps: DomainToolDeps): ToolDefinition {
+  return {
+    name: 'inkflow_calendar_get',
+    description:
+      'Read the calendar this book interprets `worldTime` in: the eras (id, label-free id and the absolute day each ' +
+      'era starts at), the month lengths and the leap rule of each, plus the resulting absolute day of a date when one ' +
+      'is asked for. `source: "default"` means the book never set one (a single Gregorian era starting at day 0). ' +
+      'A table that is present but does not validate is reported as an error with its code — it never silently falls ' +
+      'back to the default, because that would change the meaning of every date in the book. Read-only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        date: {
+          type: 'string',
+          description: 'Optional `YYYY[-MM[-DD]]` date to convert; the reply then carries its absolute day.',
+        },
+        era: { type: 'string', description: 'Era for `date` (default: the newest era of the table).' },
+      },
+      additionalProperties: false,
+    },
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) {
+          const error = asRecord(v['error'])
+          return text([`Calendar unavailable: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`])
+        }
+        const eras = Array.isArray(v['eras']) ? (v['eras'] as Record<string, unknown>[]) : []
+        const lines = [`Calendar "${String(v['calendarId'])}" (${String(v['source'])}), ${String(eras.length)} era(s):`]
+        for (const era of eras) {
+          const months = Array.isArray(era['months']) ? (era['months'] as unknown[]).length : 0
+          const leap = asRecord(era['leap'])
+          lines.push(
+            `- ${String(era['id'])}: starts at day ${String(era['epochOffsetDays'])}, ${String(months)} month(s), ` +
+              `leap ${String(leap['kind'] ?? 'none')}${leap['month'] === undefined ? '' : ` in month ${String(leap['month'])}`}`,
+          )
+        }
+        if (v['date'] !== undefined) {
+          lines.push(
+            v['absoluteDay'] === null || v['absoluteDay'] === undefined
+              ? `! ${String(v['date'])} is not a date on this calendar`
+              : `${String(v['date'])}${v['era'] === undefined ? '' : ` (era ${String(v['era'])})`} = day ${String(v['absoluteDay'])}`,
+          )
+        }
+        return text(lines)
+      },
+    },
+    execute: async (args, exec) =>
+      withProject(deps, exec, args, async (root) => {
+        const calendar = readBookCalendar(root)
+        if (!calendar.ok) {
+          return { ok: false, root, error: { code: calendar.error.code, message: calendar.error.message } }
+        }
+        const spec = calendar.value.spec
+        const a = asRecord(args)
+        const dateArg = optionalString(a['date'])
+        const eraArg = optionalString(a['era'])
+        const moment =
+          dateArg === undefined
+            ? undefined
+            : parseWorldTime(dateArg, spec, eraArg)
+        return {
+          ok: true,
+          root,
+          calendarId: spec.id,
+          source: calendar.value.source,
+          defaultEra: spec.eras[spec.eras.length - 1]?.id ?? null,
+          eras: spec.eras.map((era) => ({
+            id: era.id,
+            epochOffsetDays: era.epochOffsetDays,
+            months: [...era.months],
+            leap: { ...era.leap },
+          })),
+          ...(dateArg === undefined
+            ? {}
+            : {
+                date: dateArg,
+                era: eraArg ?? moment?.era ?? null,
+                absoluteDay: moment?.absDay ?? null,
+                precision: moment?.precision ?? null,
+              }),
+        }
+      }),
+  }
+}
+
+/** The era table a caller hands in: `{ id, eras: [{ id, epochOffsetDays, months, leap }] }`. */
+function readCalendarSpecArg(value: unknown): CalendarSpec | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  return value as CalendarSpec
+}
+
+function calendarSetTool(deps: DomainToolDeps): ToolDefinition {
+  return {
+    name: 'inkflow_calendar_set',
+    description:
+      'Replace the book\'s calendar table in `inkflow.json` (the `calendar` key), then rebuild the derived index so ' +
+      'every event\'s absolute day is recomputed. The table is validated first and a bad one is refused with ' +
+      'CALENDAR_INVALID_SPEC: eras must ascend by `epochOffsetDays`, each needs positive month lengths and a leap rule ' +
+      '(`none` | `{"kind":"every","years":N,"month":M}` | `{"kind":"gregorian","month":M}`). Content files are NOT ' +
+      'touched — `timeline/*.md` keeps its flat `worldTime`, only its interpretation changes, so a table that moves the ' +
+      'era anchors re-dates every event that names no era. Requires `confirm: true`.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectRoot: PROJECT_ROOT_PARAM,
+        calendar: {
+          type: 'object',
+          description:
+            'The table: `{ "id": "common", "eras": [{ "id": "ce", "epochOffsetDays": 0, "months": [31,28,...], ' +
+            '"leap": { "kind": "gregorian", "month": 2 } }] }`. Omit entirely to reset the book to the default table.',
+          properties: {
+            id: { type: 'string', description: 'Calendar id (non-empty).' },
+            eras: {
+              type: 'array',
+              description: 'Eras, ascending by epochOffsetDays; the last one is the era a bare date is read in.',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: 'Era id, unique in the table.' },
+                  epochOffsetDays: {
+                    type: 'integer',
+                    description: 'Absolute day of this era\'s year 1 month 1 day 1 (may be negative).',
+                  },
+                  months: {
+                    type: 'array',
+                    items: { type: 'integer' },
+                    description: 'Common-year month lengths, at least one, each a positive whole number of days.',
+                  },
+                  leap: {
+                    type: 'object',
+                    description: '`{kind:"none"}` | `{kind:"every",years,month}` | `{kind:"gregorian",month}`.',
+                    properties: {
+                      kind: { type: 'string', description: 'none | every | gregorian' },
+                      years: { type: 'integer', description: 'Years between leap years (`every` only).' },
+                      month: { type: 'integer', description: '1-based month that gains the extra day.' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'Set true only after the user has seen the table this call would write.',
+        },
+      },
+      additionalProperties: false,
+    },
+    output: {
+      schema: OUTPUT_SCHEMA,
+      render: (_args, value) => {
+        const v = asRecord(value)
+        if (v['ok'] !== true) {
+          const error = asRecord(v['error'])
+          if (v['requiresConfirmation'] === true) {
+            return text([
+              `Confirmation required: ${String(error['message'] ?? '')}`,
+              'Nothing was written. Show the table to the user, then call again with confirm: true.',
+            ])
+          }
+          return text([`Calendar refused: ${String(error['code'] ?? 'unknown')} — ${String(error['message'] ?? '')}`])
+        }
+        const indexLine =
+          v['indexRebuilt'] === true
+            ? 'index rebuilt (every absolute day recomputed).'
+            : `index NOT rebuilt (${String(asRecord(v['indexError'])['code'] ?? 'unknown')}) — run inkflow_index_rebuild.`
+        return text([`Wrote the calendar "${String(v['calendarId'])}" into ${String(v['file'])}, ${indexLine}`])
+      },
+    },
+    execute: async (args, exec) =>
+      withProject(deps, exec, args, async (root) => {
+        const a = asRecord(args)
+        const asked = a['calendar']
+        const spec = asked === undefined ? DEFAULT_CALENDAR : readCalendarSpecArg(asked)
+        if (spec === undefined) {
+          return {
+            ok: false,
+            root,
+            error: {
+              code: 'CALENDAR_INVALID_SPEC',
+              message: 'the calendar must be an object {id, eras[]}, or omitted to reset to the default table',
+            },
+          }
+        }
+        const valid = validateCalendarSpec(spec)
+        if (!valid.ok) {
+          return { ok: false, root, error: { code: valid.error.code, message: valid.error.message } }
+        }
+        if (!optionalBoolean(a['confirm'])) {
+          return {
+            ok: false,
+            root,
+            requiresConfirmation: true,
+            willWrite: 'inkflow.json',
+            error: {
+              code: 'CALENDAR_SET_REQUIRES_CONFIRMATION',
+              message: `replacing the calendar in ${BOOK_CALENDAR_KEY} rewrites the meaning of every worldTime in this book; pass confirm: true`,
+              hint: 'nothing was written',
+            },
+          }
+        }
+        const written = writeBookCalendar(root, valid.value)
+        if (!written.ok) return { ok: false, root, error: { code: written.error.code, message: written.error.message } }
+
+        let indexRebuilt = false
+        let indexError: Json | undefined
+        try {
+          await buildIndex(root)
+          indexRebuilt = true
+        } catch (cause) {
+          const failure = describeIndexBuildFailure(cause)
+          indexError = { code: failure.code, message: failure.message }
+        }
+        return {
+          ok: true,
+          root,
+          file: 'inkflow.json',
+          calendarId: valid.value.id,
+          eras: valid.value.eras.map((era) => era.id),
+          indexRebuilt,
+          ...(indexError === undefined ? {} : { indexError }),
+        }
+      }),
+  }
+}
+
 /** The current text of one project file, or undefined when it is not there yet. */
 function readProjectText(root: string, relativePath: string): string | undefined {
   try {
@@ -524,7 +810,13 @@ function readProjectText(root: string, relativePath: string): string | undefined
   }
 }
 
-/** Both timeline tools, in registry order (X-5: the domain's whole model-facing surface). */
+/**
+ * The timeline domain's model-facing surface, in registry order (X-5).
+ *
+ * The two calendar tools ship with it rather than in `tools.ts`: the calendar is not a
+ * content directory (it is a key in `inkflow.json`), so no domain owns it, and the
+ * timeline is its only consumer.
+ */
 export function timelineTools(deps: DomainToolDeps): readonly ToolDefinition[] {
-  return [timelineListTool(deps), timelineUpsertTool(deps)]
+  return [timelineListTool(deps), timelineUpsertTool(deps), calendarGetTool(deps), calendarSetTool(deps)]
 }

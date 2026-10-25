@@ -138,6 +138,17 @@ export type {
 } from './calendar.js'
 
 /**
+ * Where the book's calendar lives, and what a missing/broken one means (#48).
+ *
+ * Exported beside the arithmetic because they are one contract: `calendar.ts` answers
+ * "what day is this", `calendar-book.ts` answers "which table applies to this book" —
+ * and a caller that has the first without the second has to guess, which is the failure
+ * mode ADR-0025 D1 exists to prevent.
+ */
+export { BOOK_CALENDAR_KEY, calendarFingerprint, defaultEraOf, readBookCalendar, writeBookCalendar } from './calendar-book.js'
+export type { BookCalendar } from './calendar-book.js'
+
+/**
  * The frontmatter reader/writer is re-exported from the bundle entry so the
  * contract tests can drive it directly (they import lib/index.js only). The P1
  * proposal writer uses the same pair in-process, so this is not a test-only
