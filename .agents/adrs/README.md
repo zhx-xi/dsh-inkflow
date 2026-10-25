@@ -42,6 +42,7 @@
 | [0023](0023-proposal-job-private-placement.md) | 提案与批量作业的私有落点（`.inkflow/{proposals,jobs}`）+ 写白名单第三次扩容 | 已采纳 | 2026-10-25 |
 | [0024](0024-export-zip-reuse.md) | 导出复用 `zip.ts`（EPUB `mimetype` 首条且不压缩、DOCX 最小 OOXML、导出物落 `$DSH_HOME/inkflow/exports/`） | 已采纳 | 2026-10-25 |
 | [0025](0025-calendar-and-place-kind.md) | 历法与地点：`calendar.ts` 是换算的唯一实现（`A→B→A` 误差 0）、`worldTime` 保持标量、地点不新增 kind | 已采纳 | 2026-10-25 |
+| [0026](0026-private-purge-area.md) | 私有状态回收区 `.inkflow/purged/`（#199 手动清理可还原）+ 写白名单第四次扩容；清单逻辑与回收站共用一份 | 已采纳 | 2026-10-25 |
 
 ### 1.2 决策速览（一行一条）
 
@@ -68,6 +69,8 @@
 | [0023](0023-proposal-job-private-placement.md) | **提案与作业进度落 `.inkflow/{proposals,jobs}/`**（`PRIVATE_STATE_SUBDIRS` 与 `resolveWriteTarget` 白名单从四条扩到六条**子路径**）；`index/` 除 `.gitkeep` 与 `*.db*` 外一律为空（用例断言）；`.gitignore` 的 `.inkflow/` 行仍由首次使用方 append-only 追加（X-9 不变）；`..` 与符号链接逃逸仍拒 | 判据不是「同类放一起」而是「重建不可再生」：`index/` 删了会回来，提案与断点删了就没了——#43/#47 正文的 `index/audit/`、`index/jobs/` 因此以本条为准；落 `$DSH_HOME` 与「换机继续跑」直接冲突 |
 | [0024](0024-export-zip-reuse.md) | **导出复用 `src/host/zip.ts`，不出现第二个 ZIP 写入器**：store-only（method 0）+ 自写 CRC-32；EPUB 的 `mimetype` 必须**第一个条目且不压缩**（OCF 规范，store-only + 条目顺序天然满足）；DOCX 用最小 OOXML 部件集；导出物落 `$DSH_HOME/inkflow/exports/`（**不落书内**） | 引库破坏零运行时依赖；自研 deflate 出错时坏的是唯一一份导出；导出物落书内会进 git、被索引与资料卡片扫描，而书里唯一放派生物的位置只允许 `.gitkeep` 与 `*.db` |
 | [0025](0025-calendar-and-place-kind.md) | **历法与地点：一个换算函数、一个既有 kind**——`calendar.ts`（`toAbsolute` ⇄ `fromAbsolute`，可配置纪元/闰规则）是唯一实现，`A→B→A` 逐日误差 0，`fromAbsolute` 先夹上界再二分而非按平均年长估算；非法输入与非法历法表一律结构化拒绝；`timeline/*.md` 的 `worldTime` **仍是标量**，绝对日只是 #48 在**索引**里加的派生列；地点就是 `world/<category>` 的条目，地图只挂既有条目，**不新增 kind、不新建 `locations/`** | 换算散在三处，闰日旁差一天没人查得出；平均年长估算在闰日旁必差；`worldTime` 改嵌套会作废 ADR-0019 的读回约束与全部既有时间线文件；给地点新开身份会让改名/影响面/提及/检索各认一套；派生列若回写 frontmatter 就是同一事实两处存储，必漂 |
+
+| [0026](0026-private-purge-area.md) | **私有状态有自己的回收区 `.inkflow/purged/`**（`PRIVATE_STATE_SUBDIRS` 与 `resolveWriteTarget` 白名单从七条扩到八条子路径）：副本保持它在 `.inkflow/` 下的原相对路径，还原目标因此是事实而不是入参，且被 `restoreTargetOf` 限定在 `.inkflow/{review,proposals}`；可清理对象只有**单条审稿运行记录**与**已结束（`applied`/`rolled-back`）的提案**，`open` 永不进候选；清理要 `confirm: true` 并在 `.inkflow/audit/` 留一条删除记录（删了什么/何时/字节/哪个会话）；**`trash.ts` 对 `.inkflow/` 源的禁令不放宽**；清单逻辑抽成 `private-manifest.ts` 由两处共用；不新增 `inkflow_*` 工具（照 `trash` 的通道形状） | 放宽回收站等于让「作者删的正文」与「插件写的记录」共用一份清单与一套还原语义；直删（学 `candidates/purge`）删错一次就丢一次审稿证据；自动按条数淘汰与「运行记录是事实」冲突；落 `$DSH_HOME` 不随书走；给清理开工具则模型要替作者决定「留哪些历史」 |
 
 ## 2. 编号与登记规则
 

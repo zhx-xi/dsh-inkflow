@@ -42,13 +42,21 @@
  * and nothing else. The channel half (route replies) lives in `trash-channel.ts`.
  */
 
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { removeEmptyProjectDirectory, removeProjectFile, writeJsonAtomic, writeTextAtomic } from './io.js'
+import { removeEmptyProjectDirectory, removeProjectFile, writeTextAtomic } from './io.js'
 import type { IoFailure } from './io.js'
 import { ensurePrivateStateIgnored, isPrivateStatePath, privateStateDirRelative, privateStateRelative } from './private-state.js'
+import {
+  absoluteOf,
+  digestBytes,
+  plainRelativePath,
+  readPrivateManifest,
+  writePrivateManifest,
+} from './private-manifest.js'
+import type { PrivateManifestFailure, PrivateManifestRead, PrivateManifestSpec } from './private-manifest.js'
 
 /** The manifest file, project-relative (forward slashes). */
 export const TRASH_MANIFEST_RELATIVE = privateStateRelative('trash', 'index.json')
@@ -165,10 +173,6 @@ export type PurgeResult = PurgeOk | TrashFailure
 // Helpers
 // ---------------------------------------------------------------------------
 
-function digest(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex')
-}
-
 function refuse(code: string, message: string, extra: Omit<TrashError, 'code' | 'message'> = {}): TrashFailure {
   return { ok: false, error: { code, message, ...extra } }
 }
@@ -178,83 +182,15 @@ function fromIo(error: IoFailure, message: string, extra: Omit<TrashError, 'code
   return { ok: false, error: { code: error.code, message, io: error, ...extra } }
 }
 
-/** Absolute path of a project-relative path; forward slashes are the wire form. */
-function absolute(root: string, relativePath: string): string {
-  return join(root, ...relativePath.split('/'))
-}
-
-/**
- * The project-relative form of a path, or `undefined` when it names something
- * that is not a plain file inside the project (`..`, an absolute path, an empty
- * segment). `io.ts` re-checks this for the copy; the source is read directly, so
- * it is checked here.
- */
-function relativeInput(value: string): string | undefined {
-  if (typeof value !== 'string' || value.trim() === '') return undefined
-  const normalised = value.replaceAll('\\', '/').replace(/^\/+/, '')
-  const segments = normalised.split('/')
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return undefined
-  if (/^[A-Za-z]:/.test(normalised)) return undefined
-  return normalised
-}
-
-interface ManifestRead {
-  ok: true
-  entries: TrashEntry[]
-  exists: boolean
-}
-
-function readManifest(root: string): ManifestRead | TrashFailure {
-  const file = absolute(root, TRASH_MANIFEST_RELATIVE)
-  if (!existsSync(file)) return { ok: true, entries: [], exists: false }
-
-  let text: string
-  try {
-    text = readFileSync(file, 'utf8')
-  } catch (cause) {
-    return refuse('TRASH_MANIFEST_INVALID', `the recovery-bin manifest could not be read: ${String(cause)}`, {
-      root,
-      path: TRASH_MANIFEST_RELATIVE,
-    })
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return refuse('TRASH_MANIFEST_INVALID', `${TRASH_MANIFEST_RELATIVE} is not JSON`, {
-      root,
-      path: TRASH_MANIFEST_RELATIVE,
-      hint: 'the bin is left untouched on purpose: move the broken file aside to start a fresh manifest',
-    })
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return refuse('TRASH_MANIFEST_INVALID', `${TRASH_MANIFEST_RELATIVE} is not a JSON object`, { root, path: TRASH_MANIFEST_RELATIVE })
-  }
-  const record = parsed as Record<string, unknown>
-  if (record['schemaVersion'] !== TRASH_SCHEMA_VERSION) {
-    return refuse('TRASH_MANIFEST_INVALID', `${TRASH_MANIFEST_RELATIVE} has schemaVersion ${String(record['schemaVersion'])}; this build writes ${TRASH_SCHEMA_VERSION}`, {
-      root,
-      path: TRASH_MANIFEST_RELATIVE,
-    })
-  }
-  const rawEntries = record['entries']
-  if (!Array.isArray(rawEntries)) {
-    return refuse('TRASH_MANIFEST_INVALID', `${TRASH_MANIFEST_RELATIVE} has no \`entries\` array`, { root, path: TRASH_MANIFEST_RELATIVE })
-  }
-
-  const entries: TrashEntry[] = []
-  for (const raw of rawEntries) {
-    const entry = readEntry(raw)
-    if (entry === undefined) {
-      return refuse('TRASH_MANIFEST_INVALID', `${TRASH_MANIFEST_RELATIVE} holds an entry that cannot be restored (missing or mistyped field)`, {
-        root,
-        path: TRASH_MANIFEST_RELATIVE,
-      })
-    }
-    entries.push(entry)
-  }
-  return { ok: true, entries, exists: true }
+/** The bin's manifest, as the shared reader in `private-manifest.ts` needs it. */
+const TRASH_MANIFEST: PrivateManifestSpec<TrashEntry> = {
+  relative: TRASH_MANIFEST_RELATIVE,
+  schemaVersion: TRASH_SCHEMA_VERSION,
+  invalidCode: 'TRASH_MANIFEST_INVALID',
+  label: 'the recovery-bin manifest',
+  entryProblem: 'holds an entry that cannot be restored (missing or mistyped field)',
+  brokenHint: 'the bin is left untouched on purpose: move the broken file aside to start a fresh manifest',
+  parse: readEntry,
 }
 
 /** One manifest row, or `undefined` when any field is missing or mistyped. */
@@ -275,19 +211,17 @@ function readEntry(raw: unknown): TrashEntry | undefined {
   // restored, and would let a hand-edited manifest point anywhere. A path inside
   // `.inkflow/` is refused for a second reason: restoring it would drop a file
   // into the plugin's own state directory, where `listTrash` never looks again.
-  if (relativeInput(originalPath) !== originalPath) return undefined
+  if (plainRelativePath(originalPath) !== originalPath) return undefined
   if (isPrivateStatePath(originalPath)) return undefined
   return { id, originalPath, deletedAt, bytes, sha256, reason }
 }
 
-function writeManifest(root: string, entries: readonly TrashEntry[]): { ok: true } | TrashFailure {
-  const written = writeJsonAtomic(root, TRASH_MANIFEST_RELATIVE, { schemaVersion: TRASH_SCHEMA_VERSION, entries })
-  if (!written.ok) {
-    return fromIo(written.error, `the recovery-bin manifest could not be written: ${written.error.message}`, {
-      path: TRASH_MANIFEST_RELATIVE,
-    })
-  }
-  return { ok: true }
+function readManifest(root: string): PrivateManifestRead<TrashEntry> | PrivateManifestFailure {
+  return readPrivateManifest(root, TRASH_MANIFEST)
+}
+
+function writeManifest(root: string, entries: readonly TrashEntry[]): { ok: true } | PrivateManifestFailure {
+  return writePrivateManifest(root, TRASH_MANIFEST, entries)
 }
 
 /**
@@ -336,7 +270,7 @@ function pruneEmptyBinDirs(root: string, fileRelativePath: string): void {
  */
 export function trashFile(projectRoot: string, input: TrashFileInput): TrashFileResult {
   const root = resolve(projectRoot)
-  const sourcePath = relativeInput(input.path)
+  const sourcePath = plainRelativePath(input.path)
   if (sourcePath === undefined) {
     return refuse('PATH_INVALID', `${String(input.path)} is not a project-relative file path`, { root, nothingWritten: true })
   }
@@ -348,7 +282,7 @@ export function trashFile(projectRoot: string, input: TrashFileInput): TrashFile
     })
   }
 
-  const sourceFile = absolute(root, sourcePath)
+  const sourceFile = absoluteOf(root, sourcePath)
   if (!existsSync(sourceFile)) {
     return refuse('TRASH_SOURCE_NOT_FOUND', `${sourcePath} does not exist`, { root, path: sourcePath, nothingWritten: true })
   }
@@ -363,10 +297,10 @@ export function trashFile(projectRoot: string, input: TrashFileInput): TrashFile
       nothingWritten: true,
     })
   }
-  const sha256 = digest(bytes)
+  const sha256 = digestBytes(bytes)
   const text = bytes.toString('utf8')
   // Invariant 3: the copy has to survive the text writer unchanged.
-  if (digest(Buffer.from(text, 'utf8')) !== sha256) {
+  if (digestBytes(Buffer.from(text, 'utf8')) !== sha256) {
     return refuse('TRASH_COPY_MISMATCH', `${sourcePath} is not valid UTF-8, so a byte-exact copy cannot be made through the text writer`, {
       root,
       path: sourcePath,
@@ -385,7 +319,7 @@ export function trashFile(projectRoot: string, input: TrashFileInput): TrashFile
   // whose entry was dropped by hand: the slot is occupied either way.
   const trashPath = privateStateRelative('trash', sourcePath)
   const occupant = open.entries.find((entry) => entry.originalPath === sourcePath)
-  if (occupant !== undefined || existsSync(absolute(root, trashPath))) {
+  if (occupant !== undefined || existsSync(absoluteOf(root, trashPath))) {
     return refuse('TRASH_ENTRY_EXISTS', `${sourcePath} already has an entry in the recovery bin`, {
       root,
       path: sourcePath,
@@ -404,7 +338,7 @@ export function trashFile(projectRoot: string, input: TrashFileInput): TrashFile
   // Invariant 2: prove the copy before the original is touched.
   let copyHash: string
   try {
-    copyHash = digest(readFileSync(absolute(root, trashPath)))
+    copyHash = digestBytes(readFileSync(absoluteOf(root, trashPath)))
   } catch (cause) {
     removeProjectFile(root, trashPath)
     return refuse('TRASH_COPY_MISMATCH', `the recovery-bin copy could not be read back: ${String(cause)}`, {
@@ -471,7 +405,7 @@ export function undoTrashFile(projectRoot: string, id: string): { ok: boolean; e
   const entry = open.entries.find((candidate) => candidate.id === id)
   if (entry === undefined) return { ok: true }
   const trashPath = privateStateRelative('trash', entry.originalPath)
-  if (existsSync(absolute(root, trashPath))) {
+  if (existsSync(absoluteOf(root, trashPath))) {
     const removed = removeProjectFile(root, trashPath)
     if (!removed.ok) return { ok: false, error: { message: removed.error.message } }
   }
@@ -492,7 +426,7 @@ export function listTrash(projectRoot: string): TrashListResult {
   if (!open.ok) return open
   const entries: TrashEntryView[] = open.entries.map((entry) => {
     const trashPath = privateStateRelative('trash', entry.originalPath)
-    return { ...entry, trashPath, present: existsSync(absolute(root, trashPath)) }
+    return { ...entry, trashPath, present: existsSync(absoluteOf(root, trashPath)) }
   })
   return {
     ok: true,
@@ -532,7 +466,7 @@ export function restoreTrash(projectRoot: string, input: RestoreInput): RestoreR
   }
 
   const trashPath = privateStateRelative('trash', entry.originalPath)
-  const copyFile = absolute(root, trashPath)
+  const copyFile = absoluteOf(root, trashPath)
   if (!existsSync(copyFile)) {
     return refuse('TRASH_COPY_MISSING', `the copy of ${entry.originalPath} is gone from the bin`, {
       root,
@@ -552,7 +486,7 @@ export function restoreTrash(projectRoot: string, input: RestoreInput): RestoreR
       nothingWritten: true,
     })
   }
-  if (digest(bytes) !== entry.sha256) {
+  if (digestBytes(bytes) !== entry.sha256) {
     return refuse('TRASH_COPY_CHANGED', `the copy of ${entry.originalPath} no longer matches the hash recorded when it was deleted`, {
       root,
       path: trashPath,
@@ -560,7 +494,7 @@ export function restoreTrash(projectRoot: string, input: RestoreInput): RestoreR
       nothingWritten: true,
     })
   }
-  if (existsSync(absolute(root, entry.originalPath))) {
+  if (existsSync(absoluteOf(root, entry.originalPath))) {
     return refuse('RESTORE_TARGET_EXISTS', `${entry.originalPath} exists again, so the bin will not overwrite it`, {
       root,
       path: entry.originalPath,
@@ -579,7 +513,7 @@ export function restoreTrash(projectRoot: string, input: RestoreInput): RestoreR
     })
   }
 
-  const restoredHash = digest(readFileSync(absolute(root, entry.originalPath)))
+  const restoredHash = digestBytes(readFileSync(absoluteOf(root, entry.originalPath)))
   if (restoredHash !== entry.sha256) {
     removeProjectFile(root, entry.originalPath)
     return refuse('TRASH_RESTORE_MISMATCH', `the restored ${entry.originalPath} does not match the deleted bytes`, {
@@ -631,7 +565,7 @@ export function purgeTrash(projectRoot: string, input: PurgeInput): PurgeResult 
   }
 
   const trashPath = privateStateRelative('trash', entry.originalPath)
-  if (existsSync(absolute(root, trashPath))) {
+  if (existsSync(absoluteOf(root, trashPath))) {
     const removed = removeProjectFile(root, trashPath)
     if (!removed.ok) {
       return fromIo(removed.error, `the copy of ${entry.originalPath} could not be removed: ${removed.error.message}`, {

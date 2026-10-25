@@ -77,6 +77,15 @@ export interface ReviewValue {
   readonly recordDir: string
   readonly runCount: number
   readonly runs: readonly ReviewRunRow[]
+  /**
+   * How many runs the page shows before folding (#199), as the Host declared it.
+   *
+   * It is a field rather than a constant here on purpose: `REVIEW_LIST_LIMIT` is the Host's
+   * number, and a second copy in the panel is how the two drift into disagreeing about what
+   * the fold is counting. `0` means "the Host did not say" — the page then shows every row
+   * it was handed and offers no fold.
+   */
+  readonly foldLimit: number
   readonly selectedRunId: string
   readonly selectedReviewer: string
   readonly selectedCreatedAt: string
@@ -121,6 +130,7 @@ export const EMPTY_REVIEW: ReviewValue = {
   recordDir: '',
   runCount: 0,
   runs: [],
+  foldLimit: 0,
   selectedRunId: '',
   selectedReviewer: '',
   selectedCreatedAt: '',
@@ -272,6 +282,7 @@ export function readReviewValue(raw: unknown): ReviewValue {
         scores: Object.keys(asRecord(row['scores'])).length === 0 ? null : (asRecord(row['scores']) as Record<string, number>),
       }
     }),
+    foldLimit: num(root['foldLimit']),
     selectedRunId: str(selected['runId']),
     selectedReviewer: str(selected['reviewer']),
     selectedCreatedAt: str(selected['createdAt']),
@@ -344,6 +355,45 @@ export function statusLabel(status: string): string {
   if (status === 'failed') return '失败'
   if (status === 'skipped') return '跳过'
   return '完成'
+}
+
+/** The run list split at the fold (#199). */
+export interface ReviewRunSplit {
+  /** The rows the first screen shows — the last `foldLimit` runs, newest first. */
+  readonly recent: readonly ReviewRunRow[]
+  /** The rows behind the fold; empty until the page has been asked for more. */
+  readonly older: readonly ReviewRunRow[]
+  /**
+   * How many runs sit behind the fold, whether or not they have been loaded yet. This is
+   * what the "更早的 N 次运行" row prints, so a folded page can say how much it is hiding
+   * without fetching it.
+   */
+  readonly olderCount: number
+}
+
+/**
+ * Split the run list at the fold the Host declared (#199).
+ *
+ * Why the boundary is `foldLimit` and not `runs.length`: when the fold opens the panel asks
+ * for a bigger page, so `runs.length` grows and would move its own boundary — the fold row
+ * would keep saying "更早的 N 次" for the rows it just revealed. The Host's number does not
+ * move, which is what makes the row disappear exactly when everything is shown.
+ *
+ * A `foldLimit` of `0` means the Host did not declare one: the page then shows what it has
+ * and hides nothing, which is the only safe reading of "unknown" here.
+ */
+export function splitRuns(view: {
+  readonly runCount: number
+  readonly foldLimit: number
+  readonly runs: readonly ReviewRunRow[]
+}): ReviewRunSplit {
+  const limit = view.foldLimit > 0 ? Math.min(view.foldLimit, view.runs.length) : view.runs.length
+  const olderCount = view.foldLimit > 0 ? Math.max(view.runCount - view.foldLimit, 0) : 0
+  return {
+    recent: view.runs.slice(0, limit),
+    older: view.runs.slice(limit),
+    olderCount,
+  }
 }
 
 export function dimensionLabel(dimension: string, label: string): string {

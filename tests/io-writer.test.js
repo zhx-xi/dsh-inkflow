@@ -505,15 +505,16 @@ test('io: the write lock file itself is not a writable target', () => {
   }
 })
 
-test('io: the private state directory is writable only inside its six subdirectories', () => {
+test('io: the private state directory is writable only inside its eight subdirectories', () => {
   const dir = workdir()
   try {
     const root = project(dir)
 
     // ADR-0012 / roadmap X-9, X-18, X-25: exactly trash/ backup/ audit/ candidates/
-    // proposals/ jobs/, one segment deeper than a content directory because the file
-    // lives inside the subdirectory.
-    for (const sub of ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs']) {
+    // proposals/ jobs/ review/ purged/ — one segment deeper than a content directory
+    // because the file lives inside the subdirectory. `purged/` is #199's holding area
+    // (ADR-0026): a closed list, and widening it stays an explicit decision.
+    for (const sub of ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs', 'review', 'purged']) {
       const resolved = resolveWriteTarget(root, `.inkflow/${sub}/chapters/vol-01/0001-a.md`)
       assert.equal(resolved.ok, true, `.inkflow/${sub}/ must be writable`)
       assert.equal(resolved.target.dir, '.inkflow')

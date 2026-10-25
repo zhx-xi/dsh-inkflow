@@ -296,6 +296,10 @@ export function buildReviewList(
         recordDir: reviewDirOf(chapter.id),
         runCount: listed.runs.length,
         runs: listed.runs.slice(0, limit).map((run) => reviewRunSummary(run)),
+        // #199: the fold boundary travels WITH the page. The panel draws "更早的 N 次运行"
+        // past this number, so `limit` (a bigger page) must not move it — otherwise opening
+        // the fold would push its own boundary and the count would never reach zero.
+        foldLimit: REVIEW_LIST_LIMIT,
         truncated: listed.runs.length > limit,
         skippedFiles: listed.skippedFiles,
         selected: selected === undefined ? null : reviewRunWire(selected),

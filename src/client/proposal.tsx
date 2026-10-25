@@ -32,8 +32,10 @@ import {
   PROPOSAL_NOTE,
   applyActionLabel,
   applyBlocked,
+  cleanable,
   confirmPayload,
   decidePayload,
+  describeClosedGroup,
   describeCounts,
   describeHunk,
   describeOutcome,
@@ -45,8 +47,23 @@ import {
   readProposalPage,
   rollbackActionLabel,
   rollbackBlocked,
+  splitProposals,
 } from './proposal-model.js'
 import type { Decision, HunkRow, ProposalPage, ProposalRow } from './proposal-model.js'
+import {
+  PURGED_PATH,
+  PURGE_CLEAN_PATH,
+  PURGE_RESTORE_PATH,
+  cleanActionLabel,
+  cleanPayload,
+  describePurgedError,
+  describePurgedFailure,
+  purgedFor,
+  readPurgedValue,
+  restorePayload,
+} from './purge-model.js'
+import { PurgeCard } from './purge-card.js'
+import { ClosedProposalGroup, ProposalListItem } from './proposal-closed.js'
 
 const bodyStyle = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)', gap: 10, minHeight: 0 } as const
 
@@ -132,24 +149,6 @@ interface RollbackOk {
   readonly backup?: string
 }
 
-/** One proposal in the left column. The rows come from the pure model, not from the wire. */
-function ProposalListItem(props: {
-  readonly row: ProposalRow
-  readonly active: boolean
-  readonly onSelect: () => void
-}) {
-  const { row, active, onSelect } = props
-  return (
-    <button type="button" style={active ? activeSelectStyle : selectButtonStyle} onClick={onSelect}>
-      <span style={{ ...mono, display: 'block' }}>{row.proposalId}</span>
-      <span style={{ display: 'block', fontWeight: 600 }}>{row.title === '' ? row.path : row.title}</span>
-      <span style={{ ...muted, display: 'block' }}>
-        {describeProposalStatus(row.status)} · {describeCounts(row.counts)}
-      </span>
-    </button>
-  )
-}
-
 /** One hunk: the address, the removed lines, the added lines, and the two verdict buttons. */
 function HunkCard(props: {
   readonly hunk: HunkRow
@@ -216,6 +215,10 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
   const [busy, setBusy] = useState(false)
   /** Which destructive action is armed; the second click sends `confirm: true`. */
   const [armed, setArmed] = useState<'apply' | 'rollback' | null>(null)
+  /** #199: the finished proposals' fold, the cleanup being confirmed, and the purge area. */
+  const [closedOpen, setClosedOpen] = useState(false)
+  const [armedClean, setArmedClean] = useState<string | null>(null)
+  const [purgedResult, setPurgedResult] = useState<InternalResult<unknown> | null>(null)
   const [message, setMessage] = useState('')
   const scrollBox = useScrollBox()
 
@@ -319,6 +322,44 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
     refresh()
   }, [selected, sessionId, refresh])
 
+  // The purge area (#199). Read on every refresh, so a cleanup or a restore is reflected
+  // without the author having to guess whether it worked.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      const result = await fetchInternal<unknown>(PURGED_PATH, { sessionId })
+      if (!live) return
+      setPurgedResult(result)
+    })()
+    return () => {
+      live = false
+    }
+  }, [sessionId, reload])
+
+  /** Move one finished proposal into the area (the second click is what sends `confirm: true`). */
+  const clean = useCallback(
+    async (proposalId: string) => {
+      setBusy(true)
+      const result = await writeInternal<unknown>(PURGE_CLEAN_PATH, cleanPayload('proposal', proposalId), { sessionId })
+      setMessage(result.ok ? '已搬进回收区（.inkflow/purged/）：可以还原，章节字节没动。' : describePurgedFailure(result))
+      setBusy(false)
+      setArmedClean(null)
+      refresh()
+    },
+    [sessionId, refresh],
+  )
+
+  const restore = useCallback(
+    async (id: string) => {
+      setBusy(true)
+      const result = await writeInternal<unknown>(PURGE_RESTORE_PATH, restorePayload(id), { sessionId })
+      setMessage(result.ok ? '已从回收区还原到原路径。' : describePurgedFailure(result))
+      setBusy(false)
+      refresh()
+    },
+    [sessionId, refresh],
+  )
+
   const onApplyClick = useCallback(() => {
     if (applyReason !== null) return
     if (armed === 'apply') {
@@ -346,6 +387,26 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
         ? (page.error ?? '提案答案读不懂')
         : null
 
+  // #199: the first screen shows what still needs a decision; finished proposals fold away and
+  // are the only cleanable ones. `split` is also what `describeTotals` counts, so the header and
+  // the column cannot disagree.
+  const split = useMemo(() => splitProposals(page), [page])
+  const purgedView = useMemo(() => readPurgedValue(purgedResult?.ok === true ? purgedResult.value : undefined), [purgedResult])
+  const purgedProposals = useMemo(() => purgedFor(purgedView, 'proposal'), [purgedView])
+  const purgedError = describePurgedError(purgedResult)
+
+  const onCleanClick = useCallback(
+    (proposalId: string) => {
+      if (armedClean === proposalId) {
+        void clean(proposalId)
+        return
+      }
+      setArmedClean(proposalId)
+      setMessage('再点一次「确认清理」才会把它搬进回收区（可还原）。')
+    },
+    [armedClean, clean],
+  )
+
   return (
     <div style={scrollBox.style}>
       <div style={bodyStyle}>
@@ -367,8 +428,13 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
                 提案由会话里的模型写成正文草稿后存下来：对 AI 说「把第 3 章改一遍」，它会调用 inkflow_proposal_create。
               </div>
             </div>
+          ) : split.open.length === 0 ? (
+            <div style={cardStyle}>
+              <div>没有待决定的提案。</div>
+              <div style={{ ...muted, marginTop: 4 }}>已应用/已回滚的提案都在下面的「{describeClosedGroup(split)}」里，可逐条查看或清理。</div>
+            </div>
           ) : (
-            page.rows.map((row) => (
+            split.open.map((row) => (
               <ProposalListItem
                 key={row.proposalId}
                 row={row}
@@ -381,6 +447,32 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
               />
             ))
           )}
+          {split.closedCount === 0 ? null : (
+            <ClosedProposalGroup
+              split={split}
+              open={closedOpen}
+              selected={selected}
+              armedClean={armedClean}
+              busy={busy}
+              onToggle={() => setClosedOpen(!closedOpen)}
+              onSelect={(proposalId) => {
+                setSelected(proposalId)
+                setArmed(null)
+                setMessage('')
+              }}
+              onClean={onCleanClick}
+            />
+          )}
+          <PurgeCard
+            title="已清理的提案"
+            entries={purgedProposals}
+            error={purgedError}
+            busy={busy}
+            note="清理掉的提案不占首屏，但没删：还原后它会重新出现在「已结束」组里。"
+            onRestore={(id) => {
+              void restore(id)
+            }}
+          />
         </div>
         <div style={columnStyle}>
           {phaseMessage === null ? null : <div style={cardStyle}>{phaseMessage}</div>}

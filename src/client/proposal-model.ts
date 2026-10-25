@@ -291,12 +291,64 @@ export function describeCounts(counts: ProposalCounts): string {
   return `共 ${String(counts.total)} 段：待定 ${String(counts.pending)} · 接受 ${String(counts.accepted)} · 拒绝 ${String(counts.rejected)}`
 }
 
-/** `5 个提案：待决定 3 · 已应用 1 · 已回滚 1` */
+/** The proposal list split at "still waiting on the author" vs "finished" (#199). */
+export interface ProposalSplit {
+  /** What the first screen shows: proposals that still need a decision. */
+  readonly open: readonly ProposalRow[]
+  /** `applied` + `rolled-back`: behind the fold, still openable, and the only cleanable ones. */
+  readonly closed: readonly ProposalRow[]
+  /** How many are finished **in the book**, which is not `closed.length` on a truncated page. */
+  readonly closedCount: number
+  readonly openCount: number
+  readonly applied: number
+  readonly rolledBack: number
+}
+
+/**
+ * Split the inbox at the fold (#199).
+ *
+ * Two sources agree by construction: when the page holds the whole book the counts are the
+ * rows' own, and when it does not (`truncated`) they come from the Host's full-population
+ * `counts` — never from the rows, because a header that says "待决定 0" while the book has
+ * three undecided proposals is worse than one that admits it only listed part of them.
+ *
+ * This is the fix for the old defect the issue names: `describeTotals` counted one thing and
+ * the list drew another, so the header and the column could disagree about the same book.
+ */
+export function splitProposals(page: ProposalPage): ProposalSplit {
+  const open = page.rows.filter((row) => row.status === 'open')
+  const closed = page.rows.filter((row) => row.status !== 'open')
+  const appliedFromRows = closed.filter((row) => row.status === 'applied').length
+  const rolledBackFromRows = closed.filter((row) => row.status === 'rolled-back').length
+  const applied = page.truncated ? page.applied : appliedFromRows
+  const rolledBack = page.truncated ? page.rolledBack : rolledBackFromRows
+  return {
+    open,
+    closed,
+    openCount: page.truncated ? page.open : open.length,
+    applied,
+    rolledBack,
+    closedCount: applied + rolledBack,
+  }
+}
+
+/** `5 个提案：待决定 3 · 已结束 2（已应用 1 · 已回滚 1）`, from the same split the list draws. */
 export function describeTotals(page: ProposalPage): string {
-  const open = page.open === 0 && page.applied === 0 && page.rolledBack === 0 ? page.rows.length : page.open
-  const applied = page.applied
-  const rolledBack = page.rolledBack
-  return `${String(page.total)} 个提案：待决定 ${String(open)} · 已应用 ${String(applied)} · 已回滚 ${String(rolledBack)}`
+  const split = splitProposals(page)
+  const head =
+    `${String(page.total)} 个提案：待决定 ${String(split.openCount)} · 已结束 ${String(split.closedCount)}` +
+    `（已应用 ${String(split.applied)} · 已回滚 ${String(split.rolledBack)}）`
+  return page.truncated ? `${head} · 本页列出 ${String(page.rows.length)} 个` : head
+}
+
+/** `已结束（2）` — the fold's label, so the number is on the row that hides them. */
+export function describeClosedGroup(split: ProposalSplit): string {
+  return `已结束（${String(split.closedCount)}）`
+}
+
+/** Whether a row may be cleaned up: only what the author has finished with (#199). */
+export function cleanable(status: string): boolean {
+  return status === 'applied' || status === 'rolled-back'
 }
 
 /** The row the page should select first: the newest open proposal, else the newest. */
