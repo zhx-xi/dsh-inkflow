@@ -89,7 +89,7 @@ export type {
   BriefTrimRecord,
   WritingBrief,
 } from './writing-context.js'
-export { charactersInChapter, voiceInChapter } from './brief-sources.js'
+export { MAX_TAGGED_CHARS, charactersInChapter, voiceInChapter } from './brief-sources.js'
 export type { BriefCastSource, BriefPackedText } from './brief-sources.js'
 export {
   BRIEF_AUDIT_FORMAT,

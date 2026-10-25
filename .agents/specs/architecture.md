@@ -348,7 +348,7 @@
 
 `briefFor(root, opts)` 是这一段的唯一取数入口（#183 起走简报；`buildWritingContext(root, opts)` 是同一批段渲染器的六段装配，`tests/prompt.test.js` 拿它与简报逐段对拍等价性）：两者都是纯投影（无缓存，除门禁文档化的 `index/` 自愈外无副作用）。取数规则集中在 `writing-sources.ts` / `brief-sources.ts`（同步、失败即「缺这一段」），装配在 `prompt.ts`，section 回调只做「取 cwd → build → 返回 text」，所以测试直接断言纯函数。`briefFor` 额外带进程内计数（`runs` / `overBudgetRuns` / `last`），由 `inkflow_diagnostics_export` 读走——**注入侧**的裁剪因此可测、可观测，不只是预览侧。
 
-不在范围内：`promise`（承诺书）与 `anchors`（场景锚点）的**数据来源**（[#213](https://github.com/zhx-xi/dsh-inkflow/issues/213)：由会话里的模型产出，插件只组装；在此之前这两段如实记 `missing: true`）、简报页的编辑能力。
+`promise`（承诺书）与 `anchors`（场景锚点）的取数自 #213 起落在**本章大纲节点的两个标签行**（`- [承诺] …` / `- [锚点] …`，见 [S-03 §3.5](conventions.md)）：`brief-sources.ts` 的 `taggedOutlineSegment()` 复用情节点解析器，没有标签即 `missing: true`，不跨章借用、不从角色卡兜底。不在范围内：简报页的编辑能力（这两段由作者在 `outlines/` 里手写，插件只读）。
 
 ### 4.8 构建标识与 stale 检测 — `src/host/build-info.ts`
 
