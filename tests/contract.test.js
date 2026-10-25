@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the thirty-six built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the forty built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -264,6 +264,12 @@ test('registers the thirty-six built-ins, the tools of every registered domain, 
       'inkflow_project_plan',
       'inkflow_project_repair',
       'inkflow_project_status',
+      // #45: proposals — create / decide / apply / rollback. Built-ins: a proposal belongs to
+      // no content directory and its only write path is the chapter writer.
+      'inkflow_proposal_apply',
+      'inkflow_proposal_create',
+      'inkflow_proposal_decide',
+      'inkflow_proposal_rollback',
       'inkflow_relation_clues',
       'inkflow_relation_list',
       'inkflow_relation_upsert',

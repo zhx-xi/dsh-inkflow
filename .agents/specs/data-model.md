@@ -268,6 +268,55 @@ origin:
 
 **副本与 `chapter`/`world` 等实体一样是普通文件**：索引不为它建表，也不复制 `origin` 进索引；"这本书有哪些副本、哪条落后"由 `buildSharedCopies` 扫文件头得出（`shared-copy.ts`），与 [ADR-0005](../adrs/0005-files-first-with-derived-index.md) 的"文件是真相"一致。
 
+### 3.8 提案目录 `.inkflow/proposals/<proposalId>/`
+
+**提案是工作物，不是实体、不是派生物**（[ADR-0023](../adrs/0023-proposal-job-private-placement.md) D1/D5）：它是一份**等作者逐段点头的正文草稿**，删了就没了（产出它的模型调用不可复现），所以落在 `.inkflow/` 而不在 `index/`，也**不进索引**（没有表、没有列，`INDEX_SCHEMA_VERSION` 不因它动）。
+
+```
+<book>/.inkflow/proposals/
+  pr-1a2b3c4d/                 # proposalId = 'pr-' + 8 位十六进制，由插件发放
+    meta.json                  # 一章、一份基线、一张段表
+    hunks/
+      1.json                   # 一段（序号从 1 起，与 meta.hunks[].index 对齐）
+      2.json
+```
+
+`meta.json`（`schemaVersion: 1`；字段值非法即整份拒绝，绝不猜测）：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `proposalId` | string | `pr-<8 hex>`；目录名与它一致 |
+| `chapterId` | string | 章节的持久 id（`chapters.ts` 的口径：frontmatter `id`，否则项目相对路径） |
+| `path` | string | 提案成立时该章的**项目相对路径**；决定时按它取指纹，`apply` 也按它做 CAS |
+| `title` | string | 章标题（面板显示用，读不到时回落 `path`） |
+| `createdAt` | string | ISO 时间。提案是工作物，允许带时间戳（与门禁结论文件相反） |
+| `source` | object | `{kind:'revised-body', label, note?}`：谁产出的修订正文（`session-model` / 技能名 / 作者名）。**插件不产生正文**（X-26） |
+| `base` | object | `{bytes, sha256, lines, eol, bom}`：提案**成立那一刻**的章文件指纹与正文行数/风格；`eol`/`bom` 让面板能说清"这份文件是 CRLF 还是 LF"（ADR-0016） |
+| `revised` | object | `{lines, bytes}`：修订正文的行数与字节数 |
+| `hunks[]` | array | 段表：`{index, kind, baseStart, baseLines, nextLines, file}`；`baseStart` 是 0 基行号，这里的 `baseLines`/`nextLines` 是**行数**（正文在段文件里） |
+| `counts` | object | `{total, pending, accepted, rejected}`：写入时与段文件的状态**同一次**计算，避免两处漂移 |
+| `status` | string | `open` → `applied` → `rolled-back`；`applied`/`rolled-back` 都不可再推进（要改就新建提案） |
+| `decision` | object \| null | `{at, baseline:{size, mtimeMs, sha256}, counts}`：作者做决定那一刻的章文件指纹。**`apply` 的 CAS 基线取自这里**，不是执行瞬间重算的（[ADR-0021](../adrs/0021-candidate-duplicate-and-overwrite.md)：执行瞬间的摘要在定义上永远等于当前文件，作者在两次点击之间的手工修改会被无声覆盖） |
+| `apply` | object \| null | `{at, backup, before, after, accepted[]}`：`backup` 是 `.inkflow/backup/<stamp>`（`kind: 'replace'`），`before`/`after` 是逐字节摘要 |
+| `rollback` | object \| null | `{at, backup, verified, restored[]}`：`verified` 只有在回读摘要等于 `apply.before` 时才为 true |
+
+`hunks/<n>.json`（`schemaVersion: 1`）：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `proposalId` | string | 归属校验：段文件不属于这份提案就整份拒绝 |
+| `index` | number | ≥1，与 `meta.hunks[].index` 对应 |
+| `kind` | `'replace' \| 'insert' \| 'delete'` | 段类型；`insert` 的 `baseLines` 为空、`delete` 的 `nextLines` 为空 |
+| `baseStart` | number | 0 基行号，指向 `base` 正文里的位置 |
+| `baseLines` / `nextLines` | string[] | 原文行与修订行（按行切，绝不按字符切：中文按字符切会把词切成两半） |
+| `status` | `'pending' \| 'accepted' \| 'rejected'` | 作者对该段的裁决。**段文件是状态的唯一真相**，`meta.counts` 只是它的汇总 |
+
+三条不变量（脚本用例各断言一条）：
+
+1. **未确认的提案零内容目录写盘**：`create` 与 `decide` 之后 `chapters/`、`characters/`… 全部逐字节不变，`index/` 除 `.gitkeep`/`*.db*` 外无新增；越界写被 `resolveWriteTarget` 的白名单拒（ADR-0023 D4）。
+2. **`apply` 只写"已接受"的段**：被拒绝的段一个字节都不进文件——重建正文时用 `baseLines`，不写 `nextLines`。
+3. **`apply` 可回滚且逐字节一致**：`apply` 前先开 `replace` 备份包（`backup.ts`，ADR-0012 #1），回滚走 `rollbackBackup`（`verbatim: true`，BOM/CRLF 保留），并用摘要回读证明"一致"而不是"同一段话"。
+
 ## 4. 派生索引（`index/inkflow.db`）
 
 ### 4.1 v9（现行，`PRAGMA user_version = 9`）

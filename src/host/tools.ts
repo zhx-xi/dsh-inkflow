@@ -47,6 +47,7 @@ import { sharedRootOf } from './settings.js'
 import { buildSharedCopies, copySharedEntry, updateSharedEntry } from './shared-copy.js'
 import { etlTools } from './etl-tools.js'
 import { reviewTools } from './review-tools.js'
+import { proposalTools } from './proposal-tools.js'
 
 export interface ToolDeps {
   ctx: HostContext
@@ -2237,6 +2238,10 @@ export function buildTools(deps: ToolDeps, modules: readonly DomainModule[] = DO
     // directories and writes a run record under `.inkflow/review/`, so no content
     // directory owns it, and the plugin embeds no model client to produce the opinions.
     ...reviewTools(deps),
+    // Proposals (#45, ADR-0023, X-26): create / decide / apply / rollback. A built-in rather
+    // than a domain tool — a proposal is not an entity, belongs to no content directory, and
+    // its one write path is the chapter writer, which no domain module owns.
+    ...proposalTools(deps),
     // Domain modules own their own `inkflow_*` tools (roadmap §2.1 X-5): a domain
     // branch adds one line to `DOMAIN_MODULES`, never to the literal above.
     ...domainTools(deps, modules),

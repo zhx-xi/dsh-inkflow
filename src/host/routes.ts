@@ -150,6 +150,13 @@ import {
   briefOptionsFromQuery,
   buildBrief,
   exportBriefAudit,
+  PROPOSAL_APPLY_BODY_FIELDS,
+  PROPOSAL_DECIDE_BODY_FIELDS,
+  PROPOSAL_ROLLBACK_BODY_FIELDS,
+  applyViaChannel as applyProposalViaChannel,
+  buildProposals,
+  decideViaChannel as decideProposalViaChannel,
+  rollbackViaChannel as rollbackProposalViaChannel,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 import { MAX_QUERY_CHARS } from './search.js'
@@ -613,6 +620,53 @@ const ROUTES: readonly InternalRoute[] = [
         { ...(chapterId === '' ? {} : { chapterId }) },
       )
     },
+  },
+  {
+    // The proposal inbox (#45, ADR-0023, X-25): what a session model has proposed as a
+    // revision of one chapter, newest first, plus one proposal's hunks when `proposalId`
+    // is given.
+    //
+    // GET-only and **read-only**: a proposal is plain JSON under `.inkflow/proposals/`,
+    // so unlike `/chapters` and `/foreshadow` this route does not call `ensureIndex` — the
+    // tab has to open on a book whose index is missing, which is exactly when a proposal
+    // is worth reading. Each hunk travels with its own `baseLines`/`nextLines`, so the
+    // page never has to fetch the chapter to draw a diff.
+    name: 'proposal',
+    pattern: /^\/proposal$/,
+    methods: ['GET'],
+    handle: ({ target, query, version }) => {
+      const proposalId = (query.get('proposalId') ?? '').trim()
+      const raw = Number(query.get('limit') ?? '')
+      return buildProposals(target, version, {
+        ...(proposalId === '' ? {} : { proposalId }),
+        ...(Number.isFinite(raw) && raw > 0 ? { limit: raw } : {}),
+      })
+    },
+  },
+  {
+    // Recording a verdict writes only the proposal's own hunk records (`contentFilesWritten: 0`
+    // in the answer), so it is a write route for the guards' sake, not because prose moves.
+    name: 'proposal-decide',
+    pattern: /^\/proposal\/decide$/,
+    methods: ['POST'],
+    body: PROPOSAL_DECIDE_BODY_FIELDS,
+    handle: ({ target, version, body }) => decideProposalViaChannel(target, version, body),
+  },
+  {
+    // Applying rewrites a chapter, so it carries every write guard plus `confirm: true`.
+    name: 'proposal-apply',
+    pattern: /^\/proposal\/apply$/,
+    methods: ['POST'],
+    body: PROPOSAL_APPLY_BODY_FIELDS,
+    handle: async ({ target, version, body }) => applyProposalViaChannel(target, version, body),
+  },
+  {
+    // Rollback replays the backup package the apply opened; also `confirm: true`.
+    name: 'proposal-rollback',
+    pattern: /^\/proposal\/rollback$/,
+    methods: ['POST'],
+    body: PROPOSAL_ROLLBACK_BODY_FIELDS,
+    handle: async ({ target, version, body }) => rollbackProposalViaChannel(target, version, body),
   },
 ]
 

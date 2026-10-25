@@ -103,6 +103,13 @@ const BUILT_IN_TOOLS = [
   ['inkflow_review_run', 'ee5e8185'],
   ['inkflow_review_context', 'f85b27ee'],
   ['inkflow_review_compare', '770ed3a2'],
+  // #45: proposals — create / decide / apply / rollback. Built-ins for the same reason as the
+  // extraction queue: a proposal is not an entity, belongs to no content directory, and its one
+  // write path is the chapter writer, which no domain module owns.
+  ['inkflow_proposal_create', '9d647000'],
+  ['inkflow_proposal_decide', 'a6f7a092'],
+  ['inkflow_proposal_apply', '0c64fabf'],
+  ['inkflow_proposal_rollback', '822d2435'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */

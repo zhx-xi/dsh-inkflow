@@ -1221,3 +1221,20 @@ export type { GateReport, GateResult } from './gate.js'
 export { buildReviewList } from './review.js'
 export { buildReviewCompare } from './review-compare.js'
 export type { ReviewOpinion, ReviewRunRecord } from './review.js'
+// ---------------------------------------------------------------------------
+// issue #45 — the proposal tab (ADR-0023 D5). The store and its four actions live in
+// `proposal.ts` / the wire in `proposal-channel.ts`. Re-exported here so `routes.ts` keeps
+// ONE entry point for the channel — the same arrangement as the bin (#35), the audit
+// (#33), the import (#37), the queue (#38) and the gate (#44).
+// ---------------------------------------------------------------------------
+
+export {
+  PROPOSAL_APPLY_BODY_FIELDS,
+  PROPOSAL_DECIDE_BODY_FIELDS,
+  PROPOSAL_ROLLBACK_BODY_FIELDS,
+  applyViaChannel,
+  buildProposals,
+  decideViaChannel,
+  rollbackViaChannel,
+} from './proposal-channel.js'
+export type { ProposalReply, ProposalSource } from './proposal-channel.js'
