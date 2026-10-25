@@ -29,6 +29,7 @@ import { readdirSync } from 'node:fs'
 import { extname, join } from 'node:path'
 
 import { parseMarkdown, stringField } from '../frontmatter.js'
+import { chapterPositionsFromProjection, relationPeriodIssues } from './relation-period.js'
 import { RELATION_DIRECTIONS, RELATION_KINDS, relationConflicts } from './relation-write.js'
 import type { RelationRow } from './relation-write.js'
 import { relationTools } from './relation-tools.js'
@@ -264,6 +265,19 @@ export const relationDomain: DomainModule = {
     for (const conflict of relationConflicts(rows)) {
       issues.push({ code: conflict.code, path: conflict.path, detail: conflict.detail })
     }
+
+    // The knowledge graph's third invariant (#188): `since`/`until` windows that cannot hold
+    // — one file contradicting itself, or two files writing two windows for one relation.
+    // Chapter order comes from the projection this validate already received (id + path +
+    // `orderIndex`), which is the same channel the ledger resolves I-23 through, so the
+    // rebuild and the write path judge one book state without a second file walk.
+    issues.push(
+      ...relationPeriodIssues(
+        rows,
+        chapterPositionsFromProjection(entities),
+        candidate === undefined ? undefined : { path: candidate.path },
+      ),
+    )
 
     // Write path: only blocking issues belong here (types.ts `DomainValidateInput`).
     if (candidate === undefined) issues.push(...legacyRelationFieldIssues(root))

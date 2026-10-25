@@ -224,15 +224,14 @@ export type { RelationEdge } from './domains/query.js'
 export { planRelationUpsert } from './domains/relation-write.js'
 
 /**
- * The knowledge graph's type vocabulary and its contradiction rule (#48).
- *
- * Exported because they are the contract a test and a panel both need: `RELATION_KINDS`
- * is what `data-model` §3.3 enumerates, and `relationConflicts` is the *one*
- * implementation of the contradictory-edge rule that both nets call (X-4) — a second
- * copy would be a second answer.
- */
+ * The knowledge graph's type vocabulary and its two contradiction rules — direction (#48) and
+ * `since`/`until` windows (#188). Exported because a test and a panel need them and each rule has
+ * one implementation every net and reader calls (X-4); the window judgement is pure arithmetic, so
+ * "1000 edges under 100 ms" is measured on the function itself (`relation-period.ts`). */
 export { RELATION_KINDS, relationConflicts } from './domains/relation-write.js'
 export type { RelationConflict } from './domains/relation-write.js'
+// Inline `type` specifiers, one line: this file sits at its recorded line budget (guard #10).
+export { chapterPositionsFromProjection, relationPeriodFindings, relationPeriodMarks, type RelationPeriodConflict, type RelationPeriodMark, type RelationPeriodUncomparable, type RelationPeriodVerdict } from './domains/relation-period.js'
 
 /** Timeline planners and views (#28): pure, so both axes are test-driven directly. */
 export {

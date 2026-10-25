@@ -170,11 +170,9 @@ export function kindLabel(kind: string): string {
 }
 
 /**
- * Wording for the validation codes the index records (`validation_issues`).
- *
- * The list is deliberately partial: an unknown code is shown VERBATIM rather
- * than folded into "其他问题", because a code the panel does not know is still
- * the most useful thing on the row (it is what the author pastes into an issue).
+ * Wording for the validation codes the index records (`validation_issues`). The list is deliberately
+ * partial: an unknown code is shown VERBATIM rather than folded into "其他问题", because a code the
+ * panel does not know is still the most useful thing on the row (the author pastes it into an issue).
  */
 export const ISSUE_LABELS: Record<string, string> = {
   FRONTMATTER_ISSUE: 'frontmatter 解析问题',
@@ -202,10 +200,9 @@ export const ISSUE_LABELS: Record<string, string> = {
   TIMELINE_TIME_INVALID: '时间线时间不合法',
   TIMELINE_TIME_REVERSED: '世界时间倒流',
   TIMELINE_ORDER_CONFLICT: '叙事次序冲突',
-  // #31 / #32 / #33 filled the codes these two families actually emit: before that the
-  // panel printed them verbatim (`FACT_CONFLICT`), which reads as a bug report rather
-  // than as a problem in the book. `FORESHADOW_OVERDUE` / `FORESHADOW_DUE_NOW` are the
-  // audit's two lateness codes (data-model §5, "仅体检期诊断").
+  // #31 / #32 / #33 filled the codes these two families actually emit: before that the panel printed
+  // them verbatim (`FACT_CONFLICT`), which reads as a bug report rather than as a problem in the book.
+  // `FORESHADOW_OVERDUE` / `FORESHADOW_DUE_NOW` are the audit's two lateness codes (data-model §5).
   FORESHADOW_RESOLVED_WITHOUT_CHAPTER: '伏笔标了已回收但没写回收章',
   FORESHADOW_TRANSITION_INVALID: '伏笔状态与历史字段矛盾',
   FORESHADOW_OVERDUE: '伏笔已超期未回收',
@@ -213,6 +210,8 @@ export const ISSUE_LABELS: Record<string, string> = {
   FACT_LINE_MALFORMED: '账本行写不成一条事实',
   FACT_CONFLICT: '账本同一属性前后矛盾',
   RELATION_FIELD_DEPRECATED: '关系文件用了废弃字段',
+  RELATION_PERIOD_CONFLICT: '关系时段互相矛盾',
+  RELATION_PERIOD_UNCOMPARABLE: '关系时段无法按章序判定',
   ID_PATH_DIVERGED: '实体 id 是改名前的老路径',
   CATALOG_STALE: '卷章目录与正文不一致',
   CATALOG_DUPLICATE: '同一章出现在两条目录项',

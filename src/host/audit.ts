@@ -107,6 +107,10 @@ const INFO_CODES: ReadonlySet<string> = new Set([
   'ID_PATH_DIVERGED',
   'TIMELINE_WORLD_TIME_REVERSED',
   'FORESHADOW_DUE_NOW',
+  // #188: a relation window whose boundary this book cannot place (a free label, or a chapter
+  // id it does not have) is "cannot say", not "says the opposite" — information for the
+  // author, never an accusation.
+  'RELATION_PERIOD_UNCOMPARABLE',
 ])
 
 /**
@@ -132,6 +136,10 @@ const HINTS: Readonly<Record<string, string>> = {
   RELATION_SELF_LOOP: '删掉自环，或把它改成两个不同实体之间的关系',
   RELATION_DUPLICATE: '删掉重复的关系文件：同 (source, target, kind) 只保留一条',
   RELATION_FIELD_DEPRECATED: '删掉废弃字段（如 direction），换成现行字段名',
+  // #188: the window rules. The hint names the one decision the tool cannot make — which of
+  // two windows is the true one — because "merge them" would silently move the relation in time.
+  RELATION_PERIOD_CONFLICT: '把这条关系的 since/until 改成成立的一段（since 早于 until）：两条边写了两套时段时，删掉错的那条或改成同一套',
+  RELATION_PERIOD_UNCOMPARABLE: '把 since/until 写成本书的章 id（世界内时间在章序里没有位置）；不打算按章算就留空，留标签只会报「无法判定」',
   FRONTMATTER_ISSUE: '修好这条 frontmatter：键值写成「键: 值」，数组写成块列表',
   ENTITIES_DRIFT: '重跑一次索引重建；仍旧漂移说明同一次 scan 的两个写入点被改坏了',
   ID_PATH_DIVERGED: '不用处理：改名后旧 id 被钉住是正常状态（ADR-0014），引用才能继续解析',

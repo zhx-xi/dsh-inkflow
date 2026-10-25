@@ -171,9 +171,11 @@
 - `direction` → `dir`：两个字段读时都接受，写时只写 `dir`。
 - 新增 `chapter`：与 [conventions.md](conventions.md) 的 `relations/` 契约一致，`since`/`until` 只表达抽象位置。
 
-**四项校验（#27 三条 + #48 一条，双侧同判）**：端点必须存在且各恰一个（`RELATION_ENDPOINT`）、禁止自环（`RELATION_SELF_LOOP`）、同 `(source, target, kind)` 不许重复（`RELATION_DUPLICATE`）、**同一对实体同类型不许方向自相矛盾**（`RELATION_CONFLICT`，#48）。
+**五项校验（#27 三条 + #48 一条 + #188 一条，双侧同判）**：端点必须存在且各恰一个（`RELATION_ENDPOINT`）、禁止自环（`RELATION_SELF_LOOP`）、同 `(source, target, kind)` 不许重复（`RELATION_DUPLICATE`）、**同一对实体同类型不许方向自相矛盾**（`RELATION_CONFLICT`，#48）、**时段必须成立**（`RELATION_PERIOD_CONFLICT`，#188）。
 
-`RELATION_CONFLICT` 的判据写死为两条，命中任一即报：① 同一无序实体对 + 同一 `kind` 出现两条 `directed` 边且方向相反（A→B 与 B→A）；② 同一无序实体对 + 同一 `kind` 两条边的 `dir` 不一致（一条 `directed`、一条 `undirected`）。判据**不含 `since`/`until` 的时段冲突**：那两个字段装自由标签（章 id **或** 世界内时间），判定「两个区间不能同时成立」需要 I-23 那套章序解析，把它做半套会报出无人能裁决的矛盾——时段冲突留给后续单（见 #48 的汇报）。
+`RELATION_CONFLICT` 的判据写死为两条，命中任一即报：① 同一无序实体对 + 同一 `kind` 出现两条 `directed` 边且方向相反（A→B 与 B→A）；② 同一无序实体对 + 同一 `kind` 两条边的 `dir` 不一致（一条 `directed`、一条 `undirected`）。方向冲突与时段冲突是**两件事**，各自报、不合并，同一条边可以两条都命中。
+
+`RELATION_PERIOD_CONFLICT` 的判据（#188，见 §5 的 I-24）写死为两条，命中任一即报：① 同一条边的 `since` 按章序**不早于** `until`——`[since, until)` 为空，含 `since == until`（两端同一章）；② 同一**无序实体对 + `kind`** 的两条边写了两套时段，既不相同、也不是在同一章「一分为二」（首尾相接的 `[a,b)` + `[b,c)` 是一次合法切分，不报；窗口完全相同属于去重/方向问题，归上面两个码）。章序解析不出的边界（自由标签如 `永平三年秋`，或本书没有的章 id）**不判矛盾**，只报 `RELATION_PERIOD_UNCOMPARABLE`（info，不阻断写入）——「说不清」不等于「说反了」。`since`/`until` 的时间轴是**章序**（§3.2.2 的「卷序 → 卷内 `seq`」，与 I-23 同一套解析，实现复用 `comparePosition()`）；世界内时间（`calendar` 的绝对日，ADR-0025）目前**不参与**这份判定，写了就落在「无法判定」里，而不是被当成章序猜一遍。
 
 ### 3.4 时间线事件 `timeline/<slug>.md`
 
@@ -467,8 +469,9 @@ origin:
 | I-21 | 伏笔状态机按 §3.2.1 的 4×4 矩阵：`planted → advanced → resolved`，任一未终态 → `overdue`；`overdue` 只可继续推进或回收（回退到 `planted` 拒）；`resolved` 是终态。文件的历史字段（`resolved` / `advancedAt`）与 `status` 矛盾同样算非法流转（§3.2.1 的两条网）。**碰撞时答案唯一**：修复器按「`resolved: true` 或 `resolvedChapter` 非空 → `resolved`；否则 `advancedAt` 非空 → `advanced`；否则 → `planted`」改写 `status` **一行**（[ADR-0015](../adrs/0015-repair-and-migration.md) D2），于是本条对这类文件是**可自动修**的；证据自相矛盾（`resolved: false` 却有 `resolvedChapter`，或 `resolved: true` 缺 `resolvedChapter`）时**不推导**，仍留给作者 | 拒 | `FORESHADOW_TRANSITION_INVALID` |
 | I-22 | 账本每行必须可解析为一条事实：`attribute` + `value` 必填，段形如 `键: 值` 且以 `\|` 分隔，值内含字面 `\|` 时写 `\|`；未知键保留不报错 | 不阻断，报行锚 `path#L<n>`（1-based） | `FACT_LINE_MALFORMED` |
 | I-23 | 同一 `subject + attribute` 的生效区间不得重叠且取值不同（`since` 含、`until` 不含；缺省 `until` = 至今成立）。区间按**章序**（`chapters.seq`）比较，不按 id 字典序；章序解析不出的边界不参与判定。**空区间不算区间**：`until <= since`（含 `until == since` 的 `[c,c)` 与写反的 `until < since`）永不成立，既不进快照也不参与冲突配对——把它当跨段比对会诬告一条永不在生效的事实 | 拒 | `FACT_CONFLICT` |
+| I-24 | 关系时段必须成立：一条边的 `since` 按章序**不得晚于** `until`（`[since, until)`，同一章＝空区间＝不成立）；同一**无序实体对 + `kind`** 的多条边不得写两套既不相同、也不是在同一章「一分为二」的时段（首尾相接合法、完全相同归 I-08 的去重/方向）。**章序与 I-23 是同一套**：卷序 → 卷内 `seq`（§3.2.2），实现复用 `comparePosition()`，不另写第二套比较。**解析不出的边界不判矛盾**：自由标签（`永平三年秋`）或本书没有的章 id 只报 `RELATION_PERIOD_UNCOMPARABLE`（info）——「说不清」不等于「说反了」；世界内时间轴（ADR-0025 的绝对日）目前不参与 | 拒（时段矛盾）；「无法判定」只报 | `RELATION_PERIOD_CONFLICT`（#188）+ `RELATION_PERIOD_UNCOMPARABLE`（info） |
 
-> I-21 由伏笔域 [`domains/foreshadowing-plan.ts`](../../src/host/domains/foreshadowing-plan.ts) 产出（写入侧与重建侧各一条网）；I-22 / I-23 由账本域 [`domains/facts.ts`](../../src/host/domains/facts.ts) 产出；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
+> I-21 由伏笔域 [`domains/foreshadowing-plan.ts`](../../src/host/domains/foreshadowing-plan.ts) 产出（写入侧与重建侧各一条网）；I-22 / I-23 由账本域 [`domains/facts.ts`](../../src/host/domains/facts.ts) 产出；I-24 由关系域 [`domains/relation-period.ts`](../../src/host/domains/relation-period.ts) 产出（重建走 `relation.ts` 的 `validate()`、写入走 `relation-tools.ts` 的同一次 `validate()`，读面 `inkflow_relation_list` / `inkflow_relation_clues` 复用同一判定给每条边打标）；`src/host/findings.ts` 的 `FINDING_CODES` 与本表由 `tests/findings.test.js` 双向对拍。
 
 > **I-04 与账本主体**：`facts/<subject>.md` 的 `subject` **有意复用**所描述主体的 id（`characters/qingyin.md` 的 `id: char-qingyin` + `facts/char-qingyin.md` 的 `subject: char-qingyin` 是标准写法），**不算违规**：账本实体不作为 id 发布——它在 `entities` 里的 id 是**文件路径**（§4.1），`subject` 只是引用字段；`entity_mentions` 也**不扫 `facts`**（账本条目没有自己的名字，`title` 就是主体名，扫了会在同一处正文双计）。
 

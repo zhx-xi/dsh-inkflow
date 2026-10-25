@@ -19,9 +19,12 @@ import { writeTextAtomic } from '../io.js'
 import { findProjectRoot } from '../project.js'
 import { sessionCwd } from '../session-cwd.js'
 import { applyCandidate } from './types.js'
-import { listRelationsFor, titlesForIds } from './query.js'
+import { chapterPlacementsForBook, listRelationsFor, titlesForIds } from './query.js'
+import type { RelationEdge } from './query.js'
+import { relationPeriodMarks } from './relation-period.js'
+import type { RelationPeriodMark } from './relation-period.js'
 import { RELATION_DIRECTIONS, RELATION_KINDS, planRelationUpsert, renderRelationFile } from './relation-write.js'
-import type { RelationRow } from './relation-write.js'
+import type { RelationKind, RelationRow } from './relation-write.js'
 import type { DomainModule, DomainToolDeps } from './types.js'
 import { readText, rowsOf } from './scan-helpers.js'
 
@@ -108,6 +111,70 @@ function relationView(row: RelationRow): Record<string, unknown> {
     until: row.until,
     chapter: row.chapter,
   }
+}
+
+/**
+ * Time-window marks for the edges a read is about to return (#188).
+ *
+ * The judgement runs on the **edges the read already has**, not on a second query: every
+ * edge that can contradict one of them joins the same `(unordered pair, kind)` bucket and
+ * therefore also touches the entity being asked about. Only a `limit` that cuts a bucket in
+ * half can hide a partner, which is why the mark is advisory and the audit reports the
+ * book-wide list.
+ *
+ * A missing index answers no marks: the callers have already refused with
+ * `INDEX_UNAVAILABLE` at that point, and inventing "no problems" for a book no one could
+ * read is the silent empty list this module exists to avoid elsewhere.
+ */
+function periodMarksOf(root: string, edges: readonly RelationEdge[]): Map<string, RelationPeriodMark> {
+  if (edges.length === 0) return new Map()
+  const positions = chapterPlacementsForBook(root)
+  if (positions === undefined) return new Map()
+  return relationPeriodMarks(edges.map(toPeriodRow), positions)
+}
+
+/**
+ * An index edge as the row the judgement reads.
+ *
+ * `kind` and `dir` are strings in the index payload (they are what an author may have
+ * hand-written); an unknown value degrades to the same defaults the parser applies, so a
+ * malformed row is marked from its windows instead of being dropped from the check.
+ */
+function toPeriodRow(edge: RelationEdge): RelationRow {
+  const kind: RelationKind = RELATION_KINDS.find((candidate) => candidate === edge.kind) ?? 'character'
+  return {
+    id: edge.id,
+    path: edge.path,
+    title: edge.title,
+    relationKind: kind,
+    source: edge.source,
+    target: edge.target,
+    direction: edge.dir === 'undirected' ? 'undirected' : 'directed',
+    since: edge.since,
+    until: edge.until,
+    chapter: edge.chapter,
+  }
+}
+
+/** The edge plus its window mark, when it has one. */
+function withPeriod(edge: RelationEdge, marks: ReadonlyMap<string, RelationPeriodMark>): Record<string, unknown> {
+  const mark = marks.get(edge.path)
+  return { ...edge, ...(mark === undefined ? {} : { period: mark }) }
+}
+
+/** One line of "what is wrong with this edge's window", for the tool's text reply. */
+function periodLine(mark: RelationPeriodMark | undefined): string[] {
+  if (mark === undefined) return []
+  const lines: string[] = []
+  if (mark.conflict !== undefined) {
+    lines.push(
+      mark.conflict.otherPath === undefined
+        ? '  ! 时段矛盾：这条边自己的 since/until 写不出成立的区间'
+        : `  ! 时段矛盾：与 ${mark.conflict.otherPath} 的时段不可能同时成立`,
+    )
+  }
+  if (mark.uncomparable !== undefined) lines.push('  ? 时段无法判定：有一端不是本书的章 id')
+  return lines
 }
 
 const upsertSurface: Omit<ToolDefinition, 'execute'> = {
@@ -210,6 +277,7 @@ const listSurface: Omit<ToolDefinition, 'execute'> = {
         lines.push(
           `- (${asSource ? 'as source' : 'as target'}, ${String(edge['kind'])}, ${String(edge['dir'])}) ${other} — ${String(edge['path'])}`,
         )
+        lines.push(...periodLine(edge['period'] as RelationPeriodMark | undefined))
       }
       return text(lines)
     },
@@ -256,6 +324,7 @@ const cluesSurface: Omit<ToolDefinition, 'execute'> = {
         for (const peer of peers) {
           const peerName = String(peer['title'] ?? '') === '' ? String(peer['id']) : `${String(peer['title'])} (${String(peer['id'])})`
           lines.push(`  - ${peerName} — ${String(peer['direction'])}, ${String(peer['path'])}`)
+          lines.push(...periodLine(peer['period'] as RelationPeriodMark | undefined))
         }
       }
       return text(lines)
@@ -383,7 +452,8 @@ async function runRelationList(args: unknown, exec: ToolRunContext, deps: Domain
       error: { code: 'INDEX_UNAVAILABLE', message: 'the index is missing or was built by another schema version' },
     }
   }
-  return { ok: true, entity, count: edges.length, edges }
+  const marks = periodMarksOf(root, edges)
+  return { ok: true, entity, count: edges.length, edges: edges.map((edge) => withPeriod(edge, marks)) }
 }
 
 /**
@@ -440,6 +510,7 @@ async function runRelationClues(args: unknown, exec: ToolRunContext, deps: Domai
   }
 
   const kept = kindFilter === undefined ? edges : edges.filter((edge) => edge.kind === kindFilter)
+  const marks = periodMarksOf(root, kept)
   const peers = kept.map((edge) => (edge.source === entity ? edge.target : edge.source))
   // The entity itself is asked for too, so the reply can name what it is talking about.
   const titles = titlesForIds(root, [...new Set([entity, ...peers])])
@@ -457,6 +528,7 @@ async function runRelationClues(args: unknown, exec: ToolRunContext, deps: Domai
         .map((edge) => {
           const outgoing = edge.source === entity
           const peer = outgoing ? edge.target : edge.source
+          const mark = marks.get(edge.path)
           return {
             id: peer,
             title: titleOf(peer),
@@ -465,6 +537,7 @@ async function runRelationClues(args: unknown, exec: ToolRunContext, deps: Domai
             ...(edge.since === undefined ? {} : { since: edge.since }),
             ...(edge.until === undefined ? {} : { until: edge.until }),
             ...(edge.chapter === undefined ? {} : { chapter: edge.chapter }),
+            ...(mark === undefined ? {} : { period: mark }),
           }
         })
         .sort((left, right) => (left.id === right.id ? 0 : left.id < right.id ? -1 : 1))
