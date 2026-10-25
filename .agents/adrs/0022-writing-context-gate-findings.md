@@ -61,6 +61,8 @@ world → facts → foreshadow → prevTail
 > 现行实现仍是 X-13 的六段 + `EXTRA_SEGMENTS` 注册表；本 ADR 定的是 #43 落地时必须满足的形状。这是一次**扩容**（六段 → 九段），不是重写：`EXTRA_SEGMENTS` 的「只声明不排序」纪律继续有效。
 >
 > **修订（2026-10-25，#43）**：九段是**简报**的段集，**不包括 `project`**——既有六段注入里的「项目摘要」不进简报，项目信息仍在系统提示的其他段里。两套装配共用同一份段渲染器（`writing-context-render.ts`），因此同一个段在两处不可能渲染成两种文字；简报的段集与顺序由 `BRIEF_SEGMENT_ORDER` 与 `BRIEF_TRIM_ORDER` 两个常量表定死（`src/host/writing-context.ts`），本表与它们由用例对拍。
+>
+> **修订（2026-10-25，#219）**：去掉 `project` 段的代价补偿——**书级标识落在 `text` 的头部**（九段之前的第一行，形如 `《书名》· 全书 N 章 / M 万字`，数字取自 `readProjectStats()`；缺 `title` 时退化为书目录名，与六段装配同一判据）。它**不是第十段**：段集与顺序仍由本节定死，头部是简报级字段（`WritingBrief.header`），不进段表、也不塞进 `outline` 段正文。裁剪口径：**不入 `BRIEF_TRIM_ORDER`（永不裁）却计入 `tokens`**；整行放不进预算时缩短为只留书名，禁止整块丢弃（与 `outline`/`promise`/`characters` 同档，「宁可 `overBudget`」）。三处同源因此仍成立：预览、注入、审计三处读到的是同一个字符串；审计记录为此新增 `header` 字段，`BRIEF_AUDIT_SCHEMA` 由 1 升到 2（只加字段、不迁移——文件是私有状态，下次审计就地重写，字节形状变化是预期变更）。
 
 ### D3 门禁/审稿/校对一律用 `findings.ts` 的既有形状
 

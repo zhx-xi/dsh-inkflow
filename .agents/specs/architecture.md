@@ -308,7 +308,7 @@
 
 #### 四份材料（六段装配的段；简报里 `outline` / `prevTail` / `world` 也读这四份）
 
-> 注入的段集自 #183 起是简报的九段（`outline → promise → characters → voice → facts → foreshadow → world → prevTail → anchors`，ADR-0022 D2）。下表描述的是**取数**：其中「当前章」「上章结尾」「世界书」三份在简报里分别落到 `outline` / `prevTail` / `world`，而「项目摘要」只存在于六段装配（`buildWritingContext`），**不进简报**——简报的九个 id 里没有 `project`，书名改由宿主的会话/工作区信息与 `outline` 段里的卷/章标识承担。
+> 注入的段集自 #183 起是简报的九段（`outline → promise → characters → voice → facts → foreshadow → world → prevTail → anchors`，ADR-0022 D2）。下表描述的是**取数**：其中「当前章」「上章结尾」「世界书」三份在简报里分别落到 `outline` / `prevTail` / `world`，而「项目摘要」只存在于六段装配（`buildWritingContext`），**不进简报**——简报的九个 id 里没有 `project`；书级标识改由简报 **`text` 的第一行**承担（`《书名》· 全书 N 章 / M 万字`，`WritingBrief.header` / 审计记录的 `header` 字段，#219）：它不是第十段、不入裁剪阶梯、但计入 `tokens`，放不下整行时缩为只留书名。
 
 | # | 段 | 取数 | 依据 |
 |---|---|---|---|
@@ -552,7 +552,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/ovk-status.ts` | **三个语义动作的唯一实现**（工具与面板共用）：`semanticStatusOf`（设置 + peer + 可用性 + 账本计数 + 队列状态 + 阈值）、`estimateRebuild`（含 `requiresConfirm`：>200 章或 >5 MB）、`rebuildNow`（走队列）、`purgePlanOf` / `purgeApply`（逐条删、**首条失败即停**、只摘掉真正删掉的条目） | 会话 / 书锚点解析（那两个调用方各做各的）、HTTP 细节、工具 schema |
 | `src/host/ovk-tools.ts` | 语义三工具：`inkflow_semantic_status`（只读、无 `confirm`）、`inkflow_semantic_rebuild`（先估值、超阈值要 `confirm`）、`inkflow_semantic_purge`（**唯一会物理删除**、先列清单再 `confirm`、首条失败即停并报位置） | 动作实现（在 `ovk-status.ts`）、直连 OVK、读作品正文以外的内容 |
 | `src/host/ovk-hub.ts` | 设置页「语义检索」块的三条 hub 路由（`GET /hub/semantic`、`POST /hub/semantic/rebuild`、`POST /hub/semantic/purge`）：书锚点走 `resolveHubBook`（注册表 id / 已注册路径 / 目录名，**不接受任意路径**），先把索引刷新鲜再估值，动作一律调 `ovk-status.ts` | 在请求里携带端点或密钥（ADR-0020 决策：连接只来自设置文件）、自己再实现一遍重建 / 清理 |
-| `src/host/writing-context-render.ts` | 两套装配共用的**段渲染器**（#43，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D1/D2）：`### 项目` / `### 当前章` / `### 上一章结尾` / `### 世界书` 四个块的文字、`[trimmed: …]` 标记、`MAX_OUTLINE_CHARS` 与两个裁剪方向（尾段留尾、其余留头）；六段装配与简报的九段调同一份，所以同一个段在两处不可能渲染成两种文字（#183 的等价性用例逐字节对拍这一条） | 决定要渲染哪些段、预算与裁剪顺序（归 `writing-context.ts`）、任何 IO |
+| `src/host/writing-context-render.ts` | 两套装配共用的**段渲染器**（#43，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D1/D2）：`### 项目` / `### 当前章` / `### 上一章结尾` / `### 世界书` 四个块的文字、简报的书级标识行（`renderBriefHeader`，`《书名》· 全书 N 章 / M 万字`，可退化为只留书名，#219）、`[trimmed: …]` 标记、`MAX_OUTLINE_CHARS` 与两个裁剪方向（尾段留尾、其余留头）；六段装配与简报的九段调同一份，所以同一个段在两处不可能渲染成两种文字（#183 的等价性用例逐字节对拍这一条） | 决定要渲染哪些段、预算与裁剪顺序（归 `writing-context.ts`）、任何 IO |
 | `src/host/brief-sources.ts` | 简报 `characters` / `voice` 两段的**来源**（#43）：从 `characters` + `character_states` 取「本章大纲 + 上章结尾」里点名的人物卡（姓名/别名 ≥2 字、`firstAppearance` 不晚于本章），按「角色 · 本章状态」与 `voice`（语言基因）整行装填到 `capChars`；无索引/无命中 → `undefined`（简报记 `missing`），有来源但装不下一整行 → `{ text: '', truncated: true }` | 段顺序、预算与裁剪阶梯（归 `writing-context.ts`）、写入人物卡、拿 `entity_mentions` 当来源（那是「已存在章」的提及，而本章还没有正文） |
 | `src/host/brief.ts` | 简报的**审计、注入入口与两个通道回复**（#43，ADR-0022 D1/D4、[ADR-0023](../adrs/0023-proposal-job-private-placement.md)）：`briefFor`（唯一装配入口 + 进程内超预算计数；#183 起 `prompt.ts` 也调它，所以注入、预览、审计是同一份）、`briefAuditRecord`/`serializeBriefAudit`（确定性：无时钟、无随机 id、无绝对路径，字段顺序即构造顺序）、`writeBriefAudit`（落 `.inkflow/audit/brief-<chapterId>.json`，`sha256` 从磁盘回读）、`GET /brief` 与 `POST /brief/audit`（要 `confirm: true`） | 装配规则（归 `writing-context.ts`）、第二次装配（预览与审计必须是同一份）、把段正文写进审计文件 |
 | `src/host/etl-source.ts` | 旧 InkFlow 库的**只读取数**（#51）：`readOnly` 打开 `.db`，按 `PRAGMA table_info` **只投影该文件真正有的列**（52 次 `ensure_*` 的历史意味着老库缺列，缺列不该让迁移器拒绝最老的书），把 13 张内容表读成 `LegacyBook`；工程按 `uuid / 名字 / 序号` 解析，缺省选内容最多的那个 | 写库、建表、判迁移规则（归 `etl-plan.ts`）、碰书里的任何文件 |
