@@ -518,51 +518,24 @@ test('projectFacts reports derived state without implying it is the truth', () =
 test('PANEL_TABS leaves unimplemented pages disabled with their release note', () => {
   const { PANEL_TABS } = model
   const available = PANEL_TABS.filter((tab) => tab.available)
-  // Issue #30 added 设定库 (the eight-kind setting library), issue #35 回收站 (the
-  // recovery bin), issue #31 伏笔 (the read-only board), issue #33 体检 (the five-family
-  // audit), issue #38 候选 (the extraction queue — X-20's one new tab), #48 地图 (places
-<<<<<<< HEAD
-  // are world entries, ADR-0025 D4), #43 简报 (nine segments, X-23) and #44 门禁 (the seven
-  // quality gates, ADR-0022 D4) and #46 审稿 (the review runs + evidence chain). This list is the build's own claim about what a user can
-  // click, so it is spelled out rather than derived.
+  // Issue #30 added 设定库 (the eight-kind setting library), issue #35 回收站 (the recovery
+  // bin), #31 伏笔 (the read-only board), #33 体检 (the five-family audit), #38 候选 (the
+  // extraction queue — X-20's one new tab), #48 地图 (places are world entries, ADR-0025 D4),
+  // #43 简报 (nine segments, X-23), #44 门禁 (the seven quality gates, ADR-0022 D4),
+  // #46 审稿 (the review runs and their evidence chain) and #45 提案 (per-hunk accept, apply,
+  // rollback). This list is the build's own claim about what a user can click, so it is
+  // spelled out rather than derived — and it is ONE list, not one list per issue.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review'],
-    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43)、门禁 (#44) 与审稿 (#46) exist in this build',
-=======
-  // are world entries, ADR-0025 D4), #43 简报 (nine segments, X-23), #44 门禁 (the seven
-  // quality gates, ADR-0022 D4) and #45 提案 (per-hunk accept, apply, rollback). This list is
-  // the build's own claim about what a user can click, so it is spelled out rather than derived.
-  assert.deepEqual(
-    available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'proposal'],
-    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43)、门禁 (#44) 与提案 (#45) exist in this build',
->>>>>>> a420beb (feat(proposal): 提案制修订 + 逐段接受/拒绝 + 应用前备份与逐字节回滚)
+    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal'],
+    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43)、门禁 (#44)、审稿 (#46) 与提案 (#45) exist in this build',
   )
-  // Issue #180 registers the four 0.5.0 pages as placeholders (roadmap §2.4): a
-  // registered row with `available: false` and a note, so the four B1/B2 issues add a
-  // page instead of inserting a line into this array four times over. A placeholder
-<<<<<<< HEAD
-  // that quietly becomes clickable without a page is the failure this pins. #43 (brief) and
-  // #44 (gate) and #46 (review) turned their rows live, so they left this list.
+  // Issue #180 registered the four 0.5.0 pages as placeholders (roadmap §2.4); #43, #44, #46
+  // and #45 each turned their own row live, so exactly one placeholder is left. A row that
+  // quietly becomes clickable without a page is the failure this pins.
   const disabled = PANEL_TABS.filter((tab) => !tab.available)
-  assert.deepEqual(
-    disabled.map((tab) => tab.id),
-    ['outline', 'proposal'],
-=======
-  // that quietly becomes clickable without a page is the failure this pins. #43 (brief),
-  // #44 (gate) and #45 (proposal) turned their rows live, so they left this list.
-  const disabled = PANEL_TABS.filter((tab) => !tab.available)
-  assert.deepEqual(
-    disabled.map((tab) => tab.id),
-    ['outline', 'review'],
->>>>>>> a420beb (feat(proposal): 提案制修订 + 逐段接受/拒绝 + 应用前备份与逐字节回滚)
-    'only the unimplemented pages are disabled',
-  )
+  assert.deepEqual(disabled.map((tab) => tab.id), ['outline'], 'only the unimplemented page is disabled')
   assert.equal(disabled[0].note, '0.2.0 起', 'tab outline must say when it arrives')
-  for (const tab of disabled.slice(1)) {
-    assert.match(tab.note ?? '', /^0\.5\.0 起 · .+/, `tab ${tab.id} must name its release and its content`)
-  }
 })
 
 test('the client bundle ships the title-suspicion tooltip (issue #89)', () => {

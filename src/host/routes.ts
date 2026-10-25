@@ -580,7 +580,6 @@ const ROUTES: readonly InternalRoute[] = [
       exportBriefAudit({ sessionId: target.sessionId, root: target.root }, version, {}, body),
   },
   {
-<<<<<<< HEAD
     // The review runs of one chapter (#46, X-24/X-26): every recorded pass as a row
     // (`runId`, model, time, opinion count, how many located, failed/skipped nodes), plus the
     // selected run expanded — its five dimensions with anchors, and every opinion with its
@@ -621,7 +620,8 @@ const ROUTES: readonly InternalRoute[] = [
         { ...(chapterId === '' ? {} : { chapterId }) },
       )
     },
-=======
+  },
+  {
     // The proposal inbox (#45, ADR-0023, X-25): what a session model has proposed as a
     // revision of one chapter, newest first, plus one proposal's hunks when `proposalId`
     // is given.
@@ -667,7 +667,6 @@ const ROUTES: readonly InternalRoute[] = [
     methods: ['POST'],
     body: PROPOSAL_ROLLBACK_BODY_FIELDS,
     handle: async ({ target, version, body }) => rollbackProposalViaChannel(target, version, body),
->>>>>>> a420beb (feat(proposal): 提案制修订 + 逐段接受/拒绝 + 应用前备份与逐字节回滚)
   },
 ]
 
