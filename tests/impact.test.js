@@ -33,6 +33,7 @@ import { join, resolve } from 'node:path'
 
 import { apply, buildImpact, buildIndex } from '../lib/index.js'
 import { hashTree } from './hash-tree.mjs'
+import { createStateDir } from './state-dir.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library', 'index']
@@ -507,6 +508,8 @@ test('impact (client): the rename request carries the address, the new slug and 
 // uses — that file also explains why nothing needs a real server).
 // ---------------------------------------------------------------------------
 
+const STATE_DIR = createStateDir('inkflow-impact-state')
+
 function createHarness({ workspace, sessionId = 'session-1' }) {
   const routes = []
   const ctx = {
@@ -534,7 +537,7 @@ function createHarness({ workspace, sessionId = 'session-1' }) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-impact-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

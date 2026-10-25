@@ -160,10 +160,9 @@ check('no hook is called after an early return (client components)', () => {
  *     by every test in the file, so the state one test mutates is the state the next one
  *     asserts against.
  *
- * NOT checked here, and deliberately so: four files still use a fixed state directory under
- * %TEMP% (`dataDir: tmpdir()` / `join(tmpdir(), 'inkflow-x-state')` in domain-registry,
- * proposal, series and tool-schema). That is the same class of defect and wants its own
- * change with its own evidence, not a silent addition to this guard.
+ * A fixed state directory under %TEMP% (`dataDir: tmpdir()`, `join(tmpdir(), 'inkflow-x-state')`)
+ * is the same class of defect with a quieter failure mode, so it has its own check below
+ * rather than a line here.
  */
 check('test files bind port 0 and declare no module-level server', () => {
   const dir = join(ROOT, 'tests')
@@ -178,6 +177,52 @@ check('test files bind port 0 and declare no module-level server', () => {
     }
     for (const match of text.matchAll(/^(?:const|let|var)\s+server\b.*$/gmu)) {
       offenders.push(`${name}:${String(lineOf(text, match.index))} declares a module-level server — build it inside the test and close it there`)
+    }
+  }
+  if (offenders.length > 0) throw new Error(offenders.join('; '))
+})
+
+/**
+ * A test may not hand the code under test a %TEMP% path whose name it did not mint.
+ *
+ * WHY this is the check above with the volume turned down: a fixed name under %TEMP% is a
+ * resource *outside* the test process. Every checkout of this repository on the machine
+ * shares it — an agent running two worktrees at once is normal here — and it outlives the
+ * run that created it, so one process reads the plugin state another one wrote: `apply()`
+ * reads `state.json` at startup, and the exporters, the backup packages and the semantic
+ * ledger all live in that same directory. Measured before the change: a value written by
+ * one process came back out of a second process's `apply()`, while two concurrent runs of
+ * the same file never went red. That gap is the reason this is a mechanism and not a
+ * story — nothing observable depends on the leftover today, and the day something does it
+ * fails in somebody else's worktree, at random.
+ *
+ * What is allowed is `mkdtempSync(join(tmpdir(), '<prefix>-'))`: a name no other process
+ * can pick, removed by the file's own `after` hook. A `tmpdir()` whose next character is a
+ * `.` is a string read (the two "no temp path leaked" assertions), not a path handed over,
+ * so it stays legal.
+ *
+ * A deliberately shared directory carries `guard-ignore: <reason>` on the same line, the
+ * way `scripts/lint.mjs` reads `lint-ignore`.
+ *
+ * The scan is textual, like every other check here, so a comment under `tests/` that spells
+ * the forbidden shape out is itself a finding: describe it in words instead.
+ */
+check('test files mint their temp directory per run', () => {
+  const dir = join(ROOT, 'tests')
+  const offenders = []
+  for (const entry of readFileSyncDir(dir)) {
+    if (!entry.isFile() || !/\.(js|mjs|cjs)$/.test(entry.name)) continue
+    const name = `tests/${entry.name}`
+    const text = readFileSync(join(dir, entry.name), 'utf8')
+    const lines = text.split('\n')
+    const minted = mkdtempSpans(text)
+    for (const match of text.matchAll(/\b(?:os\s*\.\s*)?tmpdir\s*\(\s*\)/gu)) {
+      if (minted.some(([open, close]) => open < match.index && match.index < close)) continue
+      const next = /^\s*(\S)/u.exec(text.slice(match.index + match[0].length))
+      if (next !== null && next[1] === '.') continue
+      const line = text.slice(0, match.index).split('\n').length
+      if ((lines[line - 1] ?? '').includes('guard-ignore')) continue
+      offenders.push(`${name}:${String(line)} hands over a fixed %TEMP% path — mint one per run with mkdtempSync and delete it afterwards`)
     }
   }
   if (offenders.length > 0) throw new Error(offenders.join('; '))
@@ -304,6 +349,32 @@ function readFileSyncDir(dir) {
   } catch {
     return []
   }
+}
+
+/**
+ * The `[open, close]` paren index span of every `mkdtempSync(…)` call in `text`.
+ *
+ * Paren counting is sufficient because the argument is a path expression; a literal holding
+ * an unbalanced bracket would skew it, and no test has one (checked when this landed).
+ */
+function mkdtempSpans(text) {
+  const spans = []
+  for (const match of text.matchAll(/mkdtempSync\s*\(/gu)) {
+    const open = match.index + match[0].length - 1
+    let depth = 0
+    for (let index = open; index < text.length; index += 1) {
+      const char = text[index]
+      if (char === '(') depth += 1
+      else if (char === ')') {
+        depth -= 1
+        if (depth === 0) {
+          spans.push([open, index])
+          break
+        }
+      }
+    }
+  }
+  return spans
 }
 
 import { readdirSync } from 'node:fs'

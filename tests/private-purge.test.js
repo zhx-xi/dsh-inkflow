@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { apply, createProposal, decideProposal } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const HOST = '127.0.0.1:2161'
 const ORIGIN = `http://${HOST}`
@@ -39,6 +40,8 @@ const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadow
 // ---------------------------------------------------------------------------
 // Harness (same shape as tests/trash.test.js)
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-purge-state')
 
 function createHarness({ sessionId = 'session-1', workspace } = {}) {
   const routes = []
@@ -84,7 +87,7 @@ function createHarness({ sessionId = 'session-1', workspace } = {}) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-purge-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

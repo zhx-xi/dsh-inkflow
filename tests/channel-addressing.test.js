@@ -35,6 +35,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { apply } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -44,6 +45,8 @@ const INTERNAL = '/inkflow/internal'
 // ---------------------------------------------------------------------------
 // Harness (the same shape `internal-channel.test.js` uses: no DSH process)
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-addressing-state')
 
 function createHarness({ sessionId = 'session-1', workspace } = {}) {
   const routes = []
@@ -89,7 +92,7 @@ function createHarness({ sessionId = 'session-1', workspace } = {}) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-addressing-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

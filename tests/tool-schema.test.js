@@ -30,6 +30,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { apply, domainTools } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
+
+const STATE_DIR = createStateDir('inkflow-tool-schema-state')
 
 /**
  * The keywords `assertSupportedJsonSchema` accepts (dsh-tools 0.2.1-rc.2).
@@ -292,7 +295,7 @@ test('the domain tools the registry contributes are covered by the same guard', 
   // count keeps this file honest when a new domain lands. 19 = 16 before the calendar plus the
   // timeline domain's two calendar tools (`inkflow_calendar_get` / `_set`) and the
   // relation domain's clue view (`inkflow_relation_clues`).
-  const domain = domainTools({ ctx: {}, dataDir: tmpdir(), version: 'test' })
+  const domain = domainTools({ ctx: {}, dataDir: STATE_DIR, version: 'test' })
   assert.equal(domain.length, 19, `expected the nineteen domain tools, got ${domain.length}`)
   const failures = []
   for (const tool of domain) {

@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { MAX_INTERNAL_BODY_BYTES, apply } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -35,6 +36,8 @@ const INTERNAL = '/inkflow/internal'
 // ---------------------------------------------------------------------------
 // Harness: registrations recorded, Host services faked
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-internal-state')
 
 function createHarness({ sessionId = 'session-1', workspace, sessions, workspaces } = {}) {
   const routes = []
@@ -90,7 +93,7 @@ function createHarness({ sessionId = 'session-1', workspace, sessions, workspace
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-internal-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

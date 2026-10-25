@@ -41,6 +41,7 @@ import {
 } from '../lib/index.js'
 import { hashTree } from './hash-tree.mjs'
 import { changedPaths, fileDigests } from './tree-digest.mjs'
+import { createStateDir } from './state-dir.mjs'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -499,6 +500,8 @@ test('a book that is not an InkFlow project is refused before the source is even
 // The route: guards, body whitelist, confirm
 // ---------------------------------------------------------------------------
 
+const STATE_DIR = createStateDir('inkflow-import-state')
+
 function createHarness(workspace) {
   const routes = []
   const ctx = {
@@ -531,7 +534,7 @@ function createHarness(workspace) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-import-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return routes
 }
 

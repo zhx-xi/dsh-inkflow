@@ -30,6 +30,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { HUB_BOOK_TIMEOUT_MS, HUB_CONCURRENCY, HUB_MAX_BOOKS, HUB_TOTAL_BUDGET_MS, apply, buildHubBooks } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -41,6 +42,8 @@ const HUB = `${INTERNAL}/hub`
 // ---------------------------------------------------------------------------
 // Harness: the /inkflow prefix route and the single Host service the hub reads
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-hub-state')
 
 function createHarness({ workspaces } = {}) {
   const routes = []
@@ -78,7 +81,7 @@ function createHarness({ workspaces } = {}) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-hub-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

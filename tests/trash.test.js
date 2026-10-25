@@ -38,6 +38,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { apply, searchChapters } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const require = createRequire(import.meta.url)
 const ROOT = join(import.meta.dirname, '..')
@@ -57,6 +58,8 @@ const MANIFEST = `${TRASH_ROOT}/index.json`
 // ---------------------------------------------------------------------------
 // Harness (same shape as tests/internal-write.test.js)
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-trash-state')
 
 function createHarness({ sessionId = 'session-1', workspace } = {}) {
   const routes = []
@@ -102,7 +105,7 @@ function createHarness({ sessionId = 'session-1', workspace } = {}) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-trash-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

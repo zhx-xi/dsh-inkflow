@@ -54,6 +54,9 @@ import {
   rollbackViaChannel,
   splitLines,
 } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
+
+const STATE_DIR = createStateDir('inkflow-proposal-state')
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const INDEX_DIR = 'index'
@@ -533,7 +536,7 @@ test('提案：读到不存在的提案是 404，id 形状不对是 400', () => 
 })
 
 test('提案：工具面注册四个工具，apply/rollback 的 schema 要求 confirm', () => {
-  const tools = proposalTools({ ctx: {}, dataDir: tmpdir(), version: 'test' })
+  const tools = proposalTools({ ctx: {}, dataDir: STATE_DIR, version: 'test' })
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
     ['inkflow_proposal_apply', 'inkflow_proposal_create', 'inkflow_proposal_decide', 'inkflow_proposal_rollback'],

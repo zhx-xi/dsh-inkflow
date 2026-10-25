@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { apply } from '../lib/index.js'
+import { createStateDir } from './state-dir.mjs'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
@@ -45,6 +46,8 @@ const JSON_TYPE = 'application/json'
 // ---------------------------------------------------------------------------
 // Harness (same shape as internal-write.test.js / library-panel.test.js)
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-library-write-state')
 
 function createHarness({ sessionId = 'session-1', workspace, sessions, workspaces } = {}) {
   const routes = []
@@ -100,7 +103,7 @@ function createHarness({ sessionId = 'session-1', workspace, sessions, workspace
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-library-write-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes }
 }
 

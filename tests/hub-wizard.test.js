@@ -43,6 +43,7 @@ import { realpathSync } from 'node:fs'
 
 import { HUB_PLAN_TOKEN_TTL_MS, MAX_INTERNAL_BODY_BYTES, apply, createHubPlanTokenStore, hubApply, hubPlan } from '../lib/index.js'
 import { hashTree } from './hash-tree.mjs'
+import { createStateDir } from './state-dir.mjs'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
 const ALL_DIRS = [...CONTENT_DIRS, 'index']
@@ -56,6 +57,8 @@ const HUB = `${INTERNAL}/hub`
 // ---------------------------------------------------------------------------
 // Harness: the /inkflow prefix route plus the workspace registry the hub reads
 // ---------------------------------------------------------------------------
+
+const STATE_DIR = createStateDir('inkflow-hub-wizard-state')
 
 function createHarness({ workspaces } = {}) {
   const routes = []
@@ -100,7 +103,7 @@ function createHarness({ workspaces } = {}) {
       },
     },
   }
-  apply(ctx, { dataDir: join(tmpdir(), 'inkflow-hub-wizard-state') })
+  apply(ctx, { dataDir: STATE_DIR })
   return { ctx, routes, created }
 }
 
