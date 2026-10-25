@@ -43,6 +43,7 @@
 | [0024](0024-export-zip-reuse.md) | 导出复用 `zip.ts`（EPUB `mimetype` 首条且不压缩、DOCX 最小 OOXML、导出物落 `$DSH_HOME/inkflow/exports/`） | 已采纳 | 2026-10-25 |
 | [0025](0025-calendar-and-place-kind.md) | 历法与地点：`calendar.ts` 是换算的唯一实现（`A→B→A` 误差 0）、`worldTime` 保持标量、地点不新增 kind | 已采纳 | 2026-10-25 |
 | [0026](0026-private-purge-area.md) | 私有状态回收区 `.inkflow/purged/`（#199 手动清理可还原）+ 写白名单第四次扩容；清单逻辑与回收站共用一份 | 已采纳 | 2026-10-25 |
+| [0027](0027-external-reference-tiers.md) | 外部参考的复用档位：方法论自写、数据表可引用（须署名）、代码只允许单文件移植（须文件头写明来源与许可） | 已采纳 | 2026-10-25 |
 
 ### 1.2 决策速览（一行一条）
 
@@ -71,6 +72,8 @@
 | [0025](0025-calendar-and-place-kind.md) | **历法与地点：一个换算函数、一个既有 kind**——`calendar.ts`（`toAbsolute` ⇄ `fromAbsolute`，可配置纪元/闰规则）是唯一实现，`A→B→A` 逐日误差 0，`fromAbsolute` 先夹上界再二分而非按平均年长估算；非法输入与非法历法表一律结构化拒绝；`timeline/*.md` 的 `worldTime` **仍是标量**，绝对日只是 #48 在**索引**里加的派生列；地点就是 `world/<category>` 的条目，地图只挂既有条目，**不新增 kind、不新建 `locations/`** | 换算散在三处，闰日旁差一天没人查得出；平均年长估算在闰日旁必差；`worldTime` 改嵌套会作废 ADR-0019 的读回约束与全部既有时间线文件；给地点新开身份会让改名/影响面/提及/检索各认一套；派生列若回写 frontmatter 就是同一事实两处存储，必漂 |
 
 | [0026](0026-private-purge-area.md) | **私有状态有自己的回收区 `.inkflow/purged/`**（`PRIVATE_STATE_SUBDIRS` 与 `resolveWriteTarget` 白名单从七条扩到八条子路径）：副本保持它在 `.inkflow/` 下的原相对路径，还原目标因此是事实而不是入参，且被 `restoreTargetOf` 限定在 `.inkflow/{review,proposals}`；可清理对象只有**单条审稿运行记录**与**已结束（`applied`/`rolled-back`）的提案**，`open` 永不进候选；清理要 `confirm: true` 并在 `.inkflow/audit/` 留一条删除记录（删了什么/何时/字节/哪个会话）；**`trash.ts` 对 `.inkflow/` 源的禁令不放宽**；清单逻辑抽成 `private-manifest.ts` 由两处共用；不新增 `inkflow_*` 工具（照 `trash` 的通道形状） | 放宽回收站等于让「作者删的正文」与「插件写的记录」共用一份清单与一套还原语义；直删（学 `candidates/purge`）删错一次就丢一次审稿证据；自动按条数淘汰与「运行记录是事实」冲突；落 `$DSH_HOME` 不随书走；给清理开工具则模型要替作者决定「留哪些历史」 |
+
+| [0027](0027-external-reference-tiers.md) | **外部参考按内容性质分三档**：D1 方法论**一律自写**（只借结构与思路）；D2 纯数据表（词表/阈值/类别名单）**可引用**但须在使用处署名（项目 + 文件 + MIT + 我们改了什么）；D3 代码**只允许单文件移植**，文件头须写明来源/许可/改写点，禁止整目录复制；D4 非宽松许可（GPL 等）仍只读行为；D5 引用进来的阈值必须落在单一来源文件并注明出处（散落 = 迟早漂移）；D6 对照结论仍进 issue/PR。配套纪律改为指向本 ADR，不再写「只学设计，不搬代码」的绝对化读法 | 一律重写对数据表等于重做别人的标定过程（我们没有那份语料，只会得到更差的表）；允许整包派生则会让 4.3 MiB / 431 文件破坏零依赖与包体积，并退化成「别人的 skill 包 + 我们的壳」 |
 
 ## 2. 编号与登记规则
 
