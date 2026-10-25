@@ -148,6 +148,52 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'VOLUME_DIR_MISMATCH', group: 'catalog', fixable: false, meaning: '卷目录名与 volumeId/卷大纲不一致' },
   { code: 'CHAPTER_FILE_MISSING', group: 'catalog', fixable: true, meaning: 'catalog 引用的章文件不存在' },
   { code: 'CHAPTER_NOT_MARKDOWN', group: 'catalog', fixable: false, meaning: '正文目录下有非 .md 文件（catalog 除外）' },
+
+  // The quality gate (#44, roadmap X-24). Seven checks over one chapter, emitted by
+  // `gate.ts` / `gate-rules.ts` into `.inkflow/audit/gate-<chapterId>.json`.
+  //
+  // `group` answers "which family of book facts does this finding touch", because
+  // ADR-0022 D3 keeps `FINDING_GROUPS` at five: a name or an entity reference is
+  // `structure`, a ledger value is `ledger`, and everything that is a fact about the
+  // chapter *text* is `catalog` (the chapter family). The seven checks stay
+  // distinguishable through their codes and through `GATE_CODES`' `check` column.
+  //
+  // `fixable` is false for every one of them on purpose (ADR-0022 D3 / ADR-0015 D2):
+  // `repair.ts` is the one repair path and it has no action for a gate code, so a
+  // `true` here would promise a one-click fix that does nothing — the accident #143
+  // recorded. The mechanical classes flip to true in the commit that also teaches
+  // `repair.ts` the rewrite, with its own tests.
+  //
+  // 1 字数
+  { code: 'GATE_WORD_COUNT_LOW', group: 'catalog', fixable: false, meaning: '本章字数低于目标下限' },
+  { code: 'GATE_WORD_COUNT_HIGH', group: 'catalog', fixable: false, meaning: '本章字数超过目标上限' },
+  // 2 章末钩子
+  { code: 'GATE_HOOK_MISSING', group: 'catalog', fixable: false, meaning: '章末一段没有钩子信号（新处境/新疑问/新威胁）' },
+  { code: 'GATE_HOOK_SUMMARY', group: 'catalog', fixable: false, meaning: '章末一段是总结、抒情或预告' },
+  // 3 六维去 AI 味（open-questions Q4 的六维，一维一码）
+  { code: 'GATE_AI_SENTENCE', group: 'catalog', fixable: false, meaning: '句长分布过于均匀或长句成串' },
+  { code: 'GATE_AI_PUNCT', group: 'catalog', fixable: false, meaning: '破折号或省略号密度过高' },
+  { code: 'GATE_AI_PARALLEL', group: 'catalog', fixable: false, meaning: '「不是…而是…」与连续同构句（排比/三段式）' },
+  { code: 'GATE_AI_NARRATION', group: 'catalog', fixable: false, meaning: '解释性旁白：动作之后补写情绪结论' },
+  { code: 'GATE_AI_MODIFIER', group: 'catalog', fixable: false, meaning: '形容词/副词（的、地、程度副词）密度过高' },
+  { code: 'GATE_AI_TEMPLATE', group: 'catalog', fixable: false, meaning: '段尾套路话（空气仿佛凝固一类）' },
+  // 4 一致性（与设定库对账，不重判设定本身）
+  { code: 'GATE_CONSISTENCY_POV_UNKNOWN', group: 'structure', fixable: false, meaning: '本章 frontmatter 的 pov 不在角色库里' },
+  { code: 'GATE_CONSISTENCY_FACT_STALE', group: 'ledger', fixable: false, meaning: '账本里已失效的取值仍出现在本章正文' },
+  // 5 敏感自查
+  { code: 'GATE_SENSITIVE_WORD', group: 'catalog', fixable: false, meaning: '命中敏感词表' },
+  // 6 平台规则（形式类：残留与引流）
+  { code: 'GATE_PLATFORM_RESIDUE', group: 'catalog', fixable: false, meaning: '正文残留分页/求票/码字工具文字' },
+  { code: 'GATE_PLATFORM_PROMO', group: 'catalog', fixable: false, meaning: '正文含站外引流或广告词' },
+  // 7 机械校对（零模型、确定性）
+  { code: 'GATE_PROOF_PUNCT_UNPAIRED', group: 'catalog', fixable: false, meaning: '引号/括号/书名号不成对' },
+  { code: 'GATE_PROOF_HALF_PUNCT', group: 'catalog', fixable: false, meaning: '半角标点紧邻汉字（全半角混用）' },
+  { code: 'GATE_PROOF_FULLWIDTH_ALNUM', group: 'catalog', fixable: false, meaning: '正文出现全角字母或数字' },
+  { code: 'GATE_PROOF_REPEAT_WORD', group: 'catalog', fixable: false, meaning: '重复字词（的的、了了、紧邻同词）' },
+  { code: 'GATE_PROOF_NEAR_NAME', group: 'structure', fixable: false, meaning: '别名词表外的近似名（疑似把角色名写错）' },
+  { code: 'GATE_PROOF_APPELLATION_MIXED', group: 'catalog', fixable: false, meaning: '同一角色在同一章内混用不同称谓' },
+  { code: 'GATE_PROOF_ARABIC_MEASURE', group: 'catalog', fixable: false, meaning: '阿拉伯数字后紧接中文量词' },
+  { code: 'GATE_PROOF_NUMBER_MIXED', group: 'catalog', fixable: false, meaning: '同一段里阿拉伯数字与汉字数字混写' },
 ]
 
 /** Lookup for the report/repair pass; `undefined` for an unknown code (a bug, not a finding). */

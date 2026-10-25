@@ -634,7 +634,8 @@ export const PANEL_TABS: PanelTab[] = [
   // quality gates with evidence), `review` #46 (审稿意见 by chapter/paragraph/offset) and
   // `proposal` #45 (diff accepted or rejected piece by piece, then apply/roll back).
   { id: 'brief', label: '简报', available: true },
-  { id: 'gate', label: '门禁', available: false, note: '0.5.0 起 · 七项门禁与逐条证据' },
+  // Issue #44 landed this row live: the page is `src/client/gate.tsx`, fed by `GET /gate`.
+  { id: 'gate', label: '门禁', available: true },
   { id: 'review', label: '审稿', available: false, note: '0.5.0 起 · 审稿意见与证据链' },
   { id: 'proposal', label: '提案', available: false, note: '0.5.0 起 · 逐段接受与回滚' },
 ]

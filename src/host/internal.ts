@@ -1204,3 +1204,11 @@ export type { CandidateReply, CandidateSource } from './extract-channel.js'
 
 export { BRIEF_AUDIT_BODY_FIELDS, briefOptionsFromQuery, buildBrief, exportBriefAudit } from './brief.js'
 export type { BriefChannelSource, BriefReply } from './brief.js'
+// issue #44 — the quality gate (ADR-0022 D4, X-24/X-26). The engine is `gate.ts`
+// (files → seven checks → the deterministic conclusion file under `.inkflow/audit/`),
+// the rules in `gate-rules.ts`. Re-exported here so `routes.ts` keeps ONE entry point for
+// the channel, the same arrangement as the audit (#33) and the extraction queue (#38).
+// ---------------------------------------------------------------------------
+
+export { GATE_CHECK_IDS, GATE_LIST_LIMIT, buildGate } from './gate.js'
+export type { GateReport, GateResult } from './gate.js'

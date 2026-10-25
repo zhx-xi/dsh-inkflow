@@ -44,6 +44,9 @@ import type { LibraryFocus } from './library-model.js'
 import { TrashView } from './trash.js'
 import { ForeshadowView } from './foreshadow.js'
 import { AuditView } from './audit.js'
+// Issue #44: the seven quality gates for one chapter (ADR-0022 D4). Its own file, so the
+// workbench's renderer map stays one line per page (X-12).
+import { GateQualityView } from './gate.js'
 import { ExtractView } from './extract.js'
 import { BriefView } from './brief.js'
 import { MapView } from './map.js'
@@ -558,6 +561,10 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // entry. It reuses 设定库's projection (a place IS a world entry, ADR-0025 D4) and
     // jumps the way an audit row does, so it adds no route and no second truth.
     map: () => <MapView sessionId={sessionId} onOpen={openFromMap} />,
+    // Issue #44: the seven quality gates for one chapter — counts per check, every finding
+    // with its address and hint, filtered by severity. `GET /gate` is read-only, so this tab
+    // cannot change the book or the conclusion file.
+    gate: () => <GateQualityView sessionId={sessionId} />,
   }
 
   /**

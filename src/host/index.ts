@@ -686,6 +686,29 @@ export type { RemoveResult, RenameResult } from './io.js'
 export { FINDING_CODES, FINDING_GROUPS, compareFindings, findingCode, locatorKey } from './findings.js'
 export type { Finding, FindingCodeSpec, FindingGroup, FindingLocator, FindingSeverity } from './findings.js'
 
+/**
+ * The quality gate (issue #44, roadmap X-24/X-26): seven checks over one chapter, the
+ * `.inkflow/audit/gate-<chapterId>.json` conclusion and its deterministic serialiser.
+ * The rules live in `gate-rules.ts`; this block is the one entry point for the tool, the
+ * panel route and the tests.
+ */
+export {
+  GATE_FILE_SCHEMA_VERSION,
+  GATE_LIST_LIMIT,
+  buildGate,
+  gateFileName,
+  gateFilePath,
+  gateFindingRecord,
+  gateWire,
+  renderGateFile,
+  runGate,
+} from './gate.js'
+export { GATE_CHECKS } from './gate.js'
+export { GATE_CHECK_IDS, GATE_CHECK_LABELS, GATE_CODES, GATE_DEFAULTS, gateCheckOf } from './gate-vocabulary.js'
+export type { GateCheck } from './gate.js'
+export type { GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-vocabulary.js'
+export type { GateCounts, GateError, GateFileResult, GateReport, GateRequest, GateResult, GateRunOptions } from './gate.js'
+
 /** Private state directory (`.inkflow/`) helpers — ADR-0012, roadmap X-9. */
 export {
   PRIVATE_STATE_DIR,

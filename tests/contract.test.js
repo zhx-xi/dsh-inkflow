@@ -240,6 +240,9 @@ test('registers the thirty-one built-ins, the tools of every registered domain, 
       // #31: the foreshadowing domain's own tools, contributed through `domainTools()`.
       'inkflow_foreshadow_list',
       'inkflow_foreshadow_upsert',
+      // #44: the quality gate — seven checks over one chapter (ADR-0022 D4). A built-in: it
+      // reads the chapter plus two setting directories and owns no content directory.
+      'inkflow_gate_check',
       'inkflow_index_rebuild',
       // #37: importing an old manuscript, built-in for the same reason as the audit — it
       // writes chapters *and* a `library/` copy, so no single content directory owns it.
