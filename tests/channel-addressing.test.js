@@ -175,6 +175,16 @@ function chapterBook(root) {
       body,
     )
   }
+  // Chapter 2 has its chapter-level outline node, written the way a real book has it: the
+  // node is where the brief's chapter block and its plot points come from, so a book
+  // without one has no chapter block to show (and says so, instead of a bare heading).
+  writeMarkdown(root, 'outlines/overall.md', ['id: ov', 'kind: overall', 'title: 总纲'], '- 故事线\n')
+  writeMarkdown(
+    root,
+    'outlines/ch-0002-outline.md',
+    ['id: oc-2', 'kind: chapter', 'title: 起风', 'parent: ov', 'order: 2'],
+    '- [主线] 起风：断剑仍在鞘中，师父守着不谈。\n',
+  )
   return root
 }
 

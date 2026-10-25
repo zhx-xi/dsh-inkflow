@@ -642,13 +642,12 @@ export function buildWritingBrief(root: string, options: WritingContextOptions =
   // Every segment's full text, built once: the ladder only decides which of these
   // survive, so a rung can never change what a segment says.
   const built = new Map<BriefSegmentId, { text: string; truncated: boolean; missing: boolean }>()
-  if (current !== undefined) {
-    built.set('outline', {
-      text: renderChapter(current, outline),
-      truncated: outline !== undefined && outline.body.length > MAX_OUTLINE_CHARS,
-      missing: false,
-    })
+  if (current !== undefined && outline !== undefined) {
+    built.set('outline', { text: renderChapter(current, outline), truncated: outline.body.length > MAX_OUTLINE_CHARS, missing: false })
   } else {
+    // No node is no segment: the heading-with-nothing-under-it this branch used to render
+    // (`renderChapter(current, undefined)`) reads like "the outline is fine" while the plot
+    // points the writer needs are gone. Silence is the failure this segment exists to break.
     built.set('outline', { text: '', truncated: false, missing: true })
   }
   // The two marker bullets in THIS chapter's outline node are their only source.

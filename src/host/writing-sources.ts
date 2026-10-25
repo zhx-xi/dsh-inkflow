@@ -282,8 +282,104 @@ function withFrontmatter(root: string, path: string): ChapterHead {
   return head
 }
 
-/** `outlines/ch-<seq>.md`, tolerating the four spellings the conventions allow. */
+/** One candidate the outline tree offers: a `kind: chapter` node and where it hangs. */
+interface OutlineCandidate {
+  path: string
+  order: number | undefined
+  /** The parent's id+path when the parent is a volume node — where `vol-NN` is spelled. */
+  volume?: string
+}
+
+/**
+ * The chapter's own outline node, or `undefined` when the book has none.
+ *
+ * Two sources, in this order, because a chapter has two kinds of address and only one is a
+ * fact of the data model:
+ *
+ *   1. **The tree.** conventions §3.5 makes the node a `kind: chapter` entry under
+ *      `outlines/<free slug>.md` hung off a parent by `parent`; the file name is derived
+ *      from the title (`inkflow_outline_upsert`), so the field that ties a node to a
+ *      chapter is `order` — the chapter's own `seq` — with the volume agreement choosing
+ *      between two volumes that both hold that number. It is read from the derived index,
+ *      the same source every other read route resolves through; listing `outlines/` here
+ *      would answer "which node is this chapter's" a second way, and the second answer is
+ *      the one that drifts.
+ *   2. **The four file names older books use.** A book whose chapter nodes declare no
+ *      `order` has nothing to walk, and its outline must not vanish from the brief because
+ *      of a naming guess this function stopped making.
+ *
+ * "Nothing found" answers `undefined` and no half-rendered block: the caller reports the
+ * segment as missing, which is the one fact that stays true.
+ */
 export function readChapterOutline(root: string, current: ChapterHead): OutlinedChapter | undefined {
+  return readOutlineFromTree(root, current) ?? readOutlineByFilename(root, current)
+}
+
+/** The tree walk over `outline_nodes`; `undefined` when the index is absent or has no match. */
+function readOutlineFromTree(root: string, current: ChapterHead): OutlinedChapter | undefined {
+  if (current.seq === undefined) return undefined
+  const dbFile = join(root, INDEX_DIR, INDEX_DB_FILE)
+  if (!existsSync(dbFile)) return undefined
+  let db: DatabaseSync | undefined
+  let path: string | undefined
+  try {
+    db = new DatabaseSync(dbFile, { readOnly: true })
+    if (readSchemaVersion(db) !== INDEX_SCHEMA_VERSION) return undefined
+    // `parent` stores the parent's id, so the volume a node hangs under only comes out of
+    // the self-join. Kind is filtered in SQL: a volume or overall node may carry the same
+    // `order` (it is a display number), and it is never this chapter's outline.
+    const rows = db
+      .prepare(
+        'SELECT c.path AS path, c.order_index AS order_index, p.kind AS parent_kind, p.id AS parent_id, p.path AS parent_path' +
+          ' FROM outline_nodes c LEFT JOIN outline_nodes p ON p.id = c.parent' +
+          " WHERE c.kind = 'chapter' ORDER BY c.path",
+      )
+      .all() as unknown as Array<Record<string, unknown>>
+    const candidates: OutlineCandidate[] = rows.map((row) => {
+      const candidate: OutlineCandidate = {
+        path: String(row['path']),
+        order: typeof row['order_index'] === 'number' ? row['order_index'] : undefined,
+      }
+      if (row['parent_kind'] === 'volume') {
+        candidate.volume = `${String(row['parent_id'] ?? '')}\u0000${String(row['parent_path'] ?? '')}`
+      }
+      return candidate
+    })
+    const asked = candidates.filter((candidate) => candidate.order === current.seq)
+    const inVolume = asked.filter((candidate) => volumeAgrees(candidate, current.volume))
+    // One node agrees. Two agreeing nodes are a damaged tree: choosing between them would
+    // be the guess this function exists to stop making, so the file-name fallback answers.
+    const chosen = inVolume.length === 1 ? inVolume[0] : inVolume.length === 0 && asked.length === 1 ? asked[0] : undefined
+    path = chosen?.path
+  } catch {
+    return undefined
+  } finally {
+    db?.close()
+  }
+  return path === undefined ? undefined : readOutlineAt(root, path)
+}
+
+/**
+ * Does this node hang under the volume the chapter belongs to?
+ *
+ * A chapter with no `volume` belongs to no volume (§3.2.2 order 0), so the node that agrees
+ * is one under the overall — not the first volume node that happens to hold the same
+ * `order`. The volume itself is named by its `vol-NN` identifier inside the parent's id or
+ * path (`outlines/vol-01`), which is what the volume and outline writers both produce.
+ */
+function volumeAgrees(candidate: OutlineCandidate, volume: string | undefined): boolean {
+  if (volume === undefined || volume === '') return candidate.volume === undefined
+  return candidate.volume !== undefined && candidate.volume.includes(volume)
+}
+
+/** The node at this path, read now — a path the index still names but the disk does not answers `undefined`. */
+function readOutlineAt(root: string, path: string): OutlinedChapter | undefined {
+  if (!existsSync(join(root, path))) return undefined
+  return { path, body: parseMarkdown(readText(join(root, path))).body.trim() }
+}
+
+/** The four spellings older books were read by: `ch-<seq>` / `chapter-<seq>`, padded or not. */
+function readOutlineByFilename(root: string, current: ChapterHead): OutlinedChapter | undefined {
   if (current.seq === undefined) return undefined
   const padded = String(current.seq).padStart(4, '0')
   const candidates = [
@@ -293,9 +389,8 @@ export function readChapterOutline(root: string, current: ChapterHead): Outlined
     `outlines/chapter-${String(current.seq)}.md`,
   ]
   for (const path of candidates) {
-    if (!existsSync(join(root, path))) continue
-    const body = parseMarkdown(readText(join(root, path))).body.trim()
-    return { path, body }
+    const outline = readOutlineAt(root, path)
+    if (outline !== undefined) return outline
   }
   return undefined
 }

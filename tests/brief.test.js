@@ -925,3 +925,206 @@ test('brief: preview, audit file and injection carry the same header bytes', asy
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 8. Which node is "this chapter's outline"
+// ---------------------------------------------------------------------------
+
+/**
+ * The plot points every fixture in this section shares, so the only thing that differs
+ * between them is **where the node lives** — that is the whole question here.
+ */
+const CHAPTER_PLOT = [
+  '- [主线] 起风：清音在青萍宗后山见到信物。',
+  '- [承诺] 断剑的来历这一章必须露一角。',
+  '- [锚点] 复沓句「剑未出鞘，雨先落」。',
+  '',
+].join('\n')
+
+/**
+ * A two-chapter book whose chapter-2 outline node is written at `outline.file` with
+ * `outline.frontmatter`; pass `outline` = `undefined` for a book with no chapter node.
+ *
+ * The volume node deliberately carries `order: 2` — the same number as the chapter being
+ * written — so every case below also shows that a bigger node with a matching `order`
+ * never stands in for the chapter node.
+ */
+async function outlineBook(root, outline) {
+  scaffold(root)
+  writeMarkdown(root, 'chapters/vol-01/0001-开端.md', ['id: ch-0001', 'title: 开端', 'volume: vol-01', 'seq: 1'], '第一章正文。\n')
+  writeMarkdown(root, 'chapters/vol-01/0002-起风.md', ['id: ch-0002', 'title: 起风', 'volume: vol-01', 'seq: 2'], '第二章正文。\n')
+  writeMarkdown(root, 'outlines/overall.md', ['id: ov', 'kind: overall', 'title: 总纲', 'order: 0'], '- 故事线\n')
+  writeMarkdown(
+    root,
+    'outlines/vol-01.md',
+    ['id: outlines/vol-01', 'kind: volume', 'title: 卷一', 'parent: ov', 'order: 2'],
+    '- 卷线：入门、试剑、第一次夜谈\n',
+  )
+  if (outline !== undefined) writeMarkdown(root, outline.file, outline.frontmatter, outline.body ?? CHAPTER_PLOT)
+  await buildIndex(root)
+  return root
+}
+
+/** The chapter node the outline tree owns: `kind: chapter`, `order` = the chapter's `seq`. */
+function chapterNode(file, extra = []) {
+  return {
+    file,
+    frontmatter: [`id: ${file.replace(/^outlines\//u, '').replace(/\.md$/u, '')}`, 'kind: chapter', 'title: 第二章 试剑', 'parent: outlines/vol-01', 'order: 2', ...extra],
+  }
+}
+
+/** One segment of a brief by id, asserting it is there at all. */
+function segmentOf(brief, id) {
+  const segment = brief.segments.find((entry) => entry.id === id)
+  assert.ok(segment !== undefined, `the brief always lists ${id}`)
+  return segment
+}
+
+test('brief: the chapter outline is the tree node, whatever its file is called', async () => {
+  const dir = workdir()
+  try {
+    // Named after ids/slugs, not after the four spellings an older reader guessed: this is
+    // what `inkflow_outline_upsert` writes when the author names the chapter node.
+    const root = await outlineBook(join(dir, 'book'), chapterNode('outlines/第二章-试剑.md'))
+    const brief = buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 })
+
+    const outline = segmentOf(brief, 'outline')
+    assert.equal(outline.missing, false, 'the node is in the tree, so the segment has a source')
+    assert.match(outline.text, /清音在青萍宗后山见到信物/u, 'the plot points are the chapter\'s own words')
+    assert.ok(outline.text.includes('大纲 outlines/第二章-试剑.md：'), 'and the segment says which file it read')
+
+    // The two marker segments read the same body: one lookup, three segments.
+    assert.equal(segmentOf(brief, 'promise').missing, false)
+    assert.match(segmentOf(brief, 'promise').text, /断剑的来历这一章必须露一角/u)
+    assert.equal(segmentOf(brief, 'anchors').missing, false)
+    assert.match(segmentOf(brief, 'anchors').text, /剑未出鞘，雨先落/u)
+    assert.ok(brief.text.includes('### 当前章'), 'the outline segment is rendered under its own heading')
+    assert.ok(brief.text.includes(`### ${BRIEF_LABELS.promise}`), 'the markers reach the wire too')
+    assert.ok(brief.text.includes(`### ${BRIEF_LABELS.anchors}`))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: the four legacy file-name spellings still reach the chapter', async () => {
+  for (const file of ['outlines/ch-0002.md', 'outlines/ch-2.md', 'outlines/chapter-0002.md', 'outlines/chapter-2.md']) {
+    const dir = workdir()
+    try {
+      // An old book: the node declares no `order`, so only its file name can name it.
+      const root = await outlineBook(join(dir, 'book'), {
+        file,
+        frontmatter: ['id: oc-2', 'kind: chapter', 'title: 第二章 试剑', 'parent: outlines/vol-01'],
+      })
+      const outline = segmentOf(buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 }), 'outline')
+      assert.equal(outline.missing, false, `${file}: an old book must not lose the segment`)
+      assert.ok(outline.text.includes(`大纲 ${file}：`), `${file}: the file that was read is named`)
+      assert.match(outline.text, /清音在青萍宗后山见到信物/u, `${file}: with its plot points`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+})
+
+test('brief: with no index at all the legacy file name still fills the segment', async () => {
+  const dir = workdir()
+  try {
+    // A fresh clone whose `index/` was never built: there is no tree to walk, and the file
+    // walk still has to keep the chapter's outline alive (the brief may not depend on a cache).
+    const root = join(dir, 'book')
+    scaffold(root)
+    writeMarkdown(root, 'chapters/vol-01/0001-开端.md', ['id: ch-0001', 'title: 开端', 'volume: vol-01', 'seq: 1'], '第一章正文。\n')
+    writeMarkdown(root, 'chapters/vol-01/0002-起风.md', ['id: ch-0002', 'title: 起风', 'volume: vol-01', 'seq: 2'], '第二章正文。\n')
+    writeMarkdown(root, 'outlines/ch-0002.md', ['id: oc-2', 'kind: chapter', 'title: 第二章 试剑'], CHAPTER_PLOT)
+
+    assert.equal(existsSync(join(root, 'index', 'inkflow.db')), false, 'the fixture really has no index')
+    const outline = segmentOf(buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 }), 'outline')
+    assert.equal(outline.missing, false)
+    assert.match(outline.text, /清音在青萍宗后山见到信物/u)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: with no chapter node the outline segment is missing, never half a block', async () => {
+  const dir = workdir()
+  try {
+    // Only the overall and volume nodes exist: the chapter being written has no node.
+    const root = await outlineBook(join(dir, 'book'), undefined)
+    const brief = buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 })
+
+    assert.deepEqual(
+      segmentOf(brief, 'outline'),
+      { id: 'outline', label: BRIEF_LABELS.outline, text: '', bytes: 0, tokens: 0, truncated: false, missing: true },
+      'no node means no segment — not a chapter heading with nothing under it',
+    )
+    // The half block was the silent lie: a heading plus the frontmatter reads like "the
+    // outline is fine" while the plot points are gone.
+    assert.equal(brief.text.includes('### 当前章'), false, 'and the half block is not on the wire')
+    assert.equal(brief.text.includes('标题：起风'), false, 'no chapter identity left behind either')
+    for (const id of ['promise', 'anchors']) {
+      assert.equal(segmentOf(brief, id).missing, true, `${id}: its only source is the same absent node`)
+      assert.equal(segmentOf(brief, id).text, '')
+    }
+    // The bigger nodes are present and were not borrowed (their bodies would have shown up).
+    assert.equal(brief.text.includes('卷线：入门、试剑、第一次夜谈'), false, 'a volume node is not a chapter node')
+    assert.equal(brief.text.includes('故事线'), false, 'nor is the overall node')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: the same node under another file name fills the three segments the same way', async () => {
+  const dir = workdir()
+  try {
+    // Same words, two homes: found through the tree, and found through a legacy name.
+    const viaTree = await outlineBook(join(dir, 'tree'), chapterNode('outlines/第二章-试剑.md'))
+    const viaName = await outlineBook(join(dir, 'name'), {
+      file: 'outlines/ch-0002.md',
+      frontmatter: ['id: oc-2', 'kind: chapter', 'title: 第二章 试剑', 'parent: outlines/vol-01'],
+    })
+    const tree = buildWritingBrief(viaTree, { chapterSeq: 2, budgetTokens: 20_000 })
+    const name = buildWritingBrief(viaName, { chapterSeq: 2, budgetTokens: 20_000 })
+
+    // The two marker segments carry no file name at all: byte for byte, before and after.
+    for (const id of ['promise', 'anchors']) {
+      assert.equal(segmentOf(tree, id).missing, false, `${id}: sourced on the tree side`)
+      assert.equal(segmentOf(tree, id).text, segmentOf(name, id).text, `${id}: the file name cannot change the words`)
+      assert.equal(segmentOf(tree, id).bytes, segmentOf(name, id).bytes)
+    }
+
+    // The outline segment names the file it read, so that ONE line is the difference — and
+    // it is the only difference (a body read from two places was the bug's whole symptom).
+    const lines = (text) => text.split('\n')
+    const onlyIn = (left, right) => lines(left).filter((line) => !lines(right).includes(line))
+    assert.deepEqual(onlyIn(segmentOf(tree, 'outline').text, segmentOf(name, 'outline').text), ['大纲 outlines/第二章-试剑.md：'])
+    assert.deepEqual(onlyIn(segmentOf(name, 'outline').text, segmentOf(tree, 'outline').text), ['大纲 outlines/ch-0002.md：'])
+    assert.equal(segmentOf(tree, 'outline').truncated, false)
+    assert.equal(segmentOf(name, 'outline').truncated, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: a volume node and the overall node never stand in for the chapter node', async () => {
+  const dir = workdir()
+  try {
+    // The volume already carries `order: 2` (`outlineBook`), and the chapter node is the
+    // id-named one: the tree walk has to land on the chapter, not on the volume above it.
+    const root = await outlineBook(join(dir, 'book'), chapterNode('outlines/第二章-试剑.md'))
+    const outline = segmentOf(buildWritingBrief(root, { chapterSeq: 2, budgetTokens: 20_000 }), 'outline')
+    assert.ok(outline.text.includes('大纲 outlines/第二章-试剑.md：'), 'the chapter node is the one read')
+    assert.equal(outline.text.includes('卷线'), false, 'the volume body is not the chapter outline')
+
+    // A third shape: an id-named chapter node sitting directly under the overall node, with
+    // a volume node that also matches `order`. Still the chapter node, still not the volume.
+    const flat = await outlineBook(join(dir, 'flat'), {
+      file: 'outlines/第二章-试剑.md',
+      frontmatter: ['id: ch-outline-2', 'kind: chapter', 'title: 第二章 试剑', 'parent: ov', 'order: 2'],
+    })
+    const flatOutline = segmentOf(buildWritingBrief(flat, { chapterSeq: 2, budgetTokens: 20_000 }), 'outline')
+    assert.ok(flatOutline.text.includes('大纲 outlines/第二章-试剑.md：'))
+    assert.match(flatOutline.text, /清音在青萍宗后山见到信物/u)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
