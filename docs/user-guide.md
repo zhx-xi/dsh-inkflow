@@ -186,10 +186,14 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 ### 5.2 对 AI 说人话就行
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 插件提供 54 个工具（35 个内置 + 19 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
 =======
 插件提供 51 个工具（35 个内置 + 16 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
 >>>>>>> cea52c8 (feat(gate): 质量门禁七项与确定性结论文件（含机械校对）(#44))
+=======
+插件提供 52 个工具（36 个内置 + 16 个域工具），DSH 里的 AI 会在需要时自己调用。写作用的那几个，你直接说人话就行：
+>>>>>>> a85c1fb (feat(etl): 旧 inkflow 库迁移（13 类表 → 九目录，dry-run=apply、幂等、可回滚、逐批持锁）)
 
 **项目与索引**
 
@@ -203,6 +207,8 @@ dsh plugin --profile desktop add link:D:\develop\projects\dsh-inkflow
 | `inkflow_gate_check` | 质量门禁：对**一章**跑七项——字数 / 章末钩子 / 六维去 AI 味 / 一致性 / 敏感自查 / 平台规则 / 机械校对（标点配对、全半角、重复词、近似名、称谓、数字单位），每条带定位与修法，结论落 `.inkflow/audit/gate-<章 id>.json`（同章同文件跑两次字节相同）；零模型调用，一章不到 1 秒 | 「给这章过一遍门禁」/「看看有没有错字」 |
 | `inkflow_project_repair` | 三段式修复：`detect` 只列问题、`preview` 只给动作（零写盘）、`fix` 才写（需确认）；只补必填键 / 按证据字段推导伏笔 `status` / 重挂 parent / 删重复关系 / 重建 catalog | 「看看能自动修哪些」/「把能修的修掉」 |
 | `inkflow_project_migrate` | 老六目录书升到九目录：`plan` 只读、`apply` 需确认、`rollback` 从 `.inkflow/backup/` 回滚 | 「这本书是老结构，迁一下」/「刚才那次迁移撤回」 |
+| `inkflow_etl_plan` | **只读**：把旧 InkFlow 的 SQLite 库算成一份迁移计划——13 张表各多少行落到哪、实体/字数偏差、章号断层、要你裁决的清单；一字节都不写 | 「旧库能搬成什么样，先给我看看」 |
+| `inkflow_etl_apply` | 执行上面那份计划（需 `confirm: true` + `planToken`），`action: "rollback"` 撤销某一次执行；幂等、逐批取锁、不覆盖已有内容、不跑 git | 「就按这个计划搬」/「把刚才那次迁移撤回」 |
 
 **卷与章**
 
@@ -506,6 +512,7 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 
 **已知边界**：`library/` 里的第三方原文不进语义索引（体积与许可都不受控），只有索引卡进；服务端升级改了端点或字段时，语义检索会掉回关键词检索，不影响数据与写作。
 
+<<<<<<< HEAD
 ### 5.16 简报：模型动笔前到底看到了什么
 
 「简报」页回答一个平时只能猜的问题：**这一章开写之前，模型拿到的上下文里究竟有什么**。它把注入内容拆成九段，一段一行，写清每段多少字节、多少 token、占本次简报的百分之几，以及它是不是被裁过：
@@ -529,6 +536,35 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 **「落盘审计」会在 `.inkflow/audit/brief-<章 id>.json` 记一份**：只记段 id、字节数、token 数、是否被裁、裁剪比例，**不记正文**，也**不记时间戳与绝对路径**——所以同一章、同一套文件跑两次，文件字节完全相同（`git diff` 里看得出来「今天和昨天一样」）。它跟「体检」页导出的 `audit-时间戳.md` 不是一回事：那个是某一次运行的报告，这个是「这一章此刻的事实」。
 
 **预览就是注入**：preview 与写进审计记录的那一份来自同一次计算、同一份入参，所以你在页面上看到的九段与模型实际收到的一致——不存在「面板一套、模型一套」。
+=======
+### 5.16 迁移旧 InkFlow 库：43 张表 → 文件
+
+以前用旧版 InkFlow 写的书存在一个 SQLite 文件里（通常在旧数据目录下，形如 `…\inkflow\inkflow.db`，里面可能有上百个工程）。现在可以把它搬进当前这本书的目录结构，**先看后做、可回滚、不覆盖任何已有内容**。
+
+**两个工具**：
+
+| 工具 | 做什么 | 会不会写盘 |
+|---|---|---|
+| `inkflow_etl_plan` | 只读预览：13 张内容表各有多少行、每行落到哪（章 / 角色卡 / 世界观条目 / 大纲 / 伏笔 / 时间线 / 关系 / 资料登记），实体数与字数偏差是否在阈值内，**章号断层**，以及要你裁决的清单 | 不会（旧库以只读方式打开，书只做 stat） |
+| `inkflow_etl_apply` | `action: "apply"` 执行（需 `confirm: true` + 预览给的 `planToken`）；`action: "rollback"` 撤掉某一次执行（同样需确认） | 会；每次执行一个备份包 |
+
+**13 张表分别去哪**：`volumes` → 卷目录 + `outlines/vol-NN-*.md`；`chapters` → `chapters/**/NNNN-*.md`；`chapter_summaries` → `library/etl-chapter-summaries.md` 登记；`characters` / `character_groups` → `characters/*.md` 与卡上的 `group` 字段；`world_categories` / `world_settings` → `world/<分类>/<slug>.md`；`outlines` / `plot_points` / `story_arcs` → `outlines/*.md` 与正文的 `- [故事线] 情节点` 列表；`foreshadowings` → `foreshadowing/*.md`；`timeline_events` → `timeline/*.md`；`knowledge_relations` → `relations/*.md`。`facts/` 是 0.3.0 才有的域，旧库没有来源，所以报告里它是 0 行，不是被漏掉。
+
+**章号断层不会被自动修**：旧库的章号可能不连续（实测一本缺 `49`、`50`，另一本缺 `121–137`）。`plan` 会把「缺哪些号」列出来，`apply` **按原编号落盘**；要连续编号必须显式传 `renumber: "compact"` 重跑（建议在空书上做），那是你的决定，不是插件的。
+
+**要你裁决的四类事**（`plan` 的「要你裁决的事」一节，`apply` 结束时会再列一遍）：
+
+- 旧库标了 `resolved` 的伏笔却没有回收章 → 按 `planted` 落下，正文里留一行说明；要真回收，补 `resolvedChapter` 后再用 `inkflow_foreshadow_upsert`（状态机拒绝没有回收章的 resolved）。
+- 时间线事件的 `time_display` 不是历法日期（如「第三天」）→ 落进 `status: unconfirmed` 的待确认区，旧值写在正文注里。
+- 知识关系的某一端实体不存在 → 这条边**不迁**（关系两端必须都存在），报告点名是哪几条。
+- 新模型里没有落点的行（空分类、没人引用的故事线、空分组、重复的边）→ 单独计一栏「无落点」，不当成丢失。
+
+**幂等**：`(旧表, 行 id) → 新路径` 的映射表写在书里的 `.inkflow/backup/etl-idmap.json`。连跑第二次**一个文件都不写**；中途断了直接重跑，已落盘的条目会被识别并跳过。
+
+**可回滚**：执行时先把每个文件写进 `.inkflow/backup/<stamp>/staging/`，再逐文件 `rename` 到位（按批取写锁，默认每批 25 个文件，批次之间放开锁——长任务不会把 GUI 卡住）。所以中断只会是「一部分已到位、其余还在暂存」；`rollback` 用备份清单删掉本轮创建的文件、恢复被改过的文件、清掉没落地的副本，并删掉本轮建出来的空目录。作者在这之后改过的文件会被报成 `BACKUP_CONFLICT` 而**不覆盖**。
+
+**它不跑 git**：迁移结束后只回一行建议命令（`git add -A && git commit -m …`），提交由你自己执行。
+>>>>>>> a85c1fb (feat(etl): 旧 inkflow 库迁移（13 类表 → 九目录，dry-run=apply、幂等、可回滚、逐批持锁）)
 
 ## 6. 文件格式速查
 

@@ -796,4 +796,4 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 | 搜索的正文全文检索 | `/search` 只匹配章节元数据，并标 `searchUnavailable: true` | #22 |
 | 插件级共享库（复制快照 / `origin` / stale 列表） | 已落地：三条 hub 路由 + 三个工具（§6.2.3）；**未做**「引用卡 → 复制快照」的一键转换 | 转换随 #49 |
 | OVK 语义检索（peer 只读、按章重建、降级 FTS5） | 未实现；当前只有 FTS5 | #41 |
-| 旧库 ETL（43 表 → 文件树） | 未实现 | #51 |
+| 旧库 ETL（43 表 → 文件树） | 已落地 13 张内容表的映射：`inkflow_etl_plan`（只读预览） / `inkflow_etl_apply`（`confirm` + `planToken`，幂等、可回滚、不跑 git）；`facts/` 没有旧库来源 | #51 |

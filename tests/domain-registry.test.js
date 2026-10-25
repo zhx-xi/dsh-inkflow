@@ -92,6 +92,11 @@ const BUILT_IN_TOOLS = [
   ['inkflow_semantic_status', '019ec003'],
   ['inkflow_semantic_rebuild', 'b5d3bb95'],
   ['inkflow_semantic_purge', 'e65e1a31'],
+  // #51: the old-library migrator (plan / apply / rollback). Built-ins for the same reason as
+  // the extraction queue — it writes into every content directory, so no domain module owns
+  // it, and its dry run must be the same computation as its apply (X-29).
+  ['inkflow_etl_plan', 'd0268bd8'],
+  ['inkflow_etl_apply', '1c605cc2'],
 ]
 
 /** The seam passes the session context through; a tool factory may read it at call time. */
