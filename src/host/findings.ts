@@ -102,6 +102,17 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   // which file holds the surviving claim is the author's decision, and merging toward a
   // guessed direction is how a graph silently loses an edge.
   { code: 'RELATION_CONFLICT', group: 'structure', fixable: false, meaning: '同一对实体同类型的关系方向互相矛盾' },
+  // #188: the graph's third contradiction — `since`/`until` windows that cannot both hold
+  // (one file whose window is empty or reversed, or two files writing two windows for one
+  // relation). The judgement reuses the ledger's chapter order (I-23) rather than inventing a
+  // second one. Not `fixable`: which of the two windows is the true one is the author's
+  // knowledge, and merging toward a guessed span is how a relation silently moves in time.
+  { code: 'RELATION_PERIOD_CONFLICT', group: 'structure', fixable: false, meaning: '关系的 since/until 时段自相矛盾或两条边写了两套时段' },
+  // #188: a boundary the book cannot place — a free label (`永平三年秋`) or a chapter id the
+  // book does not have. Reported so the gap is visible, and never blocking: "cannot say" is
+  // not "says the opposite", and the lax path (no window at all, or free labels) must stay
+  // writable.
+  { code: 'RELATION_PERIOD_UNCOMPARABLE', group: 'structure', fixable: false, meaning: '关系时段有一端不是本书章 id，无法按章序判定' },
   { code: 'RELATION_FIELD_DEPRECATED', group: 'structure', fixable: true, meaning: '关系文件用了已废弃字段（如 direction）' },
   // Emitted by a domain's scan/validate as well as by a write plan (a hand-written file
   // raises them), so they belong in the report's vocabulary — #33 surfaced that

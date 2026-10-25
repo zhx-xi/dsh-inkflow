@@ -17,8 +17,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from '../conventions.js'
 import { locateHit, makeSnippet } from '../snippet.js'
 import { entityFromRow } from './entities.js'
+import { chapterPositionsFromProjection } from './relation-period.js'
 import { splitTerms } from './scan-helpers.js'
 import { statusOf } from './timeline-plan.js'
+import type { ChapterPosition } from './foreshadowing-plan.js'
 import type { TimelineRow } from './timeline-plan.js'
 import type { DomainEntityRef } from './types.js'
 
@@ -541,6 +543,31 @@ export function listTimelineEvents(root: string): TimelineRow[] | undefined {
       participants: splitTerms(typeof row['participants'] === 'string' ? row['participants'] : undefined),
       status: statusOf(typeof row['status'] === 'string' ? row['status'] : undefined),
     }))
+  } catch {
+    return undefined
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Chapter positions for a reader that needs "which chapter is later" (#188).
+ *
+ * Why not `chapterPositions()` from `foreshadowing-query.ts`: that module imports
+ * `indexer.ts` at run time, and the relation tools are reached *from* the registry, so
+ * taking chapter order from there would close a runtime import cycle. This module already
+ * owns a private `openIndex()`, and the `entities` projection is the channel a domain reads
+ * cross-directory ids through anyway — one query, one derivation (`chapterPositionsFromProjection`),
+ * so the read side and the rebuild place chapters the same way.
+ */
+export function chapterPlacementsForBook(root: string): Map<string, ChapterPosition> | undefined {
+  const db = openIndex(root)
+  if (db === undefined) return undefined
+  try {
+    const rows = db
+      .prepare("SELECT kind, id, path, title, order_index FROM entities WHERE kind = 'chapters' ORDER BY path")
+      .all() as unknown as Array<Record<string, unknown>>
+    return chapterPositionsFromProjection(rows.map(entityFromRow))
   } catch {
     return undefined
   } finally {
