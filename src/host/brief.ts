@@ -33,6 +33,9 @@ import { buildWritingBrief } from './writing-context.js'
 import { writeTextAtomic } from './io.js'
 import { ensureIndex } from './index-freshness.js'
 import { ensurePrivateStateIgnored, privateStateRelative } from './private-state.js'
+// The chapter map `/gate` and `/review` resolve through (issue #200): a `chapterId` must
+// mean the same chapter on every read route, so there is one lookup and not four.
+import { chapterPositions } from './domains/foreshadowing-query.js'
 
 /** The record's own identity, so a reader can refuse a file it does not understand. */
 export const BRIEF_AUDIT_FORMAT = 'inkflow.brief-audit'
@@ -318,14 +321,37 @@ function refused(status: number, code: string, extra: JsonRecord = {}): BriefRep
  * card the author saved a second ago would be a preview of a different book. A failed
  * rebuild is reported (`indexRebuilt: false`), never fatal — the brief then renders with
  * the segments the files can still answer.
+ *
+ * CHAPTER ADDRESSING (issue #200): `chapterId` wins over the `chapterSeq` in `options`,
+ * and an id that matches nothing is a **404 `CHAPTER_NOT_FOUND` naming that id** — it does
+ * not fall back to the last chapter. The lookup runs AFTER `ensureIndex` and through
+ * `chapterPositions()`, the map `/gate` and `/review` resolve through, so "which chapter
+ * is this id" is answered by one function in this product. The resolved file travels down
+ * as `chapterPath`, which is why the assembly never has to guess: before this, an unknown
+ * `chapterId` on `/brief` was simply not read, and the answer was the last chapter with
+ * HTTP 200 — a legal response for a target the caller never named.
  */
 export async function buildBrief(
   source: BriefChannelSource,
   version: string,
   options: WritingContextOptions,
+  chapterId = '',
 ): Promise<BriefReply> {
   const ensured = await ensureIndex(source.root)
-  const brief = briefFor(source.root, options)
+  const asked = chapterId.trim()
+  const addressed = asked === '' ? undefined : chapterPositions(source.root).get(asked)
+  if (asked !== '' && addressed === undefined) {
+    return refused(404, 'CHAPTER_NOT_FOUND', {
+      chapterId: asked,
+      hint: 'list the chapters with GET /inkflow/internal/chapters and pass one of the ids it reports',
+    })
+  }
+  const brief = briefFor(
+    source.root,
+    addressed === undefined
+      ? options
+      : { ...options, chapterPath: addressed.path, chapterSeq: undefined },
+  )
   return {
     status: 200,
     body: {

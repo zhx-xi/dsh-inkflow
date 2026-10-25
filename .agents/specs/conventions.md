@@ -553,7 +553,7 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 
 面板与 Host 之间的数据通道是**内部实现**，不是对外 API（[ADR-0008](../adrs/0008-panel-data-channel.md) D2）：不版本化、不提供 OpenAPI、不承诺兼容；`/inkflow/api/*` 一律 404，不留兼容别名。
 
-**路由表**（方法在路由表里逐条声明，未声明的动词 → 405 + `Allow` 头；读路由只有 GET，写路由是 POST/DELETE 并额外过写守卫，见下文「写路由」）：
+**路由表**（方法在路由表里逐条声明，未声明的动词 → 405 + `Allow` 头；读路由只有 GET，写路由是 POST/DELETE 并额外过写守卫，见下文「写路由」）。**query 键同样逐条声明**：每条路由声明它读哪些键（`sessionId` 总是允许，与 body 同理），出现未声明的键 → `400 UNKNOWN_QUERY_PARAM`（body 指名 `route`/`param`/`allowed`），判定紧接 405 之后、任何文件 IO 之前。为什么不是"忽略不认识的参数"：handler 是一个键一个键地读，未声明的键谁都没读、也就谁都没报，拼错或不支持的参数会安静退化成默认行为（真实事故：`?chapterID=` 打 `/brief` 回了**最后一章**，HTTP 200、九段齐全、字段一个不缺，只能靠事后比对 `chapterId` 才发现目标被丢了）。**读路由的章寻址**（`/brief`、`/gate`、`/review`、`/review/compare` 同一套）取章顺序是 `chapterId` → `chapterSeq` → 默认（最后一章），并在 `value.addressedBy` 里回 `'chapterId' | 'chapterSeq' | 'default'`；`chapterId` 指向不存在的章 → `404 CHAPTER_NOT_FOUND`（body 指名该 id），**绝不回退到最后一章**；两个键同时给时以 `chapterId` 为准。章 id → 章的解析只有一处：[`chapterPositions()`](../../src/host/domains/foreshadowing-query.ts)（索引优先、文件兜底，键同时含 frontmatter `id` 与项目相对路径），与 `/gate`、`/review` 同一张表；`/brief` 用它把 id 折成 `chapterPath` 交给装配层（`WritingContextOptions.chapterPath`，优先于 `chapterSeq`），因此两键指向同一章时除 `addressedBy` 外逐字段相同。`chapterSeq` 保留不删：它寻址的是**「计划中的下一章」**，那一章还没有 id（`jobs.ts` 用它取注入简报）。
 
 | 路由 | 方法 | 参数 | 成功值 `value` | 专属错误码 |
 |---|---|---|---|---|
@@ -583,10 +583,10 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 | 400 | `PATH_OUT_OF_SCOPE` | 设定库写路由的 id 试图逃出该 kind 的内容目录（绝对路径、`..` 段、realpath 落在 `kind/` 之外）；判定在任何写之前 |
 | 400 | `BODY_INVALID` / `EXPECTED_REQUIRED` / `EXPECTED_INVALID` | 设定库写路由：`body` 不是字符串或含无法编码为 UTF-8 的代理对；缺基线（`expected` 必填，空对象也算缺）；基线形状不合法 |
 | 400 | `FRONTMATTER_INVALID` / `FRONTMATTER_VALUE_INVALID` / `EMPTY_UPDATE` | 设定库写路由：`frontmatter` 不是对象或键名非法；值是无法写进 frontmatter 的嵌套结构/多行文本；`frontmatter` 与 `body` 都没给 |
-| 400 | `invalid-field` / `EXPECTED_INVALID` / `UNEXPECTED_BODY_FIELD` | 写路由：声明字段的类型不符（附 `field`）、`expected` 不是对象、body 出现路由未声明的字段（写路由只接受 `sessionId` + 该路由声明的字段） |
+| 400 | `invalid-field` / `EXPECTED_INVALID` / `UNEXPECTED_BODY_FIELD` / `UNKNOWN_QUERY_PARAM` | 写路由：声明字段的类型不符（附 `field`）、`expected` 不是对象、body 出现路由未声明的字段（写路由只接受 `sessionId` + 该路由声明的字段）；任何路由 query 出现未声明的键（附 `route`/`param`/`allowed`，判定在 405 之后、任何文件 IO 之前） |
 | 403 | `forbidden-host` / `forbidden-origin` / `forbidden-remote` | `Host` 非 loopback；`Origin` 存在但非 loopback；socket 对端地址非 loopback |
 | 403 | `forbidden-origin`（`reason: 'cross-site-fetch'`） | **写路由**缺 `Origin` 且 `Sec-Fetch-Site` 声明为跨站：缺 `Origin` 本身不再拒绝（浏览器 POST 必带 `Origin`，缺省说明调用方不是网页；见 note） |
-| 404 | `not-found` / `chapter-not-found` | 未知路径（含全部 `/inkflow/api/*`）；章节 id 不存在或不在 `chapters/` 内 |
+| 404 | `not-found` / `chapter-not-found` / `CHAPTER_NOT_FOUND` | 未知路径（含全部 `/inkflow/api/*`）；章节 id 不存在或不在 `chapters/` 内；读路由的 `chapterId` 匹配不到任何章（附 `chapterId`/`hint`，**不回退到最后一章**） |
 | 405 | `method-not-allowed` | 动词不在该路由声明的 `methods` 内（响带 `Allow`） |
 | 409 | `FILE_CHANGED` | **写路由**的 `expected` 与磁盘不符（§5.5）：附 `expected`/`current`/`changed[]`，**零写入**、缓存不重建 |
 | 409 | `CHAPTER_EXISTS` / `CHAPTER_AMBIGUOUS` / `SEQ_CONFLICT` / `TARGET_EXISTS` / `VOLUME_EXISTS` / `PROJECT_BUSY` | 写路由的目标已存在、id 歧义、序冲突、另一会话持写锁 |

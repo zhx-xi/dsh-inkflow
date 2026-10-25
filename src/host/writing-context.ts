@@ -103,6 +103,15 @@ export interface WritingContextOptions {
   tailChars?: number
   /** Explicit chapter to describe; defaults to the highest `seq`. */
   chapterSeq?: number
+  /**
+   * The exact chapter file to describe, resolved by the caller (issue #200).
+   *
+   * This is the `chapterId` of a `GET /brief` request after the channel looked it up in
+   * `chapterPositions()`; it wins over `chapterSeq` because a volume-local number is the
+   * wrong address for a named chapter in a multi-volume book. An id that matches nothing
+   * is refused by the channel (404 `CHAPTER_NOT_FOUND`) and never reaches this option.
+   */
+  chapterPath?: string
 }
 
 export type WritingContextSegmentName = 'project' | 'chapter' | 'tail' | 'world' | 'facts' | 'foreshadow'
@@ -362,7 +371,10 @@ function loadMaterials(root: string, options: WritingContextOptions): Materials 
   const declared = inspectProject(root).meta?.title
   const title = declared !== undefined && declared.trim() !== '' ? declared.trim() : basename(root)
   const stats = readProjectStats(root)
-  const pair = readChapterPair(root, options.chapterSeq)
+  const pair = readChapterPair(root, {
+    ...(options.chapterPath === undefined ? {} : { chapterPath: options.chapterPath }),
+    ...(options.chapterSeq === undefined ? {} : { chapterSeq: options.chapterSeq }),
+  })
   const outline = pair.current === undefined ? undefined : readChapterOutline(root, pair.current)
   const tail = readTail(root, pair.previous)
 

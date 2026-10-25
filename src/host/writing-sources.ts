@@ -26,6 +26,11 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { INDEX_DB_FILE, INDEX_DIR, INDEX_SCHEMA_VERSION } from './conventions.js'
 import { intField, parseMarkdown, stringArrayField, stringField } from './frontmatter.js'
+// The chapter map the other read routes resolve through (#200): one definition of "which
+// chapter does this id mean" and one definition of reading order (`comparePosition`).
+import { chapterPositions } from './domains/foreshadowing-query.js'
+import { comparePosition } from './domains/foreshadowing-plan.js'
+import type { ChapterPosition } from './domains/foreshadowing-plan.js'
 
 /** At most this many world-book entries are rendered; the rest are counted. */
 export const MAX_WORLD_SHOWN = 4
@@ -131,14 +136,71 @@ function readSchemaVersion(db: DatabaseSync): number {
 // ---------------------------------------------------------------------------
 
 /**
+ * How a caller names the chapter it wants described (issue #200).
+ *
+ * Two spellings, because a chapter has two kinds of address and they are not
+ * interchangeable:
+ *
+ *   - `chapterPath` — an **exact chapter file**, which is what a resolved `chapterId`
+ *     turns into. The channel resolves the id through `chapterPositions()` (the same map
+ *     `/gate`, `/review` and the audit read) and passes the file here, so "which chapter
+ *     did the request name" is answered in one place rather than guessed twice.
+ *   - `chapterSeq` — a **volume-local number**, for the chapter about to be written. That
+ *     chapter has no id yet (`jobs.ts` builds the batch injection from `chapterSeq`), and
+ *     a seq above the newest one deliberately means "no current chapter yet".
+ *
+ * `chapterPath` wins when both are present: an exact address cannot be confused with a
+ * number that repeats across volumes.
+ */
+export interface ChapterAddress {
+  readonly chapterPath?: string
+  readonly chapterSeq?: number
+}
+
+/**
  * The chapter to write and the one before it.
  *
  * `chapterSeq` overrides "the newest chapter": pointing it above the newest one
  * yields no current chapter and the newest as previous, which is exactly the
  * "about to write chapter N+1" case.
  */
-export function readChapterPair(root: string, chapterSeq: number | undefined): ChapterPair {
-  return readChapterPairFromIndex(root, chapterSeq) ?? readChapterPairFromFiles(root)
+export function readChapterPair(root: string, address: ChapterAddress = {}): ChapterPair {
+  const chapterPath = (address.chapterPath ?? '').trim()
+  if (chapterPath !== '') return readChapterPairAt(root, chapterPath)
+  return readChapterPairFromIndex(root, address.chapterSeq) ?? readChapterPairFromFiles(root)
+}
+
+/**
+ * The chapter at exactly this file, plus the one before it in reading order.
+ *
+ * Reading order is `(volume order, volume-local seq)` from `chapterPositions()`, never a
+ * file-name comparison, so "the chapter before this one" means here what it means on the
+ * board and in the gate.
+ *
+ * A path that matches nothing answers `{}` — **never another chapter**. The caller
+ * resolved this path a moment ago (the channel refuses an id that matches nothing, 404
+ * `CHAPTER_NOT_FOUND`), so a miss means the book moved underneath us; answering with the
+ * last chapter is exactly the silent substitution issue #200 removed.
+ */
+function readChapterPairAt(root: string, chapterPath: string): ChapterPair {
+  const positions = chapterPositions(root)
+  const current = positions.get(chapterPath)
+  if (current === undefined) return {}
+  let previous: ChapterPosition | undefined
+  for (const position of positions.values()) {
+    // The map files every chapter under its id AND its path, so each entry is visited
+    // twice; comparing positions (not keys) makes that harmless.
+    if (position.path === current.path) continue
+    if (comparePosition(position, current) >= 0) continue
+    if (previous === undefined || comparePosition(position, previous) > 0) previous = position
+  }
+  // The heading comes from the FILE, not from the position: the position table has no
+  // `status`, and a head that dropped it would render a different chapter block than the
+  // `chapterSeq` spelling does (#200 — the two spellings must answer the same brief).
+  return {
+    current: withFrontmatter(root, current.path),
+    ...(previous === undefined ? {} : { previous: withFrontmatter(root, previous.path) }),
+  }
 }
 
 function readChapterPairFromIndex(root: string, chapterSeq: number | undefined): ChapterPair | undefined {
