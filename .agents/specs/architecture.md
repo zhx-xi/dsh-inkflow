@@ -543,6 +543,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/proposal-channel.ts` | 提案页签的通道半：`GET /proposal`（列表 + 可选 `proposalId` 的逐段差异；读路径**不** `ensureIndex`）、`POST /proposal/{decide,apply,rollback}` 的信封、`confirm: true` 闸门、拒绝码到 HTTP 状态；每个 hunk 连同自己的 `baseLines`/`nextLines` 一起下发，面板不必再算一次 diff | 提案规则、写盘（一律调 `proposal.ts`）、HTTP 加固（归 `routes.ts`） |
 | `src/host/proposal-tools.ts` | 四个工具（#45）：`inkflow_proposal_create`（收会话已产出的修订正文，切段落盘）、`_decide`（逐段接受/拒绝/撤回，`contentFilesWritten: 0`）、`_apply` 与 `_rollback`（都要 `confirm: true`）。走 `resolveProject` 的四态门禁，与内置工具同一套判定 | 提案语义（归 `proposal.ts`）、调模型或出站请求（X-26）、直接拼章路径 |
 | `src/client/proposal.tsx` | 「提案」页签（#45 + X-12 的一行一页）：提案列表、逐段差异（原文行与修订行分开染色）、逐段接受与拒绝、全部接受/拒绝、应用与回滚各自**两段式确认**、以及「为什么现在不能应用」的那句话；只调 `/proposal` 四条路由 | 判 diff 是否成立、算 hunk（都来自 Host）、写盘 |
+| `src/host/jobs.ts` | **批量作业的状态机与记录**（#47，[ADR-0023](../adrs/0023-proposal-job-private-placement.md)、X-26/X-30）：`.inkflow/jobs/<jobId>/{meta.json,chapters/<seq>.json}` 的形状与读写（`meta.chapters` 是 `chapters/*.json` 的**汇总**，每次保存重算）；`enqueueJob`（只写作业目录、零内容写入，同 seq 幂等跳过）、`takeBatch`（按 `concurrency − inFlight` 与 `batchSize` 领章，每章附带简报装配的写作上下文；续跑按「`claimedAt` 租约 + `attempts` 上限」重新发放）、`completeChapter`（**先把草稿过七项门禁**，干净才经 `chapters.ts` 落盘并记 `digest`；有 warning 即 `held` + `pendingBody`，一个字节都不写）、`approveDrafts`（`confirm` 后写的就是门禁判过的那份草稿）、`resumeJob`（`failed` 重排队；门禁暂停一律 `APPROVAL_REQUIRED`）、`reconcileChapter`（摘要不符即 `edited`，永不覆盖作者）。每个动作自己持锁、自己放锁 | 起草正文（插件零模型调用，X-26）、整段持锁（X-30）、重写门禁判定（归 `gate.ts`）、任何 `index/` 写入 |
+| `src/host/jobs-wire.ts` | 批量页签的读投影与**唯一**写（#47）：`GET /batch`（作业列表 + 选中作业的逐章状态/门禁计数/暂停原因；读路径**不** `ensureIndex`，作业本来就不在索引里）、`POST /batch/resume`（只改作业记录；门禁暂停回 409 `APPROVAL_REQUIRED`）、`BATCH_RESUME_BODY_FIELDS` | 状态机（归 `jobs.ts`）、写正文、HTTP 加固（归 `routes.ts`） |
+| `src/host/jobs-tools.ts` | 四个工具（#47，X-26）：`inkflow_batch_enqueue`（建作业/加章，回答 `contentFilesWritten: 0`）、`inkflow_batch_take`（领章 + 写作上下文；暂停的作业不给任务，`reason: "PAUSED"`）、`inkflow_batch_complete`（交回草稿：落盘或 `held`）、`inkflow_batch_approve`（需 `confirm: true`）。走 `resolveProject` 的四态门禁 | 起草（模型侧）、状态机（归 `jobs.ts`）、`index/` 写入 |
 
 ### 6.2 客户端纯模型（`src/client/*-model.ts`）
 
@@ -567,6 +570,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `map-model.ts` — 地图页（#48，ADR-0025 D4）：把设定库同一份投影里的 `world` 分组重排成地点分组（`placeGroups`，保留分类存储顺序、未分类垫底）、三种空态分开（请求失败 / 索引不可读 / 这本书还没有地点）、`describePin` 与 `MAP_NOTE`；**地点就是 world 条目**，这里不定义第二套地点数据、不含任何坐标字段
 - `review-model.ts` — 审稿页（#46）：三态（`loading`/`error`/`ready`，**没有**「无运行」这一态——那是 `ready` 且 `runCount: 0`，否则页面会把唯一的入口藏起来）、`readReviewValue`/`readCompareValue` 的防御式折叠、`evidenceJumpOf` 只认 Host 给的 `locator` 并复用候选页的 `EvidenceJump`（**不**自己解析 `path#L<n>`）、`evidenceLine`、`describeRun`/`describeScores`、`EMPTY_REVIEW`/`EMPTY_COMPARE`
 - `proposal-model.ts` — 提案页（#45）：`readProposalPage` 的三态折叠（请求失败 / 答案读不懂 / 可读，其中「这本书还没有提案」是 `ready` 的空列表而不是错误）、段行摘要与状态文案、`preferredProposalId`、`applyBlocked`/`rollbackBlocked`（为什么现在不能按 —— 与 Host 的拒绝码同一口径）、两段式按钮文案、`decidePayload`/`confirmPayload`/`detailRequestPath`、拒绝码 → 人话；**不**重算 diff（hunk 与状态都由 Host 给）
+- `batch-model.ts` — 批量页（#47）：`readBatchPage` 的防御式折叠 + 三态判定 `batchPanelState`（`empty` 无作业 / `active` 还有在写或待批准 / `closed` 收口；「门禁暂停」属于 `active`，不能并进进行中）、逐章状态与门禁计数文案（`describeChapter`/`describeChapterStatus`/`describeGate`）、暂停原因（`describePause`）、`resumeBlockedReason`（为什么续跑现在不能按 —— 门禁暂停要的是批准，不是续跑）、`resumePayload`、`EMPTY_BATCH_NOTE`
 
 ### 6.1 一致性体检（#33）的取数与落点
 

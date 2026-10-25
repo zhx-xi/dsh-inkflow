@@ -114,10 +114,40 @@ export interface GateRequest {
   readonly chapterPath?: string
 }
 
+/**
+ * A chapter body that is **not on disk yet**: what a batch job must gate before it writes
+ * (issue #47, roadmap X-30).
+ *
+ * Why this lives here and not in `jobs.ts`: the seven checks are one implementation, and a
+ * second caller that assembled its own `GateInput` would be a second opinion about what a
+ * gate is. The batch passes the draft in; everything else (roster, ledger, positions,
+ * thresholds) is gathered exactly as for a chapter that exists.
+ *
+ * `path` is the file the draft *will* be written to, or `''` when nobody knows yet (a new
+ * chapter's file name comes from its slug at creation time). An empty path is honest: the
+ * report says "no file yet" instead of pointing at a name that does not exist.
+ */
+export interface GateDraft {
+  readonly body: string
+  readonly title?: string
+  readonly seq?: number
+  readonly path?: string
+  readonly id?: string
+  readonly pov?: string
+}
+
 export interface GateRunOptions {
   readonly thresholds?: Partial<GateThresholds>
   /** `false` computes without writing the conclusion file (the panel's read route). */
   readonly record?: boolean
+  /**
+   * Gate this body instead of the one in the chapter file (an unsaved draft, issue #47).
+   *
+   * With a draft, a chapter that does not exist yet is not an error: the input is built from
+   * the draft. `record` stays `false` for a draft — the conclusion file is keyed by chapter id
+   * and promises "the chapter file's bytes", which a draft does not have yet.
+   */
+  readonly draft?: GateDraft
 }
 
 export interface GateFileResult {
@@ -245,7 +275,12 @@ function pickChapter(
   return best
 }
 
-function gather(root: string, request: GateRequest, thresholds: GateThresholds): GateResult | Gathered {
+function gather(
+  root: string,
+  request: GateRequest,
+  thresholds: GateThresholds,
+  draft?: GateDraft,
+): GateResult | Gathered {
   let files: WalkedFile[]
   try {
     files = walkProjectFiles(root)
@@ -254,7 +289,7 @@ function gather(root: string, request: GateRequest, thresholds: GateThresholds):
   }
   const positions = chapterPositionsFromFiles(root)
   const chapterFile = pickChapter(files, positions, request)
-  if (chapterFile === undefined) {
+  if (chapterFile === undefined && draft === undefined) {
     const asked = request.chapterPath ?? request.chapterId
     return refuse(
       'CHAPTER_NOT_FOUND',
@@ -263,15 +298,23 @@ function gather(root: string, request: GateRequest, thresholds: GateThresholds):
     )
   }
 
-  const text = readText(join(root, chapterFile.path))
-  if (text === '') {
+  const text = chapterFile === undefined ? '' : readText(join(root, chapterFile.path))
+  if (chapterFile !== undefined && text === '') {
     return refuse('FILE_UNREADABLE', `cannot read ${chapterFile.path}`, 'the chapter file exists but reads as empty')
   }
   const parsed = parseMarkdown(text)
-  const chapterId = stringField(parsed.data, 'id') ?? chapterFile.path
-  const seq = intField(parsed.data, 'seq') ?? leadingNumber(chapterFile.path)
+  // A draft replaces the body and may stand in for a chapter that does not exist yet; the
+  // frontmatter of a real file still wins for id/title/seq/pov, because those are the facts
+  // the chapter will be filed under.
+  const chapterPath = chapterFile?.path ?? draft?.path ?? ''
+  const chapterId = stringField(parsed.data, 'id') ?? draft?.id ?? (chapterFile?.path ?? 'draft')
+  const seq = intField(parsed.data, 'seq') ?? leadingNumber(chapterFile?.path ?? '') ?? draft?.seq
   const title =
-    stringField(parsed.data, 'title') ?? chapterFile.path.split('/').pop()?.replace(/\.md$/iu, '') ?? chapterFile.path
+    stringField(parsed.data, 'title') ??
+    draft?.title ??
+    chapterFile?.path.split('/').pop()?.replace(/\.md$/iu, '') ??
+    chapterId
+  const body = draft === undefined ? parsed.body : draft.body
 
   const roster = rosterOf(root, files)
   const facts = factsOf(root, files)
@@ -281,24 +324,30 @@ function gather(root: string, request: GateRequest, thresholds: GateThresholds):
     return position === undefined ? undefined : position.seq
   }
 
-  // The digest covers exactly the files whose bytes the verdict depended on: the chapter
-  // and both setting directories. Sorted by path so the digest cannot depend on walk order.
-  const inputs = [
-    chapterFile.path,
-    ...files.filter((file) => file.dir === 'characters' || file.dir === 'facts').map((file) => file.path),
-  ].sort()
-  const digest = sha256(`gate-inputs-v1\n${inputs.map((path) => `${path}\u0000${hashOf(root, path)}`).join('\n')}\n`)
+  // The digest covers exactly the bytes the verdict depended on: the chapter (or the draft
+  // that replaces it) and both setting directories. Sorted by path, so the digest cannot
+  // depend on walk order.
+  const inputs = files
+    .filter((file) => file.dir === 'characters' || file.dir === 'facts')
+    .map((file) => file.path)
+    .sort()
+  const digest =
+    draft === undefined
+      ? sha256(`gate-inputs-v1\n${[chapterPath, ...inputs].sort().map((path) => `${path}\u0000${hashOf(root, path)}`).join('\n')}\n`)
+      : sha256(
+          `gate-draft-v1\n${sha256(draft.body)}\n${inputs.map((path) => `${path}\u0000${hashOf(root, path)}`).join('\n')}\n`,
+        )
 
   return {
     input: {
       chapter: {
         id: chapterId,
-        path: chapterFile.path,
+        path: chapterPath,
         seq,
         title,
-        pov: stringField(parsed.data, 'pov'),
-        body: parsed.body,
-        wordCount: countChars(parsed.body),
+        pov: stringField(parsed.data, 'pov') ?? draft?.pov,
+        body,
+        wordCount: countChars(body),
       },
       roster,
       facts,
@@ -346,7 +395,19 @@ function countsOf(findings: readonly Finding[], checks: readonly GateCheckSummar
  */
 export function runGate(root: string, request: GateRequest = {}, options: GateRunOptions = {}): GateResult {
   const thresholds: GateThresholds = { ...GATE_DEFAULTS, ...options.thresholds }
-  const gathered = gather(root, request, thresholds)
+  const drafted = options.draft !== undefined
+  // A draft is by definition not the file, so the conclusion file would describe bytes that
+  // are not on disk. Recording it is refused here rather than silently skipped: a caller that
+  // asks for both is asking for the wrong thing (issue #47 holds the verdict in the job record
+  // and writes the chapter only after a human, or a clean verdict, says yes).
+  if (drafted && options.record !== false) {
+    return refuse(
+      'GATE_DRAFT_NOT_RECORDABLE',
+      'a draft has no chapter file to key the conclusion on; pass record: false',
+      'the batch job keeps the verdict in .inkflow/jobs/<jobId>/chapters/<seq>.json instead',
+    )
+  }
+  const gathered = gather(root, request, thresholds, options.draft)
   if ('ok' in gathered) return gathered
 
   const findingsByCheck: { check: GateCheck; findings: readonly Finding[] }[] = GATE_CHECKS.map((check) => {

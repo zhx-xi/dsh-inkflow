@@ -522,13 +522,14 @@ test('PANEL_TABS leaves unimplemented pages disabled with their release note', (
   // bin), #31 伏笔 (the read-only board), #33 体检 (the five-family audit), #38 候选 (the
   // extraction queue — X-20's one new tab), #48 地图 (places are world entries, ADR-0025 D4),
   // #43 简报 (nine segments, X-23), #44 门禁 (the seven quality gates, ADR-0022 D4),
-  // #46 审稿 (the review runs and their evidence chain) and #45 提案 (per-hunk accept, apply,
-  // rollback). This list is the build's own claim about what a user can click, so it is
+  // #46 审稿 (the review runs and their evidence chain), #45 提案 (per-hunk accept, apply,
+  // rollback) and #47 批量 (the batch job's status, gate counts and 续跑). This list is the
+  // build's own claim about what a user can click, so it is
   // spelled out rather than derived — and it is ONE list, not one list per issue.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal'],
-    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43)、门禁 (#44)、审稿 (#46) 与提案 (#45) exist in this build',
+    ['chapters', 'library', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal', 'batch'],
+    '章节, 设定库, 伏笔, 回收站, 体检, 候选、地图 (#48)、简报 (#43)、门禁 (#44)、审稿 (#46)、提案 (#45) 与批量 (#47) exist in this build',
   )
   // Issue #180 registered the four 0.5.0 pages as placeholders (roadmap §2.4); #43, #44, #46
   // and #45 each turned their own row live, so exactly one placeholder is left. A row that

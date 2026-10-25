@@ -193,7 +193,7 @@ test('plugin exports the Cordis Host shape', () => {
   assert.equal(typeof apply, 'function')
 })
 
-test('registers the forty built-ins, the tools of every registered domain, and one prefix route', () => {
+test('registers the forty-eight built-ins, the tools of every registered domain, and one prefix route', () => {
   const dir = workdir()
   try {
     const harness = makeTools(join(dir, 'plugin-state'))
@@ -207,6 +207,12 @@ test('registers the forty built-ins, the tools of every registered domain, and o
       // content directory).
       'inkflow_backup_create',
       'inkflow_backup_restore',
+      // #47: the batch queue — enqueue / take / complete / approve. Built-ins: a job belongs
+      // to no content directory, and the plugin embeds no model client to draft its chapters.
+      'inkflow_batch_approve',
+      'inkflow_batch_complete',
+      'inkflow_batch_enqueue',
+      'inkflow_batch_take',
       // #48: the book's calendar, read and written through the timeline domain (it is a
       // key in `inkflow.json`, not a content directory).
       'inkflow_calendar_get',

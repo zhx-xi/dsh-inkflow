@@ -1238,3 +1238,13 @@ export {
   rollbackViaChannel,
 } from './proposal-channel.js'
 export type { ProposalReply, ProposalSource } from './proposal-channel.js'
+// ---------------------------------------------------------------------------
+// issue #47 — the batch job queue (ADR-0023, X-26/X-30). The engine and the state machine live
+// in `jobs.ts`, the panel projection in `jobs-wire.ts`, the tool surface in `jobs-tools.ts`.
+// Re-exported here so `routes.ts` keeps ONE entry point for the channel — the same arrangement
+// as the bin (#35), the audit (#33), the import (#37), the queue (#38), the gate (#44), the
+// review (#46) and the proposals (#45).
+// ---------------------------------------------------------------------------
+
+export { BATCH_RESUME_BODY_FIELDS, buildBatchPage, resumeViaChannel } from './jobs-wire.js'
+export type { BatchChapterRow, BatchCounts, BatchDetail, BatchPage } from './jobs-wire.js'
