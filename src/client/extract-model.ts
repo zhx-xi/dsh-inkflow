@@ -61,6 +61,12 @@ export interface EvidenceLocator {
 }
 
 /** One candidate as the channel reports it. */
+export interface CandidateVerdict {
+  code: string
+  message: string
+  path: string | null
+}
+
 export interface CandidateRow {
   candidateId: string
   kind: string
@@ -72,6 +78,8 @@ export interface CandidateRow {
   status: string
   file: string
   submittedAt: string
+  /** What `accept` would refuse right now (#175); null when the Host saw no conflict. */
+  willFail: CandidateVerdict | null
 }
 
 export interface CandidateCounts {
@@ -136,7 +144,19 @@ function asRow(value: unknown): CandidateRow | undefined {
     status: text(record['status']),
     file: text(record['file']),
     submittedAt: text(record['submittedAt']),
+    willFail: asVerdict(record['willFail']),
   }
+}
+
+/** A `willFail` off the wire, or null. A half-shaped one is dropped, not repaired. */
+function asVerdict(value: unknown): CandidateVerdict | null {
+  const record = asRecord(value)
+  if (record === undefined) return null
+  const code = text(record['code'])
+  const message = text(record['message'])
+  if (code === '' || message === '') return null
+  const path = text(record['path'])
+  return { code, message, path: path === '' ? null : path }
 }
 
 export interface CandidateList {
@@ -272,8 +292,32 @@ export function waitingCount(counts: CandidateCounts | null): number {
 }
 
 /** Rows a batch action may act on: only the ones still waiting for a decision. */
+/**
+ * The ids a batch would act on: waiting rows the author ticked, minus the ones the Host
+ * already said would fail (#175).
+ *
+ * They are dropped rather than sent, because a batch that half-succeeds is exactly what
+ * the author cannot read at a glance; the page says how many were skipped and why, and a
+ * single accept on such a row still works (it reports the domain code in place).
+ */
 export function actionableIds(rows: readonly CandidateRow[], selected: ReadonlySet<string>): string[] {
-  return rows.filter((row) => row.status === 'proposed' && selected.has(row.candidateId)).map((row) => row.candidateId)
+  return rows
+    .filter((row) => row.status === 'proposed' && row.willFail === null && selected.has(row.candidateId))
+    .map((row) => row.candidateId)
+}
+
+/** Ticked waiting rows the batch will skip because `willFail` says so. */
+export function skippedIds(rows: readonly CandidateRow[], selected: ReadonlySet<string>): string[] {
+  return rows
+    .filter((row) => row.status === 'proposed' && row.willFail !== null && selected.has(row.candidateId))
+    .map((row) => row.candidateId)
+}
+
+/** `将失败：重名 · characters/邓彪.md` — one line a reader can act on, or null. */
+export function willFailLabel(row: CandidateRow): string | null {
+  if (row.willFail === null) return null
+  const where = row.willFail.path === null ? '' : ` · ${row.willFail.path}`
+  return `将失败：${row.willFail.code}${where}`
 }
 
 /** Toggle one id in a selection, returning a new set (React state must not be mutated). */
@@ -286,7 +330,9 @@ export function toggleSelected(selected: ReadonlySet<string>, candidateId: strin
 
 /** Select-all for a page: adds every waiting row, or clears them when all are already in. */
 export function toggleAll(rows: readonly CandidateRow[], selected: ReadonlySet<string>): Set<string> {
-  const waiting = rows.filter((row) => row.status === 'proposed').map((row) => row.candidateId)
+  // Only rows a batch can act on: ticking a doomed row would promise something the batch
+  // skips (#175).
+  const waiting = rows.filter((row) => row.status === 'proposed' && row.willFail === null).map((row) => row.candidateId)
   if (waiting.length === 0) return new Set(selected)
   const allSelected = waiting.every((id) => selected.has(id))
   const next = new Set(selected)

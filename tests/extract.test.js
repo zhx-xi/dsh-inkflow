@@ -1087,3 +1087,179 @@ test('a world keyword the inline list cannot carry is refused at the accept door
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// #175: the queue warns about a doomed candidate BEFORE accept
+// ---------------------------------------------------------------------------
+
+test('#175: a candidate that would collide is marked willFail at submit time, with the code accept will use', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
+
+    // The author already wrote this card by hand — the state the verify report hit.
+    const hand = await callTool(harness, 'inkflow_character_upsert', { projectRoot: root, name: '邓彪', role: '配角', confirm: true })
+    assert.equal(hand.ok, true, JSON.stringify(hand.error))
+    const before = contentDigests(root)
+
+    const proposed = await propose(harness, root, 'character', [{ fields: { name: '邓彪' }, evidence: 'ch-0001' }])
+    const candidate = proposed.created[0]
+    assert.equal(candidate.willFail?.code, 'CHARACTER_NAME_DUPLICATE', 'the submit answer carries the verdict')
+    assert.equal(candidate.willFail?.path, 'characters/邓彪.md', 'and names the card it collides with')
+    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'a pre-check writes no entity file')
+
+    // The promise must be the same judgement accept runs: same code, same path.
+    const accepted = await callTool(harness, 'inkflow_extract_accept', {
+      projectRoot: root,
+      candidateIds: [candidate.candidateId],
+      confirm: true,
+    })
+    assert.equal(accepted.accepted, 0)
+    assert.equal(accepted.outcomes[0].error.code, candidate.willFail?.code, 'willFail ⇔ accept refusal')
+    assert.equal(accepted.outcomes[0].error.path, candidate.willFail?.path)
+    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'and the refused accept writes nothing either')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#175: a clean candidate carries no willFail key, so its batch file stays byte-compatible', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
+
+    const proposed = await propose(harness, root, 'character', [{ fields: { name: '夜探喽啰' }, evidence: 'ch-0001' }])
+    assert.equal(proposed.created[0].willFail, undefined, 'no verdict when nothing collides')
+    const text = readFileSync(join(root, '.inkflow', 'candidates', proposed.file), 'utf8')
+    assert.equal(text.includes('willFail'), false, 'the key is written only when it has something to say')
+
+    const accepted = await callTool(harness, 'inkflow_extract_accept', {
+      projectRoot: root,
+      candidateIds: [proposed.created[0].candidateId],
+      confirm: true,
+    })
+    assert.equal(accepted.accepted, 1, JSON.stringify(accepted.outcomes))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#175: an older batch file without willFail still reads, and the panel model treats it as "no warning"', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
+    const dirPath = join(root, '.inkflow', 'candidates')
+    mkdirSync(dirPath, { recursive: true })
+    // Exactly what 0.4.0 wrote: seven keys, no verdict.
+    writeFileSync(
+      join(dirPath, '20260101T000000000Z-character.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          submittedAt: '2026-01-01T00:00:00.000Z',
+          source: { chapters: ['ch-0001'] },
+          proposals: [
+            {
+              candidateId: 'ex-abcdef01',
+              kind: 'character',
+              fields: { name: '旧候选' },
+              evidence: 'ch-0001',
+              rationale: '',
+              confidence: 'medium',
+              status: 'proposed',
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+
+    const listed = await listCandidates(harness, root)
+    assert.equal(listed.total, 1)
+    assert.equal(listed.items[0].willFail, undefined, 'the tool answer omits the key for a legacy file')
+
+    const model = await loadExtractModel()
+    const view = model.readCandidateList({ items: listed.items, counts: { byStatus: {}, byKind: {} } })
+    assert.equal(view.rows[0].willFail, null)
+    assert.equal(model.willFailLabel(view.rows[0]), null, 'nothing to warn about')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#175: the panel keeps doomed rows out of a batch and says how many it skipped', async () => {
+  const dir = workdir()
+  try {
+    const model = await loadExtractModel()
+    const row = (candidateId, status, willFail) => ({
+      candidateId,
+      kind: 'character',
+      fields: { name: candidateId },
+      evidence: 'ch-0001',
+      locator: null,
+      rationale: '',
+      confidence: 'medium',
+      status,
+      file: 'x.json',
+      submittedAt: '',
+      willFail,
+    })
+    const rows = [
+      row('ex-00000001', 'proposed', null),
+      row('ex-00000002', 'proposed', { code: 'CHARACTER_NAME_DUPLICATE', message: 'taken', path: 'characters/邓彪.md' }),
+      row('ex-00000003', 'accepted', null),
+    ]
+    const selected = new Set(['ex-00000001', 'ex-00000002', 'ex-00000003'])
+
+    assert.deepEqual(model.actionableIds(rows, selected), ['ex-00000001'], 'only clean, waiting rows are acted on')
+    assert.deepEqual(model.skippedIds(rows, selected), ['ex-00000002'], 'the doomed row is reported as skipped')
+    assert.equal(model.willFailLabel(rows[1]), '将失败：CHARACTER_NAME_DUPLICATE · characters/邓彪.md')
+    assert.equal(model.willFailLabel(rows[0]), null)
+
+    // Select-all must not promise a row the batch would skip.
+    const all = model.toggleAll(rows, new Set())
+    assert.equal(all.has('ex-00000002'), false, 'a doomed row is not ticked by 全选待审')
+    assert.equal(all.has('ex-00000001'), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#175: the shared judge covers other kinds too — a world candidate on an occupied path is `DUPLICATE_ID` both ways', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
+    markdown(root, 'world/门派/鹤鸣剑.md', ['id: world/门派/鹤鸣剑.md', 'title: 鹤鸣剑', 'category: 门派'], '白鹤门的佩剑。\n')
+
+    const proposed = await propose(harness, root, 'world', [{ fields: { title: '鹤鸣剑', category: '门派' }, evidence: 'ch-0001' }])
+    const candidate = proposed.created[0]
+    assert.equal(candidate.willFail?.code, 'DUPLICATE_ID', 'the pre-check is the seam judge, not a character special case')
+    assert.equal(candidate.willFail?.path, 'world/门派/鹤鸣剑.md')
+
+    const accepted = await callTool(harness, 'inkflow_extract_accept', {
+      projectRoot: root,
+      candidateIds: [candidate.candidateId],
+      confirm: true,
+    })
+    assert.equal(accepted.accepted, 0)
+    assert.equal(accepted.outcomes[0].error.code, 'DUPLICATE_ID')
+    assert.equal(accepted.outcomes[0].error.path, candidate.willFail?.path)
+    assert.equal(
+      readFileSync(join(root, 'world', '门派', '鹤鸣剑.md'), 'utf8'),
+      '---\nid: world/门派/鹤鸣剑.md\ntitle: 鹤鸣剑\ncategory: 门派\n---\n\n白鹤门的佩剑。\n',
+      'the existing file is byte-identical',
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

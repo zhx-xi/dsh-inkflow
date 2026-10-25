@@ -46,10 +46,12 @@ import {
   kindLabel,
   kindLabelOf,
   readCandidateList,
+  skippedIds,
   statusLabel,
   toggleAll,
   toggleSelected,
   waitingCount,
+  willFailLabel,
 } from './extract-model.js'
 import type { CandidateListValue, CandidateRow, EvidenceJump } from './extract-model.js'
 
@@ -297,6 +299,11 @@ export function ExtractView({
           <button type="button" style={buttonStyle} disabled={busy || actionableIds(view.rows, selected).length === 0} onClick={() => void acceptBatch()}>
             批量采纳（{String(actionableIds(view.rows, selected).length)}）
           </button>
+          {skippedIds(view.rows, selected).length === 0 ? null : (
+            <span style={{ ...muted, fontSize: 12 }} title="这些候选的实体已存在，采纳会被拒；批量里已跳过，行内可看原因">
+              已跳过 {String(skippedIds(view.rows, selected).length)} 条将失败的候选
+            </span>
+          )}
           <button
             type="button"
             style={dangerButtonStyle}
@@ -328,20 +335,32 @@ export function ExtractView({
               const ticked = selected.has(row.candidateId)
               const jump = evidenceTarget(row)
               const facts = describeFields(row)
+              const doomed = willFailLabel(row)
               return (
                 <div key={row.candidateId} style={rowStyle}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                     <input
                       type="checkbox"
                       checked={ticked}
-                      disabled={!waitingRow}
-                      title={waitingRow ? '选中以便批量处理' : '已处理的候选不能再批量操作'}
+                      disabled={!waitingRow || doomed !== null}
+                      title={
+                        !waitingRow
+                          ? '已处理的候选不能再批量操作'
+                          : doomed === null
+                            ? '选中以便批量处理'
+                            : `${doomed}：批量会跳过这一条`
+                      }
                       onChange={() => setSelected(toggleSelected(selected, row.candidateId))}
                     />
                     <span style={{ fontWeight: 600 }}>{candidateTitle(row)}</span>
                     <span style={{ ...muted, fontSize: 12 }}>{kindLabel(row)}</span>
                     <span style={{ ...muted, fontSize: 12 }}>置信 {confidenceLabel(row)}</span>
                     <span style={{ ...muted, fontSize: 12 }}>{statusLabel(row)}</span>
+                    {doomed === null ? null : (
+                      <span style={{ fontSize: 12, color: 'var(--dsw-alias-state-warning-primary)' }} title={row.willFail?.message ?? ''}>
+                        {doomed}
+                      </span>
+                    )}
                     <span style={{ ...muted, ...mono, fontSize: 11 }}>{row.candidateId}</span>
                     <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                       <button

@@ -177,6 +177,8 @@ export function buildCandidates(
           status: record.proposal.status,
           file: record.file,
           submittedAt: record.submittedAt,
+          // #175: the panel shows this as a badge and keeps the row out of a batch.
+          ...(record.proposal.willFail === undefined ? {} : { willFail: { ...record.proposal.willFail } }),
         })),
       },
     },

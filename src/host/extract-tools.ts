@@ -24,8 +24,9 @@
 import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } from './context.js'
 import { ensureIndex } from './index-freshness.js'
 import { gateFailure, isRefused, resolveProject } from './domains/tool-project.js'
-import { acceptCandidates } from './extract-accept.js'
+import { acceptCandidates, judgeCandidate } from './extract-accept.js'
 import type { AcceptRefusal } from './extract-accept.js'
+import { scanProject } from './indexer.js'
 import {
   EXTRACT_KINDS,
   CANDIDATE_STATUSES,
@@ -91,6 +92,8 @@ function candidateView(record: CandidateRecord): Json {
     status: proposal.status,
     file: record.file,
     submittedAt: record.submittedAt,
+    // #175: present only when accept would refuse this candidate right now.
+    ...(proposal.willFail === undefined ? {} : { willFail: { ...proposal.willFail } }),
   }
 }
 
@@ -178,7 +181,17 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
         for (const item of [...created, ...updated]) {
           const fields = asRecord(item['fields'])
           const label = String(fields['name'] ?? fields['title'] ?? fields['source'] ?? '')
-          lines.push(`- ${String(item['candidateId'])} (${String(item['kind'])}) ${label} — ${String(item['evidence'])}`)
+          const verdict = item['willFail'] === undefined ? undefined : asRecord(item['willFail'])
+          const failing = verdict === undefined ? '' : ` — will FAIL on accept: ${String(verdict['code'] ?? 'unknown')}`
+          lines.push(`- ${String(item['candidateId'])} (${String(item['kind'])}) ${label} — ${String(item['evidence'])}${failing}`)
+        }
+        const doomed = [...created, ...updated].filter((item) => item['willFail'] !== undefined).length
+        if (doomed > 0) {
+          lines.push(
+            `${String(doomed)} candidate(s) carry \`willFail\`: the book already holds what they would create. They are ` +
+              'stored and listed all the same — fix the fields and resubmit with the same candidateId, or tell the author ' +
+              'that accepting them will be refused with that code.',
+          )
         }
         lines.push('Nothing has been written into the content directories: candidates wait for inkflow_extract_accept.')
         return text(lines)
@@ -209,17 +222,28 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
       const chapters = Array.isArray(a['chapters'])
         ? a['chapters'].filter((item): item is string => typeof item === 'string')
         : []
+      // One snapshot for the whole batch (#175): nothing is written between these
+      // judgements, so the same view is honest — and it keeps a 30-candidate batch at a
+      // single scan instead of thirty. The documented consequence: two candidates of the
+      // SAME batch can both look clean here while the second one loses on accept, because
+      // accept re-scans per candidate (a write may have landed in between).
+      const scan = scanProject(root)
+      const view = { scan: { tables: scan.tables, entities: scan.entities, issues: scan.issues }, entities: scan.entities }
       const result = proposeCandidates(root, {
         kind: kind as ExtractKind,
         chapters,
         proposals: raw.map((item) => {
           const record = asRecord(item)
+          const judged = judgeCandidate({ root, kind: kind as ExtractKind, fields: asRecord(record['fields']), view })
           return {
             ...(optionalString(record['candidateId']) === undefined ? {} : { candidateId: optionalString(record['candidateId']) ?? '' }),
             fields: record['fields'],
             evidence: record['evidence'],
             ...(record['rationale'] === undefined ? {} : { rationale: record['rationale'] }),
             ...(record['confidence'] === undefined ? {} : { confidence: record['confidence'] }),
+            // A field error is not a "will fail" warning: `proposeCandidates` refuses the
+            // whole batch for it below, so only real conflicts reach the queue.
+            ...(judged.ok ? {} : { willFail: judged.error }),
           }
         }),
       })
@@ -272,9 +296,11 @@ export function extractTools(deps: ToolDeps): ToolDefinition[] {
         for (const item of items) {
           const fields = asRecord(item['fields'])
           const label = String(fields['name'] ?? fields['title'] ?? fields['source'] ?? '')
+          const verdict = item['willFail'] === undefined ? undefined : asRecord(item['willFail'])
+          const failing = verdict === undefined ? '' : ` · WILL FAIL: ${String(verdict['code'] ?? 'unknown')}`
           lines.push(
             `- ${String(item['candidateId'])} [${String(item['kind'])}/${String(item['status'])}] ${label} ` +
-              `(${String(item['confidence'])}) — evidence ${String(item['evidence'])}`,
+              `(${String(item['confidence'])}) — evidence ${String(item['evidence'])}${failing}`,
           )
           if (typeof item['rationale'] === 'string' && item['rationale'] !== '') lines.push(`    ${item['rationale']}`)
         }
