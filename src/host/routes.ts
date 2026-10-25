@@ -98,6 +98,9 @@ import {
   writeHubSettings,
 } from './hub-settings.js'
 import { HUB_APPLY_BODY_FIELDS, HUB_PLAN_BODY_FIELDS, hubApply, hubPlan } from './hub-wizard.js'
+// The export entry (#195): a thin forwarder to `exportBook()`, so the page and `inkflow_export`
+// are one computation (ADR-0024 入口归属).
+import { HUB_EXPORT_BODY_FIELDS, hubExportOptions, hubExportReply } from './export-channel.js'
 import { sharedRootOf } from './settings.js'
 import {
   CANDIDATES_ACCEPT_BODY_FIELDS,
@@ -1007,6 +1010,33 @@ const HUB_ROUTES: readonly HubRoute[] = [
     query: [],
     body: HUB_APPLY_BODY_FIELDS,
     handle: ({ ctx, body }) => hubApply(ctx, body),
+  },
+  {
+    // The export entry (#195, ADR-0024 D4 / 入口归属). Two routes and no new semantics: the
+    // read half serves what the page may offer (volumes + the three vocabularies, straight
+    // from `export.ts`), the write half forwards to `exportBook()` — the SAME function
+    // `inkflow_export` calls, so the panel and the tool cannot drift apart.
+    //
+    // Two route objects rather than one with two verbs: a route declares its verbs AND its
+    // guards together, and a GET must not inherit the write guards. They therefore need
+    // different paths (`/hub/export/options` vs `/hub/export`), because this channel has no
+    // method-based dispatch — which is exactly what keeps a write off a read route.
+    name: 'hub-export-options',
+    pattern: /^\/hub\/export\/options$/,
+    methods: ['GET'],
+    query: ['book'],
+    handle: ({ ctx, dataDir, query }) => hubExportOptions(ctx, dataDir, query.get('book')),
+  },
+  {
+    // No `confirm` field and no `planToken`: ADR-0024's判据 is "can it overwrite or delete",
+    // and a stamped export name can never do either. The hub write guards (same-origin
+    // `Origin`, JSON body, field whitelist) still apply, because this route does write a file.
+    name: 'hub-export',
+    pattern: /^\/hub\/export$/,
+    methods: ['POST'],
+    query: [],
+    body: HUB_EXPORT_BODY_FIELDS,
+    handle: ({ ctx, dataDir, body }) => hubExportReply(ctx, dataDir, body),
   },
   {
     // The shared library (ADR-0010 D5, issue #87): read-only browsing of
