@@ -50,11 +50,10 @@ import { compareFindings } from './findings.js'
 import type { Finding, FindingSeverity } from './findings.js'
 import {
   GATE_CHECKS,
-  GATE_CHECK_IDS,
-  GATE_DEFAULTS,
-  gateCheckOf,
 } from './gate-rules.js'
-import type { GateCheckId, GateCheck, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-rules.js'
+import type { GateCheck } from './gate-rules.js'
+import { GATE_CHECK_IDS, GATE_DEFAULTS, gateCheckOf } from './gate-vocabulary.js'
+import type { GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-vocabulary.js'
 import { intField, parseMarkdown, stringField } from './frontmatter.js'
 import { walkProjectFiles } from './indexer.js'
 import type { WalkedFile } from './indexer.js'
@@ -64,17 +63,12 @@ import { ensurePrivateStateIgnored, privateStateRelative } from './private-state
 /**
  * The gate's surface for the tool, the panel route and the tests: seven checks in order,
  * their labels, the code table and the defaults. Re-exported here so a caller imports one
- * module (`gate.ts`) instead of two.
+ * module (`gate.ts`) instead of three.
  */
-export {
-  GATE_CHECKS,
-  GATE_CHECK_IDS,
-  GATE_CHECK_LABELS,
-  GATE_CODES,
-  GATE_DEFAULTS,
-  gateCheckOf,
-} from './gate-rules.js'
-export type { GateCheck, GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-rules.js'
+export { GATE_CHECKS } from './gate-rules.js'
+export type { GateCheck } from './gate-rules.js'
+export { GATE_CHECK_IDS, GATE_CHECK_LABELS, GATE_CODES, GATE_DEFAULTS, gateCheckOf } from './gate-vocabulary.js'
+export type { GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-vocabulary.js'
 
 /** Bumped only when the file's shape changes; the gate file is a fact, not a cache. */
 export const GATE_FILE_SCHEMA_VERSION = 1

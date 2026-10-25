@@ -703,8 +703,10 @@ export {
   renderGateFile,
   runGate,
 } from './gate.js'
-export { GATE_CHECKS, GATE_CHECK_IDS, GATE_CHECK_LABELS, GATE_CODES, GATE_DEFAULTS, gateCheckOf } from './gate-rules.js'
-export type { GateCheck, GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-rules.js'
+export { GATE_CHECKS } from './gate.js'
+export { GATE_CHECK_IDS, GATE_CHECK_LABELS, GATE_CODES, GATE_DEFAULTS, gateCheckOf } from './gate-vocabulary.js'
+export type { GateCheck } from './gate.js'
+export type { GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-vocabulary.js'
 export type { GateCounts, GateError, GateFileResult, GateReport, GateRequest, GateResult, GateRunOptions } from './gate.js'
 
 /** Private state directory (`.inkflow/`) helpers — ADR-0012, roadmap X-9. */

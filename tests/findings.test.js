@@ -120,11 +120,13 @@ function emittedValidationCodes() {
     join(repoRoot, 'src/host/indexer.ts'),
     join(repoRoot, 'src/host/index-build.ts'),
     join(repoRoot, 'src/host/catalog.ts'),
-    // #44: the quality gate's two halves emit `GATE_*` from the same `code: '…'` shape, so
+    // #44: the quality gate's four halves emit `GATE_*` from the same `code: '…'` shape, so
     // the scan has to see them — otherwise the catalogue entries would read as "nobody
     // emits this" and the gate codes would have to be excused as reservations.
     join(repoRoot, 'src/host/gate.ts'),
     join(repoRoot, 'src/host/gate-rules.ts'),
+    join(repoRoot, 'src/host/gate-proofread.ts'),
+    join(repoRoot, 'src/host/gate-vocabulary.ts'),
   ]
   const codes = new Set()
   for (const file of files) {

@@ -287,7 +287,7 @@ test('质量门禁：干净正文不报（负例，逐项）', async (t) => {
   await t.test('两个字的角色名不参与近似名检测（已声明的限制）', () => {
     // 「清音」 is two characters: 「清风」 would be one character away, and every common word
     // sharing one character with a two-character name would become a candidate. The limit is
-    // documented in `gate-rules.ts`; this pins it so it cannot change silently.
+    // documented in `gate-proofread.ts`; this pins it so it cannot change silently.
     assert.equal(codesOf(gateBody('清风从窗口灌进来，吹得灯芯晃了晃。\n')).includes('GATE_PROOF_NEAR_NAME'), false)
   })
 
@@ -527,7 +527,7 @@ test('质量门禁：每个 GATE_* 码都在共享词表里、都在 data-model 
 
 /** The codes one check can emit, read from the source so a new rule cannot be forgotten. */
 function codesOfCheck(checkId) {
-  const source = readFileSync(join(repoRoot, 'src/host/gate-rules.ts'), 'utf8')
+  const source = readFileSync(join(repoRoot, 'src/host/gate-vocabulary.ts'), 'utf8')
   const table = source.slice(source.indexOf('export const GATE_CODES'), source.indexOf('const SPEC_BY_CODE'))
   const rows = [...table.matchAll(/\{ code: '([A-Z0-9_]+)', check: '([a-zA-Z]+)'/g)]
   return rows.filter((row) => row[2] === checkId).map((row) => row[1])
