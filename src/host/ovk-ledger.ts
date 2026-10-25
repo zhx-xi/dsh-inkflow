@@ -329,6 +329,15 @@ export interface RebuildPlan {
   unchanged: number
   /** Chapter bodies read (for the estimate: same number as `writes` + `unchanged`). */
   chapters: number
+  /**
+   * Chapters the book still lists but whose body could not be read this run.
+   *
+   * NOT a tombstone: a read that failed says nothing about whether the chapter still
+   * exists, and the tombstone path *overwrites* the chapter's blocks with a deleted marker
+   * — one lost read would wipe a live chapter out of recall (issue #207). They are handed
+   * to the caller as stale so the next run retries them and the status surface names them.
+   */
+  unreadable: string[]
   bytes: number
   blocks: number
   calls: number
@@ -341,8 +350,11 @@ export interface RebuildPlan {
  * produced it — one read serves both the hash and the chunking, so the increment check
  * cannot disagree with what would be written.
  *
- * A chapter the ledger knows and the book no longer has is a TOMBSTONE, not a deletion of
- * the record (ADR-0009 P6 step 2/3): the record is what a purge names.
+ * A chapter the ledger knows and the book no longer lists is a TOMBSTONE, not a deletion of
+ * the record (ADR-0009 P6 step 2/3): the record is what a purge names. "The book no longer
+ * lists it" is read from the index listing, which is the book's own record — a chapter the
+ * index still lists is never tombstoned, even when its body could not be read (that case is
+ * `unreadable`, and the next index rebuild is what settles whether the file is really gone).
  */
 export function planRebuild(
   ledger: SemanticLedger,
@@ -353,6 +365,7 @@ export function planRebuild(
   const projectId = options.projectId ?? ledger.projectId
   const writes: ChapterPlan[] = []
   const tombstones: TombstonePlan[] = []
+  const unreadable: string[] = []
   const seen = new Set<string>()
   let unchanged = 0
   let chaptersRead = 0
@@ -361,10 +374,15 @@ export function planRebuild(
   let calls = 0
 
   for (const chapter of chapters) {
-    const body = bodies.get(chapter.id)
-    if (body === undefined) continue
-    chaptersRead += 1
+    // Recorded before the body check: the book still has this chapter, so it must not fall
+    // through to the tombstone loop below just because this run could not read it.
     seen.add(chapter.id)
+    const body = bodies.get(chapter.id)
+    if (body === undefined) {
+      unreadable.push(chapter.id)
+      continue
+    }
+    chaptersRead += 1
     const existing = ledger.chapters[chapter.id]
     const sameShape =
       existing !== undefined && !existing.deleted && existing.contentHash === body.hash && existing.blocks.length > 0
@@ -407,7 +425,7 @@ export function planRebuild(
     tombstones.push({ chapterId, record })
   }
 
-  return { writes, tombstones, unchanged, chapters: chaptersRead, bytes, blocks, calls }
+  return { writes, tombstones, unreadable, unchanged, chapters: chaptersRead, bytes, blocks, calls }
 }
 
 /** Chapter body text, chunk counts and bytes for the estimator (no writes implied). */
