@@ -519,6 +519,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/ovk-status.ts` | **三个语义动作的唯一实现**（工具与面板共用）：`semanticStatusOf`（设置 + peer + 可用性 + 账本计数 + 队列状态 + 阈值）、`estimateRebuild`（含 `requiresConfirm`：>200 章或 >5 MB）、`rebuildNow`（走队列）、`purgePlanOf` / `purgeApply`（逐条删、**首条失败即停**、只摘掉真正删掉的条目） | 会话 / 书锚点解析（那两个调用方各做各的）、HTTP 细节、工具 schema |
 | `src/host/ovk-tools.ts` | 语义三工具：`inkflow_semantic_status`（只读、无 `confirm`）、`inkflow_semantic_rebuild`（先估值、超阈值要 `confirm`）、`inkflow_semantic_purge`（**唯一会物理删除**、先列清单再 `confirm`、首条失败即停并报位置） | 动作实现（在 `ovk-status.ts`）、直连 OVK、读作品正文以外的内容 |
 | `src/host/ovk-hub.ts` | 设置页「语义检索」块的三条 hub 路由（`GET /hub/semantic`、`POST /hub/semantic/rebuild`、`POST /hub/semantic/purge`）：书锚点走 `resolveHubBook`（注册表 id / 已注册路径 / 目录名，**不接受任意路径**），先把索引刷新鲜再估值，动作一律调 `ovk-status.ts` | 在请求里携带端点或密钥（ADR-0020 决策：连接只来自设置文件）、自己再实现一遍重建 / 清理 |
+| `src/host/writing-context-render.ts` | 两套装配共用的**段渲染器**（#43，[ADR-0022](../adrs/0022-writing-context-gate-findings.md) D1/D2）：`### 项目` / `### 当前章` / `### 上一章结尾` / `### 世界书` 四个块的文字、`[trimmed: …]` 标记、`MAX_OUTLINE_CHARS` 与两个裁剪方向（尾段留尾、其余留头）；注入的六段与简报的九段调同一份，所以同一个段在两处不可能渲染成两种文字 | 决定要渲染哪些段、预算与裁剪顺序（归 `writing-context.ts`）、任何 IO |
+| `src/host/brief-sources.ts` | 简报 `characters` / `voice` 两段的**来源**（#43）：从 `characters` + `character_states` 取「本章大纲 + 上章结尾」里点名的人物卡（姓名/别名 ≥2 字、`firstAppearance` 不晚于本章），按「角色 · 本章状态」与 `voice`（语言基因）整行装填到 `capChars`；无索引/无命中 → `undefined`（简报记 `missing`），有来源但装不下一整行 → `{ text: '', truncated: true }` | 段顺序、预算与裁剪阶梯（归 `writing-context.ts`）、写入人物卡、拿 `entity_mentions` 当来源（那是「已存在章」的提及，而本章还没有正文） |
+| `src/host/brief.ts` | 简报的**审计与两个通道回复**（#43，ADR-0022 D4、[ADR-0023](../adrs/0023-proposal-job-private-placement.md)）：`briefFor`（唯一装配入口 + 进程内超预算计数）、`briefAuditRecord`/`serializeBriefAudit`（确定性：无时钟、无随机 id、无绝对路径，字段顺序即构造顺序）、`writeBriefAudit`（落 `.inkflow/audit/brief-<chapterId>.json`，`sha256` 从磁盘回读）、`GET /brief` 与 `POST /brief/audit`（要 `confirm: true`） | 装配规则（归 `writing-context.ts`）、第二次装配（预览与审计必须是同一份）、把段正文写进审计文件 |
 
 ### 6.2 客户端纯模型（`src/client/*-model.ts`）
 
@@ -539,6 +542,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 - `search-model.ts` — 检索框：请求路径与「全部类型」开关换算（`kinds=chapters` vs 省略）、X-16 信封的防御式读取、命中行文案、点击去向、摘要与降级文案
 - `extract-model.ts` — 候选页签：6 个 kind 与 3 个状态的取值与文案（`KIND_LABELS`/`STATUS_LABELS`/`CONFIDENCE_LABELS`）、`readCandidateList` 的防御式折叠、字段摘要（`describeFields`）与证据行（`describeEvidence`）、`evidenceTarget` 只认 Host 给的 `locator`（**不**二次解析 `path#L<n>`）、`describeCounts`/`waitingCount`
 - `settings-model.ts` — 设置页三段的表单换算与文案：`formFromSettings`/`patchFromForm`（表单字符串 ↔ 线上类型，空串 → `null` 清除）、`describeSettings`/`describeDraftChanges`、`SETTINGS_FIELD_LABELS`、备份与恢复的 `backupSummary`/`mergeRestoreExpected`/`describePlan`
+- `brief-model.ts` — 简报页（#43）：九段每行的状态（`ok`/`trimmed`/`missing`，只读 Host 的两个标记，**不**从 `bytes === 0` 自行推算）、占比文案（`formatShare`）、裁剪记录文案、`readBrief` 的三态折叠（请求失败 / 答案读不懂 / 九段真的都没有来源）
 
 ### 6.1 一致性体检（#33）的取数与落点
 

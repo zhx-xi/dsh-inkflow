@@ -1193,3 +1193,14 @@ export {
   rejectViaChannel,
 } from './extract-channel.js'
 export type { CandidateReply, CandidateSource } from './extract-channel.js'
+// ---------------------------------------------------------------------------
+// issue #43 — the nine-segment brief (ADR-0022 D1/D2, X-23). The assembly lives in
+// `writing-context.ts` (`buildWritingBrief`, beside the six-segment context it must not
+// disturb), the two new sources in `brief-sources.ts`, the audit record and both channel
+// replies in `brief.ts`. Re-exported here so `routes.ts` keeps ONE entry point for the
+// channel — the same arrangement as the bin (#35), the audit (#33), the import (#37) and
+// the queue (#38).
+// ---------------------------------------------------------------------------
+
+export { BRIEF_AUDIT_BODY_FIELDS, briefOptionsFromQuery, buildBrief, exportBriefAudit } from './brief.js'
+export type { BriefChannelSource, BriefReply } from './brief.js'
