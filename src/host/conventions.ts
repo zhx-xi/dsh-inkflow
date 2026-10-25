@@ -113,8 +113,9 @@ export type WriteDir = (typeof WRITE_DIRS)[number]
  */
 export const PRIVATE_STATE_DIR = '.inkflow'
 /**
- * The seven writable names under `.inkflow/` (roadmap X-18 widened this from three;
- * X-25 / ADR-0023 widened it again from four; #46 added the seventh, `review`).
+ * The eight writable names under `.inkflow/` (roadmap X-18 widened this from three;
+ * X-25 / ADR-0023 widened it again from four; #46 added the seventh, `review`; #199 added
+ * the eighth, `purged`).
  *
  * `candidates/` holds the extract pipeline's unreviewed proposals (ADR-0017 D3): they
  * are work files, not derived artefacts, so a rebuild must not be able to sweep them
@@ -131,8 +132,14 @@ export const PRIVATE_STATE_DIR = '.inkflow'
  * A run is an event — the reviewer is a session's model and cannot be replayed (X-26) — so
  * the record is not rebuildable either, and the panel reads it back to answer "what did the
  * last pass say about this chapter".
+ *
+ * `purged/` (#199) is the eighth, and it is the only **holding area** in the list: review
+ * runs and closed proposals the author cleaned up move here instead of vanishing, and the
+ * `trash/` ban on `.inkflow/` sources stays as it is (ADR-0012/ADR-0026). It is not a second
+ * recovery bin: it restores **private state only**, and its restore target is limited to
+ * `.inkflow/{review,proposals}` by construction.
  */
-export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs', 'review'] as const
+export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs', 'review', 'purged'] as const
 export type PrivateStateSubdir = (typeof PRIVATE_STATE_SUBDIRS)[number]
 
 /**

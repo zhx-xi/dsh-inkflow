@@ -208,7 +208,6 @@ const OVER_CAP_BUDGET = {
   'src/host/series.ts': 762,
   'src/host/settings-tools.ts': 643,
   'src/host/shared-copy.ts': 896,
-  'src/host/trash.ts': 649,
   'src/host/writing-context.ts': 863,
 }
 
