@@ -46,7 +46,7 @@
 | 19 | 场景契约 scene_contract | `outlines/scenes/<chapter>.md` | MD + frontmatter | 【未实现】 |
 | 20 | 提案 / 修订 proposal | `index/proposals/` | JSON | 派生临时件；接受后才写正文并 git commit |
 | 21 | 审计运行 audit_run | `index/audit/<timestamp>.json` | JSON | 派生物，可删 |
-| 22 | 提取暂存 extraction_staging | `.inkflow/candidates/<stamp>-<kind>.json` | JSON | **待作者审阅的工作物**，不是派生物：重建索引不该让它消失（[ADR-0017](../adrs/0017-extraction-by-session-model.md) D3）。形状 `{schemaVersion, submittedAt, source:{chapters[]}, proposals[]}`，`candidateId` 形如 `ex-<8 位十六进制>`；每条 proposal 可带**可选**的 `willFail: {code, message, path?}`——提交时用 `judgeCandidate()`（与 accept **同一个**判定）预检出的拒绝，是**提示不是闸门**（照样入队、照样可采纳，采纳时按同一 code 拒绝）；无冲突时该键不写，所以旧候选文件仍可读。只有 `inkflow_extract_accept(confirm)` 才写内容目录 |
+| 22 | 提取暂存 extraction_staging | `.inkflow/candidates/<stamp>-<kind>.json` | JSON | **待作者审阅的工作物**，不是派生物：重建索引不该让它消失（[ADR-0017](../adrs/0017-extraction-by-session-model.md) D3）。形状 `{schemaVersion, submittedAt, source:{chapters[]}, proposals[]}`，`candidateId` 形如 `ex-<8 位十六进制>`；每条 proposal 可带两个**可选**键（都由 `judgeCandidate()` 产出，与 accept **同一个**判定）：`willFail: {code, message, path?}` 是硬冲突（跨类 id、域不变量、无法解析），**提示不是闸门**（照样入队、照样可采纳，采纳时按同一 code 拒绝）；`duplicate: {state:"different", path, digest?, changedFields[]}` 表示「同身份、异内容」，采纳需显式 `overwrite: true` 才替换（先落 `replace` 备份包，CAS 基线是这里的 `digest`）。**同身份且内容一致**的候选**不入队**：`propose` 直接跳过并在回答里列 `skipped[]`（ADR-0021）。两个键都不写时文件与 0.4.0 逐字节相同，所以旧候选文件仍可读。只有 `inkflow_extract_accept(confirm)` 才写内容目录 |
 
 系统/检索类（不计入 22 组）：
 

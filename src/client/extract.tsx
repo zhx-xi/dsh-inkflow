@@ -42,6 +42,8 @@ import {
   describeFields,
   describeOutcomeSummary,
   describeOutcomes,
+  duplicateIds,
+  duplicateLabel,
   evidenceTarget,
   kindLabel,
   kindLabelOf,
@@ -196,17 +198,26 @@ export function ExtractView({
   }
 
   const acceptOne = async (row: CandidateRow): Promise<void> => {
+    const overwrite = row.duplicate !== null
     if (pendingAcceptId !== row.candidateId) {
       // The first click only arms: writing an entity file must not happen on a stray press.
       setPendingAcceptId(row.candidateId)
-      setNotice(`再点一次「确认采纳」才会写入：${candidateTitle(row)}`)
+      setNotice(
+        overwrite
+          ? `再点一次「确认覆盖」才会替换 ${row.duplicate?.path ?? ''}（旧内容先备份）：${candidateTitle(row)}`
+          : `再点一次「确认采纳」才会写入：${candidateTitle(row)}`,
+      )
       setError(null)
       return
     }
     setBusy(true)
     setError(null)
     setNotice(null)
-    const result = await writeInternal<unknown>('/candidates/accept', { candidateIds: [row.candidateId], confirm: true }, { sessionId })
+    const result = await writeInternal<unknown>(
+      '/candidates/accept',
+      { candidateIds: [row.candidateId], confirm: true, ...(overwrite ? { overwrite: true } : {}) },
+      { sessionId },
+    )
     setBusy(false)
     if (fail(result)) return
     await afterAction(result)
@@ -304,6 +315,11 @@ export function ExtractView({
               已跳过 {String(skippedIds(view.rows, selected).length)} 条将失败的候选
             </span>
           )}
+          {duplicateIds(view.rows, selected).length === 0 ? null : (
+            <span style={{ ...muted, fontSize: 12 }} title="覆盖既有实体要逐条决定；批量不代替你覆盖">
+              已跳过 {String(duplicateIds(view.rows, selected).length)} 条会覆盖既有内容的候选（请逐条点「覆盖」）
+            </span>
+          )}
           <button
             type="button"
             style={dangerButtonStyle}
@@ -336,13 +352,14 @@ export function ExtractView({
               const jump = evidenceTarget(row)
               const facts = describeFields(row)
               const doomed = willFailLabel(row)
+              const replacing = duplicateLabel(row)
               return (
                 <div key={row.candidateId} style={rowStyle}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                     <input
                       type="checkbox"
                       checked={ticked}
-                      disabled={!waitingRow || doomed !== null}
+                      disabled={!waitingRow || doomed !== null || replacing !== null}
                       title={
                         !waitingRow
                           ? '已处理的候选不能再批量操作'
@@ -361,16 +378,29 @@ export function ExtractView({
                         {doomed}
                       </span>
                     )}
+                    {replacing === null ? null : (
+                      <span style={{ fontSize: 12, color: 'var(--dsw-alias-state-warning-primary)' }} title={row.duplicate?.path ?? ''}>
+                        {replacing}
+                      </span>
+                    )}
                     <span style={{ ...muted, ...mono, fontSize: 11 }}>{row.candidateId}</span>
                     <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                       <button
                         type="button"
                         style={armed ? armedButtonStyle : buttonStyle}
-                        disabled={busy || !waitingRow}
-                        title={armed ? '再点一次确认：会写入实体文件' : '需要点两次才写入'}
+                        disabled={busy || !waitingRow || doomed !== null}
+                        title={
+                          replacing !== null
+                            ? armed
+                              ? `再点一次：会先备份再替换 ${row.duplicate?.path ?? ''}`
+                              : `这条会替换已存在的内容（${row.duplicate?.path ?? ''}），需要点两次`
+                            : armed
+                              ? '再点一次确认：会写入实体文件'
+                              : '需要点两次才写入'
+                        }
                         onClick={() => void acceptOne(row)}
                       >
-                        {armed ? '确认采纳' : '采纳'}
+                        {replacing !== null ? (armed ? '确认覆盖' : '覆盖') : armed ? '确认采纳' : '采纳'}
                       </button>
                       <button
                         type="button"

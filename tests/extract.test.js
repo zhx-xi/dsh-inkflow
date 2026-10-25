@@ -468,48 +468,115 @@ test('accept writes one entity through the domain seam; before it the content tr
   }
 })
 
-test('a candidate that would collide with an existing entity is refused with the domain code and writes nothing', async () => {
+test('#178: identical content is skipped at submit time — no candidate, no write, nothing to review', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
     tenChapters(root)
     const harness = makeHarness(dir)
 
-    // The author already wrote this card by hand.
+    // The author already wrote this card by hand, and the extraction says the same thing.
+    const hand = await callTool(harness, 'inkflow_character_upsert', { projectRoot: root, name: '清音', role: '主角', confirm: true })
+    assert.equal(hand.ok, true, JSON.stringify(hand.error))
+    const before = contentDigests(root)
+
+    const proposed = await propose(harness, root, 'character', [{ fields: { name: '清音', role: '主角' }, evidence: 'ch-0001' }])
+    assert.equal(proposed.created.length, 0, 'nothing to review: the book already says this')
+    assert.equal(proposed.skipped.length, 1)
+    assert.equal(proposed.skipped[0].path, 'characters/清音.md')
+    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'a skip writes no entity file')
+    const listed = await listCandidates(harness, root)
+    assert.equal(listed.total, 0, 'and no candidate row either')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#178: different content is kept and marked; accepting asks for overwrite and only then replaces', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
     const hand = await callTool(harness, 'inkflow_character_upsert', {
       projectRoot: root,
       name: '清音',
       role: '主角',
+      body: '旧版人物小传。',
       confirm: true,
     })
     assert.equal(hand.ok, true, JSON.stringify(hand.error))
+    const cardPath = 'characters/清音.md'
+    const beforeText = readFileSync(join(root, cardPath), 'utf8')
     const before = contentDigests(root)
 
-    const proposed = await propose(harness, root, 'character', [{ fields: { name: '清音' }, evidence: 'ch-0001' }])
-    const accepted = await callTool(harness, 'inkflow_extract_accept', {
+    const proposed = await propose(harness, root, 'character', [
+      { fields: { name: '清音', role: '主角', body: '新版人物小传，多了师门来历。' }, evidence: 'ch-0001' },
+    ])
+    const candidate = proposed.created[0]
+    assert.equal(candidate.duplicate?.state, 'different', 'same identity, other content')
+    assert.equal(candidate.duplicate?.path, cardPath)
+    assert.deepEqual(candidate.duplicate?.changedFields, ['body'], 'and it says WHAT differs')
+    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'proposing a duplicate writes nothing')
+
+    // No overwrite → refused, with the reason; the file is untouched.
+    const refused = await callTool(harness, 'inkflow_extract_accept', {
       projectRoot: root,
-      candidateIds: [proposed.created[0].candidateId],
+      candidateIds: [candidate.candidateId],
       confirm: true,
     })
-    assert.equal(accepted.accepted, 0)
-    assert.equal(accepted.outcomes[0].error.code, 'CHARACTER_NAME_DUPLICATE', 'I-03 keeps its own code')
-    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'a conflicting accept writes nothing')
+    assert.equal(refused.accepted, 0)
+    assert.equal(refused.outcomes[0].error.code, 'OVERWRITE_REQUIRED')
+    assert.equal(readFileSync(join(root, cardPath), 'utf8'), beforeText, 'nothing was replaced')
 
-    // The candidate is still undecided: the author can rename it and accept again.
-    const still = await listCandidates(harness, root, { status: 'proposed' })
-    assert.equal(still.total, 1)
-
-    // An occupied path is I-04, whatever the entity's name is.
-    markdown(root, 'world/门派/白鹤门.md', ['id: world/门派/白鹤门.md', 'title: 白鹤门', 'category: 门派'], '剑派。\n')
-    const world = await propose(harness, root, 'world', [{ fields: { title: '白鹤门', category: '门派' }, evidence: 'ch-0001' }])
-    const worldAccept = await callTool(harness, 'inkflow_extract_accept', {
+    // Explicit overwrite → the file is replaced, and the old bytes are in a replace backup.
+    const overwritten = await callTool(harness, 'inkflow_extract_accept', {
       projectRoot: root,
-      candidateIds: [world.created[0].candidateId],
+      candidateIds: [candidate.candidateId],
       confirm: true,
+      overwrite: true,
     })
-    assert.equal(worldAccept.accepted, 0)
-    assert.equal(worldAccept.outcomes[0].error.code, 'DUPLICATE_ID')
-    assert.equal(readFileSync(join(root, 'world', '门派', '白鹤门.md'), 'utf8'), '---\nid: world/门派/白鹤门.md\ntitle: 白鹤门\ncategory: 门派\n---\n\n剑派。\n', 'the existing file is byte-identical')
+    assert.equal(overwritten.accepted, 1, JSON.stringify(overwritten.outcomes))
+    assert.equal(overwritten.outcomes[0].overwritten, true)
+    const afterText = readFileSync(join(root, cardPath), 'utf8')
+    assert.notEqual(afterText, beforeText)
+    assert.ok(afterText.includes('新版人物小传，多了师门来历。'))
+
+    const packages = readdirSync(join(root, '.inkflow', 'backup'))
+    assert.equal(packages.length, 1, 'one replace package per overwrite')
+    const staged = readFileSync(join(root, '.inkflow', 'backup', packages[0], 'files', cardPath), 'utf8')
+    assert.equal(staged, beforeText, 'the package holds the bytes that were replaced')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#178: an edit made after the decision is not clobbered — the digest is the CAS baseline', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
+    markdown(root, 'world/门派/白鹤门.md', ['id: world/门派/白鹤门.md', 'title: 白鹤门', 'category: 门派'], '旧的一句话。\n')
+
+    const proposed = await propose(harness, root, 'world', [
+      { fields: { title: '白鹤门', category: '门派', body: '新的一句话。' }, evidence: 'ch-0001' },
+    ])
+    const candidate = proposed.created[0]
+    assert.equal(candidate.duplicate?.state, 'different')
+
+    // The author edits the entity by hand before clicking overwrite.
+    markdown(root, 'world/门派/白鹤门.md', ['id: world/门派/白鹤门.md', 'title: 白鹤门', 'category: 门派'], '作者刚改的一句。\n')
+
+    const refused = await callTool(harness, 'inkflow_extract_accept', {
+      projectRoot: root,
+      candidateIds: [candidate.candidateId],
+      confirm: true,
+      overwrite: true,
+    })
+    assert.equal(refused.accepted, 0)
+    assert.equal(refused.outcomes[0].error.code, 'FILE_CHANGED', 'a stale overwrite is refused, not applied')
+    assert.ok(readFileSync(join(root, 'world', '门派', '白鹤门.md'), 'utf8').includes('作者刚改的一句。'))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -1089,117 +1156,41 @@ test('a world keyword the inline list cannot carry is refused at the accept door
 })
 
 // ---------------------------------------------------------------------------
-// #175: the queue warns about a doomed candidate BEFORE accept
+// #178: a second extraction meets an existing entity — skip it or ask to overwrite
 // ---------------------------------------------------------------------------
 
-test('#175: a candidate that would collide is marked willFail at submit time, with the code accept will use', async () => {
+test('#178: a re-extraction of an unchanged entity never reaches the queue twice', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
     tenChapters(root)
     const harness = makeHarness(dir)
 
-    // The author already wrote this card by hand — the state the verify report hit.
-    const hand = await callTool(harness, 'inkflow_character_upsert', { projectRoot: root, name: '邓彪', role: '配角', confirm: true })
-    assert.equal(hand.ok, true, JSON.stringify(hand.error))
-    const before = contentDigests(root)
-
-    const proposed = await propose(harness, root, 'character', [{ fields: { name: '邓彪' }, evidence: 'ch-0001' }])
-    const candidate = proposed.created[0]
-    assert.equal(candidate.willFail?.code, 'CHARACTER_NAME_DUPLICATE', 'the submit answer carries the verdict')
-    assert.equal(candidate.willFail?.path, 'characters/邓彪.md', 'and names the card it collides with')
-    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'a pre-check writes no entity file')
-
-    // The promise must be the same judgement accept runs: same code, same path.
+    // First extraction: creates a candidate, accepted into a real file.
+    const first = await propose(harness, root, 'character', [{ fields: { name: '夜探喽啰', role: '配角' }, evidence: 'ch-0001' }])
     const accepted = await callTool(harness, 'inkflow_extract_accept', {
       projectRoot: root,
-      candidateIds: [candidate.candidateId],
-      confirm: true,
-    })
-    assert.equal(accepted.accepted, 0)
-    assert.equal(accepted.outcomes[0].error.code, candidate.willFail?.code, 'willFail ⇔ accept refusal')
-    assert.equal(accepted.outcomes[0].error.path, candidate.willFail?.path)
-    assert.deepEqual(diffDigests(before, contentDigests(root)), [], 'and the refused accept writes nothing either')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('#175: a clean candidate carries no willFail key, so its batch file stays byte-compatible', async () => {
-  const dir = workdir()
-  try {
-    const root = project(join(dir, 'book'))
-    tenChapters(root)
-    const harness = makeHarness(dir)
-
-    const proposed = await propose(harness, root, 'character', [{ fields: { name: '夜探喽啰' }, evidence: 'ch-0001' }])
-    assert.equal(proposed.created[0].willFail, undefined, 'no verdict when nothing collides')
-    const text = readFileSync(join(root, '.inkflow', 'candidates', proposed.file), 'utf8')
-    assert.equal(text.includes('willFail'), false, 'the key is written only when it has something to say')
-
-    const accepted = await callTool(harness, 'inkflow_extract_accept', {
-      projectRoot: root,
-      candidateIds: [proposed.created[0].candidateId],
+      candidateIds: [first.created[0].candidateId],
       confirm: true,
     })
     assert.equal(accepted.accepted, 1, JSON.stringify(accepted.outcomes))
+
+    // Second extraction says the same thing → dropped, and the file is untouched.
+    const before = contentDigests(root)
+    const again = await propose(harness, root, 'character', [{ fields: { name: '夜探喽啰', role: '配角' }, evidence: 'ch-0002' }])
+    assert.equal(again.created.length, 0)
+    assert.equal(again.skipped.length, 1, 'reported, so the model knows why nothing appeared')
+    assert.deepEqual(diffDigests(before, contentDigests(root)), [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('#175: an older batch file without willFail still reads, and the panel model treats it as "no warning"', async () => {
-  const dir = workdir()
-  try {
-    const root = project(join(dir, 'book'))
-    tenChapters(root)
-    const harness = makeHarness(dir)
-    const dirPath = join(root, '.inkflow', 'candidates')
-    mkdirSync(dirPath, { recursive: true })
-    // Exactly what 0.4.0 wrote: seven keys, no verdict.
-    writeFileSync(
-      join(dirPath, '20260101T000000000Z-character.json'),
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          submittedAt: '2026-01-01T00:00:00.000Z',
-          source: { chapters: ['ch-0001'] },
-          proposals: [
-            {
-              candidateId: 'ex-abcdef01',
-              kind: 'character',
-              fields: { name: '旧候选' },
-              evidence: 'ch-0001',
-              rationale: '',
-              confidence: 'medium',
-              status: 'proposed',
-            },
-          ],
-        },
-        null,
-        2,
-      )}\n`,
-      'utf8',
-    )
-
-    const listed = await listCandidates(harness, root)
-    assert.equal(listed.total, 1)
-    assert.equal(listed.items[0].willFail, undefined, 'the tool answer omits the key for a legacy file')
-
-    const model = await loadExtractModel()
-    const view = model.readCandidateList({ items: listed.items, counts: { byStatus: {}, byKind: {} } })
-    assert.equal(view.rows[0].willFail, null)
-    assert.equal(model.willFailLabel(view.rows[0]), null, 'nothing to warn about')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('#175: the panel keeps doomed rows out of a batch and says how many it skipped', async () => {
+test('#178: the panel asks before replacing, and a batch never replaces anything', async () => {
   const dir = workdir()
   try {
     const model = await loadExtractModel()
-    const row = (candidateId, status, willFail) => ({
+    const row = (candidateId, status, willFail, duplicate) => ({
       candidateId,
       kind: 'character',
       fields: { name: candidateId },
@@ -1211,54 +1202,92 @@ test('#175: the panel keeps doomed rows out of a batch and says how many it skip
       file: 'x.json',
       submittedAt: '',
       willFail,
+      duplicate,
     })
     const rows = [
-      row('ex-00000001', 'proposed', null),
-      row('ex-00000002', 'proposed', { code: 'CHARACTER_NAME_DUPLICATE', message: 'taken', path: 'characters/邓彪.md' }),
-      row('ex-00000003', 'accepted', null),
+      row('ex-00000001', 'proposed', null, null),
+      row('ex-00000002', 'proposed', null, { state: 'different', path: 'characters/清音.md', digest: 'abc', changedFields: ['body'] }),
+      row('ex-00000003', 'proposed', { code: 'DUPLICATE_ID', message: 'taken', path: 'x.md' }, null),
+      row('ex-00000004', 'accepted', null, null),
     ]
-    const selected = new Set(['ex-00000001', 'ex-00000002', 'ex-00000003'])
+    const selected = new Set(['ex-00000001', 'ex-00000002', 'ex-00000003', 'ex-00000004'])
 
-    assert.deepEqual(model.actionableIds(rows, selected), ['ex-00000001'], 'only clean, waiting rows are acted on')
-    assert.deepEqual(model.skippedIds(rows, selected), ['ex-00000002'], 'the doomed row is reported as skipped')
-    assert.equal(model.willFailLabel(rows[1]), '将失败：CHARACTER_NAME_DUPLICATE · characters/邓彪.md')
-    assert.equal(model.willFailLabel(rows[0]), null)
+    assert.deepEqual(model.actionableIds(rows, selected), ['ex-00000001'], 'only a plain create goes into a batch')
+    assert.deepEqual(model.duplicateIds(rows, selected), ['ex-00000002'], 'the overwrite row is reported as skipped')
+    assert.deepEqual(model.skippedIds(rows, selected), ['ex-00000003'], 'and the doomed row separately')
+    assert.equal(model.duplicateLabel(rows[1]), '已存在，内容不一致（body） —— 是否覆盖？')
+    assert.equal(model.duplicateLabel(rows[0]), null)
 
-    // Select-all must not promise a row the batch would skip.
     const all = model.toggleAll(rows, new Set())
-    assert.equal(all.has('ex-00000002'), false, 'a doomed row is not ticked by 全选待审')
-    assert.equal(all.has('ex-00000001'), true)
+    assert.equal(all.has('ex-00000002'), false, 'select-all never ticks a row that would overwrite')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('#175: the shared judge covers other kinds too — a world candidate on an occupied path is `DUPLICATE_ID` both ways', async () => {
+test('#178: an older candidate file (no duplicate / willFail keys) still reads', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    tenChapters(root)
+    const harness = makeHarness(dir)
+    const dirPath = join(root, '.inkflow', 'candidates')
+    mkdirSync(dirPath, { recursive: true })
+    const legacy = {
+      schemaVersion: 1,
+      submittedAt: '2026-01-01T00:00:00.000Z',
+      source: { chapters: ['ch-0001'] },
+      proposals: [
+        {
+          candidateId: 'ex-abcdef01',
+          kind: 'character',
+          fields: { name: '旧候选' },
+          evidence: 'ch-0001',
+          rationale: '',
+          confidence: 'medium',
+          status: 'proposed',
+        },
+      ],
+    }
+    writeFileSync(join(dirPath, '20260101T000000000Z-character.json'), `${JSON.stringify(legacy, null, 2)}\n`, 'utf8')
+
+    const listed = await listCandidates(harness, root)
+    assert.equal(listed.total, 1)
+    assert.equal(listed.items[0].willFail, undefined)
+    assert.equal(listed.items[0].duplicate, undefined)
+
+    const model = await loadExtractModel()
+    const view = model.readCandidateList({ items: listed.items, counts: { byStatus: {}, byKind: {} } })
+    assert.equal(view.rows[0].duplicate, null)
+    assert.equal(model.duplicateLabel(view.rows[0]), null)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('#178: the shared judge covers other kinds too — a world candidate on an occupied path is asked about, not refused', async () => {
   const dir = workdir()
   try {
     const root = project(join(dir, 'book'))
     tenChapters(root)
     const harness = makeHarness(dir)
     markdown(root, 'world/门派/鹤鸣剑.md', ['id: world/门派/鹤鸣剑.md', 'title: 鹤鸣剑', 'category: 门派'], '白鹤门的佩剑。\n')
+    const beforeText = readFileSync(join(root, 'world', '门派', '鹤鸣剑.md'), 'utf8')
 
-    const proposed = await propose(harness, root, 'world', [{ fields: { title: '鹤鸣剑', category: '门派' }, evidence: 'ch-0001' }])
+    const proposed = await propose(harness, root, 'world', [
+      { fields: { title: '鹤鸣剑', category: '门派', body: '白鹤门的佩剑，剑身有七道云纹。' }, evidence: 'ch-0001' },
+    ])
     const candidate = proposed.created[0]
-    assert.equal(candidate.willFail?.code, 'DUPLICATE_ID', 'the pre-check is the seam judge, not a character special case')
-    assert.equal(candidate.willFail?.path, 'world/门派/鹤鸣剑.md')
+    assert.equal(candidate.duplicate?.state, 'different', 'not a character special case')
+    assert.equal(candidate.duplicate?.path, 'world/门派/鹤鸣剑.md')
 
-    const accepted = await callTool(harness, 'inkflow_extract_accept', {
+    const refused = await callTool(harness, 'inkflow_extract_accept', {
       projectRoot: root,
       candidateIds: [candidate.candidateId],
       confirm: true,
     })
-    assert.equal(accepted.accepted, 0)
-    assert.equal(accepted.outcomes[0].error.code, 'DUPLICATE_ID')
-    assert.equal(accepted.outcomes[0].error.path, candidate.willFail?.path)
-    assert.equal(
-      readFileSync(join(root, 'world', '门派', '鹤鸣剑.md'), 'utf8'),
-      '---\nid: world/门派/鹤鸣剑.md\ntitle: 鹤鸣剑\ncategory: 门派\n---\n\n白鹤门的佩剑。\n',
-      'the existing file is byte-identical',
-    )
+    assert.equal(refused.outcomes[0].error.code, 'OVERWRITE_REQUIRED')
+    assert.equal(readFileSync(join(root, 'world', '门派', '鹤鸣剑.md'), 'utf8'), beforeText, 'untouched without overwrite')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -31,6 +31,7 @@
 
 import { randomUUID } from 'node:crypto'
 
+import { newBackupBody, openBackup, sealBackup, stageFile } from './backup.js'
 import { applyCandidate, DOMAIN_MODULES } from './domains/index.js'
 import type { DomainModule, DomainWriteView } from './domains/types.js'
 import { rowsOf } from './domains/scan-helpers.js'
@@ -48,7 +49,9 @@ import type { RelationRow } from './domains/relation-write.js'
 import { keywordProblem } from './domains/world-plan.js'
 import { renderWorldFile } from './domains/world-tools.js'
 import { isPortableSlug, slugify } from './domains/tool-support.js'
+import { compareWithExisting } from './extract-compare.js'
 import { readCandidateStore, setCandidateStatuses } from './extract.js'
+import { fingerprintProjectFile } from './file-cas.js'
 import { scanProject } from './indexer.js'
 import { withProjectWriteLock, writeTextAtomic } from './io.js'
 
@@ -337,6 +340,10 @@ export interface AcceptOutcome {
   readonly accepted: boolean
   /** Project-relative path of the written file (accepted only). */
   readonly path?: string
+  /** True when an existing file was replaced (only with an explicit `overwrite`). #178 */
+  readonly overwritten?: boolean
+  /** True when the book already said this, so nothing had to be written. #178 */
+  readonly unchanged?: boolean
   readonly error?: AcceptRefusal
 }
 
@@ -369,27 +376,77 @@ function domainFor(kind: ExtractKind, modules: readonly DomainModule[]): DomainM
   return modules.find((module) => module.kind === dir)
 }
 
+/**
+ * Copy `path` into a sealed `replace` backup package before an overwrite (#178, X-17).
+ *
+ * Sealed immediately rather than held open across the batch: one file is replaced per
+ * candidate, so a package per overwrite is the honest unit — "which file did this click
+ * replace" stays answerable from the directory name alone.
+ */
+function backupFileBeforeOverwrite(root: string, path: string): { ok: true; dir: string } | { ok: false; code: string; message: string } {
+  const opened = openBackup(root, 'replace')
+  if (!opened.ok) return { ok: false, code: opened.error.code, message: opened.error.message }
+  const handle = opened.value
+  const staged = stageFile(root, handle, path)
+  if (!staged.ok) return { ok: false, code: staged.error.code, message: staged.error.message }
+  const body = newBackupBody()
+  if (staged.value !== undefined) {
+    body.steps.push(`stage ${path}`)
+    body.files.push({ path, change: 'modified', before: staged.value })
+  }
+  const sealed = sealBackup(root, handle, 'replace', body, true)
+  if (!sealed.ok) return { ok: false, code: sealed.error.code, message: sealed.error.message }
+  return { ok: true, dir: handle.dir }
+}
+
 function storeError(error: ExtractError): AcceptRefusal {
   return { code: error.code, message: error.message }
 }
 
 /**
- * "Would this candidate land, and as what?" — the ONE judgement (#175).
+ * What the project already holds at a candidate's address (#178).
  *
- * Accept runs it and writes when it says yes; `inkflow_extract_propose` runs the very
- * same function and stores the refusal on the candidate as `willFail`, so the author
- * learns that 5 of 30 candidates are doomed *before* clicking accept, and the two
- * verdicts can never disagree (a second judge would drift the first time a domain
- * gained an invariant).
+ * The author's rule: the same entity extracted twice is not a conflict to report — if the
+ * content is the same there is nothing to review, and if it differs they want to be asked
+ * whether to overwrite. So the judge answers with *this* instead of a flat refusal, and
+ * the caller decides:
  *
- * Read-only: it scans the files, parses the rendered document, folds it into the view
- * and asks the domain's own `validate()`. The write (`writeTextAtomic`) stays in
- * `acceptCandidates`, which is why a refusal here costs the book nothing.
+ *   - `propose` drops `identical` ones and keeps `different` ones in the queue (marked);
+ *   - `accept` writes `different` ones only with an explicit `overwrite`, after a backup.
+ */
+export interface ExistingEntity {
+  readonly state: 'identical' | 'different'
+  /** The file that already holds this identity (the address a write would replace). */
+  readonly path: string
+  /** sha256 of those bytes, so an edit after the decision is never clobbered. */
+  readonly digest?: string
+  /** Which of the candidate's own fields differ; empty when identical. */
+  readonly changedFields: readonly string[]
+}
+
+/**
+ * "Would this candidate land, and as what?" — the ONE judgement (#175, #178).
  *
- * `view` is optional so a caller judging a whole batch can scan once: nothing is
- * written between those calls, so one snapshot is honest — with the documented
- * consequence that two candidates *of the same batch* are judged independently
- * (the accept path re-scans per candidate and would refuse the second one).
+ * Accept runs it and writes when it says yes; `inkflow_extract_propose` runs the very same
+ * function, so what the queue promises and what accepting does cannot drift (a second
+ * judge would drift the first time a domain gained an invariant).
+ *
+ * Three outcomes:
+ *   - no `existing` → a plain create;
+ *   - `existing.state === 'identical'` → the book already says this: nothing to review,
+ *     nothing to write;
+ *   - `existing.state === 'different'` → same identity, other content: overwriting is the
+ *     author's decision, so `accept` demands `overwrite: true`.
+ * A real conflict (an id owned by a *different* kind of entity, an invariant the domain
+ * refuses, an unreadable document) is still `{ ok: false }`.
+ *
+ * Read-only: scans the files, parses the rendered document, folds it into the view and asks
+ * the domain's own `validate()`. The write stays in `acceptCandidates`.
+ *
+ * `view` is optional so a caller judging a whole batch can scan once: nothing is written
+ * between those calls, so one snapshot is honest — with the documented consequence that two
+ * candidates *of the same batch* are judged independently (accept re-scans per candidate and
+ * would see the first one's write).
  */
 export function judgeCandidate(input: {
   readonly root: string
@@ -397,12 +454,12 @@ export function judgeCandidate(input: {
   readonly fields: Readonly<Record<string, unknown>>
   readonly modules?: readonly DomainModule[]
   readonly view?: DomainWriteView
-}): { ok: true; path: string; text: string } | { ok: false; error: AcceptRefusal } {
+}): { ok: true; path: string; text: string; existing?: ExistingEntity } | { ok: false; error: AcceptRefusal } {
   const domain = domainFor(input.kind, input.modules ?? DOMAIN_MODULES)
   if (domain === undefined) return refuse('CANDIDATE_KIND_INVALID', `no domain module owns "${input.kind}"`)
 
-  // A synthetic proposal: judging must not depend on an id, an evidence string or a
-  // status — those are the queue's business, not the document's.
+  // A synthetic proposal: judging must not depend on an id, an evidence string or a status
+  // — those are the queue's business, not the document's.
   const materialized = materializeCandidate({
     candidateId: 'ex-00000000',
     kind: input.kind,
@@ -425,18 +482,21 @@ export function judgeCandidate(input: {
       return { scan: { tables: scan.tables, entities: scan.entities, issues: scan.issues }, entities: scan.entities }
     })()
 
+  // Who owns this identity? A character card is keyed on its **name** (I-03), so the card
+  // that already carries this folded name is the entity in question even when the file name
+  // would differ; every other kind is keyed by path/id. A name taken by a card whose path
+  // differs is therefore "the same entity", not a hard conflict — which is exactly the case
+  // the author hit when the same person was extracted twice.
+  let occupant: { path: string } | undefined
   if (input.kind === 'character') {
-    // I-03 has a code of its own and a name is what a reader sees, so a taken name is
-    // reported as the name collision it is — `planCharacterUpsert` is the exact judge
-    // `inkflow_character_upsert` uses, called with no "own path" exemption: accepting
-    // never edits a card.
     const plan = planCharacterUpsert({
       name: textField(input.fields, 'name') ?? '',
       aliases: listField(input.fields, 'aliases'),
       existing: rowsOf<CharacterRow>(view.scan, 'characters'),
     })
     if (!plan.ok) {
-      return refuse(plan.code, plan.message, plan.conflictPath)
+      if (plan.conflictPath === undefined) return refuse(plan.code, plan.message, plan.conflictPath)
+      occupant = { path: plan.conflictPath }
     }
   }
 
@@ -446,20 +506,37 @@ export function judgeCandidate(input: {
     return refuse(issue?.code ?? 'FRONTMATTER_ISSUE', issue?.detail ?? 'the document could not be parsed', path)
   }
 
-  // Accept creates; it never overwrites. A new entity's id is its path for every kind
-  // but `character`, so an occupied address is I-04 `DUPLICATE_ID`.
-  const targetId = parsed.entity?.id ?? path
-  const clash =
-    view.entities.find((entity) => entity.path === path) ??
-    view.entities.find((entity) => entity.id === targetId && entity.path !== path)
-  if (clash !== undefined) {
-    return refuse(
-      'DUPLICATE_ID',
-      clash.path === path
-        ? `${path} already holds an entity; accept never overwrites one — edit it, or reject this candidate`
-        : `id "${targetId}" is already used by ${clash.path} (I-04)`,
-      clash.path,
-    )
+  if (occupant === undefined) {
+    const targetId = parsed.entity?.id ?? path
+    const byPath = view.entities.find((entity) => entity.path === path)
+    const byId = view.entities.find((entity) => entity.id === targetId && entity.path !== path)
+    if (byId !== undefined && parsed.entity !== undefined && byId.kind !== parsed.entity.kind) {
+      // The same id owned by another kind is not "the same entity": replacing it would
+      // delete a different file's identity, so this stays a hard refusal.
+      return refuse('DUPLICATE_ID', `id "${targetId}" is already used by ${byId.path} (I-04)`, byId.path)
+    }
+    const found = byPath ?? byId
+    occupant = found === undefined ? undefined : { path: found.path }
+  }
+
+  if (occupant !== undefined) {
+    const comparison = compareWithExisting(input.root, occupant.path, text, input.fields)
+    const fingerprint = fingerprintProjectFile(input.root, occupant.path)
+    // `comparison === undefined` means the index remembered a file that is gone now: the
+    // filesystem says "nothing there", so the candidate is a plain create.
+    if (comparison !== undefined) {
+      return {
+        ok: true,
+        path: occupant.path,
+        text,
+        existing: {
+          state: comparison.state,
+          path: occupant.path,
+          ...(fingerprint === undefined ? {} : { digest: fingerprint.sha256 }),
+          changedFields: comparison.changedFields,
+        },
+      }
+    }
   }
 
   const post = applyCandidate(view, parsed)
@@ -473,6 +550,7 @@ export function judgeCandidate(input: {
 
   return { ok: true, path, text }
 }
+
 
 /**
  * Accept candidates: one document each, through the seam, then marked `accepted`.
@@ -489,6 +567,7 @@ export function acceptCandidates(
   root: string,
   candidateIds: readonly string[],
   modules: readonly DomainModule[] = DOMAIN_MODULES,
+  options: { readonly overwrite?: boolean } = {},
 ): { ok: true; value: AcceptReport } | { ok: false; error: AcceptRefusal } {
   const locked = withProjectWriteLock(root, (lock): AcceptReport => {
     const projectRoot = lock.root
@@ -528,6 +607,59 @@ export function acceptCandidates(
         continue
       }
       const { path, text } = judged
+      const existing = judged.existing
+
+      // The book already says exactly this: nothing to review and nothing to write, so the
+      // candidate is closed out rather than reported as a failure (#178).
+      if (existing !== undefined && existing.state === 'identical') {
+        outcomes.push({ candidateId, kind: proposal.kind, accepted: true, path, unchanged: true })
+        acceptedRefs.push({ file: record.file, candidateId })
+        continue
+      }
+
+      // Same identity, other content: replacing an entity is the author's call, so it takes
+      // an explicit `overwrite`. The digest from the judgement is the CAS baseline — if the
+      // file changed between the panel decision and this click, nothing is clobbered.
+      if (existing !== undefined && existing.state === 'different') {
+        if (options.overwrite !== true) {
+          failed({
+            code: 'OVERWRITE_REQUIRED',
+            message:
+              `${path} already exists with different content (${existing.changedFields.join(', ')}); ` +
+              'accepting would replace it — ask the author, then call again with overwrite: true',
+            path,
+          })
+          continue
+        }
+        // The baseline is the digest recorded when the AUTHOR decided (propose time), not
+        // the one this judgement just measured — otherwise an edit made in between would
+        // always look consistent and be silently clobbered (#178).
+        const baseline = proposal.duplicate?.digest ?? existing.digest
+        const current = fingerprintProjectFile(projectRoot, path)
+        if (baseline !== undefined && current !== undefined && current.sha256 !== baseline) {
+          failed({
+            code: 'FILE_CHANGED',
+            message: `${path} changed after this candidate was judged; re-read the entity and decide again`,
+            path,
+          })
+          continue
+        }
+        // X-17: a batch that replaces an existing file opens a backup package first, so
+        // "undo that overwrite" never depends on git.
+        const backupDir = backupFileBeforeOverwrite(projectRoot, path)
+        if (!backupDir.ok) {
+          failed({ code: backupDir.code, message: backupDir.message, path })
+          continue
+        }
+        const replaced = writeTextAtomic(projectRoot, path, text)
+        if (!replaced.ok) {
+          failed({ code: replaced.error.code, message: replaced.error.message, path })
+          continue
+        }
+        outcomes.push({ candidateId, kind: proposal.kind, accepted: true, path, overwritten: true })
+        acceptedRefs.push({ file: record.file, candidateId })
+        continue
+      }
 
       const written = writeTextAtomic(projectRoot, path, text)
       if (!written.ok) {
