@@ -1212,3 +1212,12 @@ export type { BriefChannelSource, BriefReply } from './brief.js'
 
 export { GATE_CHECK_IDS, GATE_LIST_LIMIT, buildGate } from './gate.js'
 export type { GateReport, GateResult } from './gate.js'
+// issue #46 — the review DAG (ADR-0022 D3, X-24/X-26). The engine is `review.ts` (one read
+// pass → five independent nodes → the run record under `.inkflow/review/`), the comparison
+// table `review-compare.ts`, the tool surface `review-tools.ts`. Re-exported here so
+// `routes.ts` keeps ONE entry point for the channel, the same arrangement as the gate (#44).
+// ---------------------------------------------------------------------------
+
+export { buildReviewList } from './review.js'
+export { buildReviewCompare } from './review-compare.js'
+export type { ReviewOpinion, ReviewRunRecord } from './review.js'

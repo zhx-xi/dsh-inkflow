@@ -194,6 +194,21 @@ export const FINDING_CODES: readonly FindingCodeSpec[] = [
   { code: 'GATE_PROOF_APPELLATION_MIXED', group: 'catalog', fixable: false, meaning: '同一角色在同一章内混用不同称谓' },
   { code: 'GATE_PROOF_ARABIC_MEASURE', group: 'catalog', fixable: false, meaning: '阿拉伯数字后紧接中文量词' },
   { code: 'GATE_PROOF_NUMBER_MIXED', group: 'catalog', fixable: false, meaning: '同一段里阿拉伯数字与汉字数字混写' },
+
+  // The review DAG (#46, roadmap X-24/X-26). One code per dimension rather than one
+  // `REVIEW_OPINION`: the code is what a report groups and a repair pass dispatches on, and
+  // "a structure problem" vs "a pacing problem" is the distinction a reader acts on. The
+  // dimension also travels as its own field, because the panel filters on it; the code is
+  // how the same distinction reaches the shared vocabulary and data-model §5.
+  //
+  // `fixable` is false for all five, for the reason ADR-0022 D3 spells out: an aesthetic
+  // judgement is not something `repair.ts` may rewrite, and a `fixable: true` with no
+  // action behind it turns 「一键修复」 into a button that does nothing.
+  { code: 'REVIEW_STRUCTURE', group: 'structure', fixable: false, meaning: '结构维度的审稿意见（场景/因果/章末推进力）' },
+  { code: 'REVIEW_CHARACTER', group: 'structure', fixable: false, meaning: '人物维度的审稿意见（动机/言行/对话腔调）' },
+  { code: 'REVIEW_PACING', group: 'catalog', fixable: false, meaning: '节奏维度的审稿意见（疏密/说明段/可删段）' },
+  { code: 'REVIEW_STYLE', group: 'catalog', fixable: false, meaning: '文风维度的审稿意见（句长/重复/腔调）' },
+  { code: 'REVIEW_CONSISTENCY', group: 'ledger', fixable: false, meaning: '一致性维度的审稿意见（与设定库/账本冲突）' },
 ]
 
 /** Lookup for the report/repair pass; `undefined` for an unknown code (a bug, not a finding). */

@@ -709,6 +709,73 @@ export type { GateCheck } from './gate.js'
 export type { GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-vocabulary.js'
 export type { GateCounts, GateError, GateFileResult, GateReport, GateRequest, GateResult, GateRunOptions } from './gate.js'
 
+/**
+ * The review DAG (issue #46, roadmap X-24/X-26, ADR-0022 D3): five independent dimension
+ * nodes over one chapter, the locator/evidence chain, the `.inkflow/review/<chapterId>/
+ * <runId>.json` run record, and the cross-model table. Exported together so the tool
+ * surface, the panel route and the tests read the same definitions.
+ */
+export {
+  REVIEW_CONTEXT_CHARS,
+  REVIEW_DEFAULT_CONTEXT_CHARS,
+  REVIEW_DIMENSIONS,
+  REVIEW_DIMENSION_CODES,
+  REVIEW_DIMENSION_LABELS,
+  REVIEW_DIMENSION_SPECS,
+  REVIEW_DIMENSION_TASKS,
+  REVIEW_FILE_SCHEMA_VERSION,
+  REVIEW_LIST_LIMIT,
+  REVIEW_NODES,
+  buildReviewContext,
+  buildReviewList,
+  frontmatterLineCount,
+  listReviewRuns,
+  locateOpinion,
+  paragraphsOf,
+  renderReviewRunFile,
+  reviewDirOf,
+  reviewOpinionRecord,
+  reviewRunId,
+  reviewRunPath,
+  reviewRunSummary,
+  reviewRunWire,
+  runReview,
+} from './review.js'
+export type {
+  ReviewAnchorValue,
+  ReviewChapter,
+  ReviewContextResult,
+  ReviewContextValue,
+  ReviewDimension,
+  ReviewDimensionSpec,
+  ReviewDimensionSummary,
+  ReviewError,
+  ReviewEvidence,
+  ReviewFileResult,
+  ReviewHintSource,
+  ReviewNode,
+  ReviewNodeInput,
+  ReviewNodeOutput,
+  ReviewNodeResult,
+  ReviewOpinion,
+  ReviewOpinionInput,
+  ReviewParagraph,
+  ReviewRejection,
+  ReviewRequest,
+  ReviewResult,
+  ReviewRunList,
+  ReviewRunOptions,
+  ReviewRunRecord,
+} from './review.js'
+export {
+  REVIEW_COMPARE_COLUMNS,
+  buildReviewCompare,
+  compareReviewRuns,
+  renderCompareMarkdown,
+  reviewCompareWire,
+} from './review-compare.js'
+export type { ReviewCompare, ReviewCompareColumn, ReviewCompareRow } from './review-compare.js'
+
 /** Private state directory (`.inkflow/`) helpers — ADR-0012, roadmap X-9. */
 export {
   PRIVATE_STATE_DIR,

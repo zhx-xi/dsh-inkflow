@@ -113,8 +113,8 @@ export type WriteDir = (typeof WRITE_DIRS)[number]
  */
 export const PRIVATE_STATE_DIR = '.inkflow'
 /**
- * The six writable names under `.inkflow/` (roadmap X-18 widened this from three;
- * X-25 / ADR-0023 widened it again from four).
+ * The seven writable names under `.inkflow/` (roadmap X-18 widened this from three;
+ * X-25 / ADR-0023 widened it again from four; #46 added the seventh, `review`).
  *
  * `candidates/` holds the extract pipeline's unreviewed proposals (ADR-0017 D3): they
  * are work files, not derived artefacts, so a rebuild must not be able to sweep them
@@ -126,8 +126,13 @@ export const PRIVATE_STATE_DIR = '.inkflow'
  * delete it and it comes back empty), so anything a rebuild would erase lives here.
  * The issue texts for #43/#47 named `index/audit/` and `index/jobs/`; X-25 overrides
  * them for exactly that reason.
+ *
+ * `review/` (#46) is the seventh: one record per review run, `.inkflow/review/<chapterId>/<runId>.json`.
+ * A run is an event — the reviewer is a session's model and cannot be replayed (X-26) — so
+ * the record is not rebuildable either, and the panel reads it back to answer "what did the
+ * last pass say about this chapter".
  */
-export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs'] as const
+export const PRIVATE_STATE_SUBDIRS = ['trash', 'backup', 'audit', 'candidates', 'proposals', 'jobs', 'review'] as const
 export type PrivateStateSubdir = (typeof PRIVATE_STATE_SUBDIRS)[number]
 
 /**

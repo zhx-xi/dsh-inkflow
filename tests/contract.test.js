@@ -267,6 +267,12 @@ test('registers the thirty-six built-ins, the tools of every registered domain, 
       'inkflow_relation_clues',
       'inkflow_relation_list',
       'inkflow_relation_upsert',
+      // #46: the review DAG. Built-ins for the same reason as the shared library above — a
+      // review reads one chapter plus two setting directories and writes a run record under
+      // `.inkflow/review/`, so no content directory owns it.
+      'inkflow_review_compare',
+      'inkflow_review_context',
+      'inkflow_review_run',
       // #39: the single search entry (X-16) and the search-replace batch (X-17), both
       // built-ins — they span every kind and own no content directory.
       'inkflow_search',

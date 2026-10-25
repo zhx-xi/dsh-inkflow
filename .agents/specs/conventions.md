@@ -258,7 +258,7 @@ index/.write.lock
 |---|---|
 | 不在 `CONTENT_DIRS` / `REQUIRED_DIRS` 里 | 门禁对它的存在与否**不表态**（存在即允许，缺失不修）；它不产 `entities` 行、不进索引扫描、不参与 catalog |
 | 不进 git（`.gitignore` 加 `.inkflow/`，由**首次使用方** append-only 追加，不在门禁必需行里） | 已删除的正文不会以「新文件」身份重新出现在 `git status` 里；从不删东西的书也不会被永久提示 |
-| 只经白名单写 | `resolveWriteTarget` 额外允许 `.inkflow/trash/`、`.inkflow/backup/`、`.inkflow/audit/`、`.inkflow/candidates/`、`.inkflow/proposals/`、`.inkflow/jobs/` 六条**子路径**；`.inkflow/` 下其它子路径、`..`、绝对路径、符号链接逃出项目根仍拒 |
+| 只经白名单写 | `resolveWriteTarget` 额外允许 `.inkflow/trash/`、`.inkflow/backup/`、`.inkflow/audit/`、`.inkflow/candidates/`、`.inkflow/proposals/`、`.inkflow/jobs/`、`.inkflow/review/` 七条**子路径**（`review/` 是 #46 的审稿运行记录 `.inkflow/review/<chapterId>/<runId>.json`，一次运行一个文件；为什么它也要进 `.inkflow/` 见 [ADR-0023](../adrs/0023-proposal-job-private-placement.md) 的补充节）；`.inkflow/` 下其它子路径、`..`、绝对路径、符号链接逃出项目根仍拒 |
 | 点开头即被 `walk()` 跳过（`src/host/indexer.ts:99`） | 新鲜度对拍与索引扫描天然看不到它，不需要额外排除规则 |
 | 与 `index/` 生命周期无关 | 删掉 `index/` 重建索引，不影响回收站（这正是它不放在 `index/` 下的原因：`index/` 缺失会被静默重建，ADR-0006 D2）。判据：`index/` 可以删（重建即回来），`.inkflow/` 里的东西删了不可再生（被删正文、提案、断点）——凡是「重建不可再生」的插件状态一律进 `.inkflow/`，因此 `index/` 除 `.gitkeep` 与 `*.db` / `*.db-wal` / `*.db-shm` 外一律为空（用例断言） |
 
