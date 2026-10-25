@@ -45,10 +45,11 @@ const BUILT_IN_TOOLS = [
   ['inkflow_search', '46e8ca64'],
   ['inkflow_search_replace', '1c309b8e'],
   ['inkflow_project_audit', 'fbf1ebf5'],
-  // #44: the quality gate — seven checks over one chapter plus the verdict file under
+  // #44: the quality gate — eight checks over one chapter plus the verdict file under
   // `.inkflow/audit/` (ADR-0022 D4). A built-in, not a domain tool: it reads the chapter
   // and two setting directories and judges the prose, so no content directory owns it.
-  ['inkflow_gate_check', '9c138730'],
+  // #212 改了 description（七项→八项，补退化检测）：基线由 `node scripts/surface-hash.mjs` 重算。
+  ['inkflow_gate_check', 'ef0058b5'],
   // #37: importing an old manuscript. A built-in rather than a domain tool: it writes
   // chapters *and* a `library/` copy, so no single content directory owns it.
   ['inkflow_library_import', '39f228ea'],

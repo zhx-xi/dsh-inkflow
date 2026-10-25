@@ -1,5 +1,5 @@
 /**
- * Issue #44 — the seven quality gates: the rules themselves.
+ * Issue #44 — the quality gates: the rules themselves (#212 added the eighth).
  *
  * Two constraints decide the shape of this file, and both are contracts rather than
  * preferences:
@@ -13,19 +13,19 @@
  *     looked up in the shared catalogue, so a gate code cannot carry a second opinion about
  *     which family it belongs to or whether the repair pass can fix it.
  *
- * Three files, one subject: `gate-vocabulary.ts` owns the words (check ids, code table,
- * thresholds, input types), `gate-text.ts` owns the pure text helpers, and this file owns the
- * seven judgements plus the table the report walks — so no single file both defines and uses
- * the words.
+ * Four files, one subject: `gate-vocabulary.ts` owns the words (check ids, code table,
+ * thresholds, input types), `gate-text.ts` owns the pure text helpers, `gate-degeneration.ts`
+ * owns the eighth check, and this file owns the first seven judgements plus the table the
+ * report walks — so no single file both defines and uses the words.
  *
- * ## Why the seven checks are seven `check` ids but only five `group`s
+ * ## Why the eight checks are eight `check` ids but only five `group`s
  *
  * `FINDING_GROUPS` is the audit's five invariant families and is pinned by
  * `tests/audit.test.js` (the report always prints all five, all of them meaning "the book's own
  * data"), so ADR-0022 D3 files the gates into the existing five rather than growing the enum.
  * The rule used here is "which family of book facts does this finding touch": a name or an
  * entity reference is `structure`, a ledger value is `ledger`, and everything that is a fact
- * about the chapter *text* is `catalog` (the chapter family). The seven checks stay
+ * about the chapter *text* is `catalog` (the chapter family). The eight checks stay
  * distinguishable through their codes and through `GATE_CODES`' `check` column — the panel
  * groups by that, not by `group`. A new enum member would make every audit report print a
  * permanently empty section, which reads as "the gate passed" when the audit never runs it.
@@ -43,6 +43,7 @@
  */
 
 import type { Finding } from './findings.js'
+import { checkDegeneration } from './gate-degeneration.js'
 import { checkProofread } from './gate-proofread.js'
 import {
   charLength,
@@ -427,7 +428,7 @@ export interface GateCheck {
   readonly run: (input: GateInput) => Finding[]
 }
 
-/** The seven checks, in `GATE_CHECK_IDS` order — the report's order, unchanged. */
+/** The eight checks, in `GATE_CHECK_IDS` order — the report's order, unchanged. */
 export const GATE_CHECKS: readonly GateCheck[] = [
   { id: 'wordCount', label: GATE_CHECK_LABELS.wordCount, run: checkWordCount },
   { id: 'hook', label: GATE_CHECK_LABELS.hook, run: checkHook },
@@ -436,4 +437,6 @@ export const GATE_CHECKS: readonly GateCheck[] = [
   { id: 'sensitive', label: GATE_CHECK_LABELS.sensitive, run: checkSensitive },
   { id: 'platform', label: GATE_CHECK_LABELS.platform, run: checkPlatform },
   { id: 'proofread', label: GATE_CHECK_LABELS.proofread, run: checkProofread },
+  // #212: 退化检测（复读 / 截断 / 占位 / 工程词）—— 判「模型是不是写坏了」，不是「写得好不好」。
+  { id: 'degeneration', label: GATE_CHECK_LABELS.degeneration, run: checkDegeneration },
 ]

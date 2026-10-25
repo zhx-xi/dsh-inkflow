@@ -287,7 +287,9 @@ test('领取 → 交回 → 落盘：章文件按 seq 建出来，记录里的 d
     const gate = done.value.state.chapters[0].gate
     assert.notEqual(gate, null)
     assert.equal(gate.counts.warning, 0, 'a clean draft has no warning')
-    assert.equal(gate.checks.length, 7, 'all seven checks report, even with zero findings')
+    // #212: the gate is eight checks now (退化检测 is the eighth). Every one reports even when
+    // it found nothing — that is what makes "0" mean "clean" rather than "did not run".
+    assert.equal(gate.checks.length, 8, 'all eight checks report, even with zero findings')
     assert.equal(gate.paused, false)
 
     // A second complete is refused: the chapter is no longer claimed.
