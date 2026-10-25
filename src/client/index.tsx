@@ -23,11 +23,9 @@
  * `/hub/*` so no session route can lose its session requirement. No `root`,
  * `path` or `cwd` is ever built here.
  *
- * WHAT IS STILL NOT HERE: 大纲 stays a disabled placeholder with its release note,
- * exactly like the other rows that waited for their page (see `PANEL_TABS` in
- * `panel-model.ts`). The wizard button in the workbench only re-reads the
- * read-only plan (`GET /status`), never applies it
- * (D5 / ADR-0006 D3).
+ * WHAT IS STILL NOT HERE: writing stays a tool call — the wizard button only re-reads
+ * the read-only plan (`GET /status`) and never applies it (D5 / ADR-0006 D3). No page
+ * (大纲 included) reaches the book any other way than the private channel.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -41,6 +39,9 @@ import { EditorPane } from './editor.js'
 import type { VolumeOption } from './editor.js'
 import { LibraryView } from './library.js'
 import type { LibraryFocus } from './library-model.js'
+// 大纲 reads the library's own projection and saves through the same editor: no new route.
+import { OutlineView } from './outline.js'
+import { tabForEntityKind } from './outline-model.js'
 import { TrashView } from './trash.js'
 import { ForeshadowView } from './foreshadow.js'
 import { AuditView } from './audit.js'
@@ -325,8 +326,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const [detailError, setDetailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [planVisible, setPlanVisible] = useState(false)
-  // Which declared tab is open. Only `available` tabs are switchable, so this
-  // never names a page that does not exist: only `available` tabs are switchable.
+  // Which declared tab is open: `available` decides, so this never names a page that
+  // does not exist.
   const [tab, setTab] = useState('chapters')
   // One entry another tab wants the setting library to open (the audit rows). The
   // nonce makes a repeated request for the same entry a *new* prop, so the library re-selects
@@ -337,9 +338,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const [newTitle, setNewTitle] = useState('')
   const [newVolume, setNewVolume] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
-  // The chapter body states its own height (issue 116): the slot wrapper above the
-  // panel is content-sized, so a percentage height resolves to the content and both
-  // columns stop scrolling. Measured at runtime, `100%` when it cannot be measured.
+  // The chapter body states its own height (issue 116): the slot wrapper above the panel
+  // is content-sized, so a percentage height resolves to the content and nothing scrolls.
   const scrollBox = useScrollBox()
 
   const workspace = useMemo(() => findSessionWorkspace(workspaceItems, sessionId), [workspaceItems, sessionId])
@@ -370,8 +370,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     void refresh()
   }, [refresh])
 
-  // One chapter, with its CAS baseline (`fingerprint`): the editor saves against
-  // exactly the bytes the Host handed over, never a re-serialised copy.
+  // One chapter, with its CAS baseline (`fingerprint`): the editor saves against exactly
+  // the bytes the Host handed over, never a re-serialised copy.
   useEffect(() => {
     if (selected === null) {
       setDetail(null)
@@ -396,8 +396,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   }, [selected, sessionId])
 
   const gate: PanelGate = useMemo(() => readGate(status), [status])
-  // Which generation answered, read from `value` or `error` — the
-  // refusal screen is exactly where a stale build hides a healthy book.
+  // Which generation answered: the refusal screen is where a stale build hides a healthy book.
   const build = useMemo(() => readBuild(status), [status])
   const tree = useMemo(() => buildChapterTree(chapters), [chapters])
   // Derived state the gate answer already carried: shown, never acted upon.
@@ -405,10 +404,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   const empty = emptyKindOf(gate, tree.total, selected !== null)
 
   // -------------------------------------------------------------------------
-  // Search (X-16/X-20). One box in the 章节 tab and a 「全部类型」 switch
-  // beside it — no seventh tab: searching the book is a way to read this page.
-  // The switch changes the SCOPE (chapters only vs the whole book), never the
-  // result shape, so the list below renders one kind of row either way.
+  // Search (X-16/X-20): one box in the 章节 tab and a 「全部类型」 switch beside it —
+  // searching the book is a way to read this page, not a tab. The switch changes the
+  // SCOPE (chapters only vs the whole book), never the result shape.
   // -------------------------------------------------------------------------
   const [searchText, setSearchText] = useState('')
   const [searchAllKinds, setSearchAllKinds] = useState(false)
@@ -454,8 +452,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
 
   /**
    * A click on a hit: chapter prose opens in this page's editor, anything from the
-   * setting library jumps to that tab with the entry selected (the same hand-off an
-   * audit finding uses). The search text is left alone so the list survives.
+   * setting library jumps to the tab that owns its kind with the entry selected (the
+   * same hand-off an audit finding uses). The search text is left alone.
    */
   const openSearchHit = useCallback((hit: SearchHit): void => {
     const target = searchHitTarget(hit)
@@ -464,7 +462,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       return
     }
     setLibraryFocus({ kind: target.entityKind, id: target.id, nonce: Date.now() })
-    setTab('library')
+    setTab(tabForEntityKind(target.entityKind))
   }, [])
 
   // Volumes for the editor's "which volume" picker and the new-chapter form.
@@ -477,8 +475,8 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   // absolute path, the workspace came from the Client store.
   const rootLabel = relativeProjectRoot(gate.root, workspace?.path ?? sessionCwd)
   const projectTitle = gate.projectTitle ?? workspace?.title ?? null
-  // A hand-written meta can carry a GBK-misread title. One marker and
-  // one tooltip — the panel has no way to fix the file itself, so it says so.
+  // A hand-written meta can carry a GBK-misread title: one marker and one tooltip (the
+  // panel cannot fix the file itself).
   const titleWarning = describeTitleSuspicion(gate)
   const routeHint = status !== null && !status.ok ? describeRouteError(status.error) : null
 
@@ -487,19 +485,18 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
    *
    * `chapters` stays inline below: it is the default page and carries the editor,
    * the scroll box and most of this component's state, so extracting it would move
-   * ~160 lines for no gain. Every *other* page is one line here — a new panel adds
-   * its entry and its component file and never edits the render tree.
-   *
-   * `PANEL_TABS` decides what a user can click (`available`), this map decides what
-   * exists. A live tab with no page here renders nothing, which is why the two are
-   * meant to be changed in the same commit.
+   * ~160 lines for no gain. Every *other* page is one line here — a new panel adds its
+   * entry and its component file and never edits the render tree. `PANEL_TABS` decides
+   * what a user can click, this map decides what exists: a live tab with no page here
+   * renders nothing, which is why the two are changed in the same commit.
    */
   /**
    * Take the reader to an audit finding's target: a chapter opens in this page's own
-   * editor, an entity opens in the setting library.
+   * editor, an entity opens in the page that owns its kind (`tabForEntityKind` — 大纲 has
+   * a page of its own now, everything else is still 设定库).
    *
-   * Lives here rather than in the audit page because the two destinations are *this*
-   * component's state (the selected chapter) and another page's props (the library's focus).
+   * Lives here rather than in the audit page because the destinations are *this*
+   * component's state (the selected chapter) and another page's props (its focus).
    * An audit row therefore carries an address, and the workbench decides what an address
    * means — the report never guesses a route.
    */
@@ -509,10 +506,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
       setSelected(target.chapterId)
       return
     }
-    // A new nonce so that asking for the same entry twice still re-focuses it (React would
-    // otherwise see an equal prop and skip the effect that selects the row).
+    // A new nonce: asking for the same entry twice must still re-focus it (React skips an equal prop).
     setLibraryFocus({ kind: target.entityKind, id: target.id, nonce: Date.now() })
-    setTab('library')
+    setTab(tabForEntityKind(target.entityKind))
   }, [])
 
   /**
@@ -537,13 +533,13 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
    * Take the reader from a map pin to the entry it stands for.
    *
    * Same rule as an audit row: the pin carries `(kind, id)` and the **workbench** decides
-   * what that means — for a place it always means "open it in 设定库", because the map is a
-   * view over the world book and holds no copy of the entry (ADR-0025 D4). A new nonce so a
+   * what that means — a place is a `world` entry, so it opens in 设定库, because the map is
+   * a view over the world book and holds no copy of the entry (ADR-0025 D4). A new nonce so a
    * second click on the same pin re-focuses it.
    */
   const openFromMap = useCallback((pin: { id: string }): void => {
     setLibraryFocus({ kind: PLACE_KIND, id: pin.id, nonce: Date.now() })
-    setTab('library')
+    setTab(tabForEntityKind(PLACE_KIND))
   }, [])
 
   const pageRenderers: Readonly<Record<string, () => ReactNode>> = {
@@ -551,6 +547,9 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // editor and the problem panel. It talks to its own three routes, so this tab
     // costs the chapter tree nothing.
     library: () => <LibraryView sessionId={sessionId} focus={libraryFocus} />,
+    // 大纲 — the same projection in its own reading order (整体 → 卷 → 章) with each
+    // node's plot points; it takes the focus address because a 体检 row can point here.
+    outline: () => <OutlineView sessionId={sessionId} focus={libraryFocus} />,
     // The recovery bin — what a delete moved into `.inkflow/trash/`,
     // with restore (one click) and purge (two). One route pair of its own.
     trash: () => <TrashView sessionId={sessionId} />,
