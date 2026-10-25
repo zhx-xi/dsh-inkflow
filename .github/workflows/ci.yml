@@ -90,6 +90,10 @@ jobs:
       # Same reason as the note above — a gate that only runs locally is half a gate, and the
       # skill text is precisely what the model reads instead of the code.
       - run: node scripts/check-skill-numbers.mjs
+      # An issue number in source is project management, not code: it rots the moment the
+      # issue closes and says nothing about why the code is shaped that way. The rule is in
+      # engineering-discipline §7 and the reason belongs in words (commit / PR / thread).
+      - run: node scripts/check-issue-refs.mjs
 
   package:
     name: package
