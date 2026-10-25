@@ -23,9 +23,13 @@
  */
 
 import { ensureIndex } from './index-freshness.js'
-import { countsOf, decideProposal } from './proposal.js'
-import { applyProposal, listProposals, readProposal, rollbackProposal } from './proposal.js'
-import type { HunkDecision, ProposalError, ProposalMeta, ProposalRead } from './proposal.js'
+import { countsOf, listProposals, readProposal } from './proposal.js'
+// The three writers live in proposal-actions.ts (shape vs action, AGENTS.md §10.5): the
+// channel calls them, it does not own them.
+import { decideProposal } from './proposal-actions.js'
+import { applyProposal, rollbackProposal } from './proposal-apply.js'
+import type { HunkDecision } from './proposal-actions.js'
+import type { ProposalError, ProposalMeta, ProposalRead } from './proposal.js'
 
 type JsonRecord = Record<string, unknown>
 

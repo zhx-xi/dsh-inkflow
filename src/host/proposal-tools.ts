@@ -26,8 +26,9 @@ import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } fro
 import { gateFailure, isRefused, resolveProject } from './domains/tool-project.js'
 import { ensureIndex } from './index-freshness.js'
 import { isProposalHunkStatus } from './proposal.js'
-import { applyProposal, createProposal, decideProposal, rollbackProposal } from './proposal.js'
-import type { HunkDecision } from './proposal.js'
+import { createProposal, decideProposal } from './proposal-actions.js'
+import { applyProposal, rollbackProposal } from './proposal-apply.js'
+import type { HunkDecision } from './proposal-actions.js'
 import type { ToolDeps } from './tools.js'
 
 type Json = Record<string, unknown>

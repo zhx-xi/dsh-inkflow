@@ -1293,10 +1293,7 @@ export {
   PROPOSAL_META_FILE,
   PROPOSAL_SCHEMA_VERSION,
   PROPOSAL_STATUSES,
-  applyProposal,
   countsOf,
-  createProposal,
-  decideProposal,
   isProposalHunkStatus,
   isProposalId,
   listProposals,
@@ -1305,16 +1302,10 @@ export {
   proposalMetaPath,
   proposalsDirRelative,
   readProposal,
-  rollbackProposal,
 } from './proposal.js'
+export { createProposal, decideProposal } from './proposal-actions.js'
+export { applyProposal, rollbackProposal } from './proposal-apply.js'
 export type {
-  ApplyProposalInput,
-  ApplyProposalOk,
-  CreateProposalInput,
-  CreateProposalOk,
-  DecideProposalInput,
-  DecideProposalOk,
-  HunkDecision,
   ProposalBase,
   ProposalCounts,
   ProposalDigest,
@@ -1327,9 +1318,10 @@ export type {
   ProposalRead,
   ProposalResult,
   ProposalStatus,
-  RollbackProposalInput,
-  RollbackProposalOk,
 } from './proposal.js'
+export type { CreateProposalInput, CreateProposalOk, DecideProposalInput, DecideProposalOk, HunkDecision } from
+  './proposal-actions.js'
+export type { ApplyProposalInput, ApplyProposalOk, RollbackProposalInput, RollbackProposalOk } from './proposal-apply.js'
 export { applyHunks, diffLines, joinLines, splitLines } from './proposal-diff.js'
 export type { HunkKind, LineHunk } from './proposal-diff.js'
 export {
