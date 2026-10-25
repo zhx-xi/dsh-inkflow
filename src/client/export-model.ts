@@ -64,7 +64,6 @@ export const EXPORT_TEXTS = {
   run: '开始导出',
   running: '导出中…',
   close: '关闭',
-  loading: '正在读取这本书的卷目…',
   noBook: '还没有可导出的书：先把一本修到「可用」，再回来导出。',
   openDir: '打开所在目录：在文件管理器里粘贴下面这个路径（面板没有文件系统权限，不代你打开）。',
   statusHint: '按状态筛会跨卷，所以打的是一卷一个文件的 zip。',
