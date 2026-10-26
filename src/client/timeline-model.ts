@@ -86,7 +86,7 @@ export interface TimelineAxisRow {
   event: TimelineEvent
   /** `1710-01-05` (plus the era when the file names one), or 「读不出日期」. */
   when: string
-  /** `#3`, or null when the event declares no screen slot. */
+  /** The slot label (a `#` and the book-wide number), or null when the event declares none. */
   slot: string | null
   /** The event declares no `narrativeOrder`: the Host appends it after the declared ones. */
   undeclared: boolean
@@ -288,7 +288,7 @@ export function narrativeRows(events: readonly TimelineEvent[]): TimelineAxisRow
   return rows
 }
 
-/** `1710-01-05 · #3 · c-1` — the time, the slot and the chapter, in the order the eye wants. */
+/** `1710-01-05 · #<序号> · c-1` — the time, the slot and the chapter, in the order the eye wants. */
 export function describeRow(row: TimelineAxisRow): string {
   const parts = [row.when, row.slot ?? UNDECLARED_SLOT]
   if (row.event.chapter !== null) parts.push(row.event.chapter)

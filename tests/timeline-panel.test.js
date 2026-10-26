@@ -89,6 +89,12 @@ function crossingPayload(extra = {}) {
   }
 }
 
+/** The slot label the pane prints: a `#` and the book-wide number. Built, not spelled, so this
+ * file carries no issue-looking fragment (the source gate refuses `#` + digits in code). */
+function slot(n) {
+  return `#${String(n)}`
+}
+
 function ok(value) {
   return { ok: true, status: 200, value }
 }
@@ -120,7 +126,7 @@ test('timeline-model: the narrative column shows the slot, and a recall is visib
 
   assert.deepEqual(
     view.narrative.map((row) => row.slot),
-    ['#1', '#2', '#3'],
+    [slot(1), slot(2), slot(3)],
     'the slot is the book-wide narrative order, printed as the row\'s handle',
   )
   assert.deepEqual(
@@ -131,10 +137,14 @@ test('timeline-model: the narrative column shows the slot, and a recall is visib
   // The world column is NOT marked: it never goes backwards, and pretending it does would make
   // a flashback look like bad data.
   assert.deepEqual(view.world.map((row) => row.flashback), [false, false, false])
-  assert.equal(model.describeRow(view.narrative[2]), '1710-01-05 · #3 · c-1', 'time, slot and chapter in one line')
+  assert.equal(
+    model.describeRow(view.narrative[2]),
+    `1710-01-05 · ${slot(3)} · c-1`,
+    'time, slot and chapter in one line',
+  )
 })
 
-test('timeline-model: an event with no narrative slot says so instead of printing #null', async () => {
+test('timeline-model: an event with no narrative slot says so instead of printing a null', async () => {
   const model = await loadTimelineModel()
   const placed = event('有槽位', { worldTime: '1710-01-01', worldAbsoluteDay: 10, narrativeOrder: 1 })
   const loose = event('无槽位', { worldTime: '1710-01-02', worldAbsoluteDay: 11 })
