@@ -36,6 +36,7 @@ const PAGES = [
   'audit.tsx',
   'batch.tsx',
   'brief.tsx',
+  'chapter-tree.tsx',
   'extract.tsx',
   'foreshadow.tsx',
   'gate.tsx',
@@ -67,6 +68,9 @@ const WORD_ONLY = {
   // Two row lists: one axis each. Picking a row selects it, it does not act.
   'timeline.tsx': ['onPick(row)', 'pick(axisRowOf(entry))'],
   'library.tsx': ['pick(item)', 'pick(item)', 'describeIssueRow(issue)'],
+  // A chapter row selects the chapter; the row IS the list. Its sibling — the volume head —
+  // carries a caret, because folding is an action.
+  'chapter-tree.tsx': ['onPick(chapter.id)'],
 }
 
 function sourceOf(page) {

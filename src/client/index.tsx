@@ -65,13 +65,13 @@ import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
 import { HubIcon, HubView } from './hub.js'
 import { PanelTabRow } from './panel-tabs.js'
+import { ChapterTree } from './chapter-tree.js'
 import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
 import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
 import {
   EMPTY_MESSAGES,
   PANEL_TABS,
   buildChapterTree,
-  chapterHeading,
   describeAction,
   describeBuildTime,
   describeFacts,
@@ -866,61 +866,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
               </div>
             ) : null}
             {tree.total === 0 ? <EmptyCard kind="no-chapters" /> : null}
-            {tree.groups.map((group) => (
-              <div key={group.volumeId} style={{ display: 'grid', gap: 2 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                  <span style={{ fontWeight: 600 }}>{group.title}</span>
-                  <span style={{ ...muted, ...mono }}>{group.dir ?? group.volumeId}</span>
-                </div>
-                {group.chapters.length === 0 ? (
-                  <div style={{ ...muted, paddingLeft: 8 }}>这一卷还没有章</div>
-                ) : (
-                  group.chapters.map((chapter) => (
-                    <button
-                      key={chapter.id}
-                      type="button"
-                      onClick={() => setSelected(chapter.id)}
-                      style={{
-                        ...buttonStyle,
-                        display: 'block',
-                        width: '100%',
-                        textAlign: 'left',
-                        paddingLeft: 8,
-                        background: chapter.id === selected ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
-                        borderColor: chapter.id === selected ? 'var(--dsw-alias-border-l2)' : 'transparent',
-                      }}
-                    >
-                      <div>{chapterHeading(chapter)}</div>
-                      <div style={{ ...muted, ...mono }}>{chapter.path}</div>
-                    </button>
-                  ))
-                )}
-              </div>
-            ))}
-            {tree.loose.length === 0 ? null : (
-              <div style={{ display: 'grid', gap: 2 }}>
-                <span style={{ fontWeight: 600 }}>未分卷</span>
-                {tree.loose.map((chapter) => (
-                  <button
-                    key={chapter.id}
-                    type="button"
-                    onClick={() => setSelected(chapter.id)}
-                    style={{
-                      ...buttonStyle,
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      paddingLeft: 8,
-                      background: chapter.id === selected ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
-                      borderColor: chapter.id === selected ? 'var(--dsw-alias-border-l2)' : 'transparent',
-                    }}
-                  >
-                    <div>{chapterHeading(chapter)}</div>
-                    <div style={{ ...muted, ...mono }}>{chapter.path}</div>
-                  </button>
-                ))}
-              </div>
-            )}
+            <ChapterTree groups={tree.groups} loose={tree.loose} selected={selected} onPick={setSelected} />
             <div style={{ ...muted, marginTop: 'auto', paddingTop: 6 }}>{describeFacts(facts)}</div>
               </>
             )}
