@@ -231,14 +231,33 @@ test('outline-model: the empty state says what to do, in the tool that does it',
   assert.equal(model.buildOutlineTree(null).indexAvailable, true, 'nothing loaded yet is not a refusal')
 })
 
-test('outline-model: an 大纲 address opens the 大纲 tab, every other kind opens 设定库', async () => {
+test('outline-model: every kind that owns a page is sent to it, the rest to 设定库', async () => {
   const model = await loadOutlineModel()
   // `AuditJumpTarget.entityKind` / `SearchHit.kind` carry the CONTENT DIR name (plural);
   // the tab id is singular. The workbench maps the address, the page never guesses.
-  assert.equal(model.tabForEntityKind('outlines'), 'outline', 'an 大纲 finding lands on the new tab')
-  assert.equal(model.tabForEntityKind('characters'), 'library', 'a character stays in 设定库')
-  assert.equal(model.tabForEntityKind('world'), 'library', 'so does a place')
+  // Three kinds have a page of their own now; a fourth would add one line here.
+  assert.equal(model.tabForEntityKind('outlines'), 'outline', 'an 大纲 finding lands on the 大纲 tab')
+  assert.equal(model.tabForEntityKind('foreshadowing'), 'foreshadowing', 'a 伏笔 finding lands on the 伏笔 tab')
+  assert.equal(model.tabForEntityKind('timeline'), 'timeline', 'a 时间线 finding lands on the 时间线 tab')
+  for (const kind of ['characters', 'world', 'relations', 'facts', 'library']) {
+    assert.equal(model.tabForEntityKind(kind), 'library', `${kind} is still read in 设定库`)
+  }
   assert.equal(model.tabForEntityKind(''), 'library', 'an unknown kind is not sent to a page that cannot show it')
+})
+
+test('outline-model: a problem row in a kind with its own page is handed to that page', async () => {
+  const model = await loadOutlineModel()
+  // `validation_issues` carries a path and nothing else, so this is the one address the
+  // 设定库 problem panel can resolve: the file's own kind decides the page, and a kind
+  // that still lives in the tree keeps its own in-place jump.
+  assert.equal(model.movedKindOf('foreshadowing/青铜镜.md'), 'foreshadowing')
+  assert.equal(model.movedKindOf('timeline/甲申立约.md'), 'timeline')
+  assert.equal(model.movedKindOf('outlines/main.md'), 'outlines')
+  assert.equal(model.movedKindOf('world\\地点\\青云山.md'), undefined, 'a backslash path is still 设定库')
+  assert.equal(model.movedKindOf('characters/沈青.md'), undefined)
+  // Not one of the eight kinds at all: no page owns it either.
+  assert.equal(model.movedKindOf('chapters/vol-01/0001-开篇.md'), undefined)
+  assert.equal(model.movedKindOf(null), undefined)
 })
 
 test('outline-model: the facts line counts tiers, and a focus request finds its node', async () => {
@@ -256,6 +275,12 @@ test('outline-model: the facts line counts tiers, and a focus request finds its 
   )
 
   assert.equal(model.findOutlineNode(tree, { kind: 'outlines', id: 'c11', nonce: 1 })?.title, '第十一章')
+  // A problem row knows a FILE, not an id (validation_issues carries `path` only), so the
+  // same request also resolves by path — otherwise 设定库's problem panel could switch the
+  // tab but never land on the row it was about.
+  const pathOfC11 = model.flattenOutlineTree(tree).find((row) => row.node.id === 'c11').node.path
+  assert.equal(model.findOutlineNode(tree, { kind: 'outlines', path: pathOfC11, nonce: 1 })?.title, '第十一章')
+  assert.equal(model.findOutlineNode(tree, { kind: 'outlines', path: 'outlines/没有这个.md', nonce: 1 }), undefined)
   assert.equal(model.findOutlineNode(tree, { kind: 'characters', id: 'c11', nonce: 1 }), undefined, 'another kind is not ours')
   assert.equal(model.findOutlineNode(tree, null), undefined)
 

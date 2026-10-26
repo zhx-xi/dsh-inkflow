@@ -297,19 +297,27 @@ export function flattenOutlineTree(tree: OutlineTree): OutlineRow[] {
   return rows
 }
 
-/** The node a focus request names (`GET /library`'s id), if this tree holds it. */
+/**
+ * The node a focus request names, if this tree holds it.
+ *
+ * Two addresses resolve here on purpose: a search hit or an audit finding carries an `id`,
+ * while 设定库's problem panel knows only the `path` a `validation_issues` row carries. A pane
+ * that answered one and not the other would switch the tab and then look like a dead click.
+ */
 export function findOutlineNode(tree: OutlineTree, focus: LibraryFocus | null | undefined): OutlineNode | undefined {
   if (focus === null || focus === undefined || focus.kind !== OUTLINE_KIND) return undefined
+  const matches = (node: OutlineNode): boolean =>
+    (focus.id !== undefined && node.id === focus.id) || (focus.path !== undefined && node.path === focus.path)
   const hit =
-    tree.overall.concat(tree.unparented).map((root) => findInTree(root, focus.id)).find((node) => node !== undefined) ??
-    tree.orphans.map((orphan) => orphan.node).find((node) => node.id === focus.id)
+    tree.overall.concat(tree.unparented).map((root) => findInTree(root, matches)).find((node) => node !== undefined) ??
+    tree.orphans.map((orphan) => orphan.node).find(matches)
   return hit
 }
 
-function findInTree(tree: OutlineTreeNode, id: string): OutlineNode | undefined {
-  if (tree.node.id === id) return tree.node
+function findInTree(tree: OutlineTreeNode, matches: (node: OutlineNode) => boolean): OutlineNode | undefined {
+  if (matches(tree.node)) return tree.node
   for (const child of tree.children) {
-    const hit = findInTree(child, id)
+    const hit = findInTree(child, matches)
     if (hit !== undefined) return hit
   }
   return undefined
@@ -336,16 +344,40 @@ export function outlineItemOf(node: OutlineNode): LibraryTreeItem {
 }
 
 /**
+ * The kinds that have a page of their own, with the tab id each one opens.
+ *
+ * `AuditJumpTarget.entityKind` and `SearchHit.kind` carry the CONTENT DIR name (plural);
+ * the tab ids are their own strings, and 大纲's is singular (`outline`). Three kinds own a
+ * page: 大纲 (its own reading order), 伏笔 (a board that can now advance a state) and 时间线
+ * (two axes). Every other kind is read in 设定库, whose tree lists exactly the rest.
+ */
+export const OWN_PAGE_TABS: Readonly<Record<string, string>> = {
+  [OUTLINE_KIND]: OUTLINE_TAB,
+  foreshadowing: 'foreshadowing',
+  timeline: 'timeline',
+}
+
+/**
  * Which tab an entity address opens.
  *
- * `AuditJumpTarget.entityKind` and `SearchHit.kind` carry the CONTENT DIR name
- * (`outlines`), the tab id is singular (`outline`). The mapping belongs to the
- * workbench, not to the page that received the click — a report prints an address and
- * never guesses a route. Only 大纲 has a page of its own; every other kind is still
- * read in 设定库.
+ * The mapping belongs to the workbench, not to the page that received the click — a report
+ * prints an address and never guesses a route.
  */
 export function tabForEntityKind(kind: string): string {
-  return kind === OUTLINE_KIND ? OUTLINE_TAB : 'library'
+  return OWN_PAGE_TABS[kind] ?? 'library'
+}
+
+/**
+ * The kind a problem row's file belongs to, when that kind has a page of its own.
+ *
+ * `validation_issues` carries a path and nothing else, so the first segment is the whole
+ * address this page can resolve. `undefined` means "this page's own tree, or no page at
+ * all" — a chapter is neither, and the row then keeps its in-place jump (or none).
+ */
+export function movedKindOf(path: string | null): string | undefined {
+  if (path === null) return undefined
+  const [kind] = path.replaceAll('\\', '/').split('/')
+  return kind !== undefined && OWN_PAGE_TABS[kind] !== undefined ? kind : undefined
 }
 
 /**

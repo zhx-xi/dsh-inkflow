@@ -25,6 +25,7 @@
  */
 
 import type { InternalResult } from './internal.js'
+import type { LibraryFocus } from './library-model.js'
 
 /** The two states the pending area is made of (the Host writes only these spellings). */
 export type TimelineStatus = 'confirmed' | 'unconfirmed'
@@ -94,6 +95,23 @@ export interface TimelineAxisRow {
   unreadable: boolean
   /** Told after a later moment — a flashback or a recall. Never an error. */
   flashback: boolean
+}
+
+/**
+ * The event a jump addressed, or `undefined`.
+ *
+ * Two addresses reach this pane: a search hit or an audit finding carries an `id`, 设定库's
+ * problem panel carries only the `path` of a `validation_issues` row. Both axis rows and the
+ * pending area hold the same events, so the answer is the event itself — the pane then picks
+ * it for editing, which is this page's own idea of "selected".
+ */
+export function focusEventOf(view: TimelineView, focus: LibraryFocus | null | undefined): TimelineEvent | undefined {
+  if (focus === null || focus === undefined || focus.kind !== 'timeline') return undefined
+  const same = (left: string, right: string): boolean => left.replaceAll('\\', '/') === right.replaceAll('\\', '/')
+  const matches = (event: TimelineEvent): boolean =>
+    (focus.id !== undefined && event.id === focus.id) || (focus.path !== undefined && same(event.file, focus.path))
+  const rows = [...view.world, ...view.narrative].map((row) => row.event)
+  return [...rows, ...view.pending].find(matches)
 }
 
 /** The whole pane, in one object. `null` means "not loaded yet" wherever it appears. */

@@ -475,46 +475,47 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   // absolute path, the workspace came from the Client store.
   const rootLabel = relativeProjectRoot(gate.root, workspace?.path ?? sessionCwd)
   const projectTitle = gate.projectTitle ?? workspace?.title ?? null
-  // A hand-written meta can carry a GBK-misread title: one marker and one tooltip (the
-  // panel cannot fix the file itself).
+  // A hand-written meta can carry a GBK-misread title: one marker, one tooltip (the panel cannot fix it).
   const titleWarning = describeTitleSuspicion(gate)
   const routeHint = status !== null && !status.ok ? describeRouteError(status.error) : null
 
   /**
-   * Every tab that is not `chapters` renders from this map (roadmap X-12).
-   *
-   * `chapters` stays inline below: it is the default page and carries the editor,
-   * the scroll box and most of this component's state, so extracting it would move
-   * ~160 lines for no gain. Every *other* page is one line here — a new panel adds its
-   * entry and its component file and never edits the render tree. `PANEL_TABS` decides
-   * what a user can click, this map decides what exists: a live tab with no page here
-   * renders nothing, which is why the two are changed in the same commit.
+   * Every tab that is not `chapters` renders from this map (roadmap X-12). `chapters` stays
+   * inline: it is the default page and carries the editor, the scroll box and most of this
+   * component's state, so extracting it would move ~160 lines for no gain. Every *other* page
+   * is one line here, and `PANEL_TABS` decides what a user can CLICK while this map decides
+   * what EXISTS — a live tab with no page renders nothing, so both change in one commit.
    */
   /**
-   * Take the reader to an audit finding's target: a chapter opens in this page's own
-   * editor, an entity opens in the page that owns its kind (`tabForEntityKind` — 大纲 has
-   * a page of its own now, everything else is still 设定库).
+   * Take the reader to an address: a chapter opens in this page's own editor, a setting
+   * opens the page that owns its kind (`tabForEntityKind`).
    *
-   * Lives here rather than in the audit page because the destinations are *this*
-   * component's state (the selected chapter) and another page's props (its focus).
-   * An audit row therefore carries an address, and the workbench decides what an address
-   * means — the report never guesses a route.
+   * Lives here rather than in the reporting page because the destinations are *this*
+   * component's state (the selected chapter) and another page's props (its focus): a report
+   * prints an address, and the workbench decides what an address means.
    */
-  const openFromAudit = useCallback((target: AuditJumpTarget): void => {
-    if (target.kind === 'chapter') {
-      setTab('chapters')
-      setSelected(target.chapterId)
-      return
-    }
+  const openAddress = useCallback((address: { kind: string; id?: string; path?: string }): void => {
     // A new nonce: asking for the same entry twice must still re-focus it (React skips an equal prop).
-    setLibraryFocus({ kind: target.entityKind, id: target.id, nonce: Date.now() })
-    setTab(tabForEntityKind(target.entityKind))
+    setLibraryFocus({ ...address, nonce: Date.now() })
+    setTab(tabForEntityKind(address.kind))
   }, [])
+  const openFromAudit = useCallback(
+    (target: AuditJumpTarget): void => {
+      if (target.kind === 'chapter') {
+        setTab('chapters')
+        setSelected(target.chapterId)
+        return
+      }
+      openAddress({ kind: target.entityKind, id: target.id })
+    },
+    [openAddress],
+  )
+  // A problem row knows a path and nothing else, so that address travels without an id.
+  const openMovedKind = useCallback((kind: string, path: string): void => openAddress({ kind, path }), [openAddress])
 
   /**
-   * Take the reader to a candidate's evidence: the same rule as an audit finding —
-   * an address is resolved by the workbench, because "which chapter is this?" is this
-   * component's own state (the chapter tree) and not the queue's.
+   * Take the reader to a candidate's evidence: the same rule as an audit finding — the workbench
+   * resolves an address, because "which chapter is this?" is this component's own state.
    */
   const openFromEvidence = useCallback(
     (jump: EvidenceJump): void => {
@@ -543,18 +544,17 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
   }, [])
 
   const pageRenderers: Readonly<Record<string, () => ReactNode>> = {
-    // The setting library — eight-kind tree, one entry's detail, the
-    // editor and the problem panel. It talks to its own three routes, so this tab
-    // costs the chapter tree nothing.
-    library: () => <LibraryView sessionId={sessionId} focus={libraryFocus} />,
+    // 设定库 — the five-kind tree, one entry's detail, the editor, the problem panel. Its own
+    // three routes, so this tab costs the chapter tree nothing; a moved kind is handed over.
+    library: () => <LibraryView sessionId={sessionId} focus={libraryFocus} onOpenKind={openMovedKind} />,
     // 大纲 — the same projection in its own reading order (整体 → 卷 → 章) with each
     // node's plot points; it takes the focus address because a 体检 row can point here.
     outline: () => <OutlineView sessionId={sessionId} focus={libraryFocus} />,
     // The recovery bin — what a delete moved into `.inkflow/trash/`,
     // with restore (one click) and purge (two). One route pair of its own.
     trash: () => <TrashView sessionId={sessionId} />,
-    // The read-only foreshadow board (超期 / 未回收 / 按角色).
-    foreshadowing: () => <ForeshadowView sessionId={sessionId} />,
+    // 伏笔 — the board (本期到期 / 超期 / 未回收 / 按角色) with one write: 推进 a state in place.
+    foreshadowing: () => <ForeshadowView sessionId={sessionId} focus={libraryFocus} />,
     // The five-family consistency audit — counts, findings with their
     // addresses, and the Markdown export into `.inkflow/audit/`.
     audit: () => <AuditView sessionId={sessionId} onOpen={openFromAudit} />,
@@ -585,7 +585,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // reason and the 续跑 button. `GET /batch` is read-only; the button writes the job records
     // and never a chapter file (approving prose is a tool call, not a click).
     batch: () => <BatchView sessionId={sessionId} />,
-    timeline: () => <TimelineView sessionId={sessionId} />,
+    timeline: () => <TimelineView sessionId={sessionId} focus={libraryFocus} />,
   }
 
   /**

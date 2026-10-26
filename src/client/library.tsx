@@ -1,16 +1,15 @@
 /**
- * The setting-library tab: eight-kind tree, one entry's detail, the
- * editor, and the problem panel.
+ * The setting-library tab: the five-kind tree, one entry's detail, the editor, and the
+ * problem panel.
  *
- * Scope of THIS build, stated where the code lives: the tree, one entry's
- * detail, the entry editor (common frontmatter fields + Markdown body, saved
- * against a CAS baseline), and `validation_issues` grouped by code. The editor
- * component is `library-editor.tsx`; the rules it obeys (field set per kind,
- * "only what changed" payload) are pure functions in `library-model.ts`.
+ * 大纲 / 伏笔 / 时间线 have a page of their own, so this tree renders the rest
+ * (`SETTINGS_LIBRARY_KINDS`) — the wire still answers all eight, because the outline page
+ * reads its own group from it. A problem row about one of the three is handed to the page
+ * that owns the kind, not expanded into a group this tree no longer has.
  *
- * The client half never touches the filesystem (ADR-0008 D4): everything comes
- * from the private-channel routes, and the request carries a session id and an
- * entity address, never a directory.
+ * The editor is `library-editor.tsx`; the rules it obeys are pure functions in
+ * `library-model.ts`. The client half never touches the filesystem (ADR-0008 D4): the request
+ * carries a session id and an entity address, never a directory.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -32,15 +31,15 @@ import {
   findFocusItem,
   findItemByPath,
   fingerprintOf,
+  kindLabel,
 } from './library-model.js'
+import { movedKindOf } from './outline-model.js'
 import type { LibraryFocus, LibraryIssuesValue, LibraryItemValue, LibraryTreeItem, LibraryValue } from './library-model.js'
 
 /**
- * The unsaved-changes question.
- *
- * A plain `confirm` on purpose: the panel stays dependency-free, and a modal
- * component would need focus management the harness does not give a plugin. When
- * there is no window (a test bundle, a non-browser host) nothing is blocked.
+ * The unsaved-changes question. A plain `confirm` on purpose: the panel stays
+ * dependency-free, and a modal would need focus management the harness does not give a
+ * plugin. With no window (a test bundle, a non-browser host) nothing is blocked.
  */
 function confirmDiscard(message: string): boolean {
   const host = typeof window === 'undefined' ? undefined : window
@@ -71,13 +70,10 @@ const columnStyle = {
 const dividerStyle = { borderLeft: '1px solid var(--dsw-alias-border-l1)' } as const
 
 /**
- * The detail column: same look as the tree column, but no BOTTOM padding.
- *
- * The measured box inside it ends at this column's border box (that is what
- * `layout.ts` measures — padding is invisible to it), so a 14px bottom pad would
- * make the column overflow by exactly 14px and the header would slide up under
- * that scroll — the very bug issue 133 reports. The breathing room moves into the
- * box, where it scrolls with the content.
+ * The detail column: same look as the tree column, but no BOTTOM padding. The measured box
+ * ends at this column's border box (`layout.ts` cannot see padding), so a 14px bottom pad
+ * would overflow by exactly that and the header would slide under the scroll — the bug
+ * issue 133 reports. The breathing room moves into the box, where it scrolls.
  */
 const detailColumnStyle = {
   ...columnStyle,
@@ -294,14 +290,22 @@ function DetailPane({
   )
 }
 
-export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: LibraryFocus | null }) {
+export function LibraryView({
+  sessionId,
+  focus,
+  onOpenKind,
+}: {
+  sessionId: string
+  focus?: LibraryFocus | null
+  /** Hand a problem row's file to the page that owns its kind; the workbench picks the tab. */
+  onOpenKind?: (kind: string, path: string) => void
+}) {
   const [library, setLibrary] = useState<InternalResult<LibraryValue> | null>(null)
   const [issues, setIssues] = useState<InternalResult<LibraryIssuesValue> | null>(null)
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<readonly string[]>([])
   const [selected, setSelected] = useState<LibraryTreeItem | null>(null)
-  // Keyed by `kind:id` so a slow answer for the previous row can never be shown
-  // under the current one (the same lesson the chapter editor learned).
+  // Keyed by `kind:id`: a slow answer for the previous row can never be shown under the current one.
   const [detail, setDetail] = useState<{ key: string; value: LibraryItemValue } | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -309,9 +313,8 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
   const [status, setStatus] = useState<string | null>(null)
   /** The import dialog is open — it renders inside the 资料 group (X-20). */
   const [importing, setImporting] = useState(false)
-  // Same measured height as the chapters tab (issue 116): the tab row above this
-  // grid is the harness chrome, so the grid has to state its own height or the
-  // library columns scroll as one page with the panel.
+  // Same measured height as the chapters tab (issue 116): the tab row above is harness chrome,
+  // so the grid states its own height or both columns scroll as one page with the panel.
   const scrollBox = useScrollBox()
 
   const load = useCallback(async () => {
@@ -363,9 +366,8 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
   }, [detailKey, selected, sessionId])
 
   /**
-   * Leaving edit mode with unsaved changes must be a decision, not an accident.
-   * `draftDirty` comes from the editor (the same "only what changed" comparison
-   * the payload uses), so a draft that matches the file never nags.
+   * Leaving edit mode with unsaved changes must be a decision, not an accident. `draftDirty`
+   * comes from the editor's "only what changed" comparison, so a matching draft never nags.
    */
   const mayLeaveDraft = useCallback((): boolean => {
     if (!editing || !draftDirty) return true
@@ -392,15 +394,9 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
   }, [mayLeaveDraft])
 
   /**
-   * Open the entry another page asked for (the audit rows).
-   *
-   * Keyed on `focus.nonce` rather than on the object so a second click on the same finding
-   * re-selects the same row instead of being swallowed as an equal prop. It waits for the
-   * tree: the request can arrive before `GET /library` answers, and a selection of a row the
-   * tree does not hold yet would render an empty detail pane. A focused id the tree never
-   * holds (a finding about a file the index cannot see) selects nothing — silently, because
-   * the audit row already shows the address, and a toast about a missing row would be noise
-   * on top of the problem the author opened the audit to read.
+   * Open the entry another page asked for (an audit row, a search hit). Keyed on
+   * `focus.nonce` so a repeated click re-selects instead of being swallowed as an equal prop;
+   * it waits for the tree, because selecting a row the tree lacks renders an empty pane.
    */
   useEffect(() => {
     if (focus === undefined || focus === null) return
@@ -450,7 +446,7 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
   return (
     <div ref={scrollBox.ref} style={{ ...panelStyle, ...SCROLL_BOX_STYLE, ...scrollBox.style }}>
       <div style={columnStyle}>
-        <SectionTitle>设定库（八类）</SectionTitle>
+        <SectionTitle>设定库（五类）</SectionTitle>
         <div style={{ ...muted, ...mono }}>{describeLibraryFacts(tree)}</div>
 
         {loading ? <div style={muted}>载入中…</div> : null}
@@ -459,8 +455,8 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
           <NoteCard title={LIBRARY_EMPTY['index-unavailable'].title} body={LIBRARY_EMPTY['index-unavailable'].body} />
         ) : null}
 
-        {/* When the index cannot be read, the card above already says so — rendering eight
-            empty kinds underneath would contradict it. */}
+        {/* When the index cannot be read the card above already says so; five empty kinds under
+            it would contradict that. */}
         {(tree.indexAvailable ? tree.groups : []).map((group) => (
           <div key={group.kind} style={{ display: 'grid', gap: 2 }}>
             <button type="button" style={groupRowStyle} onClick={() => toggle(group.kind)} aria-expanded={expanded.includes(group.kind)}>
@@ -469,9 +465,8 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
               <span style={{ ...muted, ...mono, marginLeft: 6 }}>{group.total}</span>
               {group.truncated ? <span style={{ ...muted, fontSize: 11 }}> （已达上限，列表不完整）</span> : null}
             </button>
-            {/* X-20: the import entry lives in the 资料 group, not in a tab of its own.
-                Importing an old draft is how material gets into this directory, so the
-                button sits where the result appears. */}
+            {/* X-20: the import entry lives in the 资料 group, not in a tab of its own — importing
+                is how material gets into this directory, so the button sits where it lands. */}
             {group.kind !== 'library' ? null : (
               <div style={{ paddingLeft: 14 }}>
                 <button type="button" style={{ ...buttonStyle, fontSize: 11 }} onClick={() => setImporting(true)}>
@@ -548,14 +543,19 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
             </div>
             {group.items.slice(0, 5).map((issue, index) => {
               const target = findItemByPath(tree, issue.path)
+              // A finding about 大纲 / 伏笔 / 时间线 has no row in this tree any more, so it opens
+              // the page that owns the kind, carrying the path — the only address a
+              // `validation_issues` row has.
+              const owner = movedKindOf(issue.path)
+              const reachable = owner === undefined ? target !== undefined : onOpenKind !== undefined
               return (
                 <button
                   key={`${group.code}-${index}`}
                   type="button"
-                  style={{ ...rowStyle, paddingLeft: 10, cursor: target === undefined ? 'default' : 'pointer' }}
-                  title={issue.detail}
-                  disabled={target === undefined}
-                  onClick={() => jumpTo(issue.path)}
+                  style={{ ...rowStyle, paddingLeft: 10, cursor: reachable ? 'pointer' : 'default' }}
+                  title={owner === undefined ? issue.detail : `${issue.detail}（在「${kindLabel(owner)}」页签打开）`}
+                  disabled={!reachable}
+                  onClick={() => (owner === undefined ? jumpTo(issue.path) : onOpenKind?.(owner, issue.path ?? ''))}
                 >
                   <span style={mono}>{describeIssueRow(issue)}</span>
                 </button>
@@ -572,8 +572,8 @@ export function LibraryView({ sessionId, focus }: { sessionId: string; focus?: L
         {selected === null ? (
           <NoteCard title={LIBRARY_EMPTY['no-selection'].title} body={LIBRARY_EMPTY['no-selection'].body} />
         ) : editing && current !== null && fingerprintOf(current) !== null ? (
-          // Keyed by the baseline: a reload or a save mounts a fresh draft instead
-          // of leaving inputs bound to bytes that are already gone.
+          // Keyed by the baseline: a reload or a save mounts a fresh draft instead of leaving
+          // inputs bound to bytes that are already gone.
           <LibraryItemEditor
             key={`${detailKey ?? ''}:${current.fingerprint?.sha256 ?? ''}`}
             item={selected}
