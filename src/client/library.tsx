@@ -122,10 +122,7 @@ const groupRowStyle = {
   cursor: 'pointer',
   textAlign: 'left',
   width: '100%',
-  // A row, not a line of text: the caret, the kind name and its count are three boxes that must
-  // stay on one line and share a centre line. Without this the button was a plain inline-block
-  // and the SVG (a block-level element) pushed the caret onto a line of its own — the caret sat
-  // above its label. `gap` replaces the ad-hoc `marginLeft` on the count.
+  // A row of three boxes (caret, name, count): without flex a block-level svg starts its own line.
   display: 'flex',
   alignItems: 'center',
   gap: 4,
