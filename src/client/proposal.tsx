@@ -24,8 +24,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE, ACTION_BUTTON_STYLE_SMALL } from './action-button.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import {
@@ -42,6 +44,7 @@ import {
   describeProposalStatus,
   describeTotals,
   detailRequestPath,
+  hunkLabel,
   pendingDecisions,
   preferredProposalId,
   readProposalPage,
@@ -86,31 +89,15 @@ const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
 
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
-
 const disabledButtonStyle = {
-  ...buttonStyle,
+  ...ACTION_BUTTON_STYLE,
   cursor: 'not-allowed',
   color: 'var(--dsw-alias-label-secondary)',
   opacity: 0.6,
 } as const
 
-const rowButtonStyle = {
-  ...buttonStyle,
-  padding: '1px 8px',
-  fontSize: 11,
-} as const
-
 const selectButtonStyle = {
-  ...buttonStyle,
+  ...ACTION_BUTTON_STYLE,
   textAlign: 'left',
   display: 'block',
   width: '100%',
@@ -159,23 +146,25 @@ function HunkCard(props: {
   return (
     <div style={cardStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ ...mono, fontWeight: 600 }}>#{String(hunk.index)}</span>
+        <span style={{ ...mono, fontWeight: 600 }}>{hunkLabel(hunk.index)}</span>
         <span>{describeHunk(hunk)}</span>
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
           <button
             type="button"
             disabled={busy}
-            style={busy ? disabledButtonStyle : rowButtonStyle}
+            style={busy ? disabledButtonStyle : ACTION_BUTTON_STYLE_SMALL}
             onClick={() => onDecide({ index: hunk.index, status: 'accepted' })}
           >
+            <Icon name="check" size={13} />
             接受
           </button>
           <button
             type="button"
             disabled={busy}
-            style={busy ? disabledButtonStyle : rowButtonStyle}
+            style={busy ? disabledButtonStyle : ACTION_BUTTON_STYLE_SMALL}
             onClick={() => onDecide({ index: hunk.index, status: 'rejected' })}
           >
+            <Icon name="close" size={13} />
             拒绝
           </button>
         </span>
@@ -415,7 +404,8 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <strong>提案</strong>
               <span style={muted}>{describeTotals(page)}</span>
-              <button type="button" style={rowButtonStyle} onClick={refresh}>
+              <button type="button" style={ACTION_BUTTON_STYLE_SMALL} onClick={refresh}>
+                <Icon name="refresh" size={13} />
                 刷新
               </button>
             </div>
@@ -483,7 +473,7 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
           )}
           {detail === null ? (
             <div style={cardStyle}>
-              <div>{page.rows.length === 0 ? '没有可展开的提案。' : '选左边一个提案看逐段差异。'}</div>
+              <div>{page.rows.length === 0 ? '没有可展开的提案。' : '选左边一个提案，看它每个改动块改了什么。'}</div>
             </div>
           ) : (
             <>
@@ -503,33 +493,37 @@ export function ProposalView({ sessionId }: ProposalViewProps) {
                   <button
                     type="button"
                     disabled={busy || pending.length === 0}
-                    style={busy || pending.length === 0 ? disabledButtonStyle : buttonStyle}
+                    style={busy || pending.length === 0 ? disabledButtonStyle : ACTION_BUTTON_STYLE}
                     onClick={() => void decide(pendingDecisions(detail.hunks, 'accepted'))}
                   >
+                    <Icon name="check" size={13} />
                     全部接受（{String(pending.length)}）
                   </button>
                   <button
                     type="button"
                     disabled={busy || pending.length === 0}
-                    style={busy || pending.length === 0 ? disabledButtonStyle : buttonStyle}
+                    style={busy || pending.length === 0 ? disabledButtonStyle : ACTION_BUTTON_STYLE}
                     onClick={() => void decide(pendingDecisions(detail.hunks, 'rejected'))}
                   >
+                    <Icon name="close" size={13} />
                     全部拒绝
                   </button>
                   <button
                     type="button"
                     disabled={busy || applyReason !== null}
-                    style={busy || applyReason !== null ? disabledButtonStyle : buttonStyle}
+                    style={busy || applyReason !== null ? disabledButtonStyle : ACTION_BUTTON_STYLE}
                     onClick={onApplyClick}
                   >
+                    <Icon name={armed === 'apply' ? 'check' : 'lock'} size={13} />
                     {applyActionLabel(armed === 'apply')}
                   </button>
                   <button
                     type="button"
                     disabled={busy || rollbackReason !== null}
-                    style={busy || rollbackReason !== null ? disabledButtonStyle : buttonStyle}
+                    style={busy || rollbackReason !== null ? disabledButtonStyle : ACTION_BUTTON_STYLE}
                     onClick={onRollbackClick}
                   >
+                    <Icon name="undo" size={13} />
                     {rollbackActionLabel(armed === 'rollback')}
                   </button>
                 </div>

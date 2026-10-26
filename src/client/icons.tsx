@@ -171,6 +171,20 @@ const PATHS: Readonly<Record<IconName, ReactNode>> = {
       <path d="M5.6 3.6 10 8l-4.4 4.4" />
     </>
   ),
+  // The same caret pointing down: the open state, drawn rather than rotated (the shared
+  // `Icon` takes no transform, and a transform per caller would be a second geometry rule).
+  'caret-down': (
+    <>
+      <path d="M4.6 6.4 8 9.8l3.4-3.4" />
+    </>
+  ),
+  // A pencil: edit this entry's file.
+  edit: (
+    <>
+      <path d="M10.6 2.6 13.4 5.4 6 12.8H3.2V10l7.4-7.4Z" />
+      <path d="M9 4.2 11.8 7" />
+    </>
+  ),
   // Arrow to a corner: jump to the entry that owns this row.
   locate: (
     <>

@@ -20,9 +20,17 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
-import { EMPTY_BRIEF, briefAuditRoute, readBrief } from './brief-model.js'
+import { Icon } from './icons.js'
+import {
+  EMPTY_BRIEF,
+  briefAuditRoute,
+  describeSegmentHeading,
+  readBrief,
+  stateLabel,
+} from './brief-model.js'
 import type { BriefSegmentRow, BriefValue, BriefView } from './brief-model.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
@@ -49,16 +57,6 @@ const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
 
-const buttonStyle = {
-  border: '1px solid var(--dsw-alias-border-l2)',
-  borderRadius: 6,
-  background: 'transparent',
-  color: 'var(--dsw-alias-label-primary)',
-  padding: '2px 8px',
-  cursor: 'pointer',
-  fontSize: 12,
-} as const
-
 const segmentRowStyle = {
   display: 'grid',
   gridTemplateColumns: 'minmax(96px, 1fr) 64px 64px 72px minmax(140px, 2fr)',
@@ -68,7 +66,7 @@ const segmentRowStyle = {
   borderTop: '1px solid var(--dsw-alias-border-l1)',
 } as const
 
-/** The state badge: three states, three readings — present / trimmed / no source. */
+/** The state badge: three states, three readings — present / trimmed (and why) / no source. */
 function StateBadge({ row }: { row: BriefSegmentRow }) {
   const tone =
     row.state === 'missing'
@@ -76,9 +74,8 @@ function StateBadge({ row }: { row: BriefSegmentRow }) {
       : row.state === 'trimmed'
         ? { color: 'var(--dsw-alias-state-warning-primary)', borderColor: 'var(--dsw-alias-state-warning-primary)' }
         : { color: 'var(--dsw-alias-state-success-primary)', borderColor: 'var(--dsw-alias-state-success-primary)' }
-  const label = row.state === 'missing' ? '无来源' : row.state === 'trimmed' ? '被裁' : '完整'
   return (
-    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 999, border: '1px solid', ...tone }}>{label}</span>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 999, border: '1px solid', ...tone }}>{stateLabel(row.state)}</span>
   )
 }
 
@@ -132,10 +129,12 @@ export function BriefView({ sessionId }: { sessionId: string }) {
         {loading ? '读取中…' : `${String(view.tokens)} / ${String(view.budgetTokens)} tokens${view.overBudget ? '（超预算）' : ''}`}
       </span>
       <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
-        <button type="button" style={buttonStyle} onClick={() => void refresh()} disabled={loading}>
+        <button type="button" style={ACTION_BUTTON_STYLE} onClick={() => void refresh()} disabled={loading}>
+          <Icon name="refresh" size={13} />
           重新读取
         </button>
-        <button type="button" style={buttonStyle} onClick={() => void recordAudit()} disabled={saving || view.rows.length === 0}>
+        <button type="button" style={ACTION_BUTTON_STYLE} onClick={() => void recordAudit()} disabled={saving || view.rows.length === 0}>
+          <Icon name="check" size={13} />
           {saving ? '写入中…' : '落盘审计'}
         </button>
       </span>
@@ -159,7 +158,7 @@ export function BriefView({ sessionId }: { sessionId: string }) {
       {view.rows.length === 0 ? null : (
         <div style={cardStyle}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>九段</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{describeSegmentHeading(view.rows.length)}</span>
             <span style={{ ...muted, fontSize: 11 }}>
               顺序固定（outline → promise → characters → voice → facts → foreshadow → world → prevTail → anchors）
             </span>
@@ -167,7 +166,7 @@ export function BriefView({ sessionId }: { sessionId: string }) {
           <div style={{ ...segmentRowStyle, ...muted, fontSize: 11 }}>
             <span>段</span>
             <span>tokens</span>
-            <span>占比</span>
+            <span>占预算</span>
             <span>状态</span>
             <span>说明</span>
           </div>
@@ -181,7 +180,7 @@ export function BriefView({ sessionId }: { sessionId: string }) {
               <span>
                 <StateBadge row={row} />
               </span>
-              <span style={{ ...muted, fontSize: 12 }}>{row.detail}</span>
+              <span style={{ ...muted, fontSize: 12 }}>{row.note} · {row.detail}</span>
             </div>
           ))}
         </div>
@@ -189,7 +188,7 @@ export function BriefView({ sessionId }: { sessionId: string }) {
 
       {view.trims.length === 0 ? null : (
         <div style={cardStyle}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>裁剪记录</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>裁剪记录（超出预算时按顺序压缩）</div>
           {view.trims.map((trim, index) => (
             <div key={`${trim.segment}-${String(index)}`} style={{ ...mono, ...muted, fontSize: 12 }}>
               {trim.label}（{trim.segment}）：{String(trim.before)} → {String(trim.after)} tokens · {trim.share}

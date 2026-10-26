@@ -21,9 +21,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
+import { Icon } from './icons.js'
 import { useScrollBox } from './layout.js'
 import {
   describeEntry,
@@ -61,18 +63,8 @@ const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
 
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
-
 const dangerButtonStyle = {
-  ...buttonStyle,
+  ...ACTION_BUTTON_STYLE,
   borderColor: 'var(--dsw-alias-state-error-primary)',
   color: 'var(--dsw-alias-state-error-primary)',
 } as const
@@ -170,7 +162,8 @@ export function TrashView({ sessionId }: { sessionId: string }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <SectionTitle>回收站</SectionTitle>
           <span style={{ ...muted, ...mono }}>{describeTrashSummary(list)}</span>
-          <button type="button" style={{ ...buttonStyle, marginLeft: 'auto' }} disabled={loading} onClick={() => void load()}>
+          <button type="button" style={{ ...ACTION_BUTTON_STYLE, marginLeft: 'auto' }} disabled={loading} onClick={() => void load()}>
+            <Icon name="refresh" size={13} />
             {loading ? '读取中…' : '刷新'}
           </button>
         </div>
@@ -203,20 +196,22 @@ export function TrashView({ sessionId }: { sessionId: string }) {
                     <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                       <button
                         type="button"
-                        style={buttonStyle}
+                        style={ACTION_BUTTON_STYLE}
                         disabled={busy || blocked !== null}
                         title={blocked ?? '把文件放回原路径（原路径被占用时会拒绝）'}
                         onClick={() => void restore(entry)}
                       >
+                        <Icon name="undo" size={13} />
                         恢复
                       </button>
                       <button
                         type="button"
-                        style={armed ? dangerButtonStyle : buttonStyle}
+                        style={armed ? dangerButtonStyle : ACTION_BUTTON_STYLE}
                         disabled={busy}
                         title={armed ? '再点一次确认' : '需要点两次才执行'}
                         onClick={() => void purge(entry)}
                       >
+                        <Icon name={armed ? 'check' : 'trash'} size={13} />
                         {armed ? '确认彻底删除' : '彻底删除'}
                       </button>
                     </span>

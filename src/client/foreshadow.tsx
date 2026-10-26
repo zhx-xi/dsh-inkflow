@@ -19,8 +19,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE, ACTION_BUTTON_STYLE_SMALL } from './action-button.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
+import { Icon } from './icons.js'
 import { useScrollBox } from './layout.js'
 import { advanceBody, focusFileOf, readForeshadowBoard } from './foreshadow-model.js'
 import type { ForeshadowBoardValue, ForeshadowCard, ForeshadowView } from './foreshadow-model.js'
@@ -46,18 +48,8 @@ const cardStyle = {
 
 const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
-const buttonStyle = {
-  padding: '1px 8px',
-  fontSize: 11,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
-
 /** The armed button says what the second click does — the confirmation is the label. */
-const armedButtonStyle = { ...buttonStyle, borderColor: 'var(--dsw-alias-state-warning-primary)' } as const
+const armedButtonStyle = { ...ACTION_BUTTON_STYLE_SMALL, borderColor: 'var(--dsw-alias-state-warning-primary)' } as const
 
 const inputStyle = {
   width: 120,
@@ -192,19 +184,8 @@ export function ForeshadowView({ sessionId, focus }: { sessionId: string; focus?
         <span style={{ ...muted, ...mono, marginLeft: 'auto' }}>
           {loading ? '读取中…' : (view.currentChapter ?? '当前章未知')}
         </span>
-        <button
-          type="button"
-          style={{
-            padding: '2px 10px',
-            fontSize: 12,
-            borderRadius: 6,
-            cursor: 'pointer',
-            border: '1px solid var(--dsw-alias-border-l2)',
-            background: 'var(--dsw-alias-bg-layer-2)',
-            color: 'var(--dsw-alias-label-primary)',
-          }}
-          onClick={() => void refresh()}
-        >
+        <button type="button" style={ACTION_BUTTON_STYLE} onClick={() => void refresh()}>
+          <Icon name="refresh" size={13} />
           刷新
         </button>
       </div>
@@ -235,7 +216,8 @@ export function ForeshadowView({ sessionId, focus }: { sessionId: string; focus?
           ) : section.collapsed === true && !showResolved ? (
             // 已回收 opens folded: it is reference, and unfolding it must be one click — not a
             // scroll past finished work every time the board loads.
-            <button type="button" style={{ ...buttonStyle, marginTop: 8 }} onClick={() => setShowResolved(true)}>
+            <button type="button" style={{ ...ACTION_BUTTON_STYLE_SMALL, marginTop: 8 }} onClick={() => setShowResolved(true)}>
+              <Icon name="caret-down" size={13} />
               展开已回收的 {String(section.items.length)} 条
             </button>
           ) : (
@@ -273,20 +255,22 @@ export function ForeshadowView({ sessionId, focus }: { sessionId: string; focus?
                         <>
                         <button
                           type="button"
-                          style={rowArmed === 'advanced' ? armedButtonStyle : buttonStyle}
+                          style={rowArmed === 'advanced' ? armedButtonStyle : ACTION_BUTTON_STYLE_SMALL}
                           disabled={busy}
                           title={rowArmed === 'advanced' ? '再点一次确认' : '把这条的推进位置加上下面填的章'}
                           onClick={() => void advance(card, 'advanced')}
                         >
+                          <Icon name={rowArmed === 'advanced' ? 'check' : 'play'} size={13} />
                           {rowArmed === 'advanced' ? '确认已推进' : '推进'}
                         </button>
                         <button
                           type="button"
-                          style={rowArmed === 'resolved' ? armedButtonStyle : buttonStyle}
+                          style={rowArmed === 'resolved' ? armedButtonStyle : ACTION_BUTTON_STYLE_SMALL}
                           disabled={busy}
                           title={rowArmed === 'resolved' ? '再点一次确认' : '标记已回收，需要回收章'}
                           onClick={() => void advance(card, 'resolved')}
                         >
+                          <Icon name="check" size={13} />
                           {rowArmed === 'resolved' ? '确认已回收' : '标记已回收'}
                         </button>
                         </>

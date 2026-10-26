@@ -14,10 +14,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import { fetchInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
 import { describeLibraryFacts } from './library-hint.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
+import { Icon } from './icons.js'
 import { useScrollBox } from './layout.js'
 import { LibraryItemEditor } from './library-editor.js'
 import { LibraryImportDialog } from './library-import.js'
@@ -122,16 +124,6 @@ const groupRowStyle = {
   width: '100%',
 } as const
 
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
-
 function SectionTitle({ children }: { children: string }) {
   return <div style={{ ...muted, fontSize: 12, letterSpacing: 0.2 }}>{children}</div>
 }
@@ -204,7 +196,8 @@ function DetailPane({
         {detail?.readable === false ? (
           <span style={{ color: 'var(--dsw-alias-state-warn-primary)', fontSize: 12 }}>文件读不出来</span>
         ) : null}
-        <button type="button" style={buttonStyle} disabled={!editable} onClick={onEdit}>
+        <button type="button" style={ACTION_BUTTON_STYLE} disabled={!editable} onClick={onEdit}>
+          <Icon name="edit" size={13} />
           编辑
         </button>
         {editable ? null : <span style={{ ...muted, fontSize: 11 }}>读不到文件基线，暂时不能编辑</span>}
@@ -460,7 +453,7 @@ export function LibraryView({
         {(tree.indexAvailable ? tree.groups : []).map((group) => (
           <div key={group.kind} style={{ display: 'grid', gap: 2 }}>
             <button type="button" style={groupRowStyle} onClick={() => toggle(group.kind)} aria-expanded={expanded.includes(group.kind)}>
-              <span style={{ ...muted, marginRight: 4 }}>{expanded.includes(group.kind) ? '▾' : '▸'}</span>
+              <Icon name={expanded.includes(group.kind) ? 'caret-down' : 'caret'} size={12} />
               {group.label}
               <span style={{ ...muted, ...mono, marginLeft: 6 }}>{group.total}</span>
               {group.truncated ? <span style={{ ...muted, fontSize: 11 }}> （已达上限，列表不完整）</span> : null}
@@ -469,7 +462,8 @@ export function LibraryView({
                 is how material gets into this directory, so the button sits where it lands. */}
             {group.kind !== 'library' ? null : (
               <div style={{ paddingLeft: 14 }}>
-                <button type="button" style={{ ...buttonStyle, fontSize: 11 }} onClick={() => setImporting(true)}>
+                <button type="button" style={{ ...ACTION_BUTTON_STYLE, fontSize: 11 }} onClick={() => setImporting(true)}>
+                  <Icon name="plus" size={13} />
                   导入旧稿（TXT / MD）…
                 </button>
               </div>
