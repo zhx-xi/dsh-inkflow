@@ -71,6 +71,24 @@ const ITEM_ISSUE_LIMIT = 20
 /** X-7: the one kind whose rows group by `category` (**not** a kind of its own). */
 const WORLD_KIND: ContentDir = 'world'
 
+/** The kind whose rows carry two extra cells the entity table does not have. */
+const OUTLINE_KIND: ContentDir = 'outlines'
+
+/**
+ * The two cells `outline_nodes` already stores and `entities` does not: which tier a
+ * node is, and how many plot points its body holds.
+ *
+ * WHY THEY RIDE ALONG: the 大纲 page needs both for EVERY row — the tier badge decides
+ * what can be expanded, and the count is how the author spots a chapter whose outline is
+ * empty. Without them the panel had to read each node's body (`/library/item`, one request
+ * per node: 161 for a 1+9+151 book) just to fill in a badge. The index has them because the
+ * rebuild already parses every outline file; sending them costs one prepared statement.
+ */
+export interface OutlineExtra {
+  tier: string
+  plotPointCount: number
+}
+
 /** The wire shape of one tree row: what the panel needs to address a file. */
 export interface LibraryItemRow {
   id: string
@@ -80,6 +98,10 @@ export interface LibraryItemRow {
   parent: string | null
   status: string | null
   orderIndex: number | null
+  /** `outlines` rows only: `overall` / `volume` / `chapter` as the rebuild decided. */
+  tier?: string
+  /** `outlines` rows only: how many plot points the node's body declares. */
+  plotPointCount?: number
 }
 
 /** One `validation_issues` row as the problem panel reads it. */
@@ -160,6 +182,41 @@ function worldCategories(items: readonly LibraryItemRow[]): JsonRecord[] {
 }
 
 /**
+ * `outline_nodes` → `id → {tier, plotPointCount}`, read from the same cache the rows come
+ * from.
+ *
+ * `undefined` means "the index cannot answer" — the SAME verdict `listEntities` gives, so
+ * the two halves of one payload never disagree. A missing table (an index from an older
+ * schema) is indistinguishable from that and is reported the same way: the panel then shows
+ * "索引不可读", never "this book has no outline".
+ */
+function readOutlineExtras(root: string): Map<string, OutlineExtra> | undefined {
+  const paths = indexPaths(root)
+  if (!existsSync(paths.dbFile)) return undefined
+  let db: DatabaseSync | undefined
+  try {
+    db = new DatabaseSync(paths.dbFile, { readOnly: true })
+    const version = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined
+    if (version?.user_version !== INDEX_SCHEMA_VERSION) return undefined
+    const rows = db.prepare('SELECT id, kind, plot_point_count FROM outline_nodes').all() as unknown as Array<
+      Record<string, unknown>
+    >
+    const map = new Map<string, OutlineExtra>()
+    for (const row of rows) {
+      map.set(String(row['id'] ?? ''), {
+        tier: String(row['kind'] ?? ''),
+        plotPointCount: Number(row['plot_point_count'] ?? 0),
+      })
+    }
+    return map
+  } catch {
+    return undefined
+  } finally {
+    db?.close()
+  }
+}
+
+/**
  * `GET /inkflow/internal/library`: the eight-kind tree.
  *
  * One `listEntities` call per kind rather than one call for everything: the
@@ -175,9 +232,18 @@ export async function buildLibrary(source: LibrarySource, version: string): Prom
     if (rows === undefined) indexAvailable = false
     byKind.set(kind, rows ?? [])
   }
+  const outlineExtras = readOutlineExtras(source.root)
+  if (outlineExtras === undefined) indexAvailable = false
 
   const kinds = LIBRARY_KINDS.map((kind) => {
-    const items = (byKind.get(kind) ?? []).map(libraryItem)
+    const items = (byKind.get(kind) ?? []).map((entity) => {
+      const row = libraryItem(entity)
+      if (kind !== OUTLINE_KIND) return row
+      // Only the outlines group grows two cells: a row of every other kind that carried
+      // `tier: null` would be a field the panel has to ignore 7/8 of the time.
+      const extra = outlineExtras?.get(row.id)
+      return extra === undefined ? row : { ...row, tier: extra.tier, plotPointCount: extra.plotPointCount }
+    })
     const group: JsonRecord = {
       kind,
       total: items.length,

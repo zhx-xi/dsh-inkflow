@@ -33,12 +33,14 @@ import {
   OUTLINE_KIND,
   OUTLINE_TIER_LABELS,
   buildOutlineTree,
-  declaredKindsOf,
   describeOutlineFacts,
   findOutlineNode,
   flattenOutlineTree,
+  hiddenChildCount,
   outlineItemOf,
   parseOutlinePlotPoints,
+  revealFor,
+  visibleOutlineRows,
 } from './outline-model.js'
 import type { OutlineNode, OutlinePlotPoint, OutlineRow } from './outline-model.js'
 
@@ -51,9 +53,6 @@ function confirmDiscard(message: string): boolean {
   if (host === undefined || typeof host.confirm !== 'function') return true
   return host.confirm(message)
 }
-
-/** How many detail reads run at once while the tree fills in its plot-point counts. */
-const DETAIL_POOL = 4
 
 const panelStyle = {
   display: 'grid',
@@ -197,20 +196,26 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
   }, [load])
 
   const value = library !== null && library.ok ? (library.value ?? null) : null
-  const declared = useMemo(() => declaredKindsOf(Object.values(details)), [details])
-  const tree = useMemo(() => buildOutlineTree(value, declared), [value, declared])
+  const tree = useMemo(() => buildOutlineTree(value), [value])
   const rows = useMemo(() => flattenOutlineTree(tree), [tree])
+  const visible = useMemo(() => visibleOutlineRows(rows, expanded), [rows, expanded])
   const libraryError = library !== null && !library.ok ? describeLibraryError(library.error) : null
 
-  /** Plot points per node, parsed from the body the detail route handed out. */
-  const points = useMemo(() => {
-    const out: Record<string, OutlinePlotPoint[]> = {}
-    for (const row of rows) {
-      const detail = details[row.node.id]
-      if (detail !== undefined) out[row.node.id] = parseOutlinePlotPoints(detail.body ?? '')
-    }
-    return out
-  }, [rows, details])
+  /**
+   * Plot points of the ONE node on the right — not of every node.
+   *
+   * The counts used to be per-node because they were painted on every row, which cost one
+   * `/library/item` per node. The count now arrives with the tree (`plotPointCount`) and
+   * only the selected node's points are parsed, so opening the page is one request.
+   */
+  const selectedPointsOf = useCallback(
+    (id: string | null): OutlinePlotPoint[] => {
+      if (id === null) return []
+      const detail = details[id]
+      return detail === undefined ? [] : parseOutlinePlotPoints(detail.body ?? '')
+    },
+    [details],
+  )
 
   /** Title of the node an id names, for the "上级" line (the raw id is shown beside it). */
   const titleOf = useCallback(
@@ -235,30 +240,7 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
     [sessionId],
   )
 
-  // The counts on every row need every node's body, so the page warms them up with a
-  // small pool rather than one request per render tick. Bounded on purpose: this is a
-  // local channel, but 500 nodes is a real number for a hand-written book.
-  const nodeKey = rows.map((row) => row.node.id).join('\u0000')
-  useEffect(() => {
-    const ids = nodeKey === '' ? [] : nodeKey.split('\u0000').filter((id) => !asked.current.has(id))
-    if (ids.length === 0) return
-    let live = true
-    let cursor = 0
-    const worker = async (): Promise<void> => {
-      while (live && cursor < ids.length) {
-        const id = ids[cursor]
-        cursor += 1
-        if (id === undefined) return
-        await ensureDetail(id)
-      }
-    }
-    void Promise.all(Array.from({ length: DETAIL_POOL }, worker))
-    return () => {
-      live = false
-    }
-  }, [nodeKey, ensureDetail])
-
-  /** An address from the 体检 page (or a search hit): select it and show its points. */
+  /** An address from the 体检 page (or a search hit): select it, and open the volume above it. */
   useEffect(() => {
     if (focus === undefined || focus === null || focus.kind !== OUTLINE_KIND) return
     if (appliedFocus.current === focus.nonce) return
@@ -267,8 +249,12 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
     if (hit === undefined) return
     appliedFocus.current = focus.nonce
     setSelectedId(hit.id)
-    setExpanded((current) => (current.includes(hit.id) ? current : [...current, hit.id]))
-  }, [focus?.nonce, tree])
+    // The target can be a chapter inside a collapsed volume: expanding only the node itself
+    // would leave the page looking like the jump failed.
+    const reveal = revealFor(rows, hit.id)
+    if (reveal.length > 0) setExpanded((current) => [...current, ...reveal.filter((id) => !current.includes(id))])
+    void ensureDetail(hit.id)
+  }, [focus?.nonce, tree, rows, ensureDetail])
 
   /** Leaving edit mode with unsaved changes must be a decision, not an accident. */
   const mayLeaveDraft = useCallback((): boolean => {
@@ -283,7 +269,11 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
       setDraftDirty(false)
       setStatus(null)
       setSelectedId(node.id)
-      setExpanded((current) => (current.includes(node.id) ? current : [...current, node.id]))
+      // Picking a volume opens it: the author clicked the volume to look inside, and
+      // "nothing happened" is the wrong answer. A chapter has nothing to open.
+      if (node.tier === 'volume') {
+        setExpanded((current) => (current.includes(node.id) ? current : [...current, node.id]))
+      }
       void ensureDetail(node.id)
     },
     [ensureDetail, mayLeaveDraft],
@@ -291,7 +281,6 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
 
   const toggle = (id: string): void => {
     setExpanded((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]))
-    void ensureDetail(id)
   }
 
   /** A save landed: adopt the new bytes, refresh the tree (order/parent may have moved). */
@@ -317,7 +306,9 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
     selectedId === null ? undefined : rows.find((row) => row.node.id === selectedId)
   const selected = selectedRow?.node ?? null
   const selectedDetail = selected === null ? undefined : details[selected.id]
-  const selectedPoints = selected === null ? [] : (points[selected.id] ?? [])
+  const selectedPoints = selectedPointsOf(selectedId)
+  /** Children the left column cannot draw under this node (a level the model does not have). */
+  const hiddenBelowSelected = selected === null ? 0 : hiddenChildCount(rows, selected.id)
   const editable = selectedDetail !== undefined && selectedDetail.readable !== false && fingerprintOf(selectedDetail) !== null
 
   return (
@@ -337,11 +328,15 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
           <NoteCard title={OUTLINE_EMPTY['no-nodes'].title} body={OUTLINE_EMPTY['no-nodes'].body} />
         ) : null}
 
-        {rows.map((row, index) => {
-          const previous = index === 0 ? undefined : rows[index - 1]
+        {visible.map((row, index) => {
+          const previous = index === 0 ? undefined : visible[index - 1]
           const showGroup = previous === undefined || previous.group !== row.group
-          const open = expanded.includes(row.node.id)
-          const count = points[row.node.id]?.length
+          // Only a volume is a fold control. The overall node shows its volumes anyway, and a
+          // chapter has no children the page can draw — so a caret there was an invitation to
+          // a click that showed prose the right column already had (and, at the fourth level,
+          // a level the model does not allow).
+          const foldable = row.node.tier === 'volume'
+          const open = foldable && expanded.includes(row.node.id)
           const isSelected = selected !== null && selected.id === row.node.id
           return (
             <div key={row.node.id} style={{ display: 'grid', gap: 2 }}>
@@ -357,34 +352,32 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
                 onClick={() => pick(row.node)}
                 title={row.node.path}
               >
-                <span
-                  onClick={(event) => {
-                    // The caret collapses without re-selecting: the row click below already
-                    // selects AND expands, so bubbling would make collapsing impossible.
-                    event.stopPropagation()
-                    toggle(row.node.id)
-                  }}
-                  role="presentation"
-                  style={muted}
-                >
-                  {open ? <Icon name="caret-down" size={12} /> : <Icon name="caret" size={12} />}
-                </span>
+                {foldable ? (
+                  <span
+                    onClick={(event) => {
+                      // The caret folds without re-selecting: the row click below already
+                      // selects (and opens) the volume, so bubbling would make closing one
+                      // impossible.
+                      event.stopPropagation()
+                      toggle(row.node.id)
+                    }}
+                    role="presentation"
+                    aria-hidden="true"
+                    style={muted}
+                  >
+                    {open ? <Icon name="caret-down" size={12} /> : <Icon name="caret" size={12} />}
+                  </span>
+                ) : (
+                  // Keeps the tier badges of every level on one vertical line.
+                  <span aria-hidden="true" style={{ ...muted, width: 12, display: 'inline-block' }} />
+                )}
                 <span style={tierBadgeStyle}>{OUTLINE_TIER_LABELS[row.node.tier]}</span>
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.node.title}</span>
                 {row.node.order === null ? null : <span style={{ ...muted, ...mono }}>#{row.node.order}</span>}
-                <span style={{ ...muted, ...mono }}>{count === undefined ? '…' : `${String(count)} 点`}</span>
+                {row.node.plotPointCount === null ? null : (
+                  <span style={{ ...muted, ...mono }}>{row.node.plotPointCount} 点</span>
+                )}
               </button>
-              {open ? (
-                count === undefined ? null : count === 0 ? (
-                  <div style={{ ...muted, fontSize: 11, paddingLeft: 20 + row.depth * 14 }}>（这个节点还没有情节点）</div>
-                ) : (
-                  <ul style={{ margin: '2px 0 2px', paddingLeft: 20 + row.depth * 14 }}>
-                    {(points[row.node.id] ?? []).map((point, pointIndex) => (
-                      <PlotPointLine key={`${row.node.id}-point-${String(pointIndex)}`} point={point} />
-                    ))}
-                  </ul>
-                )
-              ) : null}
             </div>
           )
         })}
@@ -439,6 +432,11 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
                 <Field name="分组" value={OUTLINE_GROUP_LABELS[selectedRow.group]} />
                 <Field name="情节点" value={selectedPoints.length} />
               </div>
+              {hiddenBelowSelected === 0 ? null : (
+                <div style={{ ...muted, fontSize: 11, marginTop: 6 }}>
+                  这条下面还挂着 {hiddenBelowSelected} 个更深的子节点，左栏不展开（三级是终点）。体检页会把它列为不该有的层级。
+                </div>
+              )}
             </div>
 
             <div style={cardStyle}>
