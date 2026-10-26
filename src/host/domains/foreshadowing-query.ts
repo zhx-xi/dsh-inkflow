@@ -490,6 +490,9 @@ export async function buildForeshadowBoard(source: ForeshadowSource, version: st
     groups: {
       unresolved: unresolved.map((item) => ({ ...item })),
       overdue: overdue.map((item) => ({ ...item })),
+      // A terminal state, not a gap: without this list the pane cannot show that a foreshadow
+      // was paid off, nor let the author see what the tool refuses on a finished one.
+      resolved: view.items.filter((item) => item.status === 'resolved').map((item) => ({ ...item })),
       byEntity: byEntity.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item })) })),
     },
     indexRebuilt: ensured.rebuilt,

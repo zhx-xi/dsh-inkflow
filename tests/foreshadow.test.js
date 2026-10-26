@@ -833,7 +833,9 @@ test('foreshadow: GET /foreshadow is the board, and it stays read-only', async (
     assert.equal(response.json.ok, true, JSON.stringify(response.json.error))
     const value = response.json.value
     assert.equal(value.currentChapter.id, 'ch-10')
-    assert.deepEqual(Object.keys(value.groups).sort(), ['byEntity', 'overdue', 'unresolved'])
+    // 已回收 is its own list: a terminal state that only lived inside 按角色分组 could not be
+    // shown (nor could the tool's refusal on it).
+    assert.deepEqual(Object.keys(value.groups).sort(), ['byEntity', 'overdue', 'resolved', 'unresolved'])
     assert.deepEqual(ids(value.groups.unresolved).sort(), ['fs-duenow', 'fs-future', 'fs-overdue'])
     // ch-1 and ch-3 are earlier chapters and vol-02 an earlier volume: as of the
     // furthest chapter in the book, all three are behind their deadline.
@@ -845,6 +847,28 @@ test('foreshadow: GET /foreshadow is the board, and it stays read-only', async (
     assert.deepEqual(qingyin.items.map((item) => item.id).sort(), ['fs-duenow', 'fs-overdue'])
     const unattached = value.groups.byEntity.find((group) => group.id === null)
     assert.deepEqual(unattached.items.map((item) => item.id), ['fs-future'], 'no linked entities is its own bucket')
+
+    // 已回收 is a terminal state the board must be able to SHOW. The entry is written here
+    // rather than into the shared fixture so the counts the rest of this file asserts stay put.
+    writeMarkdown(
+      root,
+      'foreshadowing/旧盟.md',
+      ['id: fs-done', 'title: 旧盟', 'status: resolved', 'plantedAt: ch-1', 'resolvedChapter: ch-3', 'dueBy: ch-2'],
+      '已经了结的旧盟。\n',
+    )
+    await buildIndex(root)
+    const withDone = (await internalCall(harness, '/foreshadow')).json.value
+    assert.deepEqual(ids(withDone.groups.resolved), ['fs-done'], 'a paid-off setup gets a list of its own')
+    assert.equal(withDone.counts.resolved, 1)
+    assert.ok(
+      withDone.groups.unresolved.every((item) => item.status !== 'resolved'),
+      'a finished entry is never in the working list',
+    )
+    assert.equal(
+      withDone.groups.overdue.some((item) => item.id === 'fs-done'),
+      false,
+      'a paid-off setup is never late',
+    )
 
     // A write verb on a read route is a 405 with the Allow header, as for every read route.
     const rejected = await internalCall(harness, '/foreshadow', { method: 'POST' })
@@ -951,6 +975,7 @@ test('foreshadow: the panel model groups the board and words each state', async 
   const model = await bundle('foreshadow-model.ts')
   const late = { id: 'fs-a', title: '断剑', file: 'foreshadowing/断剑.md', status: 'overdue', declaredStatus: 'planted', overdue: true, dueNow: false, dueBy: 'ch-1', dueKind: 'chapter', linkedEntities: ['c-qingyin'] }
   const now = { id: 'fs-b', title: '旧信', file: 'foreshadowing/旧信.md', status: 'advanced', declaredStatus: 'advanced', overdue: false, dueNow: true, dueBy: 'ch-3', dueKind: 'chapter', linkedEntities: ['c-qingyin'] }
+  const done = { id: 'fs-c', title: '旧盟', file: 'foreshadowing/旧盟.md', status: 'resolved', declaredStatus: 'resolved', overdue: false, dueNow: false, dueBy: 'ch-2', dueKind: 'chapter', linkedEntities: ['c-qingyin'], resolvedChapter: 'ch-3' }
   const view = model.readForeshadowBoard({
     ok: true,
     status: 200,
@@ -961,13 +986,14 @@ test('foreshadow: the panel model groups the board and words each state', async 
       groups: {
         unresolved: [late, now],
         overdue: [late],
-        byEntity: [{ id: 'c-qingyin', title: '清音', kind: 'characters', items: [late, now] }],
+        resolved: [done],
+        byEntity: [{ id: 'c-qingyin', title: '清音', kind: 'characters', items: [late, now, done] }],
       },
     },
   })
   assert.equal(view.error, null)
-  assert.equal(view.summary, '超期 1 · 本期到期 1 · 未回收 2 / 共 3')
-  assert.deepEqual(view.sections.map((section) => section.key), ['dueNow', 'overdue', 'unresolved', 'byEntity'])
+  assert.equal(view.summary, '超期 1 · 本期到期 1 · 未回收 2 / 共 3 · 已回收 1')
+  assert.deepEqual(view.sections.map((section) => section.key), ['dueNow', 'overdue', 'unresolved', 'byEntity', 'resolved'])
   assert.equal(view.sections[0].title, '本期到期')
   assert.equal(view.sections[0].items[0].badge, '本期到期')
   assert.equal(view.sections[0].items[0].current, true)
@@ -975,7 +1001,7 @@ test('foreshadow: the panel model groups the board and words each state', async 
   assert.equal(view.sections[1].items[0].badge, '超期')
   assert.equal(view.sections[2].items[1].badge, '本期到期')
   assert.equal(view.sections[2].items[1].current, true)
-  assert.equal(view.sections[3].entities[0].label, '清音（2）')
+  assert.equal(view.sections[3].entities[0].label, '清音（3）', 'the grouped count includes the finished one')
 
   // "Cannot answer" is not "no foreshadows": the wording has to keep them apart.
   const unavailable = model.readForeshadowBoard({ ok: true, status: 200, value: { currentChapter: null, indexAvailable: false, counts: null, groups: null } })
