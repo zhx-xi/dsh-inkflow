@@ -19,7 +19,7 @@
  * box, never `100%` plus `flex: 1` (the geometry that produced a 2539px panel once).
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { fetchInternal, writeInternal } from './internal.js'
@@ -38,7 +38,9 @@ import {
   readTimelineView,
   upsertBodyOf,
 } from './timeline-model.js'
+import { focusEventOf } from './timeline-model.js'
 import type { TimelineAxisRow, TimelineDraft, TimelineValue, TimelineView as TimelineViewState, TimelineWriteValue } from './timeline-model.js'
+import type { LibraryFocus } from './library-model.js'
 
 // Every visible colour is a host theme token (`--dsw-alias-*`); the panel keeps its own small
 // style set rather than importing `index.tsx`'s, which would make the two modules import each other.
@@ -149,7 +151,7 @@ function AxisRow({ row, onPick }: { row: TimelineAxisRow; onPick: (row: Timeline
   )
 }
 
-export function TimelineView({ sessionId }: { sessionId: string }) {
+export function TimelineView({ sessionId, focus }: { sessionId: string; focus?: LibraryFocus | null }) {
   const [view, setView] = useState<TimelineViewState | null>(null)
   const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState<TimelineDraft | null>(null)
@@ -158,6 +160,7 @@ export function TimelineView({ sessionId }: { sessionId: string }) {
   const [receipt, setReceipt] = useState<{ text: string; failed: boolean } | null>(null)
   const [saving, setSaving] = useState(false)
   // Hooks before any return (see the file header).
+  const appliedFocus = useRef(-1)
   const scrollBox = useScrollBox()
 
   const refresh = useCallback(async () => {
@@ -177,6 +180,23 @@ export function TimelineView({ sessionId }: { sessionId: string }) {
     setDraft(draftOf(row.event))
     setReceipt(null)
   }, [])
+
+  /**
+   * Select the event a jump addressed (设定库's problem panel knows a path, an audit row an id).
+   *
+   * `appliedFocus` keeps the SAME request from re-opening the form on every later refresh: a
+   * save clears the draft and re-reads the pane, and a request that fired again there would
+   * pop the editor back open. A request for an event this page does not hold yet is left
+   * unapplied, so the next pass after the read retries it.
+   */
+  useEffect(() => {
+    if (focus === undefined || focus === null || view === null) return
+    if (appliedFocus.current === focus.nonce) return
+    const event = focusEventOf(view, focus)
+    if (event === undefined) return
+    appliedFocus.current = focus.nonce
+    pick(axisRowOf(event))
+  }, [focus?.nonce, view, pick])
 
   const submit = useCallback(async () => {
     if (draft === null) return

@@ -167,6 +167,7 @@ import {
   buildBatchPage,
   resumeViaChannel as resumeBatchViaChannel,
   TIMELINE_ROUTES,
+  FORESHADOW_ROUTES,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 import { PRIVATE_PURGE_ROUTES } from './private-purge-routes.js'
@@ -422,8 +423,7 @@ const ROUTES: readonly InternalRoute[] = [
     body: TRASH_PURGE_BODY_FIELDS,
     handle: ({ target, version, body }) => purgeTrashReply(target, version, body),
   },
-  // The timeline pane: two axes + the pending area + the findings + the book calendar, and one
-  // confirmed upsert. Descriptors in `timeline-channel.ts`; the same dispatcher guards them.
+  // The timeline pane: two axes + pending + findings + calendar, one confirmed upsert (`timeline-channel.ts`).
   ...TIMELINE_ROUTES,
   {
     // The foreshadow board (data-model §3.2): read-only, three groupings
@@ -436,6 +436,8 @@ const ROUTES: readonly InternalRoute[] = [
     query: [],
     handle: async ({ target, version }) => ({ status: 200, body: ok(await buildForeshadowBoard(target, version)) }),
   },
+  // The board's one write: a legal state move on an existing entry, same pipeline and codes as the tool.
+  ...FORESHADOW_ROUTES,
   {
     // The quality gate (ADR-0022 D4): seven checks over ONE chapter — 字数 / 章末钩子 /
     // 六维去 AI 味 / 一致性 / 敏感自查 / 平台规则 / 机械校对 — with the counts of all seven

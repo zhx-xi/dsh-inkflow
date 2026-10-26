@@ -642,6 +642,71 @@ test('library-model: the empty states are structured, never a blank pane', async
 })
 
 // ---------------------------------------------------------------------------
+// 5b. 大纲 / 伏笔 / 时间线 left this tree for a page of their own
+//
+// The move is CLIENT-side on purpose: `GET /inkflow/internal/library` still answers
+// all eight groups, because the outline page reads its `outlines` group from that very
+// payload and every jump resolves an address by `kind`. What changes is what this page
+// RENDERS — and the author must be told where the three went, or an entry that still
+// exists on disk would read as a loss.
+// ---------------------------------------------------------------------------
+
+/** A payload with all eight groups, so "which of them stay" is the only variable. */
+function allKindsPayload() {
+  const one = (kind, id, title, path, extra = {}) => ({ kind, total: 1, truncated: false, items: [{ id, title, path, category: null, parent: null, status: null }], ...extra })
+  return {
+    indexAvailable: true,
+    total: 8,
+    kinds: [
+      one('characters', 'c-1', '沈青', 'characters/沈青.md'),
+      one('world', 'w-1', '青云山', 'world/地点/青云山.md', {
+        categories: [{ category: '地点', total: 1, items: [{ id: 'w-1', path: 'world/地点/青云山.md', title: '青云山', category: '地点' }] }],
+      }),
+      one('outlines', 'o-1', '整体大纲', 'outlines/main.md'),
+      one('foreshadowing', 'f-1', '青铜镜', 'foreshadowing/青铜镜.md'),
+      one('timeline', 't-1', '甲申立约', 'timeline/甲申立约.md'),
+      one('relations', 'r-1', '师徒', 'relations/师徒.md'),
+      one('facts', 'fa-1', '境界', 'facts/沈青.md'),
+      one('library', 'l-1', '旧稿', 'library/旧稿.md'),
+    ],
+  }
+}
+
+test('library-model: the tree keeps only the five kinds that have no page of their own', async () => {
+  const model = await loadLibraryModel()
+  assert.deepEqual([...model.SETTINGS_LIBRARY_KINDS], ['characters', 'world', 'relations', 'facts', 'library'])
+
+  const tree = model.buildLibraryTree(allKindsPayload())
+  assert.deepEqual(
+    tree.groups.map((group) => group.kind),
+    ['characters', 'world', 'relations', 'facts', 'library'],
+    'the three tabs that moved are not rendered here any more',
+  )
+  for (const kind of ['outlines', 'foreshadowing', 'timeline']) {
+    assert.equal(tree.groups.some((group) => group.kind === kind), false, `${kind} has its own tab`)
+  }
+  // The five keep their own content: the filter drops groups, it does not reshape them.
+  assert.equal(tree.groups.find((group) => group.kind === 'world').categories.length, 1)
+  assert.equal(tree.total, 5, 'five rows, one per remaining kind')
+  assert.equal(tree.indexAvailable, true, 'the index still answered')
+  // Every kind keeps its label: a jump or a finding names 伏笔 by kind even though this
+  // tree no longer lists it.
+  assert.equal(model.kindLabel('foreshadowing'), '伏笔')
+  assert.equal(model.kindLabel('timeline'), '时间线')
+})
+
+test('library-model: the empty state says where 大纲 / 伏笔 / 时间线 went', async () => {
+  const model = await loadLibraryModel()
+  const empty = model.LIBRARY_EMPTY['no-items'].body
+  for (const word of ['大纲', '伏笔', '时间线', '页签']) {
+    assert.match(empty, new RegExp(word), `the empty state must name ${word} rather than let it look lost`)
+  }
+  const facts = model.describeLibraryFacts(model.buildLibraryTree(allKindsPayload()))
+  assert.match(facts, /5\/5 类有条目/, 'the counts follow what the tree shows')
+  assert.doesNotMatch(facts, /八类/, 'the tab no longer claims eight kinds')
+})
+
+// ---------------------------------------------------------------------------
 // 6. The artifact DSH actually loads carries the tab and its calls
 // ---------------------------------------------------------------------------
 

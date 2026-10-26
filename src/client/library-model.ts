@@ -1,22 +1,18 @@
 /**
  * Pure view model for the setting-library tab (roadmap X-7).
  *
- * Everything here is a plain function over plain data, for the same reason
- * `panel-model.ts` is: `node --test` has no DOM, so the React View is only
- * checked as a built bundle while the grouping rules are tested directly.
+ * Plain functions over plain data, for the same reason `panel-model.ts` is: `node --test`
+ * has no DOM, so the React View is only checked as a built bundle while the grouping
+ * rules are tested directly. Three shapes feed this file:
  *
- * Two shapes from the private channel feed this file:
- *   * `GET /inkflow/internal/library` — eight kind groups (X-7: `CONTENT_DIRS`
- *     minus `chapters`), where `world` also carries its `category` buckets.
- *     `indexAvailable: false` means the Host could not read the derived index:
- *     that is "cannot answer", NOT "the book has no characters".
- *   * `GET /inkflow/internal/library/issues` — a flat `validation_issues` list.
- *     Grouping by `code` happens here because it is presentation; the wire stays
- *     flat so the Host never has to guess a label.
- *
- * The editor adds a third: the detail payload (`fingerprint` included) and the
- * `POST /library/item` body it becomes — the field sets per kind, "what changed"
- * and the CAS baseline all live here (see the editor section at the end).
+ *   * `GET /inkflow/internal/library` — eight kind groups (X-7: `CONTENT_DIRS` minus
+ *     `chapters`), five of which this page renders (`SETTINGS_LIBRARY_KINDS`); `world`
+ *     also carries its `category` buckets. `indexAvailable: false` means "cannot answer",
+ *     NOT "the book has no characters".
+ *   * `GET /inkflow/internal/library/issues` — a flat `validation_issues` list. Grouping by
+ *     `code` happens here because it is presentation; the wire stays flat.
+ *   * the detail payload (`fingerprint` included) and the `POST /library/item` body it
+ *     becomes — field sets per kind, "what changed" and the CAS baseline (end of file).
  *
  * No IO, no React, no `@deepseek-ai/*` import (ADR-0008 D4/V7).
  */
@@ -26,6 +22,16 @@ import type { InternalError, InternalResult } from './internal.js'
 
 /** The one kind whose rows are grouped by `category` — 地点 is a bucket, not a kind. */
 export const WORLD_KIND = 'world'
+
+/**
+ * The kinds this tree renders.
+ *
+ * 大纲 / 伏笔 / 时间线 were MOVED out, not removed: each has a tab with its own reading
+ * order and its own write. The wire is untouched on purpose — `GET /library` still answers
+ * all eight groups, because the outline page reads its own group from that payload and
+ * every jump resolves an address by `kind`. A kind outside this list is skipped here.
+ */
+export const SETTINGS_LIBRARY_KINDS = ['characters', 'world', 'relations', 'facts', 'library'] as const
 
 /** Row shape the Host sends per kind (`LibraryItemRow` on the Host side). */
 export interface LibraryItem {
@@ -69,23 +75,26 @@ export interface LibraryTree {
 }
 
 /**
- * "Open this entry for me" — a request from another page (the audit rows), not state the
- * library owns.
+ * "Open this entry for me" — a request from another page (an audit row, a search hit, a
+ * problem row), not state the library owns.
  *
- * `nonce` exists because a second click on the *same* finding must re-focus the same row:
+ * `nonce` exists because a second click on the *same* address must re-focus the same row:
  * without it React sees an equal prop and skips the effect, so the second click would look
  * dead. The library never stores the nonce; it only uses it to tell "same request again"
  * from "no request".
  */
 export interface LibraryFocus {
   kind: string
-  id: string
+  /** The entity id, when the caller has one (an audit finding, a search hit). */
+  id?: string
+  /** The project-relative file, when the caller has that instead (a `validation_issues` row). */
+  path?: string
   nonce: number
 }
 
-/** The row a focus request names, found in the tree the panel already built. */
+/** The row a focus request names, found in the tree the panel already built (by id). */
 export function findFocusItem(tree: LibraryTree, focus: LibraryFocus | null | undefined): LibraryTreeItem | undefined {
-  if (focus === null || focus === undefined) return undefined
+  if (focus === null || focus === undefined || focus.id === undefined) return undefined
   for (const group of tree.groups) {
     if (group.kind !== focus.kind) continue
     const direct = group.items.find((item) => item.id === focus.id)
@@ -263,13 +272,10 @@ function asItems(value: unknown, kind: string): LibraryTreeItem[] {
 }
 
 /**
- * Group world rows by `category`, named categories first (storage order kept),
- * the uncategorised rows last.
- *
- * Exported because it is the one rule X-7 is about: 地点 is a `world` category,
- * so this function — not a kind table — decides what the tree shows underneath
- * 世界观. It also runs on rows alone, so the panel still groups correctly if a
- * future Host payload drops the precomputed `categories`.
+ * Group world rows by `category`, named categories first (storage order kept), the
+ * uncategorised rows last. Exported because it is the one rule X-7 is about: 地点 is a
+ * `world` category, so this — not a kind table — decides what shows under 世界观. It runs
+ * on rows alone too, so the panel still groups if a payload drops `categories`.
  */
 export function groupByCategory(items: readonly LibraryTreeItem[]): LibraryCategoryGroup[] {
   const buckets = new Map<string, LibraryTreeItem[]>()
@@ -311,13 +317,10 @@ function asCategories(value: unknown, items: readonly LibraryTreeItem[]): Librar
 }
 
 /**
- * The eight-kind tree, kept as a tree.
- *
- * The Host lists the kinds in `CONTENT_DIRS` order and each kind's rows in the
- * projection's order, so this only normalises shapes: a group with no items is
- * kept, because "这一库还是空的" is an editorial state the author needs to see
- * (and, for 伏笔/账本/资料, it may also mean the projection for that directory
- * has not landed yet — the tab says so in one muted line instead of pretending).
+ * The tree this page renders: `SETTINGS_LIBRARY_KINDS` out of the eight the Host answers.
+ * Shapes are normalised, order is kept, the three groups that own a page are dropped, and a
+ * group with no items IS kept: "这一库还是空的" is an editorial state the author needs to see
+ * (for 账本/资料 it may also mean the projection has not landed yet).
  */
 export function buildLibraryTree(value: LibraryValue | null): LibraryTree {
   if (value === null) return { groups: [], total: 0, indexAvailable: true }
@@ -326,7 +329,7 @@ export function buildLibraryTree(value: LibraryValue | null): LibraryTree {
     const record = asRecord(raw)
     if (record === undefined) continue
     const kind = optionalString(record['kind'])
-    if (kind === null) continue
+    if (kind === null || !(SETTINGS_LIBRARY_KINDS as readonly string[]).includes(kind)) continue
     const items = asItems(record['items'], kind)
     groups.push({
       kind,
@@ -350,12 +353,10 @@ export function flattenLibrary(tree: LibraryTree): LibraryTreeItem[] {
 }
 
 /**
- * The row behind a `validation_issues` path, if this tree holds it.
- *
- * The problem panel jumps to an entry by switching the selection, so it needs
- * the `(kind, id)` the detail route asks for. A path outside the eight kinds
- * (a chapter, an `inkflow.json`) simply has no row: the panel then shows the
- * issue without a jump target rather than guessing one.
+ * The row behind a `validation_issues` path, if this tree holds it — the `(kind, id)` the
+ * detail route asks for. A path this page does not list (a chapter, an `inkflow.json`, or
+ * one of the three kinds that own a page) has no row here: the panel then hands the path to
+ * `movedKindOf` or shows the issue with no target, never a guess.
  */
 export function findItemByPath(tree: LibraryTree, path: string | null): LibraryTreeItem | undefined {
   if (path === null || path === '') return undefined
@@ -464,12 +465,10 @@ export interface LibraryFieldSpec {
 }
 
 /**
- * The common field set per kind — the fields the author edits by hand.
- *
- * Field names and types come from the data model (`.agents/specs/data-model.md`
- * §3.1–§3.6), not from a per-kind guess; `id` is deliberately absent (it is the
- * address the tree and this editor both use) and so are nested maps like
- * `origin`, which frontmatter cannot represent.
+ * The common field set per kind — the fields the author edits by hand. Names and types come
+ * from the data model (`.agents/specs/data-model.md` §3.1–§3.6), not a per-kind guess;
+ * `id` is deliberately absent (it is the address both the tree and this editor use), as are
+ * nested maps like `origin`, which frontmatter cannot represent.
  */
 export const KIND_FIELDS: Record<string, readonly LibraryFieldSpec[]> = {
   characters: [
@@ -738,7 +737,7 @@ export function editorActions(state: { dirty: boolean; planReady: boolean }): Ed
 export const LIBRARY_EMPTY = {
   'no-items': {
     title: '设定库还没有条目',
-    body: '八个目录（角色 / 世界观 / 大纲 / 伏笔 / 时间线 / 关系 / 事实账本 / 资料）都还是空的。让 AI 用 inkflow_* 工具建条目，或直接在对应目录里写带 frontmatter 的 Markdown，面板会按类显示。',
+    body: '五类（角色 / 世界观 / 关系 / 事实账本 / 资料）都还是空的。大纲、伏笔、时间线各有自己的页签，条目不在这一页显示——它们没有丢，切到对应页签即可。让 AI 用 inkflow_* 工具建条目，或直接在对应目录里写带 frontmatter 的 Markdown，面板会按类显示。',
   },
   'no-selection': {
     title: '选择一条查看',
@@ -762,7 +761,7 @@ export type LibraryEmptyKind = keyof typeof LIBRARY_EMPTY
 
 /** The hint under the tree: counts, plus one line about why some kinds are empty. */
 export function describeLibraryFacts(tree: LibraryTree): string {
-  if (!tree.indexAvailable) return '索引 不可用 · 八类无法回答'
+  if (!tree.indexAvailable) return '索引 不可用 · 本页五类无法回答'
   const filled = tree.groups.filter((group) => group.items.length > 0).length
   return `索引 可用 · ${filled}/${tree.groups.length} 类有条目 · 共 ${tree.total} 条`
 }

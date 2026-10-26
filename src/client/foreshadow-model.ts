@@ -21,6 +21,7 @@
  */
 
 import type { InternalError, InternalResult } from './internal.js'
+import type { LibraryFocus } from './library-model.js'
 
 /** One entry as the channel sends it (`ForeshadowItem` on the Host side). */
 export interface ForeshadowItem {
@@ -83,6 +84,10 @@ export interface ForeshadowCard {
   id: string
   title: string
   file: string
+  /** The file slug — the address `POST /foreshadow/advance` takes (the tool's own name). */
+  slug: string
+  /** The advance positions already on the file, so a move appends instead of replacing them. */
+  advancedAt: string[]
   /** The word in the badge: 超期 / 本期到期 / the state's label. */
   badge: string
   /** Whether this card is about the chapter being written right now. */
@@ -146,6 +151,8 @@ function cardOf(item: ForeshadowItem): ForeshadowCard {
     id: item.id,
     title: item.title,
     file: item.file,
+    slug: slugOf(item.file),
+    advancedAt: [...(item.advancedAt ?? [])],
     badge,
     current: item.dueNow,
     due: describeDue(item),
@@ -162,6 +169,59 @@ export function describeForeshadowError(error: InternalError | undefined): strin
   if (code === 'INDEX_BUILD_FAILED') return `索引重建失败（INDEX_BUILD_FAILED）${detail}`
   if (code.startsWith('PROJECT_')) return `这本书当前不可用（${code}）${detail}`
   return `读取伏笔看板失败（${code}）${detail}`
+}
+
+/**
+ * The file slug behind a row: `foreshadowing/青铜镜.md` → `青铜镜`.
+ *
+ * The wire addresses an entry by its file, the tool (and therefore the route) by its slug.
+ * Deriving it here keeps the one naming rule in the model instead of in the click handler.
+ */
+export function slugOf(file: string): string {
+  const name = file.replaceAll('\\', '/').split('/').pop() ?? file
+  return name.endsWith('.md') ? name.slice(0, -3) : name
+}
+
+/**
+ * The body one 推进 sends.
+ *
+ * `advanced` APPENDS to the positions already on the file: the Host's upsert replaces the
+ * list it is given, so sending only the new chapter would erase the earlier ones. Nothing
+ * else is decided here — whether the move is legal, whether `resolved` needs a chapter and
+ * whether the gate is satisfied are the Host's rules, and the pane prints its code.
+ */
+export function advanceBody(
+  card: ForeshadowCard,
+  target: 'advanced' | 'resolved',
+  chapter: string,
+): Record<string, unknown> {
+  const chapterId = chapter.trim()
+  if (target === 'resolved') {
+    return { slug: card.slug, status: 'resolved', ...(chapterId === '' ? {} : { resolvedChapter: chapterId }), confirm: true }
+  }
+  return {
+    slug: card.slug,
+    status: 'advanced',
+    advancedAt: chapterId === '' ? card.advancedAt : [...card.advancedAt, chapterId],
+    confirm: true,
+  }
+}
+
+/**
+ * The row a jump addressed, as a file path — or `null`.
+ *
+ * Two addresses reach this board, and they come from different callers: a search hit or an
+ * audit finding carries an `id`, 设定库's problem panel carries only a `path`. A pane that
+ * answered one and not the other would switch the tab and then look like a dead click.
+ */
+export function focusFileOf(view: ForeshadowView, focus: LibraryFocus | null | undefined): string | null {
+  if (focus === null || focus === undefined || focus.kind !== 'foreshadowing') return null
+  const sameFile = (left: string, right: string): boolean => left.replaceAll('\\', '/') === right.replaceAll('\\', '/')
+  const cards = view.sections.flatMap((section) => section.items)
+  const hit = cards.find(
+    (card) => (focus.id !== undefined && card.id === focus.id) || (focus.path !== undefined && sameFile(card.file, focus.path)),
+  )
+  return hit === undefined ? null : hit.file
 }
 
 /**

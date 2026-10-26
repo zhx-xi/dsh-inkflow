@@ -1151,6 +1151,8 @@ export type { TrashReply, TrashSource } from './trash-channel.js'
 
 export { buildForeshadowBoard } from './domains/foreshadowing-query.js'
 export type { ForeshadowSource } from './domains/foreshadowing-query.js'
+// The board's write half: `POST /foreshadow/advance`, one legal state move; the descriptor travels with it.
+export { FORESHADOW_ADVANCE_BODY_FIELDS, FORESHADOW_ROUTES, foreshadowAdvanceReply } from './foreshadow-channel.js'
 // ---------------------------------------------------------------------------
 // The consistency audit. The engine lives in `audit.ts` (scan → findings →
 // Markdown; no HTTP, no writes on the read path), the two channel replies in
