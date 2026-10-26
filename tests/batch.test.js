@@ -235,6 +235,124 @@ test('加章到既有作业：同 seq 幂等跳过，不同 seq 追加', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 1b. 省略 seq = 书的下一章号（不是作业的下一个号）
+// ---------------------------------------------------------------------------
+
+/**
+ * Put chapters on disk the way an author does: `chapters/vol-01/NNNN-第N章.md` with a `seq`
+ * frontmatter field. Only the files are written — no catalog, no index — because the default
+ * `seq` has to come from the projection the book already implies, not from a JSON the caller
+ * happened to rebuild.
+ */
+function seedBookChapters(root, seqs) {
+  const dir = join(root, 'chapters', 'vol-01')
+  mkdirSync(dir, { recursive: true })
+  for (const seq of seqs) {
+    const name = `${String(seq).padStart(4, '0')}-第${String(seq)}章.md`
+    writeFileSync(
+      join(dir, name),
+      ['---', `id: ch-${String(seq)}`, `title: 第 ${String(seq)} 章`, 'volume: vol-01', `seq: ${String(seq)}`, '---', '', `第 ${String(seq)} 章正文。`, ''].join('\n'),
+      'utf8',
+    )
+  }
+}
+
+test('省略 seq = 书的下一章号：书里已有 1..11 时，新作业不给 seq 得到 12/13', () => {
+  const fixture = book()
+  try {
+    seedBookChapters(fixture.root, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    const enqueued = enqueueJob(fixture.root, { chapters: [{ title: '第 12 章' }, { title: '第 13 章' }] })
+    assert.equal(enqueued.ok, true, JSON.stringify(enqueued.error ?? null))
+    assert.deepEqual(
+      enqueued.value.chapters.map((chapter) => chapter.seq),
+      [12, 13],
+      'a job started on a book of eleven chapters queues the twelfth chapter, not the first',
+    )
+  } finally {
+    fixture.done()
+  }
+})
+
+test('书内章号来自投影：卷内章与散章都算，且空档不回填', () => {
+  const fixture = book()
+  try {
+    // Chapters 1..12 with 7 missing (the author removed it), plus a loose chapter 13.
+    seedBookChapters(fixture.root, [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12])
+    writeFileSync(
+      join(fixture.root, 'chapters', '0013-散章.md'),
+      ['---', 'id: loose-13', 'title: 散章', 'seq: 13', '---', '', '散章正文。', ''].join('\n'),
+      'utf8',
+    )
+    const enqueued = enqueueJob(fixture.root, { chapters: [{ title: '第 14 章' }] })
+    assert.equal(enqueued.ok, true, JSON.stringify(enqueued.error ?? null))
+    assert.deepEqual(
+      enqueued.value.chapters.map((chapter) => chapter.seq),
+      [14],
+      'max over volume chapters and loose chapters, + 1: the hole at 7 is never reused',
+    )
+  } finally {
+    fixture.done()
+  }
+})
+
+test('作业里已占 12/13 再入队不给 seq → 14，不与作业内已占的号重复', () => {
+  const fixture = book()
+  try {
+    seedBookChapters(fixture.root, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    const first = enqueueJob(fixture.root, { chapters: [{ seq: 12, title: '第 12 章' }, { seq: 13, title: '第 13 章' }] })
+    assert.equal(first.ok, true, JSON.stringify(first.error ?? null))
+    const again = enqueueJob(fixture.root, { jobId: first.value.jobId, chapters: [{ title: '第 14 章' }] })
+    assert.equal(again.ok, true, JSON.stringify(again.error ?? null))
+    assert.deepEqual(again.value.chapters.map((chapter) => chapter.seq), [12, 13, 14])
+    assert.deepEqual(again.value.skipped, [], 'nothing collides, so nothing is skipped')
+  } finally {
+    fixture.done()
+  }
+})
+
+test('同一批里显式与省略混用：显式优先，省略取「书 max+1 与作业 max+1」的较大者', () => {
+  const fixture = book()
+  try {
+    seedBookChapters(fixture.root, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    const belowBook = enqueueJob(fixture.root, { chapters: [{ seq: 5, title: '第 5 章' }, { title: '第 12 章' }] })
+    assert.equal(belowBook.ok, true, JSON.stringify(belowBook.error ?? null))
+    assert.deepEqual(
+      belowBook.value.chapters.map((chapter) => chapter.seq),
+      [5, 12],
+      'an explicit number below the book floor does not lower it for the next entry',
+    )
+    const pastBook = enqueueJob(fixture.root, { chapters: [{ seq: 20, title: '第 20 章' }, { title: '第 21 章' }] })
+    assert.equal(pastBook.ok, true, JSON.stringify(pastBook.error ?? null))
+    assert.deepEqual(
+      pastBook.value.chapters.map((chapter) => chapter.seq),
+      [20, 21],
+      'this time the job floor (20 + 1) is the larger one, so it wins',
+    )
+  } finally {
+    fixture.done()
+  }
+})
+
+test('书中已有 1..11 时，不给 seq 排的章能落盘：complete 不再报 SEQ_CONFLICT', async () => {
+  const fixture = book()
+  try {
+    seedBookChapters(fixture.root, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    const enqueued = enqueueJob(fixture.root, { chapters: [{ title: '第 12 章' }] })
+    assert.equal(enqueued.ok, true, JSON.stringify(enqueued.error ?? null))
+    const jobId = enqueued.value.jobId
+    const taken = takeBatch(fixture.root, { jobId })
+    assert.equal(taken.ok, true, JSON.stringify(taken.error ?? null))
+    assert.deepEqual(taken.value.tasks.map((task) => task.seq), [12], 'the writing context is for chapter 12, not chapter 1')
+    const done = await completeChapter(fixture.root, { jobId, seq: 12, body: CLEAN_BODY })
+    assert.equal(done.ok, true, JSON.stringify(done.error ?? null))
+    assert.equal(done.value.written, true)
+    assert.ok(String(done.value.path).includes('0012'), `the twelfth chapter file is what landed (got ${String(done.value.path)})`)
+  } finally {
+    fixture.done()
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 2. take → complete → the chapter lands
 // ---------------------------------------------------------------------------
 
