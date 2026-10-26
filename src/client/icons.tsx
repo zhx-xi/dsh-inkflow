@@ -221,6 +221,15 @@ export interface IconProps {
  *
  * The stroke width is the only thing `active` changes, so a selected tab reads as "selected"
  * without a second colour or a background fill (the tab already has an underline for that).
+ *
+ * WHY `inline-block` AND NOT `block`: an `<svg>` is a block-level replaced element by default,
+ * and this set lands in three kinds of container — a flex row (the tab bar, the shared action
+ * button), an inline `<span>` (a tree caret), and a plain `<button>` with no `display` of its
+ * own (设定库's group row). Inside the last two a block icon starts a new line box, so the
+ * caret rendered ABOVE its label instead of beside it. `inline-block` flows with the text in
+ * every container and is blockified to a normal flex item inside a flex row, which is the one
+ * value that behaves in all three. `verticalAlign` then puts the 13px box on the text's
+ * optical baseline rather than the descender line.
  */
 export function Icon({ name, size, active }: IconProps) {
   const edge = typeof size === 'number' ? size : 14
@@ -237,7 +246,7 @@ export function Icon({ name, size, active }: IconProps) {
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
-      style={{ flex: 'none', display: 'block' }}
+      style={{ flex: 'none', display: 'inline-block', verticalAlign: '-2px' }}
     >
       {PATHS[name]}
     </svg>

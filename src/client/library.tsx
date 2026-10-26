@@ -122,6 +122,13 @@ const groupRowStyle = {
   cursor: 'pointer',
   textAlign: 'left',
   width: '100%',
+  // A row, not a line of text: the caret, the kind name and its count are three boxes that must
+  // stay on one line and share a centre line. Without this the button was a plain inline-block
+  // and the SVG (a block-level element) pushed the caret onto a line of its own — the caret sat
+  // above its label. `gap` replaces the ad-hoc `marginLeft` on the count.
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
 } as const
 
 function SectionTitle({ children }: { children: string }) {
@@ -455,7 +462,7 @@ export function LibraryView({
             <button type="button" style={groupRowStyle} onClick={() => toggle(group.kind)} aria-expanded={expanded.includes(group.kind)}>
               <Icon name={expanded.includes(group.kind) ? 'caret-down' : 'caret'} size={12} />
               {group.label}
-              <span style={{ ...muted, ...mono, marginLeft: 6 }}>{group.total}</span>
+              <span style={{ ...muted, ...mono, marginLeft: 2 }}>{group.total}</span>
               {group.truncated ? <span style={{ ...muted, fontSize: 11 }}> （已达上限，列表不完整）</span> : null}
             </button>
             {/* X-20: the import entry lives in the 资料 group, not in a tab of its own — importing
