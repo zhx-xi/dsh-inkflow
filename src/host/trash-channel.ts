@@ -155,6 +155,8 @@ export function restoreTrashReply(source: TrashSource, version: string, body: Js
         root: restored.root,
         restored: { ...restoredWire(restored.restored), trashPath: restored.trashPath },
         copyRemoved: restored.copyRemoved,
+        catalogRebuilt: restored.catalogRebuilt,
+        ...(restored.catalogError === undefined ? {} : { catalogError: restored.catalogError }),
       },
     },
   }
