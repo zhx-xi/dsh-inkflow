@@ -25,6 +25,8 @@
 
 import { existsSync } from 'node:fs'
 
+import { readCatalog } from './catalog.js'
+import type { CatalogChapter } from './catalog.js'
 import {
   DEFAULT_BATCH_SIZE,
   JOB_CHAPTER_FORMAT,
@@ -76,6 +78,30 @@ function clampInt(value: number | undefined, fallback: number, min: number, max:
 }
 
 /**
+ * The book's next free chapter number: the highest `seq` the book already uses, plus one.
+ *
+ * Read from the **projection** (`readCatalog` → the `.md` files), not from the derived index:
+ * `enqueue` writes only `.inkflow/jobs/` and never rebuilds the index, so asking the index would
+ * make the answer depend on whether something else happened to read the book recently. The
+ * projection is also what the panel and the export put in front of the author, and `catalog.ts`
+ * imports no job module, so this dependency stays one-way.
+ *
+ * Gaps are **not** backfilled. A missing number means the author removed or renumbered a chapter
+ * on purpose, and chapter numbers carry reading order: filling 7 because 7 is free would drop a
+ * new chapter into the middle of the book instead of after its last chapter.
+ */
+function bookNextSeq(root: string): number {
+  const projection = readCatalog(root)
+  let highest = 0
+  const consider = (chapter: CatalogChapter): void => {
+    if (chapter.seq !== undefined && chapter.seq > highest) highest = chapter.seq
+  }
+  projection.catalog.looseChapters.forEach(consider)
+  for (const volume of projection.volumeCatalogs) volume.chapters.forEach(consider)
+  return highest + 1
+}
+
+/**
  * Create a job, or add chapters to one.
  *
  * **This writes nothing outside `.inkflow/jobs/`** — no chapter file is created, no
@@ -118,7 +144,14 @@ export function enqueueJob(root: string, input: EnqueueInput): JobResult<JobStat
       }
     const skipped: number[] = []
     const added: JobChapter[] = []
-    let nextSeq = chapters.reduce((max, chapter) => Math.max(max, chapter.seq), 0) + 1
+    // 「省略 seq」means the book's next chapter, not the job's. A brand-new job has no chapters
+    // of its own, so a job-only counter starts at 1 — and chapter 1 of a book that already has
+    // eleven is taken, which `complete` refuses with SEQ_CONFLICT after the draft was written.
+    // An explicit `seq` is still authoritative, so a call that names every number never reads
+    // the book at all. Both floors apply: whichever is higher wins, so adding chapters to a job
+    // that already holds 12/13 continues at 14 even while the book still ends at 11.
+    const bookFloor = input.chapters.some((item) => item.seq === undefined) ? bookNextSeq(held) : 1
+    let nextSeq = Math.max(bookFloor, chapters.reduce((max, chapter) => Math.max(max, chapter.seq), 0) + 1)
     for (const item of input.chapters) {
       const title = (item.title ?? '').trim()
       if (title === '') return refuse('TITLE_REQUIRED', 'every chapter of a job needs a title')

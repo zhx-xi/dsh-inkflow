@@ -9,8 +9,10 @@
  *
  * WHAT IT DOES NOT DO: it does not re-derive the order, the caps or the trim ladder. Those
  * arrive decided (`GET /inkflow/internal/brief`), and the policy lives in `brief-model.ts`
- * so it is testable without a DOM. The one action it offers is the audit write, and it
- * sends `confirm: true` because that is a write under `.inkflow/audit/`.
+ * so it is testable without a DOM. The one action it offers is the audit write: it sends
+ * `confirm: true` because that is a write under `.inkflow/audit/`, and it names the chapter
+ * the page is showing (`briefAuditRoute`) so the record is THIS brief and not the book's
+ * default one.
  *
  * The client half never touches the filesystem (ADR-0008 D4): everything comes from the
  * private channel, and the request carries a session id and nothing else.
@@ -20,7 +22,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
-import { EMPTY_BRIEF, readBrief } from './brief-model.js'
+import { EMPTY_BRIEF, briefAuditRoute, readBrief } from './brief-model.js'
 import type { BriefSegmentRow, BriefValue, BriefView } from './brief-model.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
@@ -101,8 +103,10 @@ export function BriefView({ sessionId }: { sessionId: string }) {
   /** Record this exact brief into `.inkflow/audit/brief-<chapterId>.json`. */
   const recordAudit = useCallback(async () => {
     setSaving(true)
+    // The chapter the page is SHOWING, not the book's default one: `briefAuditRoute` is the
+    // one place that decides whether there is a chapter to name (see its note in the model).
     const written = await writeInternal<{ chapterId?: string; written?: { path?: string; bytes?: number; sha256?: string } }>(
-      '/brief/audit',
+      briefAuditRoute(view),
       { confirm: true },
       { sessionId },
     )
@@ -115,7 +119,7 @@ export function BriefView({ sessionId }: { sessionId: string }) {
     const bytes = written.value?.written?.bytes
     const sha = written.value?.written?.sha256 ?? ''
     setNotice(`已落盘 ${path}${bytes === undefined ? '' : ` · ${String(bytes)} 字节`}${sha === '' ? '' : ` · sha256 ${sha.slice(0, 12)}…`}`)
-  }, [sessionId])
+  }, [sessionId, view])
 
   const header = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

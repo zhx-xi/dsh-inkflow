@@ -413,6 +413,166 @@ test('period: a chapter id the book does not have is uncomparable, not a conflic
 })
 
 // ---------------------------------------------------------------------------
+// 3b. One written end is enough to be judged
+//
+// `since`/`until` are each optional (an absent `since` starts at the head of the book, an
+// absent `until` still holds), so the interesting case is the **half-declared** window:
+// the author wrote one end and left the other open. A rule that only looked at windows
+// with both ends filled would answer "nothing to say" for exactly the edges that most
+// need the note, and the label would sit there unexplained.
+// ---------------------------------------------------------------------------
+
+test('period: a free label on just the since end is uncomparable, and the note names that end', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // The opening end is a world-internal label; the closing end is left open (至今). There
+    // is no span to call empty here — only a boundary the book cannot place.
+    markdown(root, ...relationsEdge('relations/open-start.md', {
+      source: 'char-qingyin',
+      target: 'char-baihe',
+      kind: 'character',
+      since: '永平三年秋',
+    }))
+    const build = await buildIndex(root)
+    assert.equal(
+      periodConflicts(build.issues).length,
+      0,
+      `one end cannot make an empty window: ${JSON.stringify(build.issues)}`,
+    )
+    const info = uncomparable(build.issues)
+    assert.equal(info.length, 1, `expected one "cannot judge" note, got ${JSON.stringify(build.issues)}`)
+    assert.equal(info[0].path, 'relations/open-start.md')
+    assert.match(info[0].detail, /永平三年秋/u, 'the note quotes what the author wrote')
+    assert.match(info[0].detail, /since/u, 'and names which end it could not place')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('period: a free label on just the until end is uncomparable, and the note names that end', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // The mirror case: the placeable end alone must not make the window judgeable.
+    markdown(root, ...relationsEdge('relations/open-end.md', {
+      source: 'char-qingyin',
+      target: 'char-baihe',
+      kind: 'character',
+      since: 'ch-2',
+      until: '永平五年',
+    }))
+    const build = await buildIndex(root)
+    assert.equal(periodConflicts(build.issues).length, 0, 'an unplaceable end is "cannot say", not "says the opposite"')
+    const info = uncomparable(build.issues)
+    assert.equal(info.length, 1, `expected one note, got ${JSON.stringify(build.issues)}`)
+    assert.match(info[0].detail, /永平五年/u)
+    assert.match(info[0].detail, /until/u, 'the note names the end that could not be placed')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('period: two free labels are still one note, naming both ends', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    markdown(root, ...relationsEdge('relations/both-free.md', {
+      source: 'char-qingyin',
+      target: 'char-baihe',
+      kind: 'character',
+      since: '永平三年秋',
+      until: '永平五年',
+    }))
+    const build = await buildIndex(root)
+    const info = uncomparable(build.issues)
+    // One edge is one row in the report: reporting each unplaceable end separately would
+    // double the count for one problem and make the two-end case look worse than it is.
+    assert.equal(info.length, 1, `one edge, one note — got ${JSON.stringify(info)}`)
+    assert.match(info[0].detail, /since/u)
+    assert.match(info[0].detail, /until/u)
+    assert.match(info[0].detail, /永平三年秋/u)
+    assert.match(info[0].detail, /永平五年/u)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('period: a window with no end written at all is not a defect', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // "Not written" is not "written wrong": the edge holds for the whole book, which is the
+    // documented lax path, so both judgements stay silent.
+    markdown(root, ...relationsEdge('relations/no-window.md', {
+      source: 'char-qingyin',
+      target: 'char-baihe',
+      kind: 'character',
+    }))
+    const build = await buildIndex(root)
+    assert.equal(periodConflicts(build.issues).length, 0)
+    assert.equal(uncomparable(build.issues).length, 0, `nothing was declared, so nothing is unjudgeable: ${JSON.stringify(build.issues)}`)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('period: a fully placeable window that holds is silent on both codes', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // The widened rule must not start accusing edges that were always fine: both ends are
+    // chapter ids, the span is forward, so there is nothing to report.
+    markdown(root, ...relationsEdge('relations/clean.md', {
+      source: 'char-qingyin',
+      target: 'char-baihe',
+      kind: 'character',
+      since: 'ch-1',
+      until: 'ch-9',
+    }))
+    const build = await buildIndex(root)
+    assert.deepEqual(
+      build.issues.filter((issue) => issue.code.startsWith('RELATION_PERIOD')).map((issue) => issue.code),
+      [],
+      `a sound window is silent: ${JSON.stringify(build.issues)}`,
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('period: a single free end is information in the report, never a blocking finding', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    markdown(root, ...relationsEdge('relations/open-start.md', {
+      source: 'char-qingyin',
+      target: 'char-baihe',
+      kind: 'character',
+      since: '永平三年秋',
+    }))
+    const report = auditProject(root)
+    const notes = report.findings.filter((finding) => finding.code === 'RELATION_PERIOD_UNCOMPARABLE')
+    assert.equal(notes.length, 1, `体检 must list the half-declared window, got ${JSON.stringify(report.findings)}`)
+    assert.equal(notes[0].severity, 'info')
+    assert.equal(notes[0].group, 'structure', 'the family is the graph, not the ledger')
+    // The row must point at the edge itself: an entity locator when the file carries an id
+    // (which a relation always does), the file path otherwise.
+    const addressed = notes[0].locator.kind === 'entity' ? notes[0].locator.id : notes[0].locator.path
+    assert.equal(addressed, 'relations/open-start.md', 'the row addresses the edge it is about')
+    assert.equal(report.counts.severity.blocking, 0, 'a read never produces a blocking finding')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 4. Both nets, and the read surface
 // ---------------------------------------------------------------------------
 
@@ -507,6 +667,33 @@ test('period: a free label never blocks a write, and an unrelated conflict does 
     // was not touching).
     const build = await buildIndex(root)
     assert.deepEqual(periodConflicts(build.issues).map((issue) => issue.path), ['relations/old-1.md'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('period: a half-declared window does not block the write it is a note about', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    sampleBook(root)
+    // The note is for the report, not for the write gate: an author mid-draft who writes
+    // `since: 永平三年秋` and leaves the other end open must still be able to save.
+    const written = await callTool('inkflow_relation_upsert', {
+      projectRoot: root,
+      source: 'char-qingyin',
+      target: 'char-baihe',
+      kind: 'character',
+      since: '永平三年秋',
+      confirm: true,
+    })
+    assert.equal(written.ok, true, `an unplaceable boundary must not door-block the write: ${JSON.stringify(written.error ?? {})}`)
+    assert.equal(written.relation.since, '永平三年秋')
+    assert.equal(written.relation.until, undefined, 'the open end stays open')
+    // And the rebuild that follows says exactly the same thing.
+    const build = await buildIndex(root)
+    assert.equal(periodConflicts(build.issues).length, 0)
+    assert.equal(uncomparable(build.issues).length, 1)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

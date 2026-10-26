@@ -1310,3 +1310,153 @@ test('brief: at the floor the header shortens to the book and the chapter number
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 10. The audit writes the chapter the request named (not always the book's last one)
+// ---------------------------------------------------------------------------
+
+test('brief: the audit lands on the chapter the query names, and records that chapter\u2019s preview', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    const harness = createHarness({ workspace: root })
+
+    // What the panel shows when it is looking at the FIRST chapter. It is not the book's
+    // last chapter, which is what used to be recorded instead.
+    const preview = await internalCall(harness, '/brief?chapterId=ch-0001&budgetTokens=2000')
+    assert.equal(preview.status, 200, JSON.stringify(preview.json))
+    const value = preview.json.value
+    assert.equal(value.chapterId, 'ch-0001')
+
+    const written = await internalCall(harness, '/brief/audit?chapterId=ch-0001&budgetTokens=2000', {
+      method: 'POST',
+      origin: `http://${HOST}`,
+      body: { confirm: true },
+    })
+    assert.equal(written.status, 200, JSON.stringify(written.json))
+    assert.equal(written.json.value.chapterId, 'ch-0001', 'the receipt names the chapter that was recorded')
+    assert.equal(written.json.value.written.path, '.inkflow/audit/brief-ch-0001.json')
+    assert.equal(written.json.value.addressedBy, 'chapterId', 'the answer says which key addressed the chapter')
+
+    // One brief, two readers: the record's fields ARE the preview's fields, minus the prose
+    // the record deliberately does not keep (D1: preview = audit).
+    const record = JSON.parse(readFileSync(join(root, '.inkflow', 'audit', 'brief-ch-0001.json'), 'utf8'))
+    assert.equal(record.chapterId, 'ch-0001')
+    assert.equal(record.chapterSeq, 1)
+    assert.equal(record.chapterPath, 'chapters/vol-01/0001-开端.md')
+    assert.equal(record.header, value.header, 'the header is the same string, not a re-formatting of it')
+    assert.equal(record.budgetTokens, 2000, 'the budget travels with the request instead of being hard-coded')
+    assert.equal(record.tokens, value.tokens)
+    assert.equal(record.overBudget, value.overBudget)
+    assert.deepEqual(record.trims, value.trims)
+    assert.deepEqual(
+      record.segments,
+      value.segments.map((segment) => ({
+        id: segment.id,
+        label: segment.label,
+        bytes: segment.bytes,
+        tokens: segment.tokens,
+        truncated: segment.truncated,
+        missing: segment.missing,
+      })),
+    )
+    // The bug, as an assertion: one file, and it is the addressed chapter's.
+    assert.deepEqual(readdirSync(join(root, '.inkflow', 'audit')), ['brief-ch-0001.json'])
+
+    // `chapterId` beats `chapterSeq` here too — one addressing order for both routes.
+    const both = await internalCall(harness, '/brief/audit?chapterId=ch-0001&chapterSeq=2', {
+      method: 'POST',
+      origin: `http://${HOST}`,
+      body: { confirm: true },
+    })
+    assert.equal(both.status, 200, JSON.stringify(both.json))
+    assert.equal(both.json.value.chapterId, 'ch-0001')
+    assert.equal(both.json.value.written.path, '.inkflow/audit/brief-ch-0001.json')
+    assert.equal(both.json.value.addressedBy, 'chapterId')
+
+    // `chapterSeq` alone addresses a chapter too: the batch queue names the chapter being
+    // planned by number, and its brief has to land on the same file an id would reach.
+    const bySeq = await internalCall(harness, '/brief/audit?chapterSeq=1', {
+      method: 'POST',
+      origin: `http://${HOST}`,
+      body: { confirm: true },
+    })
+    assert.equal(bySeq.status, 200, JSON.stringify(bySeq.json))
+    assert.equal(bySeq.json.value.chapterId, 'ch-0001')
+    assert.equal(bySeq.json.value.written.path, '.inkflow/audit/brief-ch-0001.json')
+    assert.equal(bySeq.json.value.addressedBy, 'chapterSeq')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: the audit refuses an unknown chapter and an undeclared query key, writing nothing', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    const harness = createHarness({ workspace: root })
+
+    const missing = await internalCall(harness, '/brief/audit?chapterId=ch-9999', {
+      method: 'POST',
+      origin: `http://${HOST}`,
+      body: { confirm: true },
+    })
+    assert.equal(missing.status, 404, JSON.stringify(missing.json))
+    assert.equal(missing.json.error.code, 'CHAPTER_NOT_FOUND')
+    assert.equal(missing.json.error.chapterId, 'ch-9999', 'the refusal names the id that matched nothing')
+    assert.equal(missing.json.error.nothingWritten, true, 'a refusal writes no file')
+    assert.equal(existsSync(join(root, '.inkflow')), false, 'not even the audit directory')
+
+    // Declaring the query keys must not make the route accept ANY key.
+    const typo = await internalCall(harness, '/brief/audit?chapterID=ch-0001', {
+      method: 'POST',
+      origin: `http://${HOST}`,
+      body: { confirm: true },
+    })
+    assert.equal(typo.status, 400, JSON.stringify(typo.json))
+    assert.equal(typo.json.error.code, 'UNKNOWN_QUERY_PARAM')
+    assert.equal(typo.json.error.route, 'brief-audit')
+    assert.equal(typo.json.error.param, 'chapterID')
+    assert.deepEqual(
+      [...typo.json.error.allowed].sort(),
+      ['budgetTokens', 'chapterId', 'chapterSeq', 'sessionId', 'tailChars'],
+      'the audit takes exactly the brief\u2019s addressing and budget keys',
+    )
+    assert.equal(existsSync(join(root, '.inkflow')), false, 'the 400 writes nothing either')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('brief: no address still records the last chapter, and two identical calls are the same bytes', async () => {
+  const dir = workdir()
+  try {
+    const root = await book(join(dir, 'book'))
+    const harness = createHarness({ workspace: root })
+
+    // The existing default is kept: a caller that names nothing gets the book's last
+    // chapter, and the receipt still says WHICH chapter that was.
+    const first = await internalCall(harness, '/brief/audit', {
+      method: 'POST',
+      origin: `http://${HOST}`,
+      body: { confirm: true },
+    })
+    assert.equal(first.status, 200, JSON.stringify(first.json))
+    assert.equal(first.json.value.chapterId, 'ch-0002')
+    assert.equal(first.json.value.addressedBy, 'default')
+    assert.equal(first.json.value.written.created, true)
+    const bytes = readFileSync(join(root, '.inkflow', 'audit', 'brief-ch-0002.json'))
+
+    const second = await internalCall(harness, '/brief/audit', {
+      method: 'POST',
+      origin: `http://${HOST}`,
+      body: { confirm: true },
+    })
+    assert.equal(second.status, 200, JSON.stringify(second.json))
+    assert.equal(second.json.value.written.created, false, 'the second run rewrites the same file, it does not add one')
+    assert.equal(second.json.value.written.sha256, first.json.value.written.sha256)
+    assert.deepEqual(readFileSync(join(root, '.inkflow', 'audit', 'brief-ch-0002.json')), bytes)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

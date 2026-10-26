@@ -117,7 +117,7 @@ const BUILT_IN_TOOLS = [
   // The batch queue — enqueue / take / complete / approve. Built-ins for the same reason
   // as the extraction queue and the proposals: a job is not an entity, belongs to no content
   // directory, and the plugin embeds no model client to draft the chapters it queues (X-26).
-  ['inkflow_batch_enqueue', '606e03fb'],
+  ['inkflow_batch_enqueue', '4ffb58b8'], // seq 默认口径改成「书的下一章号」（606e03fb → 4ffb58b8）
   ['inkflow_batch_take', '70f2b3be'],
   ['inkflow_batch_complete', '333871dc'],
   ['inkflow_batch_approve', '289befc4'],

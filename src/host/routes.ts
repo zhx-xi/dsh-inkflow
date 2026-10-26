@@ -557,11 +557,9 @@ const ROUTES: readonly InternalRoute[] = [
     // The nine-segment brief (ADR-0022 D1/D2, X-23): every segment as
     // `{id,label,bytes,tokens,truncated,missing}` in the one fixed order
     // (`outline → promise → characters → voice → facts → foreshadow → world → prevTail →
-    // anchors`), plus the trim records and the totals.
-    //
-    // It is the SAME `buildWritingBrief()` the audit writes from — the preview is not a
-    // second assembly, which is the whole point of D1. GET-only: the read path may refresh
-    // the derived index (like `/chapters` and `/foreshadow`) but writes no file.
+    // anchors`), plus the trim records and the totals. GET-only: the read path may refresh the
+    // derived index (like `/chapters` and `/foreshadow`) but writes no file — the same one
+    // assembly the audit writes from is argued in `brief.ts`, where both routes read it.
     name: 'brief',
     pattern: /^\/brief$/,
     methods: ['GET'],
@@ -578,18 +576,24 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The injection audit (ADR-0022 D4): `.inkflow/audit/brief-<chapterId>.json`,
-    // same input → same bytes (no clock, no random id, no absolute path). A write route, so
-    // it carries every write guard plus `confirm: true`, and it rebuilds the brief here
-    // instead of trusting a body: a client-supplied segment list would be a second
-    // assembly, and the record must describe the book as it is now.
+    // The injection audit (ADR-0022 D4): `.inkflow/audit/brief-<chapterId>.json`, same input
+    // → same bytes. It takes the SAME addressing and budget keys as `GET /brief`, so the record
+    // is the brief the panel shows — the rest of the why is in `brief.ts`, beside the lookup.
     name: 'brief-audit',
     pattern: /^\/brief\/audit$/,
     methods: ['POST'],
-    query: [],
+    query: ['chapterId', 'chapterSeq', 'budgetTokens', 'tailChars'],
     body: BRIEF_AUDIT_BODY_FIELDS,
-    handle: ({ target, version, body }) =>
-      exportBriefAudit({ sessionId: target.sessionId, root: target.root }, version, {}, body),
+    handle: async ({ target, query, version, body }) => {
+      const reply = await exportBriefAudit(
+        { sessionId: target.sessionId, root: target.root },
+        version,
+        briefOptionsFromQuery(query),
+        body,
+        query.get('chapterId') ?? '',
+      )
+      return withAddressedBy(reply, addressedByOf(query, ['chapterId', 'chapterSeq']))
+    },
   },
   {
     // The review runs of one chapter (X-24/X-26): every recorded pass as a row
