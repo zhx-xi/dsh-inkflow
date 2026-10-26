@@ -13,6 +13,13 @@
  * because somebody wrote a colour without a letter. Those are filtered below by context so
  * the check can stay strict instead of growing an allowlist of files.
  *
+ * WHICH FILES: tracked **plus untracked-but-not-ignored**. `git ls-files` alone lists only the
+ * index, so a brand-new file was invisible to this gate — and a new file is exactly where an
+ * issue number gets typed (the old ones are already clean). The consequence was reported as
+ * "no issue/PR numbers in code" locally while CI, which sees the committed file, failed on it:
+ * same code, opposite verdicts. Ignored paths (`lib/`, `.tmp/`, `node_modules/`) stay out of
+ * scope — they are not repository content.
+ *
  * Docs are deliberately out of scope (`.agents/**`, `docs/**`): specs and ADRs legitimately
  * cite the issue a decision came from — that is a record, not code.
  */
@@ -38,9 +45,18 @@ function isNotAnIssueRef(line, index, token) {
   return false
 }
 
-const files = execFileSync('git', ['ls-files', ...TREES], { encoding: 'utf8' })
-  .split('\n')
-  .filter((file) => file !== '' && CODE.test(file))
+/** Tracked files plus untracked working-tree files that `.gitignore` does not exclude. */
+function listedFiles() {
+  const output = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', ...TREES], {
+    encoding: 'utf8',
+  })
+  // `-z` keeps paths with spaces intact; de-duplicated because a staged file also shows up in
+  // `--others` when its index entry and working-tree copy disagree, and scanning it twice
+  // would double its findings.
+  return [...new Set(output.split('\u0000').filter((file) => file !== '' && CODE.test(file)))]
+}
+
+const files = listedFiles()
 
 const findings = []
 for (const file of files) {
