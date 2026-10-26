@@ -69,6 +69,13 @@ export interface OutlineNode {
   parent: string | null
   /** The frontmatter `order` (the projection's `orderIndex`); `null` = not written. */
   order: number | null
+  /**
+   * Plot points the node's body declares, from the projection (`plotPointCount`) — the author
+   * reads this row to spot an outline that is empty or overgrown, so it has to arrive with
+   * the tree rather than be fetched per node. `null` = the Host did not send it (an older
+   * payload), which the row shows as unknown instead of `0`.
+   */
+  plotPointCount: number | null
 }
 
 /** A node whose `parent` names no node of this book, with the name it points at. */
@@ -181,9 +188,14 @@ function asNode(raw: unknown, kind: string, declared: Record<string, string>): O
     id,
     path,
     title: optionalString(record['title']) ?? id,
-    tier: tierOf(declared[id]) ?? inferOutlineTier(path),
+    // Three sources, in order of authority: the wire (the rebuild's own verdict), a detail
+    // the page already read (`kind` in the file's frontmatter — the file is the truth), then
+    // the file name. The wire is first because it is the only one that arrives for every
+    // node in one request.
+    tier: tierOf(record['tier']) ?? tierOf(declared[id]) ?? inferOutlineTier(path),
     parent: optionalString(record['parent']),
     order: numberOrNull(record['orderIndex']) ?? numberOrNull(record['order']),
+    plotPointCount: numberOrNull(record['plotPointCount']),
   }
 }
 
@@ -295,6 +307,81 @@ export function flattenOutlineTree(tree: OutlineTree): OutlineRow[] {
   for (const root of tree.unparented) pushRows(rows, root, 'unparented')
   for (const orphan of tree.orphans) rows.push({ node: orphan.node, depth: 0, group: 'orphan' })
   return rows
+}
+
+/**
+ * Which rows the left column draws: every row the author has asked to see, and nothing else.
+ *
+ * WHAT THE RULE IS, AND WHY IT IS NOT "depth < 2":
+ *
+ *   * an **overall** node always shows its children (its children ARE the volumes, and the
+ *     whole point of the page is to see them);
+ *   * a **volume** shows its children only when it is expanded — this is the one row with a
+ *     caret;
+ *   * a **chapter** never shows children, because three levels is the end of the model. A
+ *     hand-edited file that nests a chapter under a chapter is therefore NOT drawn: the
+ *     rebuild reports it (`OUTLINE_CHAPTER_IN_CHAPTER`) and the detail pane says so, which is
+ *     better than a fourth level nobody can act on.
+ *
+ * An unknown tier is treated as "no children": a node the rebuild could not classify is one
+ * whose level nobody knows, so unfolding it would be a guess.
+ *
+ * Depth is tracked as a stack rather than read off the row, because `flattenOutlineTree`
+ * emits rows in reading order: the visibility of a row depends on the NEAREST ancestor above
+ * it, which is exactly what the last row at each depth holds.
+ */
+export function visibleOutlineRows(rows: readonly OutlineRow[], expanded: readonly string[]): OutlineRow[] {
+  const out: OutlineRow[] = []
+  /** `childrenVisible[d]` = the node last seen at depth `d` shows its children. */
+  const childrenVisible: boolean[] = []
+  for (const row of rows) {
+    const parentShows = row.depth === 0 ? true : (childrenVisible[row.depth - 1] ?? true)
+    if (!parentShows) {
+      childrenVisible[row.depth] = false
+      continue
+    }
+    out.push(row)
+    childrenVisible[row.depth] =
+      row.node.tier === 'volume' ? expanded.includes(row.node.id) : row.node.tier === 'overall'
+  }
+  return out
+}
+
+/**
+ * The ids that must be expanded for `nodeId` to be visible — its volume ancestors, outermost
+ * first. Used when a jump (an audit finding, a search hit) lands on a chapter that sits
+ * inside a collapsed volume: a jump that switches the tab and then shows nothing is a dead
+ * click.
+ */
+export function revealFor(rows: readonly OutlineRow[], nodeId: string): string[] {
+  const byId = new Map(rows.map((row) => [row.node.id, row.node]))
+  const out: string[] = []
+  let cursor = byId.get(nodeId)?.parent ?? null
+  // A cycle in `parent` would loop forever; the visited set is the same net the tree walk uses.
+  const seen = new Set<string>()
+  while (cursor !== null && !seen.has(cursor)) {
+    seen.add(cursor)
+    const parent = byId.get(cursor)
+    if (parent === undefined) break
+    if (parent.tier === 'volume') out.unshift(parent.id)
+    cursor = parent.parent
+  }
+  return out
+}
+
+/**
+ * How many nodes name this one as their parent — i.e. what the left column is NOT drawing
+ * under it.
+ *
+ * Only asked for rows that cannot be unfolded, where a non-zero answer means the book holds
+ * a level the page cannot show. Saying so, with the count, is the difference between "this
+ * file is broken, the 体检 page will list it" and a node that silently has less content than
+ * the file says it does.
+ */
+export function hiddenChildCount(rows: readonly OutlineRow[], id: string): number {
+  let count = 0
+  for (const row of rows) if (row.node.parent === id) count += 1
+  return count
 }
 
 /**
