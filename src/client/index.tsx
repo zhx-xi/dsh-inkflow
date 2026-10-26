@@ -64,6 +64,7 @@ import { PLACE_KIND } from './map-model.js'
 import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
 import { HubIcon, HubView } from './hub.js'
+import { PanelTabRow } from './panel-tabs.js'
 import { createDirectoryPicker, setHubDirectoryPicker } from './hub-wizard.js'
 import { HUB_PANEL_ID, HUB_PANEL_LABEL, HUB_PANEL_ORDER } from './hub-model.js'
 import {
@@ -123,15 +124,6 @@ const headerStyle = {
   borderBottom: '1px solid var(--dsw-alias-border-l1)',
   background: 'var(--dsw-alias-bg-layer-1)',
   flexWrap: 'wrap',
-} as const
-
-const tabRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  padding: '0 16px',
-  borderBottom: '1px solid var(--dsw-alias-border-l1)',
-  background: 'var(--dsw-alias-bg-layer-1)',
 } as const
 
 // The two-column body. Its HEIGHT comes from `SCROLL_BOX_STYLE` (spread at the use
@@ -636,50 +628,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
 
       <StaleBuildBanner build={build} />
 
-      <div style={tabRowStyle}>
-        {PANEL_TABS.map((entry) =>
-          entry.available ? (
-            // A live tab is a real switch between pages that exist in this build.
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => setTab(entry.id)}
-              aria-pressed={tab === entry.id}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: tab === entry.id ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-secondary)',
-                padding: '6px 4px',
-                fontSize: 12,
-                cursor: 'pointer',
-                borderBottom: tab === entry.id ? '2px solid var(--dsw-alias-label-primary)' : '2px solid transparent',
-              }}
-            >
-              {entry.label}
-            </button>
-          ) : (
-            // Disabled on purpose: no page exists yet, so a live tab would be a
-            // dead button. The note is the tooltip and the visible sub-label.
-            <button
-              key={entry.id}
-              type="button"
-              disabled
-              title={entry.note}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--dsw-alias-label-secondary)',
-                padding: '6px 4px',
-                fontSize: 12,
-                cursor: 'not-allowed',
-              }}
-            >
-              {entry.label}
-              <span style={{ ...muted, marginLeft: 4 }}>{entry.note}</span>
-            </button>
-          ),
-        )}
-      </div>
+      <PanelTabRow tabs={PANEL_TABS} active={tab} onPick={setTab} />
 
       {empty === 'no-session' ? (
         <div style={{ ...columnStyle, maxWidth: 560 }} title={routeHint ?? undefined}>
