@@ -111,13 +111,20 @@ export function importTools(deps: ToolDeps): ToolDefinition[] {
       render: (_args, value) => {
         const v = asRecord(value)
         if (v['ok'] !== true) return renderImportFailure(v)
-        const plan = asRecord(v['plan'])
+        // THE TWO ACTIONS ANSWER IN DIFFERENT SHAPES, and this line is where that is absorbed:
+        // `apply` returns `{plan, created, backup, library, …}` (the plan nested, because the
+        // receipt is about the write), while `plan` IS the plan (`{ok, root, action:'plan',
+        // …planned}` — flat, and the tests read `preview.chapters` / `preview.planToken` that
+        // way). Reading `v.plan` unconditionally rendered `? · ? · 行尾 ?` and an empty
+        // `planToken` for every preview: the model could not see the split, and the
+        // IMPORT_PLAN_STALE protection silently became "apply to whatever the file says now".
+        const applied = v['action'] === 'apply'
+        const plan = applied ? asRecord(v['plan']) : v
         const source = asRecord(plan['source'])
         const totals = asRecord(plan['totals'])
         const target = asRecord(plan['target'])
         const chapters = Array.isArray(plan['chapters']) ? (plan['chapters'] as Json[]) : []
         const lines: string[] = []
-        const applied = v['action'] === 'apply'
         lines.push(
           `${applied ? '已导入' : '导入预览（未写盘）'}：${String(source['name'] ?? '?')} · ` +
             `${String(source['encoding'] ?? '?')} · 行尾 ${String(source['eol'] ?? '?').toUpperCase()}`,
