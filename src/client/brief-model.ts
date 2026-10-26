@@ -260,3 +260,23 @@ export function readBrief(result: InternalResult<BriefValue>): BriefView {
     state: nullableString(value, 'state'),
   }
 }
+
+/**
+ * The path the "record this brief" button posts to.
+ *
+ * WHY THE CHAPTER GOES IN THE QUERY: the record is written under `brief-<章 id>.json`, and
+ * the audit route rebuilds the brief from the same addressing the preview took. A button
+ * that sent `confirm` alone asked the Host for "the default chapter" — the book's last one
+ * — so recording on any other chapter's page wrote a file the page would never look for.
+ * Naming the chapter the page is SHOWING makes the two the same brief (one assembly, one
+ * input, ADR-0022 D1).
+ *
+ * `chapterPath === null` is the one case with nothing to name: the Host answers
+ * `no-chapter` for a book that has no chapter yet, and sending that literal back would be a
+ * 404 for a chapter nobody asked about. Then the route keeps its own default.
+ */
+export function briefAuditRoute(view: Pick<BriefView, 'chapterId' | 'chapterPath'>): string {
+  const id = view.chapterId
+  if (id === null || view.chapterPath === null) return '/brief/audit'
+  return `/brief/audit?chapterId=${encodeURIComponent(id)}`
+}
