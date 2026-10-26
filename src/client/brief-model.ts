@@ -69,6 +69,8 @@ export interface BriefSegmentRow {
   state: BriefSegmentState
   /** Share of the whole brief's tokens, already formatted (`'12.3%'`). */
   share: string
+  /** One line for the author: what this segment shows the model (the jargon explained). */
+  note: string
   /** One line for the author: what happened to this segment. */
   detail: string
   text: string
@@ -178,6 +180,17 @@ export function formatShare(tokens: number, total: number): string {
   return `${percent.toFixed(1)}%`
 }
 
+/**
+ * The share the page's column claims — of the BUDGET, not of what was assembled.
+ *
+ * The column says 占预算, so the denominator has to be the budget: a brief that fits in a
+ * tenth of its budget must read as `12.0%`, not as `100%` of itself. A book whose host sent
+ * no budget falls back to the total, which is the old denominator and still a true sentence.
+ */
+export function budgetShare(tokens: number, budgetTokens: number, totalTokens: number): string {
+  return formatShare(tokens, budgetTokens > 0 ? budgetTokens : totalTokens)
+}
+
 /** The one place a segment's state is decided (the Host's two flags, never re-derived). */
 export function segmentState(segment: BriefSegmentValue): BriefSegmentState {
   if (segment.missing) return 'missing'
@@ -189,9 +202,45 @@ export function segmentState(segment: BriefSegmentValue): BriefSegmentState {
 
 function detailOf(segment: BriefSegmentValue, state: BriefSegmentState): string {
   if (state === 'missing') return '本书没有这一段的来源（不占位、不编造）'
-  if (segment.text === '') return '已裁掉'
-  if (state === 'trimmed') return '被段上限剪短'
+  if (segment.text === '') return '裁剪后没有留下文本（预算不够）'
+  if (state === 'trimmed') return '超过段上限，已剪短'
   return `${String(segment.bytes)} 字节`
+}
+
+/**
+ * What each injected segment shows the model, in the author's words.
+ *
+ * WHY THIS EXISTS: the page used to print the Host's nine ids and a token count, which
+ * reads as jargon until someone opens the manual ("段" what segment? "被裁" cut what?).
+ * The ids are the file format and stay on the row as the secondary detail; this table is
+ * the one line that says which part of the book the model is being handed.
+ */
+const SEGMENT_NOTES: Readonly<Record<string, string>> = {
+  outline: '大纲：这一章要发生什么',
+  promise: '承诺：前文立下、这一章要还的账',
+  characters: '人物：出场的是谁、现在什么状态',
+  voice: '口吻：这本书怎么说话',
+  facts: '设定账本：到这一章已经成立的事实',
+  foreshadow: '伏笔：还没兑现的线头',
+  world: '世界观：这本书的规矩与地点',
+  prevTail: '上一章结尾：接着往下写的那一段',
+  anchors: '锚点：不能写错的硬事实',
+}
+
+/** One segment's explanation, or `''` for an id this build does not know. */
+export function briefSegmentNote(id: string): string {
+  return SEGMENT_NOTES[id] ?? ''
+}
+
+/** `注入的 9 段` — counted, never claimed: a seven-segment book must not read as nine. */
+export function describeSegmentHeading(count: number): string {
+  return `注入的 ${String(count)} 段`
+}
+
+/** The badge word for a segment's state: `完整` / `已裁剪（预算不够）` / `无来源`. */
+export function stateLabel(state: BriefSegmentState): string {
+  if (state === 'missing') return '无来源'
+  return state === 'trimmed' ? '已裁剪（预算不够）' : '完整'
 }
 
 /**
@@ -221,6 +270,7 @@ export function readBrief(result: InternalResult<BriefValue>): BriefView {
     }
   }
   const tokens = numberField(value, 'tokens') ?? 0
+  const budgetTokens = numberField(value, 'budgetTokens') ?? 0
   const rawTrims = Array.isArray(value['trims']) ? value['trims'] : []
   const trims = rawTrims.map(trimOf).filter((entry): entry is BriefTrimValue => entry !== undefined)
   const labels = new Map(segments.map((segment) => [segment.id, segment.label]))
@@ -230,7 +280,7 @@ export function readBrief(result: InternalResult<BriefValue>): BriefView {
     chapterId: nullableString(value, 'chapterId'),
     chapterSeq: nullableNumber(value, 'chapterSeq'),
     chapterPath: nullableString(value, 'chapterPath'),
-    budgetTokens: numberField(value, 'budgetTokens') ?? 0,
+    budgetTokens,
     tokens,
     overBudget: value['overBudget'] === true,
     rungs: numberField(value, 'rungs') ?? trims.length,
@@ -242,7 +292,8 @@ export function readBrief(result: InternalResult<BriefValue>): BriefView {
         bytes: segment.bytes,
         tokens: segment.tokens,
         state,
-        share: formatShare(segment.tokens, tokens),
+        share: budgetShare(segment.tokens, budgetTokens, tokens),
+        note: briefSegmentNote(segment.id),
         detail: detailOf(segment, state),
         text: segment.text,
       }

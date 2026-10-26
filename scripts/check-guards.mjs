@@ -255,7 +255,6 @@ const SIZE_CAP = 600
 const OVER_CAP_BUDGET = {
   'src/client/index.tsx': 1053,
   'src/client/library-model.ts': 821,
-  'src/client/library.tsx': 602,
   'src/client/panel-model.ts': 648,
   'src/client/settings.tsx': 686,
   'src/host/backup-zip.ts': 716,

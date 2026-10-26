@@ -24,8 +24,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import {
@@ -81,24 +83,14 @@ const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
 
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
-
 const armedButtonStyle = {
-  ...buttonStyle,
+  ...ACTION_BUTTON_STYLE,
   borderColor: 'var(--dsw-alias-state-warn-primary)',
   color: 'var(--dsw-alias-state-warn-primary)',
 } as const
 
 const dangerButtonStyle = {
-  ...buttonStyle,
+  ...ACTION_BUTTON_STYLE,
   borderColor: 'var(--dsw-alias-state-error-primary)',
   color: 'var(--dsw-alias-state-error-primary)',
 } as const
@@ -270,7 +262,8 @@ export function ExtractView({
           <SectionTitle>候选</SectionTitle>
           <span style={{ ...muted, ...mono }}>{describeCounts(view.counts)}</span>
           <span style={{ ...muted, fontSize: 12 }}>{waiting === 0 ? '没有待审的候选' : `${String(waiting)} 条待审`}</span>
-          <button type="button" style={{ ...buttonStyle, marginLeft: 'auto' }} disabled={loading} onClick={() => void load()}>
+          <button type="button" style={{ ...ACTION_BUTTON_STYLE, marginLeft: 'auto' }} disabled={loading} onClick={() => void load()}>
+            <Icon name="refresh" size={13} />
             {loading ? '读取中…' : '刷新'}
           </button>
         </div>
@@ -300,14 +293,15 @@ export function ExtractView({
           </label>
           <button
             type="button"
-            style={buttonStyle}
+            style={ACTION_BUTTON_STYLE}
             disabled={loading || view.rows.filter((row) => row.status === 'proposed').length === 0}
             onClick={() => setSelected(toggleAll(view.rows, selected))}
             title="勾选本页所有待审候选"
           >
             全选待审
           </button>
-          <button type="button" style={buttonStyle} disabled={busy || actionableIds(view.rows, selected).length === 0} onClick={() => void acceptBatch()}>
+          <button type="button" style={ACTION_BUTTON_STYLE} disabled={busy || actionableIds(view.rows, selected).length === 0} onClick={() => void acceptBatch()}>
+            <Icon name="check" size={13} />
             批量采纳（{String(actionableIds(view.rows, selected).length)}）
           </button>
           {skippedIds(view.rows, selected).length === 0 ? null : (
@@ -326,6 +320,7 @@ export function ExtractView({
             disabled={busy || actionableIds(view.rows, selected).length === 0}
             onClick={() => void rejectBatch()}
           >
+            <Icon name="close" size={13} />
             批量拒绝
           </button>
         </div>
@@ -387,7 +382,7 @@ export function ExtractView({
                     <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                       <button
                         type="button"
-                        style={armed ? armedButtonStyle : buttonStyle}
+                        style={armed ? armedButtonStyle : ACTION_BUTTON_STYLE}
                         disabled={busy || !waitingRow || doomed !== null}
                         title={
                           replacing !== null
@@ -400,6 +395,7 @@ export function ExtractView({
                         }
                         onClick={() => void acceptOne(row)}
                       >
+                        <Icon name="check" size={13} />
                         {replacing !== null ? (armed ? '确认覆盖' : '覆盖') : armed ? '确认采纳' : '采纳'}
                       </button>
                       <button
@@ -409,6 +405,7 @@ export function ExtractView({
                         title="拒绝不改任何实体文件，只把这条候选标记为已拒绝"
                         onClick={() => void rejectOne(row)}
                       >
+                        <Icon name="close" size={13} />
                         拒绝
                       </button>
                     </span>
@@ -417,7 +414,8 @@ export function ExtractView({
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ ...muted, fontSize: 11 }}>证据：{describeEvidence(row)}</span>
                     {jump === null || onOpenEvidence === undefined ? null : (
-                      <button type="button" style={{ ...buttonStyle, padding: '0 8px', fontSize: 11 }} onClick={() => onOpenEvidence(jump)}>
+                      <button type="button" style={{ ...ACTION_BUTTON_STYLE, padding: '0 8px', fontSize: 11 }} onClick={() => onOpenEvidence(jump)}>
+                        <Icon name="locate" size={13} />
                         跳到原文
                       </button>
                     )}

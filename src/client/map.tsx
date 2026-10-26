@@ -17,8 +17,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import { fetchInternal } from './internal.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
+import { Icon } from './icons.js'
 import { useScrollBox } from './layout.js'
 import { MAP_NOTE, describePin, readMapView } from './map-model.js'
 import type { MapView, PlacePin } from './map-model.js'
@@ -64,7 +66,7 @@ const pinStyle = {
 function Pin({ pin, onOpen }: { pin: PlacePin; onOpen: (pin: PlacePin) => void }) {
   return (
     <button type="button" title={describePin(pin)} style={pinStyle} onClick={() => onOpen(pin)}>
-      <span aria-hidden="true">◦</span>
+      <Icon name="locate" size={13} />
       <span style={{ fontSize: 13 }}>{pin.title}</span>
       <span style={{ ...muted, ...mono, marginLeft: 'auto' }}>{pin.path}</span>
     </button>
@@ -99,19 +101,8 @@ export function MapView({ sessionId, onOpen }: { sessionId: string; onOpen: (pin
         <span style={{ fontSize: 13, fontWeight: 600 }}>地图</span>
         <span style={{ ...muted, fontSize: 11 }}>{MAP_NOTE}</span>
         <span style={{ ...muted, ...mono, marginLeft: 'auto' }}>{loading ? '读取中…' : (current?.summary ?? '—')}</span>
-        <button
-          type="button"
-          style={{
-            padding: '2px 10px',
-            fontSize: 12,
-            borderRadius: 6,
-            cursor: 'pointer',
-            border: '1px solid var(--dsw-alias-border-l2)',
-            background: 'var(--dsw-alias-bg-layer-2)',
-            color: 'var(--dsw-alias-label-primary)',
-          }}
-          onClick={() => void refresh()}
-        >
+        <button type="button" style={ACTION_BUTTON_STYLE} onClick={() => void refresh()}>
+          <Icon name="refresh" size={13} />
           刷新
         </button>
       </div>

@@ -410,3 +410,16 @@ export function evidenceLine(opinion: ReviewOpinionView): string {
 export function describeScores(scores: readonly { dimension: string; value: number }[]): string {
   return scores.map((entry) => `${entry.dimension} ${String(entry.value)}`).join(' · ')
 }
+
+/**
+ * The section that lists opinions the Host could not record, and the reason in words.
+ *
+ * WHY NOT "被拒收": 拒收 reads as "the author refused them", which is the opposite — the
+ * Host could not store an opinion whose shape was wrong (a dimension outside the five, an
+ * empty body). The page lists them unchanged and says why, because an opinion that vanishes
+ * silently reads as an opinion nobody had.
+ */
+export const REJECTED_SECTION_TITLE = '未进记录的意见'
+
+export const REJECTED_SECTION_NOTE =
+  '模型写过、但没有进记录的意见。原因只有两类：缺维度（五个维度之外的分类）或缺正文（正文是空的）。它们没有被丢掉，原样列在下面：'

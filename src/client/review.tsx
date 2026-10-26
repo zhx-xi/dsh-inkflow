@@ -23,14 +23,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import type { EvidenceJump } from './extract-model.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import { chapterHeading, flattenChapters } from './panel-model.js'
 import type { ChapterNode, ChaptersValue } from './panel-model.js'
 import {
+  REJECTED_SECTION_NOTE,
+  REJECTED_SECTION_TITLE,
   describeReviewError,
   describeRun,
   describeScores,
@@ -77,16 +81,6 @@ const cardStyle = {
 const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
-
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
 
 const selectStyle = {
   ...mono,
@@ -329,7 +323,7 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
           <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
             <button
               type="button"
-              style={{ ...buttonStyle, ...(showCompare ? { borderColor: 'var(--dsw-alias-label-primary)' } : {}) }}
+              style={{ ...ACTION_BUTTON_STYLE, ...(showCompare ? { borderColor: 'var(--dsw-alias-label-primary)' } : {}) }}
               onClick={() => {
                 setShowCompare(!showCompare)
               }}
@@ -338,13 +332,14 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
             </button>
             <button
               type="button"
-              style={buttonStyle}
+              style={ACTION_BUTTON_STYLE}
               disabled={loading}
               onClick={() => {
                 void loadReview(selected, runId, olderOpen ? view.runCount : 0)
                 void loadCompare(selected)
               }}
             >
+              <Icon name="refresh" size={13} />
               {loading ? '读取中…' : '重新读'}
             </button>
           </span>
@@ -381,7 +376,8 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
             ))}
             {split.olderCount === 0 ? null : (
               <div style={{ ...rowStyle }}>
-                <button type="button" style={buttonStyle} disabled={loading} onClick={toggleOlder}>
+                <button type="button" style={ACTION_BUTTON_STYLE} disabled={loading} onClick={toggleOlder}>
+                  <Icon name={olderOpen ? 'caret-down' : 'caret'} size={13} />
                   {olderOpen ? `收起更早的 ${String(split.olderCount)} 次运行` : `更早的 ${String(split.olderCount)} 次运行`}
                 </button>
                 {olderOpen ? null : (
@@ -467,8 +463,8 @@ export function ReviewView({ sessionId, onOpenEvidence }: ReviewViewProps) {
 
         {view.rejected.length === 0 ? null : (
           <div style={cardStyle}>
-            <div style={{ fontWeight: 600 }}>被拒收的意见</div>
-            <div style={{ ...muted, fontSize: 12 }}>结构不合法（缺维度/缺正文等），没有进记录：</div>
+            <div style={{ fontWeight: 600 }}>{REJECTED_SECTION_TITLE}</div>
+            <div style={{ ...muted, fontSize: 12 }}>{REJECTED_SECTION_NOTE}</div>
             {view.rejected.map((rejection) => (
               <div key={`${String(rejection.index)}:${rejection.code}`} style={{ ...mono, fontSize: 11 }}>
                 #{String(rejection.index + 1)} {rejection.code} {rejection.message}
@@ -521,11 +517,12 @@ function OpinionRow({
         {jump === null || onOpenEvidence === undefined ? null : (
           <button
             type="button"
-            style={{ ...buttonStyle, padding: '0 8px', fontSize: 11 }}
+            style={{ ...ACTION_BUTTON_STYLE, padding: '0 8px', fontSize: 11 }}
             onClick={() => {
               onOpenEvidence(jump)
             }}
           >
+            <Icon name="locate" size={13} />
             跳到正文
           </button>
         )}
@@ -566,7 +563,7 @@ function RunRowView({
       <button
         type="button"
         style={{
-          ...buttonStyle,
+          ...ACTION_BUTTON_STYLE,
           ...(row.runId === selectedRunId ? { borderColor: 'var(--dsw-alias-label-primary)' } : {}),
         }}
         onClick={() => {
@@ -585,7 +582,10 @@ function RunRowView({
             .join(' · ')}
         </span>
       )}
-      <button type="button" style={buttonStyle} disabled={cleanDisabled} onClick={onClean}>
+      <button type="button" style={ACTION_BUTTON_STYLE} disabled={cleanDisabled} onClick={onClean}>
+        {/* The icon follows the label's own state, so the two never disagree: an armed label
+            starts with 确认 (purge-model owns that word) and a confirmation is a tick. */}
+        <Icon name={cleanLabel.startsWith('确认') ? 'check' : 'trash'} size={13} />
         {cleanLabel}
       </button>
     </div>
