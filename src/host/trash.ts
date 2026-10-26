@@ -57,6 +57,7 @@ import {
   writePrivateManifest,
 } from './private-manifest.js'
 import type { PrivateManifestFailure, PrivateManifestRead, PrivateManifestSpec } from './private-manifest.js'
+import { repairCatalogAfterRestore } from './trash-catalog.js'
 
 /** The manifest file, project-relative (forward slashes). */
 export const TRASH_MANIFEST_RELATIVE = privateStateRelative('trash', 'index.json')
@@ -148,6 +149,10 @@ export interface RestoreOk {
   trashPath: string
   /** `false` only when the copy could not be removed after a successful restore. */
   copyRemoved: boolean
+  /** `true` when this restore also rewrote the book's volume/chapter catalog. */
+  catalogRebuilt: boolean
+  /** Present only when that rebuild was needed and did not finish. */
+  catalogError?: { code: string; message: string }
 }
 
 export interface PurgeInput {
@@ -533,7 +538,11 @@ export function restoreTrash(projectRoot: string, input: RestoreInput): RestoreR
     return { ok: false, error: { code: stored.error.code, message: `restored ${entry.originalPath}, but ${stored.error.message}`, root, path: TRASH_MANIFEST_RELATIVE, rolledBack: false } }
   }
   if (removedCopy.ok) pruneEmptyBinDirs(root, trashPath)
-  return { ok: true, root, restored: entry, trashPath, copyRemoved: removedCopy.ok }
+  // The delete rebuilt the projection, so the undo does too: a chapter that is back but
+  // still missing from `chapters/index.json` makes the next audit accuse correct data.
+  const catalog = repairCatalogAfterRestore(root, entry.originalPath)
+  const receipt: RestoreOk = { ok: true, root, restored: entry, trashPath, copyRemoved: removedCopy.ok, catalogRebuilt: catalog.rebuilt }
+  return catalog.error === undefined ? receipt : { ...receipt, catalogError: catalog.error }
 }
 
 // ---------------------------------------------------------------------------

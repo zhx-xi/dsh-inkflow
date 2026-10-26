@@ -37,7 +37,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { apply, searchChapters } from '../lib/index.js'
+import { apply, auditProject, rebuildCatalog, searchChapters, trashFile } from '../lib/index.js'
 import { createStateDir } from './state-dir.mjs'
 
 const require = createRequire(import.meta.url)
@@ -54,6 +54,7 @@ const CHAPTER = 'chapters/vol-01/0001-开篇.md'
 const BODY = '他走进白鹤门。'
 const TRASH_ROOT = '.inkflow/trash'
 const MANIFEST = `${TRASH_ROOT}/index.json`
+const CATALOG_FILE = 'index.json'
 
 // ---------------------------------------------------------------------------
 // Harness (same shape as tests/internal-write.test.js)
@@ -222,6 +223,26 @@ function manifestOf(root) {
   return JSON.parse(readFileSync(file, 'utf8'))
 }
 
+/**
+ * Every chapter the catalog files claim to hold, as project-relative paths.
+ *
+ * The catalog is the projection a restore has to repair, so "which chapters does the
+ * book say it has" is the assertion that distinguishes "the file came back" from "the
+ * book agrees the file came back".
+ */
+function catalogChapterFiles(root) {
+  const top = JSON.parse(readFileSync(join(root, 'chapters', CATALOG_FILE), 'utf8'))
+  const loose = top.looseChapters.map((chapter) => chapter.file)
+  const inVolumes = top.volumes.flatMap((volume) =>
+    JSON.parse(readFileSync(join(root, 'chapters', volume.dir, CATALOG_FILE), 'utf8')).chapters.map((chapter) => chapter.file),
+  )
+  return [...inVolumes, ...loose].sort()
+}
+
+function catalogStaleFindings(root) {
+  return auditProject(root).findings.filter((finding) => finding.code === 'CATALOG_STALE')
+}
+
 function trunkChanges(root) {
   // `git status --porcelain -uall`: the only acceptable mention of `.inkflow/`
   // is none at all (it is ignored from the first write, ADR-0012 decision 2).
@@ -371,6 +392,106 @@ test('restoring returns byte-identical content, BOM and CRLF included', async ()
 })
 
 // ---------------------------------------------------------------------------
+// 2b. Restore repairs the catalog projection, like the delete that made the entry
+// ---------------------------------------------------------------------------
+
+test('restoring a chapter rebuilds the catalog, so the next audit has no CATALOG_STALE', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    assert.equal((await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })).status, 200)
+    const id = manifestOf(root).entries[0].id
+    // The delete rebuilt the projection itself, which is the zero line for this claim:
+    // whatever the audit finds afterwards is the restore's own doing.
+    assert.deepEqual(catalogStaleFindings(root), [], 'the delete leaves the catalog agreeing with the files')
+    assert.deepEqual(catalogChapterFiles(root), [], 'the deleted chapter left the catalog')
+
+    const restored = await writeCall(harness, '/trash/restore', { payload: { id } })
+    assert.equal(restored.status, 200, JSON.stringify(restored.json).slice(0, 200))
+    // The defect first, the receipt second: the stale catalog is what the author sees,
+    // and `catalogRebuilt` is only the promise that it will not be there.
+    assert.deepEqual(catalogStaleFindings(root), [], 'a restored chapter must not be reported as CATALOG_STALE')
+    assert.equal(restored.json.value.catalogRebuilt, true, 'the receipt says the projection was repaired')
+
+    assert.deepEqual(catalogChapterFiles(root), [CHAPTER], 'the catalog lists the restored chapter again')
+
+    const volumeCatalog = JSON.parse(readFileSync(join(root, 'chapters', 'vol-01', CATALOG_FILE), 'utf8'))
+    assert.deepEqual(
+      volumeCatalog.chapters.map((chapter) => ({ file: chapter.file, seq: chapter.seq, title: chapter.title })),
+      [{ file: CHAPTER, seq: 1, title: '开篇' }],
+      'the volume list carries the restored chapter with the seq and title of the file',
+    )
+    const topCatalog = JSON.parse(readFileSync(join(root, 'chapters', CATALOG_FILE), 'utf8'))
+    assert.deepEqual(topCatalog.volumes.map((volume) => volume.volumeId), ['vol-01'], 'the volume list is intact')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('restoring a non-chapter file leaves the chapter catalog untouched', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+    writeChapterFile(root, 'characters/清音.md', undefined, ['id: ch-qingyin', 'name: 清音'], '白鹤门弟子。')
+    // A projection first: "not rewritten" needs something to compare against, and the
+    // bytes are what tell an unrelated write apart from no write at all.
+    assert.equal(rebuildCatalog(root).ok, true)
+    const catalogPath = join(root, 'chapters', CATALOG_FILE)
+    const volumePath = join(root, 'chapters', 'vol-01', CATALOG_FILE)
+    const before = { top: sha256(catalogPath), volume: sha256(volumePath) }
+
+    const original = readFileSync(join(root, 'characters/清音.md'))
+    const trashed = trashFile(root, { path: 'characters/清音.md', reason: 'chapter_delete' })
+    assert.equal(trashed.ok, true, 'a non-chapter path can enter the bin')
+    const restored = await writeCall(harness, '/trash/restore', { payload: { id: trashed.entry.id } })
+    assert.equal(restored.status, 200, JSON.stringify(restored.json).slice(0, 200))
+    assert.equal(restored.json.value.catalogRebuilt, false, 'a restore outside chapters/ does not touch the catalog')
+
+    assert.deepEqual(readFileSync(join(root, 'characters/清音.md')), original, 'the bytes are back')
+    assert.equal(sha256(catalogPath), before.top, 'chapters/index.json was not rewritten')
+    assert.equal(sha256(volumePath), before.volume, 'the volume list was not rewritten')
+    assert.equal(manifestOf(root).entries.length, 0, 'the entry still left the bin')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a restore whose catalog rebuild fails still returns the file, and says so', async () => {
+  const dir = workdir()
+  try {
+    const root = join(dir, 'book')
+    bookProject(root)
+    const harness = createHarness({ workspace: root })
+
+    assert.equal((await writeCall(harness, '/chapters/ch-1', { method: 'DELETE' })).status, 200)
+    const id = manifestOf(root).entries[0].id
+    const original = readFileSync(join(root, TRASH_ROOT, CHAPTER))
+    // Make the rebuild's last write impossible while the chapter's own path stays
+    // writable: a directory where the top-level catalog belongs. The restore must then
+    // keep the file (its bytes are verified) and report the half that fell short,
+    // instead of undoing a good restore to avoid a state one rebuild repairs.
+    rmSync(join(root, 'chapters', CATALOG_FILE))
+    mkdirSync(join(root, 'chapters', CATALOG_FILE))
+
+    const restored = await writeCall(harness, '/trash/restore', { payload: { id } })
+    assert.equal(restored.status, 200, JSON.stringify(restored.json).slice(0, 200))
+    assert.equal(restored.json.value.catalogRebuilt, false, 'a failed rebuild is not reported as a repair')
+    assert.equal(typeof restored.json.value.catalogError.code, 'string', 'the receipt names why the projection is stale')
+    assert.ok(restored.json.value.catalogError.code.length > 0)
+
+    assert.deepEqual(readFileSync(join(root, CHAPTER)), original, 'the chapter is back regardless')
+    assert.equal(manifestOf(root).entries.length, 0, 'the entry left the bin: the restore happened')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 3. Restore refuses to overwrite — and writes nothing at all
 // ---------------------------------------------------------------------------
 
@@ -396,6 +517,7 @@ test('restoring onto an occupied path is refused and writes nothing', async () =
 
     assert.equal(fileTree(root), before, 'a refused restore touches nothing')
     assert.deepEqual(readFileSync(join(root, CHAPTER)), recreatedBytes, 'the file at the path is untouched')
+    assert.deepEqual(catalogChapterFiles(root), [], 'the refusal did not rebuild the catalog either')
     assert.equal(manifestOf(root).entries.length, 1, 'the entry stays in the bin')
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -701,6 +823,7 @@ test('restoring a copy edited inside the bin is TRASH_COPY_CHANGED and writes no
     assert.equal(fileTree(root), before, 'a changed copy is refused without writing')
     assert.deepEqual(readFileSync(copyPath), tampered, 'the copy is left exactly as the author left it')
     assert.equal(existsSync(join(root, CHAPTER)), false, 'the edited copy was not handed back as the deleted text')
+    assert.deepEqual(catalogChapterFiles(root), [], 'the refusal did not rebuild the catalog either')
     assert.equal(manifestOf(root).entries.length, 1)
   } finally {
     rmSync(dir, { recursive: true, force: true })
