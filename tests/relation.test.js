@@ -523,3 +523,70 @@ test(
     assert.equal(planRelationUpsert(view, { source: '', target: 'c-2' }).error.code, 'RELATION_ENDPOINT')
   }),
 )
+
+/**
+ * The host refuses a tool reply it cannot carry as lossless JSON, and one key whose value
+ * is `undefined` is enough: `JSON.stringify` drops that key, so the reply it judges is not
+ * the reply the tool returned. A successful write then reads as a failure to the caller,
+ * which is what a `since` nobody wrote used to do.
+ */
+function assertLossless(value, where) {
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(value)),
+    value,
+    `${where}: a reply key whose value is undefined is not lossless JSON (the host refuses the whole reply)`,
+  )
+}
+
+test(
+  'a relation reply is lossless JSON whatever part of the window the author wrote',
+  withBook(async (root) => {
+    // A second chapter, so a window can have two ends that really differ: `[since, until)`
+    // with both ends on one chapter is an empty window and refused as a conflict.
+    markdown(root, 'chapters/vol-01/0002-第二章.md', ['id: ch-2', 'title: 第二章', 'seq: 2'], '正文。')
+    const harness = makeTools(root)
+    // The four shapes a file can have: no window at all, `since` only, both ends, and a
+    // free label (a date this book's chapters cannot place, so the window gets a mark).
+    const shapes = [
+      { source: 'c-1', target: 'c-2' },
+      { source: 'c-1', target: 'c-3', since: 'ch-1' },
+      { source: 'c-2', target: 'c-3', since: 'ch-1', until: 'ch-2', chapter: 'ch-1' },
+      { source: 'c-1', target: 'w-1', kind: 'knowledge', since: '永平三年秋', until: '永平四年春' },
+    ]
+    const written = []
+    for (const shape of shapes) {
+      const created = await callTool(harness, 'inkflow_relation_upsert', { projectRoot: root, ...shape, confirm: true })
+      assertLossless(created, `upsert ${shape.source}→${shape.target}`)
+      assert.equal(created.ok, true, JSON.stringify(created.error))
+      written.push(created)
+    }
+
+    // An absent field is an absent key — not `undefined`, and not `null` either, because
+    // `null` would claim the file says so.
+    assert.deepEqual(Object.keys(written[0].relation).sort(), ['dir', 'id', 'kind', 'path', 'source', 'target', 'title'])
+    // What the author wrote comes back on the reply.
+    assert.equal(written[1].relation.since, 'ch-1')
+    assert.equal(written[2].relation.until, 'ch-2')
+    assert.equal(written[2].relation.chapter, 'ch-1')
+
+    const listed = await callTool(harness, 'inkflow_relation_list', { projectRoot: root, entity: 'c-1' })
+    assertLossless(listed, 'list c-1')
+    assert.equal(listed.ok, true, JSON.stringify(listed.error))
+    assert.equal(listed.count, 3)
+    for (const edge of listed.edges) assertLossless(edge, `list edge ${edge.path}`)
+    const bare = listed.edges.find((edge) => edge.path === 'relations/c-1--c-2.md')
+    assert.equal('since' in bare, false)
+    assert.equal('until' in bare, false)
+    assert.equal('chapter' in bare, false)
+    // Dropping the `undefined` keys must not drop the judgement: the free label still says
+    // its window cannot be placed in this book.
+    const freeLabel = listed.edges.find((edge) => edge.path === 'relations/c-1--w-1.md')
+    assert.equal(freeLabel.since, '永平三年秋')
+    assert.ok(freeLabel.period !== undefined, 'the uncomparable mark must survive the cleanup')
+    assert.ok(freeLabel.period.uncomparable !== undefined)
+
+    const clues = await callTool(harness, 'inkflow_relation_clues', { projectRoot: root, entity: 'c-1' })
+    assertLossless(clues, 'clues c-1')
+    assert.equal(clues.ok, true, JSON.stringify(clues.error))
+  }),
+)
