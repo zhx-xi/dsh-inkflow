@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { fetchInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { describeLibraryFacts } from './library-hint.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import { LibraryItemEditor } from './library-editor.js'
@@ -27,7 +28,6 @@ import {
   describeIndexWarning,
   describeIssueRow,
   describeLibraryError,
-  describeLibraryFacts,
   findFocusItem,
   findItemByPath,
   fingerprintOf,

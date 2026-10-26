@@ -759,13 +759,6 @@ export const LIBRARY_EMPTY = {
 
 export type LibraryEmptyKind = keyof typeof LIBRARY_EMPTY
 
-/** The hint under the tree: counts, plus one line about why some kinds are empty. */
-export function describeLibraryFacts(tree: LibraryTree): string {
-  if (!tree.indexAvailable) return '索引 不可用 · 本页五类无法回答'
-  const filled = tree.groups.filter((group) => group.items.length > 0).length
-  return `索引 可用 · ${filled}/${tree.groups.length} 类有条目 · 共 ${tree.total} 条`
-}
-
 /** Message for a failed library call: the Host's own words beat a bare code. */
 export function describeLibraryError(error: InternalError | undefined): string {
   if (error === undefined) return '设定库通道没有返回内容'
