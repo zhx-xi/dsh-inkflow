@@ -462,3 +462,136 @@ test('outline: the rebuilt index stores plot points per outline node', async () 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// The anchor: the session working directory, never the process cwd
+// ---------------------------------------------------------------------------
+
+test('outline: the tree tool reads the book the session is in, not the process cwd', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    markdown(root, 'outlines/overall.md', ['id: ov', 'kind: overall', 'title: 总纲'])
+    // The session was opened one directory down, so the anchor has to walk up to the book.
+    const harness = makeTools(join(dir, 'state'), join(root, 'chapters'))
+
+    const built = await callTool(harness, 'inkflow_outline_tree', {})
+    assert.equal(built.ok, true, `expected the session's book, got ${JSON.stringify(built)}`)
+    assert.deepEqual(built.counts, { overall: 1, volumes: 0, chapters: 0, plotPoints: 0 })
+    assert.deepEqual(
+      (built.trees ?? []).map((node) => node.path),
+      ['outlines/overall.md'],
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('outline: upsert and move write into the book the session is in, without projectRoot', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    const harness = makeTools(join(dir, 'state'), join(root, 'chapters'))
+
+    const overall = fileOf(await callTool(harness, 'inkflow_outline_upsert', { kind: 'overall', title: '总纲', confirm: true }))
+    assert.equal(overall, 'outlines/overall.md')
+    const volume = await callTool(harness, 'inkflow_outline_upsert', { kind: 'volume', title: '卷一', confirm: true })
+    const chapter = await callTool(harness, 'inkflow_outline_upsert', { kind: 'chapter', title: '第一章', confirm: true })
+    assert.deepEqual(outlinesDir(root), ['.gitkeep', 'ch-001.md', 'overall.md', 'vol-01.md'])
+
+    const moved = await callTool(harness, 'inkflow_outline_move', {
+      id: chapter.node.id,
+      parent: volume.node.id,
+      confirm: true,
+    })
+    assert.equal(moved.ok, true, `expected the move into the session's book, got ${JSON.stringify(moved)}`)
+    assert.equal(moved.node.parent, volume.node.id)
+    assert.match(readFileSync(join(root, chapter.node.file), 'utf8'), new RegExp(`^parent: ${volume.node.id}$`, 'mu'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('outline: without a session working directory the tools refuse instead of searching the process cwd', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    // No `workingDirectory` service: `sessionCwd()` degrades to `process.cwd()`, which is
+    // the DSH install directory in the host process — never a book, and never this one.
+    const harness = makeTools(join(dir, 'state'))
+
+    const read = await callTool(harness, 'inkflow_outline_tree', {})
+    assert.equal(read.ok, false)
+    assert.equal(read.error.code, 'PROJECT_ROOT_UNKNOWN')
+    assert.equal(read.error.cwd, process.cwd())
+    assert.equal(read.error.searchedFrom, 'none')
+    assert.equal(read.error.cwdSource, 'process')
+    assert.match(read.error.hint, /projectRoot/u)
+
+    const write = await callTool(harness, 'inkflow_outline_upsert', { kind: 'overall', title: '总纲', confirm: true })
+    assert.equal(write.ok, false)
+    assert.equal(write.error.code, 'PROJECT_ROOT_UNKNOWN')
+    assert.deepEqual(outlinesDir(root), ['.gitkeep'], 'a guessed anchor must write nothing')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('outline: a session outside every book is answered as such, with the anchor it searched', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    // The session sits *above* the book: walking up from it finds nothing, and the tool
+    // must say so instead of walking up from the process cwd.
+    const harness = makeTools(join(dir, 'state'), dir)
+
+    const read = await callTool(harness, 'inkflow_outline_tree', {})
+    assert.equal(read.ok, false)
+    assert.equal(read.error.code, 'NOT_AN_INKFLOW_PROJECT')
+    assert.equal(read.error.cwd, dir)
+    assert.equal(read.error.searchedFrom, 'cwd')
+    assert.equal(read.error.state, 'needs-setup')
+    assert.deepEqual(outlinesDir(root), ['.gitkeep'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('outline: every outline tool documents the session anchor, not the process cwd', async () => {
+  const dir = workdir()
+  try {
+    const harness = makeTools(join(dir, 'state'), dir)
+    for (const name of ['inkflow_outline_tree', 'inkflow_outline_upsert', 'inkflow_outline_move']) {
+      const description = harness.tools.get(name).parameters.properties.projectRoot.description
+      assert.match(description, /session working directory/u, `${name} must name the anchor`)
+      assert.doesNotMatch(description, /process working directory/u, `${name} must not claim the process cwd`)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('outline: the gate still refuses the book the session is in, with nothing written', async () => {
+  const dir = workdir()
+  try {
+    const root = project(join(dir, 'book'))
+    // The session working directory *is* the book, so the anchor finds it and the
+    // four-state gate — not the anchor — has to be what refuses.
+    const harness = makeTools(join(dir, 'state'), root)
+
+    writeFileSync(join(root, 'inkflow.json'), `${JSON.stringify({ schemaVersion: 999 })}\n`, 'utf8')
+    const newer = await callTool(harness, 'inkflow_outline_upsert', { kind: 'overall', title: '总纲', confirm: true })
+    assert.equal(newer.ok, false)
+    assert.equal(newer.error.code, 'PROJECT_NEEDS_NEWER_PLUGIN')
+    assert.deepEqual(outlinesDir(root), ['.gitkeep'])
+
+    writeFileSync(join(root, 'inkflow.json'), '{"schemaVersion": ', 'utf8')
+    const repair = await callTool(harness, 'inkflow_outline_tree', {})
+    assert.equal(repair.ok, false)
+    assert.equal(repair.error.code, 'PROJECT_NEEDS_REPAIR')
+    assert.deepEqual(outlinesDir(root), ['.gitkeep'])
+    assert.equal(existsSync(join(root, INDEX_DIR, 'inkflow.db')), false, 'a refused read must not build the index')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

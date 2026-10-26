@@ -92,7 +92,7 @@ export const outlineDomain: DomainModule = {
     }
   },
 
-  tools() {
-    return buildOutlineTools()
+  tools(deps) {
+    return buildOutlineTools(deps)
   },
 }

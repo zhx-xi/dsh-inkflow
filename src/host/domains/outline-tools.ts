@@ -7,32 +7,28 @@
  * them to the built-ins array would make every parallel domain branch conflict on the
  * same lines.
  *
- * What is deliberately *not* used here, and why:
- *   - **`indexer.ts` / `index-build.ts` / `index-freshness.ts`**: they import the
- *     registry that imports this domain, so reaching them would close a runtime import
- *     cycle. The read side therefore parses `outlines/` — one small directory, and the
- *     truth — and a write reports `indexStale: true` instead of rebuilding. A stale
- *     index is not a wrong answer: `ensureIndex()` compares `files` against the disk and
- *     rebuilds on the next read (conventions.md §4.0), which is the "the index is a
- *     cache" contract (ADR-0005).
- *   - **`ctx`**: `DomainModule.tools()` receives no dependencies, so there is no session
- *     working directory to anchor on. `projectRoot` is therefore a first-class argument;
- *     without it the tool walks up from `process.cwd()`. An explicit root still passes
- *     the forbidden-path list and the four-state gate before a single byte is written.
+ * The anchor is the **session** working directory, not `process.cwd()` — `outline-target.ts`
+ * owns that resolution, its refusals and the reasoning.
+ *
+ * **`indexer.ts` / `index-build.ts` / `index-freshness.ts`** are deliberately not used:
+ * they import the registry that imports this domain, so reaching them would close a
+ * runtime import cycle. The read side therefore parses `outlines/` — one small directory,
+ * and the truth — and a write reports `indexStale: true` instead of rebuilding. A stale
+ * index is not a wrong answer: `ensureIndex()` compares `files` against the disk and
+ * rebuilds on the next read (conventions.md §4.0), which is "the index is a cache"
+ * (ADR-0005).
  */
 
 import { readdirSync } from 'node:fs'
-import { join, resolve as resolvePath } from 'node:path'
+import { join } from 'node:path'
 
-import type { ContentBlock, JsonSchemaNode, ToolDefinition } from '../context.js'
+import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } from '../context.js'
 import { INDEX_DIR } from '../conventions.js'
 import { compareExpectation, fingerprintProjectFile } from '../file-cas.js'
 import type { FileExpectation } from '../file-cas.js'
 import { parseMarkdown } from '../frontmatter.js'
 import { withProjectWriteLock, writeTextAtomic } from '../io.js'
 import type { IoFailure, ProjectLock } from '../io.js'
-import { checkProjectRootScope, findProjectRoot, inspectProject } from '../project.js'
-import type { ProjectProbe } from '../project.js'
 import {
   buildOutlineTree,
   outlineEntity,
@@ -41,8 +37,10 @@ import {
   validateOutlineScan,
 } from './outline-model.js'
 import type { OutlinePlotPoint, OutlineRow } from './outline-model.js'
+import { resolveTarget } from './outline-target.js'
+import { PROJECT_ROOT_PARAM } from './tool-support.js'
 import { applyCandidate, rowsBucket } from './types.js'
-import type { DomainWriteView } from './types.js'
+import type { DomainToolDeps, DomainWriteView } from './types.js'
 import { planOutlineMove, planOutlineUpsert, renderOutlineDocument, writeNodesOf } from './outline-write.js'
 import type { OutlinePlan, OutlineWriteNode } from './outline-write.js'
 import { readText } from './scan-helpers.js'
@@ -114,70 +112,8 @@ export function loadOutlineRows(root: string): OutlineRow[] {
 }
 
 // ---------------------------------------------------------------------------
-// Resolving the project and refusing through the gate
+// Refusing a write: every shape below means "no byte was written"
 // ---------------------------------------------------------------------------
-
-type TargetResult = { ok: true; root: string } | { ok: false; value: Json }
-
-function gateRefusal(probe: ProjectProbe): Json {
-  const state = probe.state
-  const code =
-    state === 'needs-newer-plugin'
-      ? 'PROJECT_NEEDS_NEWER_PLUGIN'
-      : state === 'needs-repair'
-        ? 'PROJECT_NEEDS_REPAIR'
-        : 'NOT_AN_INKFLOW_PROJECT'
-  return {
-    ok: false,
-    error: {
-      code,
-      state,
-      message: `this directory is not a usable InkFlow project (state: ${state})`,
-      root: probe.root,
-      missing: probe.missing,
-      reasons: probe.reasons,
-      hint:
-        state === 'needs-newer-plugin'
-          ? 'the book was written by a newer dsh-inkflow; tell the user to upgrade instead of editing it here'
-          : 'run inkflow_project_plan / inkflow_project_init on this root first, or pass the root of a usable book',
-    },
-  }
-}
-
-/**
- * `projectRoot`, else the nearest book above `process.cwd()`.
- *
- * Scope: a domain tool has no session workspace (see the file comment), so an explicit
- * root is checked against **itself** — that still rejects a volume root, the home
- * directory, a directory containing home and anything inside the install directories.
- * The real precondition is the four-state gate: an outline can only ever be written
- * into a directory that is already an InkFlow book.
- */
-function resolveRoot(argument: unknown): TargetResult {
-  const cwd = process.cwd()
-  const requested = optionalString(argument)?.trim()
-  const fromCwd = requested === undefined || requested === ''
-  const root = fromCwd ? (findProjectRoot(cwd) ?? cwd) : resolvePath(requested)
-  const rejection = checkProjectRootScope(root, fromCwd ? cwd : root)
-  if (rejection !== undefined) {
-    return {
-      ok: false,
-      value: {
-        ok: false,
-        error: {
-          code: rejection.code,
-          message: rejection.message,
-          root: rejection.root,
-          workspace: rejection.workspace,
-          hint: rejection.hint,
-        },
-      },
-    }
-  }
-  const probe = inspectProject(root)
-  if (probe.usable !== true) return { ok: false, value: gateRefusal(probe) }
-  return { ok: true, root: probe.root }
-}
 
 function planRefusal(plan: OutlinePlan, preview: Json): Json {
   if (plan.ok) return { ok: true }
@@ -423,13 +359,6 @@ function writeOutline(
 // Tools
 // ---------------------------------------------------------------------------
 
-const PROJECT_ROOT_PARAM = {
-  type: 'string',
-  description:
-    'Absolute path of the InkFlow project root. Omit to walk up from the process working directory. Pass it when the ' +
-    'session workspace is not the book (inkflow_project_status reports the root).',
-} as const
-
 const EXPECTED_PARAM = {
   type: 'object',
   properties: {
@@ -505,7 +434,7 @@ export function renderOutlineTree(value: Json): ContentBlock[] {
   return text(lines)
 }
 
-export function buildOutlineTools(): ToolDefinition[] {
+export function buildOutlineTools(deps: DomainToolDeps): ToolDefinition[] {
   const treeTool: ToolDefinition = {
     name: 'inkflow_outline_tree',
     description:
@@ -518,10 +447,10 @@ export function buildOutlineTools(): ToolDefinition[] {
       additionalProperties: false,
     },
     output: { schema: SUCCESS_SCHEMA, render: (_args, value) => renderOutlineTree(asRecord(value)) },
-    execute: (args: unknown): Promise<unknown> => {
+    execute: async (args: unknown, exec: ToolRunContext): Promise<unknown> => {
       const a = asRecord(args)
-      const target = resolveRoot(a['projectRoot'])
-      if (!target.ok) return Promise.resolve(target.value)
+      const target = await resolveTarget(deps, exec, a['projectRoot'])
+      if (!target.ok) return target.value
       const rows = loadOutlineRows(target.root)
       const { trees, dangling } = buildOutlineTree(rows)
       const issues = validateOutlineScan({ tables: [rowsBucket('outline_nodes', rows)] })
@@ -604,10 +533,10 @@ export function buildOutlineTools(): ToolDefinition[] {
         ])
       },
     },
-    execute: (args: unknown): Promise<unknown> => {
+    execute: async (args: unknown, exec: ToolRunContext): Promise<unknown> => {
       const a = asRecord(args)
-      const target = resolveRoot(a['projectRoot'])
-      if (!target.ok) return Promise.resolve(target.value)
+      const target = await resolveTarget(deps, exec, a['projectRoot'])
+      if (!target.ok) return target.value
 
       const fileArg = optionalString(a['file'])?.trim().replaceAll('\\', '/')
       const idArg = optionalString(a['id'])?.trim()
@@ -753,10 +682,10 @@ export function buildOutlineTools(): ToolDefinition[] {
         ])
       },
     },
-    execute: (args: unknown): Promise<unknown> => {
+    execute: async (args: unknown, exec: ToolRunContext): Promise<unknown> => {
       const a = asRecord(args)
-      const target = resolveRoot(a['projectRoot'])
-      if (!target.ok) return Promise.resolve(target.value)
+      const target = await resolveTarget(deps, exec, a['projectRoot'])
+      if (!target.ok) return target.value
       const id = optionalString(a['id'])?.trim() ?? ''
       if (id === '') return Promise.resolve(rejected('OUTLINE_FIELD_INVALID', '`id` is required'))
       const parentArg = a['parent']
