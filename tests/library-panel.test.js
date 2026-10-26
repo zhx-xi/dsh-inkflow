@@ -214,10 +214,11 @@ function hashTruth(root) {
 
 const require = createRequire(import.meta.url)
 
-async function loadLibraryModel() {
+/** One client module, bundled to an ESM data URL (esbuild wants one entry without `outdir`). */
+async function bundleForTest(relative) {
   const esbuild = require('esbuild')
   const result = await esbuild.build({
-    entryPoints: [join(ROOT, 'src/client/library-model.ts')],
+    entryPoints: [join(ROOT, 'src/client', relative)],
     bundle: true,
     format: 'esm',
     platform: 'neutral',
@@ -227,6 +228,12 @@ async function loadLibraryModel() {
   })
   const code = Buffer.from(result.outputFiles[0].text, 'utf8').toString('base64')
   return import(`data:text/javascript;base64,${code}`)
+}
+
+/** The tree model plus the facts line, which lives in its own module to stay under budget. */
+async function loadLibraryModel() {
+  const [model, hint] = await Promise.all([bundleForTest('library-model.ts'), bundleForTest('library-hint.ts')])
+  return { ...model, ...hint }
 }
 
 // ---------------------------------------------------------------------------
@@ -704,6 +711,21 @@ test('library-model: the empty state says where 大纲 / 伏笔 / 时间线 went
   const facts = model.describeLibraryFacts(model.buildLibraryTree(allKindsPayload()))
   assert.match(facts, /5\/5 类有条目/, 'the counts follow what the tree shows')
   assert.doesNotMatch(facts, /八类/, 'the tab no longer claims eight kinds')
+})
+
+test('library-hint: the facts line says where the other kinds went, with entries in the tree', async () => {
+  const model = await loadLibraryModel()
+  // The point of this test is that the sentence is NOT conditional on the book being empty: a
+  // page with five full kinds must still say why 大纲 / 伏笔 / 时间线 are not among them.
+  const facts = model.describeLibraryFacts(model.buildLibraryTree(allKindsPayload()))
+  for (const word of ['大纲', '伏笔', '时间线', '各有页签']) {
+    assert.match(facts, new RegExp(word), `the facts line must name ${word} even when the tree is full`)
+  }
+  assert.match(model.SETTINGS_LIBRARY_HINT, /^其余 /, 'the hint leads with "其余", so it reads as a destination')
+  // Derived, not typed twice: dropping a kind from the page rewrites the sentence.
+  assert.doesNotMatch(facts, /角色 \/ 世界观/, 'the five kinds the page DOES show are not listed as elsewhere')
+  const unavailable = model.describeLibraryFacts({ ...model.buildLibraryTree(allKindsPayload()), indexAvailable: false })
+  assert.match(unavailable, /5 类无法回答/, 'a missing index still says how many kinds the page is about')
 })
 
 // ---------------------------------------------------------------------------

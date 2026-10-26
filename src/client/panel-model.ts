@@ -20,6 +20,7 @@
  */
 
 import { describeOriginRefusal, describeTooLarge } from './error-text.js'
+import type { IconName } from './icon-names.js'
 import type { InternalError, InternalResult } from './internal.js'
 
 /** The four gate states. Anything else means "we have not learnt it yet". */
@@ -587,62 +588,61 @@ export function staleWarning(build: PanelBuild | null): string | null {
 export interface PanelTab {
   id: string
   label: string
+  /** The glyph from `icons.tsx`; a label-only row is a scan cost. */
+  icon: IconName
+  /** The band this row sits in (`PANEL_TAB_GROUPS`), drawn with a separator between bands. */
+  group: PanelGroupId
   available: boolean
   note?: string
 }
 
+/** The bands of the tab bar, in the order they are drawn. */
+export type PanelGroupId = 'write' | 'world' | 'check' | 'queue' | 'keep'
+
 /**
- * The tabs the workbench shows.
+ * The tab bar is read in four bands plus the archive, in the order an author works: write
+ * something → look up what the book says → see whether it holds → work the queues → and, on
+ * its own at the end, the recovery bin (the only page whose actions can lose work, and the
+ * one visited least — between 伏笔 and 体检 it read as a peer of the everyday pages).
  *
- * Five pages came first: 章节 (the chapter tree + editor),
- * 设定库 (the eight-kind tree, read-only detail and the problem panel),
- * 回收站 (the recovery bin, restore or purge), 伏笔 (the
- * read-only board: late / open / by linked entity) and 体检 (the five-family
- * consistency report with one-click export). 大纲 is the last placeholder to turn live —
- * its page is `outline.tsx`, which reads the same library projection and the same editor.
- *
- * The 0.5.0 rows also went in **disabled** before their pages existed (roadmap §2.4 「面板落点」):
- * they are rows here and not later additions because the row order is this file's,
- * not the feature's: four parallel issues inserting themselves into one array is a
- * merge conflict per rebase, while a placeholder line is a one-word edit
- * (`available: true`) nobody has to re-argue. Every page has landed, so no row carries
- * a note any more — an empty note would be worse than none (X-12).
+ * WHY THE ORDER LIVES HERE: the renderer only walks `PANEL_TABS` and drops a separator when
+ * `group` changes, so array order IS display order — no second list to keep in step. Rows
+ * used to be appended to the array's end to dodge a rebase conflict per parallel issue; that
+ * habit is what put 时间线 last and 回收站 fifth.
  */
-export const PANEL_TABS: PanelTab[] = [
-  { id: 'chapters', label: '章节', available: true },
-  { id: 'library', label: '设定库', available: true },
-  // 大纲: the three-level tree with each node's plot points. A tab of its own because the
-  // reading order (整体 → 卷 → 章) and the object being edited (情节点) are not the setting
-  // library's — it still writes through `POST /library/item`, so no second write path.
-  { id: 'outline', label: '大纲', available: true },
-  { id: 'foreshadowing', label: '伏笔', available: true },
-  { id: 'trash', label: '回收站', available: true },
-  { id: 'audit', label: '体检', available: true },
-  // The extraction queue (X-20) — the ONE tab this milestone added. It is a
-  // tab and not a section of the setting library because a candidate is not an entity:
-  // it is a proposal waiting for a decision, and mixing "what is true" with "what might
-  // become true" in one tree is how an author approves a duplicate by accident.
-  { id: 'candidates', label: '候选', available: true },
-  // 地图 — places grouped by world category, one click to the entry (ADR-0025 D4).
-  // Appended at the end of the live rows rather than next to 设定库: the row order is this
-  // array's, and inserting into the middle of a four-issue shared list is a merge conflict
-  // per rebase.
-  { id: 'map', label: '地图', available: true },
-  // 0.5.0 placeholders, one row per page a B1/B2 batch was landing: `brief` (nine segments +
-  // token share + what was trimmed), `gate` (the seven quality gates with evidence), `review`
-  // (审稿意见 by chapter/paragraph/offset) and `proposal` (diff, hunk by hunk, apply or roll back).
-  { id: 'brief', label: '简报', available: true },
-  // The page is `src/client/gate.tsx`, fed by `GET /gate`.
-  { id: 'gate', label: '门禁', available: true },
-  // The page is `src/client/review.tsx`, fed by `GET /review`
-  // (the recorded runs) and `GET /review/compare` (the cross-model table).
-  { id: 'review', label: '审稿', available: true },
-  // The page is `src/client/proposal.tsx`, fed by `GET /proposal`.
-  { id: 'proposal', label: '提案', available: true },
-  // The page is `src/client/batch.tsx`, fed by `GET /batch` and
-  // the one write `POST /batch/resume` (job records only — approving prose stays a tool call).
-  { id: 'batch', label: '批量', available: true },
-  // 时间线 — two axes, the pending area and the findings (`GET /timeline`); the page is `timeline.tsx`.
-  { id: 'timeline', label: '时间线', available: true },
+export const PANEL_TAB_GROUPS: readonly { readonly id: PanelGroupId; readonly label: string }[] = [
+  { id: 'write', label: '写' },
+  { id: 'world', label: '设定' },
+  { id: 'check', label: '检视' },
+  { id: 'queue', label: '队列' },
+  { id: 'keep', label: '归档' },
 ]
 
+/** The tabs the workbench shows, in display order. */
+export const PANEL_TABS: PanelTab[] = [
+  { id: 'chapters', label: '章节', icon: 'chapters', group: 'write', available: true },
+  // 大纲: the three-level tree with each node's plot points, read in 整体 → 卷 → 章 order.
+  { id: 'outline', label: '大纲', icon: 'outline', group: 'write', available: true },
+  // 简报: what will be injected into the next prompt, segment by segment.
+  { id: 'brief', label: '简报', icon: 'brief', group: 'write', available: true },
+  // 设定库: five kinds (大纲 / 伏笔 / 时间线 have pages of their own).
+  { id: 'library', label: '设定库', icon: 'library', group: 'world', available: true },
+  { id: 'timeline', label: '时间线', icon: 'timeline', group: 'world', available: true },
+  { id: 'foreshadowing', label: '伏笔', icon: 'foreshadow', group: 'world', available: true },
+  // 地图: places grouped by world category, one click to the entry.
+  { id: 'map', label: '地图', icon: 'map', group: 'world', available: true },
+  // 体检: the whole-book consistency report (five families).
+  { id: 'audit', label: '体检', icon: 'audit', group: 'check', available: true },
+  // 门禁: the per-chapter mechanical gate, fed by `GET /gate`.
+  { id: 'gate', label: '门禁', icon: 'gate', group: 'check', available: true },
+  // 审稿: recorded review runs plus the cross-model table (`GET /review`, `/review/compare`).
+  { id: 'review', label: '审稿', icon: 'review', group: 'check', available: true },
+  // 提案: a revision cut into hunks, accepted or rejected one at a time.
+  { id: 'proposal', label: '提案', icon: 'proposal', group: 'check', available: true },
+  // 候选: extraction candidates waiting for a decision — not entities, so not in the library.
+  { id: 'candidates', label: '候选', icon: 'candidates', group: 'queue', available: true },
+  // 批量: chapter jobs (`GET /batch`, `POST /batch/resume` — approving prose stays a tool).
+  { id: 'batch', label: '批量', icon: 'batch', group: 'queue', available: true },
+  // 回收站 last and alone: the only page whose actions can lose work.
+  { id: 'trash', label: '回收站', icon: 'trash', group: 'keep', available: true },
+]

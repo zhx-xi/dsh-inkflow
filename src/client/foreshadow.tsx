@@ -139,6 +139,8 @@ export function ForeshadowView({ sessionId, focus }: { sessionId: string; focus?
   const [armed, setArmed] = useState<{ slug: string; target: 'advanced' | 'resolved' } | null>(null)
   const [chapter, setChapter] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 已回收 starts folded: a finished list is reference, not the day's work. */
+  const [showResolved, setShowResolved] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   const scrollBox = useScrollBox()
@@ -230,6 +232,12 @@ export function ForeshadowView({ sessionId, focus }: { sessionId: string; focus?
                 </span>
               ))}
             </div>
+          ) : section.collapsed === true && !showResolved ? (
+            // 已回收 opens folded: it is reference, and unfolding it must be one click — not a
+            // scroll past finished work every time the board loads.
+            <button type="button" style={{ ...buttonStyle, marginTop: 8 }} onClick={() => setShowResolved(true)}>
+              展开已回收的 {String(section.items.length)} 条
+            </button>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
               {section.items.map((card) => {
@@ -253,6 +261,16 @@ export function ForeshadowView({ sessionId, focus }: { sessionId: string; focus?
                       )}
                       {addressed ? <span style={{ ...muted, fontSize: 11 }}>定位</span> : null}
                       <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+                        {card.resolved ? (
+                          <span
+                            style={{ ...muted, fontSize: 11 }}
+                            title="已回收是终态：inkflow_foreshadow_upsert 可以改状态，面板不给第四种动作"
+                          >
+                            {card.resolvedChapter === null ? '已回收（终态）' : `已回收于 ${card.resolvedChapter}`}
+                          </span>
+                        ) : null}
+                        {card.resolved ? null : (
+                        <>
                         <button
                           type="button"
                           style={rowArmed === 'advanced' ? armedButtonStyle : buttonStyle}
@@ -271,6 +289,8 @@ export function ForeshadowView({ sessionId, focus }: { sessionId: string; focus?
                         >
                           {rowArmed === 'resolved' ? '确认已回收' : '标记已回收'}
                         </button>
+                        </>
+                        )}
                       </span>
                     </div>
                     {rowArmed === null ? null : (

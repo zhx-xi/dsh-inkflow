@@ -71,6 +71,7 @@ export interface ForeshadowBoardValue {
   counts: ForeshadowCounts | null
   groups: {
     unresolved: ForeshadowItem[]
+    resolved: ForeshadowItem[]
     overdue: ForeshadowItem[]
     byEntity: ForeshadowEntityGroup[]
   } | null
@@ -90,6 +91,9 @@ export interface ForeshadowCard {
   advancedAt: string[]
   /** The word in the badge: 超期 / 本期到期 / the state's label. */
   badge: string
+  /** Terminal: the tool refuses every move from here, so the buttons become a note. */
+  resolved: boolean
+  resolvedChapter: string | null
   /** Whether this card is about the chapter being written right now. */
   current: boolean
   /** Deadline sentence for the detail line (`null` when the entry has no `dueBy`). */
@@ -106,11 +110,13 @@ export interface ForeshadowEntityRow {
 }
 
 export interface ForeshadowSection {
-  key: 'dueNow' | 'overdue' | 'unresolved' | 'byEntity'
+  key: 'dueNow' | 'overdue' | 'unresolved' | 'byEntity' | 'resolved'
   title: string
   note: string
   items: ForeshadowCard[]
   entities: ForeshadowEntityRow[]
+  /** Starts folded: a finished list is reference, not the day's work. */
+  collapsed?: boolean
 }
 
 export interface ForeshadowView {
@@ -154,6 +160,8 @@ function cardOf(item: ForeshadowItem): ForeshadowCard {
     slug: slugOf(item.file),
     advancedAt: [...(item.advancedAt ?? [])],
     badge,
+    resolved: item.status === 'resolved',
+    resolvedChapter: item.resolvedChapter ?? null,
     current: item.dueNow,
     due: describeDue(item),
     declared: item.declaredStatus !== item.status ? statusLabel(item.declaredStatus) : null,
@@ -237,6 +245,7 @@ const SECTION_TEXT = {
   overdue: { title: '超期', note: '已越过 dueBy 指向的章/卷，仍未回收' },
   unresolved: { title: '未回收', note: '所有未回收的伏笔，含已超期与本期到期的' },
   byEntity: { title: '按角色分组', note: '每条伏笔关联的角色/世界观条目（linkedEntities）' },
+  resolved: { title: '已回收', note: '已回收是终态：不能再推进，也不会再到期；改状态请用 inkflow_foreshadow_upsert' },
 } as const
 
 function sectionOf(key: 'dueNow' | 'overdue' | 'unresolved', items: ForeshadowCard[]): ForeshadowSection {
@@ -274,7 +283,8 @@ export function readForeshadowBoard(result: InternalResult<ForeshadowBoardValue>
   const summary =
     counts === null
       ? null
-      : `超期 ${String(counts.overdue)} · 本期到期 ${String(counts.dueNow)} · 未回收 ${String(counts.unresolved)} / 共 ${String(counts.total)}`
+      : `超期 ${String(counts.overdue)} · 本期到期 ${String(counts.dueNow)} · 未回收 ${String(counts.unresolved)} / 共 ${String(counts.total)}` +
+        (counts.resolved > 0 ? ` · 已回收 ${String(counts.resolved)}` : '')
 
   const overdue = value.groups.overdue.map(cardOf)
   const unresolved = value.groups.unresolved.map(cardOf)
@@ -301,6 +311,15 @@ export function readForeshadowBoard(result: InternalResult<ForeshadowBoardValue>
   if (entities.length > 0) {
     sections.push({ key: 'byEntity', ...SECTION_TEXT.byEntity, items: [], entities })
   }
+  // Last, and only when it holds rows. 已回收 is where a finished foreshadow goes: a row that
+  // simply vanishes from the board reads as a deletion, and the terminal state's own rules
+  // (no further move is legal) then have nowhere to be seen.
+  // `?? []` because a Host that predates this list must not crash the pane: an old payload
+  // simply has no finished rows to draw, which is the same thing it showed before.
+  const resolved = (value.groups.resolved ?? []).map(cardOf)
+  if (resolved.length > 0) {
+    sections.push({ key: 'resolved', ...SECTION_TEXT.resolved, items: resolved, entities: [], collapsed: true })
+  }
 
   return {
     error: null,
@@ -308,6 +327,13 @@ export function readForeshadowBoard(result: InternalResult<ForeshadowBoardValue>
     summary,
     currentChapter,
     sections,
-    empty: unresolved.length === 0 ? '这本书没有未回收的伏笔。' : null,
+    // "nothing left to do" and "nothing here at all" are different answers: with finished rows
+    // the board is not empty, it is quiet.
+    empty:
+      unresolved.length === 0
+        ? resolved.length === 0
+          ? '这本书没有未回收的伏笔。'
+          : '没有未回收的伏笔了；已回收的都列在下面。'
+        : null,
   }
 }

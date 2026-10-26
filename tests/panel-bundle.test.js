@@ -35,11 +35,17 @@ function readBundle() {
   return readFileSync(BUNDLE, 'utf8')
 }
 
-/** Bundle `src/client/panel-model.ts` to an ESM data URL and import it. */
-async function loadPanelModel() {
+/**
+ * Bundle a client module to an ESM data URL and import it.
+ *
+ * One entry per build: esbuild refuses multiple entry points without an `outdir`, and two
+ * builds merged here keep each module's exports under its own name instead of pretending they
+ * are one file.
+ */
+async function bundleForTest(relative) {
   const esbuild = require('esbuild')
   const result = await esbuild.build({
-    entryPoints: [join(ROOT, 'src/client', 'panel-model.ts')],
+    entryPoints: [join(ROOT, 'src/client', relative)],
     bundle: true,
     format: 'esm',
     platform: 'neutral',
@@ -47,9 +53,14 @@ async function loadPanelModel() {
     write: false,
     logLevel: 'silent',
   })
-  const file = result.outputFiles[0]
-  const code = Buffer.from(file.text, 'utf8').toString('base64')
+  const code = Buffer.from(result.outputFiles[0].text, 'utf8').toString('base64')
   return import(`data:text/javascript;base64,${code}`)
+}
+
+/** The panel model plus the icon names: the two things the tab contract spans. */
+async function loadPanelModel() {
+  const [model, icons] = await Promise.all([bundleForTest('panel-model.ts'), bundleForTest('icon-names.ts')])
+  return { ...model, ...icons }
 }
 
 /** The hub's pure view model, bundled the same way (its own module, same rules). */
@@ -256,7 +267,9 @@ test('the stale-build banner sits above the tabs, so every gate state shows it',
   // banner must not live inside the usable-only branch of the panel tree.
   const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
   const banner = source.indexOf('<StaleBuildBanner')
-  const tabs = source.indexOf('<div style={tabRowStyle}>')
+  // The row itself moved into `panel-tabs.tsx`; this test is about the ORDER in the tree, so
+  // it anchors on the element that renders the row rather than on the row's own markup.
+  const tabs = source.indexOf('<PanelTabRow')
   assert.ok(banner > 0 && tabs > 0 && banner < tabs, 'the banner is rendered before the tab row')
   assert.ok(source.includes('readBuild(status)'), 'the panel reads the stamp out of /status, not from a guess')
 })
@@ -537,7 +550,7 @@ test('projectFacts reports derived state without implying it is the truth', () =
 })
 
 test('PANEL_TABS is the build’s own list of pages a user can open', () => {
-  const { PANEL_TABS } = model
+  const { ICON_NAMES, PANEL_TABS, PANEL_TAB_GROUPS } = model
   const available = PANEL_TABS.filter((tab) => tab.available)
   // The panel grew one page at a time: 设定库 (the eight-kind setting library), 大纲 (the
   // three-level outline tree with its plot points), 回收站 (the recovery bin), 伏笔 (the
@@ -549,11 +562,30 @@ test('PANEL_TABS is the build’s own list of pages a user can open', () => {
   // This list is the build's own claim about what a user
   // can click, so it is spelled out rather than derived — and it is ONE list, not one
   // list per issue.
+  // The order is the READING ORDER, not the order the pages landed in: four bands an author
+  // walks (write → what the book says → whether it holds → the queues) and the recovery bin
+  // last, on its own. Asserting the sequence is the point — appending a row to the array's end
+  // is exactly how 时间线 ended up fourteenth and 回收站 fifth.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'outline', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal', 'batch', 'timeline'],
-    '章节, 设定库, 大纲, 伏笔, 回收站, 体检, 候选、地图、简报、门禁、审稿、提案、批量 与时间线 exist in this build',
+    ['chapters', 'outline', 'brief', 'library', 'timeline', 'foreshadowing', 'map', 'audit', 'gate', 'review', 'proposal', 'candidates', 'batch', 'trash'],
+    'four bands in reading order, then the recovery bin on its own',
   )
+  // The bands must be CONTIGUOUS and appear in PANEL_TAB_GROUPS' order. A row whose band did
+  // not follow the one before it would draw a second separator for the same band, which reads
+  // as two groups wearing the same name.
+  const bands = []
+  for (const tab of PANEL_TABS) if (bands[bands.length - 1] !== tab.group) bands.push(tab.group)
+  assert.deepEqual(
+    bands,
+    PANEL_TAB_GROUPS.map((entry) => entry.id),
+    'each band appears once, in the order the group list gives',
+  )
+  // Every live row names a glyph. A name with no drawing is a compile error (the `PATHS`
+  // record is keyed by the union), so this checks the other direction: a row that named none.
+  for (const tab of PANEL_TABS) {
+    assert.ok(ICON_NAMES.includes(tab.icon), `${tab.id} names a real icon (${tab.icon})`)
+  }
   // 大纲 was the last placeholder row and its page landed: nothing is disabled any more.
   // A tab that is live with no page, or a live page nobody can reach, is what the two
   // assertions around this one exist to catch — so an empty list here is a claim, not a

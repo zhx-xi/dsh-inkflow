@@ -418,10 +418,9 @@ export interface ForeshadowEntityGroup {
 /**
  * `GET /inkflow/internal/foreshadow` — the read-only board.
  *
- * Three groupings, all of them the same items from three angles: what is still open,
- * what is late, and which character/world entry each setup hangs on. The client
- * groups again for display; sending the three views means the panel never has to
- * reimplement "late" (data-model §3.2.2 is the only definition of it).
+ * Four groupings, the same items from four angles: open, late, finished, and which entry each
+ * setup hangs on. `resolved` gets its own list rather than being dropped (a vanished row reads
+ * as a deletion); the client groups again, so "late" stays data-model §3.2.2's definition.
  */
 export async function buildForeshadowBoard(source: ForeshadowSource, version: string): Promise<JsonRecord> {
   const ensured = await ensureIndex(source.root)
@@ -490,6 +489,7 @@ export async function buildForeshadowBoard(source: ForeshadowSource, version: st
     groups: {
       unresolved: unresolved.map((item) => ({ ...item })),
       overdue: overdue.map((item) => ({ ...item })),
+      resolved: view.items.filter((item) => item.status === 'resolved').map((item) => ({ ...item })),
       byEntity: byEntity.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item })) })),
     },
     indexRebuilt: ensured.rebuilt,
