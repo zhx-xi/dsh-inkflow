@@ -518,7 +518,8 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/impact-write.ts` | **改名的唯一写实现**：写锁内「先写新文件（旧 id 钉进 frontmatter `id`）→ 再删旧文件」、`TARGET_EXISTS`/`FILE_CHANGED`/失败回滚、写后 `ensureIndex(rebuild)` 并回报 `id` 不变 / `path` 更新 / 提及条数不变 | 生成影响清单、重写引用方字段（X-15：一个都不改）、直接拼项目路径（经 `io.ts`） |
 | `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封、body 字段白名单；另含**书库路由组** `/hub/*` 的独立分派（无会话；写路由要求 `Origin` 与 `Host` 同源） | 业务规则、写真相文件、解析会话 |
 | `src/host/route-types.ts` | 通道的**路由契约**（`HttpMethod` / `RouteInput` / `RouteReply` / `InternalRoute` / `KNOWN_METHODS`），被 `routes.ts` 与自带路由描述符的通道模块共用 | 任何分派、加固或业务（纯类型 + 一个常量，运行时不可见） |
-| `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 章节树 / 编辑器 / 向导清单）、页表 `pageRenderers`（roadmap X-12：非 `chapters` 页一行一页，JSX 里不再有页分支）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数 |
+| `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 编辑器 / 向导清单）、页表 `pageRenderers`（roadmap X-12：非 `chapters` 页一行一页，JSX 里不再有页分支）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数、章节树本身（在 `chapter-tree.tsx`） |
+| `src/client/chapter-tree.tsx` | 章节页左栏的树：卷可折叠（整行是控件，带 `aria-expanded`）、每行只印 `序号. 标题`（文件路径改到编辑器底部）、卷头给出章数；折叠状态只活在本会话 | 业务规则（判定在 `chapter-tree-model.ts`）、取数、写盘、渲染路径 |
 | `src/client/hub.tsx` | 书库视图：书卡片（标题 / `~/…` 路径 / 徽标 / 卷章数 / 标记）、空态、加载与错误态、手动刷新、「新开书」向导入口（`HubWizard`）、「共享内容」页入口（关闭时回到书单，并把**书单**交给它当复制目标）、`apply` 成功后**就地合并**书单行 | 写动作本身、轮询、拼路径参数 |
 | `src/client/hub-shared.tsx` | 共享内容页（#87 只读 + #40 取用）：库条目按 kind 分组、目标书选择（只列 `usable`）、复制/引用两段式确认（先臂上再「确认复制」）、本书副本列表与逐条更新（确认后带 `confirm: true`）、`selfContained` 与 `seriesId` 说明；只走 `fetchInternal`/`writeInternal` 的 `sessionless` 调用 | 判副本语义、拼 `root`/`path` 参数、轮询 |
 | `src/client/hub-shared-model.ts` | 共享内容页的纯视图模型：两种信封折叠（库 / 副本）、`state` 文案、`copyNeedsUpdate`（只为 `stale` 给按钮）、`copyModes`（引用只给 `library/`）、`copyTargets`（只列 `usable` 书）、`selfContainedNote`、拒绝码 → 人话 | React、网络、IO |
@@ -599,6 +600,7 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 **纯视图模型：无 React、无网络、无 IO**——面板的判定都落在这里，好让它们能被单测（渲染、`fetch`、文件系统一律在 `.tsx` 与 Host 侧）。整组列全：
 
 - `panel-model.ts` — 四态徽标与状态文案、`readGate`（两种信封折一份）、卷章树与扁平化、空态判定、`root` 相对化、页签表 `PANEL_TABS`、预览裁剪
+- `chapter-tree-model.ts` — 章节树唯一的判定：折叠集合（`NO_VOLUMES_CLOSED`/`isVolumeOpen`/`toggleVolume`，**默认展开**——打开一卷看全部；`LOOSE_GROUP_ID` 让「未分卷」走同一条规则而不是第二套代码）、卷头计数文案（`describeVolumeFacts`：空卷说「还没有章」，不印 `0 章`，零看起来像计数 bug）
 - `hub-model.ts` — 书库行徽标（含 `timeout`）、`~/…` 相对化、卷章数文案、`missing-dir`/`notABook`/重复注册标记、`HUB_UNAVAILABLE` 文案；**两组切分**（#198：`isMainListRow`/`splitHubRows`/`othersHeading`/`whyNotABook`——主列表只留 `usable`/`needs-repair`/`needs-newer-plugin`/`timeout`，坏书与需升级的书**必须留着**）、初始化提示词单一常量（`INIT_PROMPT_TEMPLATE`/`buildInitPrompt`：绝对路径 + `<tool>inkflow_project_init</tool>` + 三条边界）、剪贴板结果（`copyPrompt` → `copied`/`fallback`）
 - `export-model.ts` — 导出入口（#195）：三条词表与 `export.ts` 对齐（`EXPORT_FORMATS`/`EXPORT_TARGETS`/`EXPORT_STATUSES` 与其标签）、`buildExportBody`（两条选择轴照原样送出，由 Host 明确拒绝混用而不是这里静默丢）、`readExportOptions`/`readExportDone` 两种信封折叠、`describeExportValue`（成品：文件 + 范围 + 体积 + 落点）、`describeExportError`（每个拒绝码 → 人话）
 - `hub-wizard-model.ts` — 向导 plan 的四态折叠（ready / anchor-required / blocked / refused）、`willCreate` 文案、书名建议与必填、降级 A 文案、`mergeHubRow`
