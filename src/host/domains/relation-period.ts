@@ -33,10 +33,15 @@
  *      windows (`[a,b)` + `[b,c)`) are the one lawful split — their union is still one
  *      interval — and identical windows disagree about nothing (that is
  *      `RELATION_DUPLICATE` / `RELATION_CONFLICT`'s business).
- *   3. **uncomparable** — a declared window with a boundary the book cannot place. It is
- *      reported, so the gap is visible, and it never blocks a write: the lax path (no
- *      `since`/`until`, or free labels) must stay writable, and "cannot say" is not
- *      "says the opposite".
+ *   3. **uncomparable** — a written boundary the book cannot place. It is reported, so
+ *      the gap is visible, and it never blocks a write: the lax path (no `since`/`until`,
+ *      or free labels) must stay writable, and "cannot say" is not "says the opposite".
+ *      The judgement is per **written end**, not per window: `since: 永平三年秋` with
+ *      `until` left open (`至今`) is still a boundary the book cannot place, and a rule
+ *      that only looked at windows with both ends filled would go silent on exactly the
+ *      half-declared edges whose label most needs explaining. One edge is one finding
+ *      however many unplaceable ends it has. An edge with **no** end written declares
+ *      nothing at all — the relation holds for the whole book — so it has nothing to say.
  *
  * Nothing here touches the disk, the clock or a model. The rebuild (`relation.ts`) and
  * the write path (`relation-tools.ts`) call the same function on the same post-write
@@ -115,18 +120,33 @@ const BEFORE_BOOK = Number.NEGATIVE_INFINITY
 const AFTER_BOOK = Number.POSITIVE_INFINITY
 
 interface Bound {
+  /** The label as written, `undefined` when the author left this end open. */
+  readonly written?: string
   /** `false` when the label has no place in the chapter order — the window cannot be judged. */
   readonly placed: boolean
   readonly at: number
 }
 
+/** A written end this book cannot place, kept with the field's own name. */
+interface UnplacedEnd {
+  readonly end: 'since' | 'until'
+  /** What the author actually wrote there, so the finding quotes their words back. */
+  readonly text: string
+}
+
 interface Window {
   readonly since: Bound
   readonly until: Bound
-  /** Both ends placeable. */
+  /** Both ends placeable — only then can two windows be compared with each other. */
   readonly placed: boolean
   /** `[c, c)` and `until < since` never hold: not a span at all. */
   readonly empty: boolean
+  /**
+   * The written ends with no place in the chapter order, in `since` → `until` order.
+   *
+   * Empty for a fully open window (`[书首, 至今)`): "not written" is not "written wrong".
+   */
+  readonly unplaced: readonly UnplacedEnd[]
 }
 
 function label(value: string | undefined): string | undefined {
@@ -138,19 +158,22 @@ function bound(value: string | undefined, ordinals: ReadonlyMap<string, number>,
   const written = label(value)
   if (written === undefined) return { placed: true, at: open }
   const at = ordinals.get(written)
-  return at === undefined ? { placed: false, at: open } : { placed: true, at }
+  return at === undefined ? { written, placed: false, at: open } : { written, placed: true, at }
+}
+
+function unplacedEndsOf(since: Bound, until: Bound): UnplacedEnd[] {
+  const ends: UnplacedEnd[] = []
+  for (const [end, boundValue] of [['since', since], ['until', until]] as const) {
+    if (!boundValue.placed && boundValue.written !== undefined) ends.push({ end, text: boundValue.written })
+  }
+  return ends
 }
 
 function windowOf(row: RelationRow, ordinals: ReadonlyMap<string, number>): Window {
   const since = bound(row.since, ordinals, BEFORE_BOOK)
   const until = bound(row.until, ordinals, AFTER_BOOK)
   const placed = since.placed && until.placed
-  return { since, until, placed, empty: placed && until.at <= since.at }
-}
-
-/** Does this edge declare both ends? Only then can "its own window is empty" be judged. */
-function declaresWindow(row: RelationRow): boolean {
-  return label(row.since) !== undefined && label(row.until) !== undefined
+  return { since, until, placed, empty: placed && until.at <= since.at, unplaced: unplacedEndsOf(since, until) }
 }
 
 /** The interval as the author wrote it, so a finding quotes their own words back. */
@@ -158,6 +181,26 @@ function intervalText(row: RelationRow): string {
   const from = label(row.since) ?? '书首'
   const to = label(row.until) ?? '至今'
   return `[${from}, ${to})`
+}
+
+/**
+ * Why the boundary cannot be judged, naming **which end** and what was written there.
+ *
+ * The two sentences differ because the defects differ: with both ends written the author
+ * may have the order backwards or have written a window that closes where it opens, while
+ * a half-declared window has an open end and can only be unplaceable — never empty.
+ */
+function uncomparableDetail(row: RelationRow, unplaced: readonly UnplacedEnd[]): string {
+  const named = unplaced.map((end) => `${end.end}「${end.text}」`).join('与 ')
+  const isAre = unplaced.length === 1 ? '不是' : '都不是'
+  const scope =
+    unplaced.length === 1
+      ? '这一段从哪一章起、到哪一章止都说不清'
+      : '这段时段是否写反、是否为空都无法判定'
+  return (
+    `${row.path} 的 ${named}${isAre}本书的章 id，按章序排不出位置：${scope}` +
+    '（改成本书章 id，或把自由标签留在正文里）'
+  )
 }
 
 export interface RelationPeriodConflict {
@@ -225,17 +268,16 @@ export function relationPeriodFindings(
   const conflicts: RelationPeriodConflict[] = []
   const uncomparable: RelationPeriodUncomparable[] = []
 
-  // 1. A window that cannot hold, judged from the file alone.
+  // 1. A written end this book cannot place, then a window that cannot hold — both judged
+  // from the file alone. The order matters: an unplaceable end makes "is this window empty"
+  // unanswerable, so the note is filed and the emptiness question is left alone.
   for (const row of rows) {
-    if (!declaresWindow(row)) continue
     const window = windowOf(row, ordinals)
-    if (!window.placed) {
+    if (window.unplaced.length > 0) {
       uncomparable.push({
         code: 'RELATION_PERIOD_UNCOMPARABLE',
         path: row.path,
-        detail:
-          `${row.path} 的时段 ${intervalText(row)} 里有一端不是本书的章 id，按章序排不出位置：` +
-          '这段时段是否写反、是否为空都无法判定（改成本书章 id，或把自由标签留在正文里）',
+        detail: uncomparableDetail(row, window.unplaced),
       })
       continue
     }

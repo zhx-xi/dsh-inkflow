@@ -97,9 +97,36 @@ async function seam() {
   return { scanProject: indexer.scanProject, buildIndex: build.buildIndex }
 }
 
+/**
+ * The reply object with every key whose value is `undefined` removed.
+ *
+ * Why not a rule the callers follow (X-8): the host judges each tool reply as lossless JSON
+ * before the model sees it, and `JSON.stringify` drops an `undefined` value — one such key
+ * makes the judged reply differ from the returned one, so the whole call becomes
+ * `value is not lossless JSON`: a successful write that reads as a failure, a list that
+ * cannot be read at all. An absent field has to be an **absent key**, and that is a property
+ * of the reply, so it lives in the factories every read and write path goes through.
+ *
+ * Recursive on plain objects because a nested view (the `period` mark) has the same shape;
+ * `null` is something a file can say, so only `undefined` is dropped.
+ */
+function losslessValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(losslessValue)
+  if (typeof value !== 'object' || value === null) return value
+  const kept: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (entry !== undefined) kept[key] = losslessValue(entry)
+  }
+  return kept
+}
+
+function lossless(reply: Record<string, unknown>): Record<string, unknown> {
+  return losslessValue(reply) as Record<string, unknown>
+}
+
 /** One edge as the model sees it: the frontmatter field names, not the row's. */
 function relationView(row: RelationRow): Record<string, unknown> {
-  return {
+  return lossless({
     id: row.id,
     path: row.path,
     title: row.title,
@@ -110,7 +137,7 @@ function relationView(row: RelationRow): Record<string, unknown> {
     since: row.since,
     until: row.until,
     chapter: row.chapter,
-  }
+  })
 }
 
 /**
@@ -159,7 +186,7 @@ function toPeriodRow(edge: RelationEdge): RelationRow {
 /** The edge plus its window mark, when it has one. */
 function withPeriod(edge: RelationEdge, marks: ReadonlyMap<string, RelationPeriodMark>): Record<string, unknown> {
   const mark = marks.get(edge.path)
-  return { ...edge, ...(mark === undefined ? {} : { period: mark }) }
+  return lossless({ ...edge, ...(mark === undefined ? {} : { period: mark }) })
 }
 
 /** One line of "what is wrong with this edge's window", for the tool's text reply. */

@@ -268,7 +268,7 @@ const CHAPTER_ITEM: JsonSchemaNode = {
     seq: {
       type: 'integer',
       description:
-        "Chapter number to create. Omit to append after the job's highest seq. A number the book already uses is refused later by inkflow_batch_complete (SEQ_CONFLICT), so check inkflow_chapter_list first.",
+        "Chapter number to create. Omit for the book's next free chapter number: the highest seq the book already uses, plus one (gaps are not backfilled, and numbers the job itself already holds raise that floor). It is not the job's own counter, so a new job on a book of eleven chapters starts at 12. A number the book already uses is refused later by inkflow_batch_complete (SEQ_CONFLICT), so check inkflow_chapter_list first.",
     },
     title: { type: 'string', description: 'Chapter title, as it will be written into the chapter file.' },
     volumeId: {

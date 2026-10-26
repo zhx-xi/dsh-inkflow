@@ -240,11 +240,10 @@ const ROUTES: readonly InternalRoute[] = [
     pattern: /^\/chapters\/([^/]+)$/,
     methods: ['GET', 'POST', 'DELETE'],
     query: [],
-    // `eol`/`bom` are the file's own format, read from `GET /chapters/:id` and
-    // handed back on save (ADR-0016): without them the write door can only
-    // normalise, which rewrites a CRLF chapter to LF. Both are validated by
-    // `internal.ts` — the whitelist is about *which* fields may travel, not what
-    // values they carry.
+    // `eol`/`bom` are the file's own format, read from `GET /chapters/:id` and handed back on
+    // save (ADR-0016): without them the write door can only normalise, which rewrites a CRLF
+    // chapter to LF. Both are validated by `internal.ts` — the whitelist is about *which* fields
+    // may travel, not what values they carry.
     body: CHAPTER_SAVE_BODY_FIELDS,
     handle: async (input) => {
       if (input.method === 'POST') return toReply(await writeChapterViaChannel(writeRequestOf(input)))
@@ -263,9 +262,8 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
   {
-    // The single search entry (roadmap X-16): body prose plus every setting kind,
-    // one page at a time. `kinds` (repeated or comma-separated) narrows it; an unusable
-    // index is a 200 answer with `degradedReason`, never a 5xx.
+    // The single search entry (roadmap X-16): body prose plus every setting kind, one page at a time;
+    // `kinds` narrows it, an unusable index is a 200 with `degradedReason` (never a 5xx).
     name: 'search',
     pattern: /^\/search$/,
     methods: ['GET'],
@@ -285,9 +283,8 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The replace preview (X-17): what a batch would change, with the exact
-    // `expected` set an apply must send back. Read-only — it does not even refresh the
-    // index, because a preview is a question and a rebuild during a question is a write.
+    // The replace preview (X-17): what a batch would change, with the exact `expected` set an apply
+    // must send back. Read-only — it does not even refresh the index.
     name: 'replace-preview',
     pattern: /^\/replace$/,
     methods: ['GET'],
@@ -557,13 +554,9 @@ const ROUTES: readonly InternalRoute[] = [
   },
   {
     // The nine-segment brief (ADR-0022 D1/D2, X-23): every segment as
-    // `{id,label,bytes,tokens,truncated,missing}` in the one fixed order
-    // (`outline → promise → characters → voice → facts → foreshadow → world → prevTail →
-    // anchors`), plus the trim records and the totals.
-    //
-    // It is the SAME `buildWritingBrief()` the audit writes from — the preview is not a
-    // second assembly, which is the whole point of D1. GET-only: the read path may refresh
-    // the derived index (like `/chapters` and `/foreshadow`) but writes no file.
+    // `{id,label,bytes,tokens,truncated,missing}` in the fixed order `outline → … → anchors`, plus
+    // the trim records and the totals. GET-only: it may refresh the index, never write — and the
+    // one assembly both routes read is argued in `brief.ts`.
     name: 'brief',
     pattern: /^\/brief$/,
     methods: ['GET'],
@@ -580,18 +573,24 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The injection audit (ADR-0022 D4): `.inkflow/audit/brief-<chapterId>.json`,
-    // same input → same bytes (no clock, no random id, no absolute path). A write route, so
-    // it carries every write guard plus `confirm: true`, and it rebuilds the brief here
-    // instead of trusting a body: a client-supplied segment list would be a second
-    // assembly, and the record must describe the book as it is now.
+    // The injection audit (ADR-0022 D4): `.inkflow/audit/brief-<chapterId>.json`, same input
+    // → same bytes. It takes the SAME addressing and budget keys as `GET /brief`, so the record
+    // is the brief the panel shows — the rest of the why is in `brief.ts`, beside the lookup.
     name: 'brief-audit',
     pattern: /^\/brief\/audit$/,
     methods: ['POST'],
-    query: [],
+    query: ['chapterId', 'chapterSeq', 'budgetTokens', 'tailChars'],
     body: BRIEF_AUDIT_BODY_FIELDS,
-    handle: ({ target, version, body }) =>
-      exportBriefAudit({ sessionId: target.sessionId, root: target.root }, version, {}, body),
+    handle: async ({ target, query, version, body }) => {
+      const reply = await exportBriefAudit(
+        { sessionId: target.sessionId, root: target.root },
+        version,
+        briefOptionsFromQuery(query),
+        body,
+        query.get('chapterId') ?? '',
+      )
+      return withAddressedBy(reply, addressedByOf(query, ['chapterId', 'chapterSeq']))
+    },
   },
   {
     // The review runs of one chapter (X-24/X-26): every recorded pass as a row

@@ -93,6 +93,8 @@ world → facts → foreshadow → prevTail
 4. 「这是最新一次吗」不靠文件名表达，靠内容里的 `chapterDigest`（章节正文 + 相关设定文件的摘要）与当前文件比对得出。
 5. 既有 `exportAuditReport()` 仍按 `auditReportName(now)` 带戳导出 Markdown 报告：那是一次**运行**的产物，和门禁结论不是一件事。两者同名同目录，但一个是可 diff 的事实、一个是可归档的报告——区别写在这里，免得下一个人把它们合并。
 
+> **修订（2026-10-26）**：简报的落盘审计（`POST /brief/audit` → `.inkflow/audit/brief-<chapterId>.json`）补一条同源要求：**它接受与 `GET /brief` 完全相同的寻址与预算参数**（`chapterId` / `chapterSeq` / `budgetTokens` / `tailChars`），因此「记录下来的那一份」就是「面板正在显示的那一份」。D1 说的同一次装配不只是「同一个函数」，还包括**同一份入参**——把选项写死成 `{}` 的那版实现满足前者、违反后者，产物永远是末章的 `brief-<末章id>.json`，而在别的章上按按钮的人拿到的是找不到的文件。口径：`chapterId` 优先于 `chapterSeq`（`addressedBy` 与 `/brief` 一致）；章不存在 → `404 CHAPTER_NOT_FOUND` 且零写盘（错误体带 `nothingWritten: true`）；不传则沿用默认（末章），回执里的 `chapterId` 说明记的是哪一章。
+
 ### 附：本条与 X-28 的分工
 
 历法换算（`calendar.ts`）与「地点不新增 kind」是 X-28 的两半，见 [ADR-0025](0025-calendar-and-place-kind.md)——它们与本条是同一条纪律的两个面：**一个概念只允许一个实现、一个身份**（上下文只有一个装配点，时间只有一个换算函数，地点只有一个 kind）。本条只管上下文的装配与问题的形状，不在此处重复历法口径。

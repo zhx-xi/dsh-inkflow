@@ -331,6 +331,41 @@ function refused(status: number, code: string, extra: JsonRecord = {}): BriefRep
 }
 
 /**
+ * Resolve the chapter a request names, after refreshing the index.
+ *
+ * WHY ONE FUNCTION FOR BOTH ROUTES: `GET /brief` and `POST /brief/audit` must answer about
+ * the SAME chapter for the same `chapterId`, or the file on disk describes a different
+ * brief from the one the panel is showing (ADR-0022 D1 — the audit is not a second
+ * assembly, and which chapter it is about is part of that assembly's input). The lookup
+ * runs AFTER `ensureIndex` and through `chapterPositions()`, the map `/gate` and `/review`
+ * also resolve through, so "which chapter is this id" is answered in one place.
+ *
+ * `path` is `undefined` for "nothing was named" (the default chapter) and, separately, for
+ * "the named chapter does not exist" — the two are told apart by `asked`, because falling
+ * back to the last chapter on a miss is the bug both routes refuse.
+ */
+interface ChapterAddress {
+  readonly ensured: Awaited<ReturnType<typeof ensureIndex>>
+  readonly asked: string
+  readonly path: string | undefined
+}
+
+async function addressChapter(root: string, chapterId: string): Promise<ChapterAddress> {
+  const ensured = await ensureIndex(root)
+  const asked = chapterId.trim()
+  return { ensured, asked, path: asked === '' ? undefined : chapterPositions(root).get(asked)?.path }
+}
+
+/** The one 404 both brief routes answer when `chapterId` names no chapter. */
+function chapterNotFound(asked: string, nothingWritten = false): BriefReply {
+  return refused(404, 'CHAPTER_NOT_FOUND', {
+    chapterId: asked,
+    ...(nothingWritten ? { nothingWritten: true } : {}),
+    hint: 'list the chapters with GET /inkflow/internal/chapters and pass one of the ids it reports',
+  })
+}
+
+/**
  * `GET /brief`: the nine-segment preview.
  *
  * The index is refreshed first, exactly like `/chapters` and `/foreshadow`: the
@@ -339,14 +374,12 @@ function refused(status: number, code: string, extra: JsonRecord = {}): BriefRep
  * rebuild is reported (`indexRebuilt: false`), never fatal — the brief then renders with
  * the segments the files can still answer.
  *
- * CHAPTER ADDRESSING: `chapterId` wins over the `chapterSeq` in `options`,
- * and an id that matches nothing is a **404 `CHAPTER_NOT_FOUND` naming that id** — it does
- * not fall back to the last chapter. The lookup runs AFTER `ensureIndex` and through
- * `chapterPositions()`, the map `/gate` and `/review` resolve through, so "which chapter
- * is this id" is answered by one function in this product. The resolved file travels down
- * as `chapterPath`, which is why the assembly never has to guess: before this, an unknown
- * `chapterId` on `/brief` was simply not read, and the answer was the last chapter with
- * HTTP 200 — a legal response for a target the caller never named.
+ * CHAPTER ADDRESSING: `chapterId` wins over the `chapterSeq` in `options`, and an id that
+ * matches nothing is a **404 `CHAPTER_NOT_FOUND` naming that id** — it does not fall back
+ * to the last chapter. The resolved file travels down as `chapterPath`, which is why the
+ * assembly never has to guess: before this, an unknown `chapterId` on `/brief` was simply
+ * not read, and the answer was the last chapter with HTTP 200 — a legal response for a
+ * target the caller never named.
  */
 export async function buildBrief(
   source: BriefChannelSource,
@@ -354,20 +387,14 @@ export async function buildBrief(
   options: WritingContextOptions,
   chapterId = '',
 ): Promise<BriefReply> {
-  const ensured = await ensureIndex(source.root)
-  const asked = chapterId.trim()
-  const addressed = asked === '' ? undefined : chapterPositions(source.root).get(asked)
-  if (asked !== '' && addressed === undefined) {
-    return refused(404, 'CHAPTER_NOT_FOUND', {
-      chapterId: asked,
-      hint: 'list the chapters with GET /inkflow/internal/chapters and pass one of the ids it reports',
-    })
-  }
+  const address = await addressChapter(source.root, chapterId)
+  if (address.asked !== '' && address.path === undefined) return chapterNotFound(address.asked)
+  const ensured = address.ensured
   const brief = briefFor(
     source.root,
-    addressed === undefined
+    address.path === undefined
       ? options
-      : { ...options, chapterPath: addressed.path, chapterSeq: undefined },
+      : { ...options, chapterPath: address.path, chapterSeq: undefined },
   )
   return {
     status: 200,
@@ -392,13 +419,23 @@ export async function buildBrief(
  * rather than taken from the request body: the record must describe the book as it is now,
  * and a client-supplied segment list would be a second assembly (the drift ADR-0022 D1 is
  * about).
+ *
+ * IT TAKES THE SAME ADDRESSING AND BUDGET AS THE PREVIEW (`chapterId` / `chapterSeq` /
+ * `budgetTokens` / `tailChars`): the button sits on a chapter page, so "record this brief"
+ * means the brief that chapter's page is showing, not whatever the book's last chapter
+ * would be. Before this the options were hard-coded to `{}`, which is why every record was
+ * the last chapter's file under a name the panel never looked for. An unknown `chapterId`
+ * is the same 404 `CHAPTER_NOT_FOUND` as the preview, plus `nothingWritten: true` —
+ * a write route's refusal has to say that it wrote nothing, or the caller cannot tell a
+ * miss from a partial write.
  */
-export function exportBriefAudit(
+export async function exportBriefAudit(
   source: BriefChannelSource,
   version: string,
   options: WritingContextOptions,
   body: JsonRecord,
-): BriefReply {
+  chapterId = '',
+): Promise<BriefReply> {
   const confirm = body['confirm']
   if (confirm !== undefined && typeof confirm !== 'boolean') {
     return refused(400, 'invalid-field', { field: 'confirm', hint: '`confirm` must be `true` (or absent, which is a refusal)' })
@@ -406,7 +443,12 @@ export function exportBriefAudit(
   if (confirm !== true) {
     return refused(400, 'CONFIRM_REQUIRED', { hint: 'recording the brief writes a file under .inkflow/audit/: pass confirm: true' })
   }
-  const written = writeBriefAuditFor(source.root, options)
+  const address = await addressChapter(source.root, chapterId)
+  if (address.asked !== '' && address.path === undefined) return chapterNotFound(address.asked, true)
+  const written = writeBriefAuditFor(
+    source.root,
+    address.path === undefined ? options : { ...options, chapterPath: address.path, chapterSeq: undefined },
+  )
   if (!written.ok) {
     const status = STATUS_BY_CODE[written.code] ?? 500
     return refused(status, written.code, { message: written.message })

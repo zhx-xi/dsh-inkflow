@@ -424,9 +424,9 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 关系边上的 `since` / `until` 是**区间**（`[since, until)`），回答「这段关系从哪一章到哪一章成立」。四条规矩：
 
 - **两端要写成本书的章 id**（或章文件路径，如 `chapters/vol-01-首卷/0007-x.md`）。章序按「卷序 → 卷内章号」算，所以 `vol-02` 的第 1 章排在 `vol-01` 的第 9 章之后，跨卷也不会错。
-- **`since` 不能晚于 `until`**；两端写同一章等于空区间，这条关系「从未成立」，体检会报 `RELATION_PERIOD_CONFLICT`，写入时直接拒。
+- **`since` 不能晚于 `until`**；两端写同一章等于空区间，这条关系「从未成立」，体检会报 `RELATION_PERIOD_CONFLICT`，写入时直接拒。空区间只在**两端都能排进章序**时才判——有一端是自由标签或本书没有的章 id 时，「是不是空的」说不清，就不判（只报下面那一条提示）。
 - **同一对实体 + 同一类型只该有一套时段**。两条边给同一对同类型写了两套既不相同、也不是「在某一章一分为二」的时段，同样报时段矛盾；**首尾相接**（`[第1章, 第5章)` + `[第5章, 第9章)`）是正常写法，不报。
-- **写不清就说写不清**：`since: 永平三年秋` 这类自由标签、或本书没有的章 id，插件**不猜**，只报一条 `RELATION_PERIOD_UNCOMPARABLE`（提示级），**不阻断任何写入**。想让时段参与判定就换成章 id；不打算按章算，宁可不填。
+- **写不清就说写不清**：`since: 永平三年秋` 这类自由标签、或本书没有的章 id，插件**不猜**，只报一条 `RELATION_PERIOD_UNCOMPARABLE`（提示级），**不阻断任何写入**。判据落在**写了的那一端**上，不是「两端都写了才看」：只写了 `since`、`until` 空着（「至今仍成立」这种正常写法）一样会报——既要判就得说清起点在哪。一条边不论有几端写不清都只报**一条**；**两端都不写就不报**，那表示「从头到尾都成立」，不是写错了。想让时段参与判定就换成章 id；不打算按章算，宁可不填。
 
 时段矛盾是「这条关系什么时候成立」的问题，**方向矛盾**是「谁对谁」的问题，两者各自报、互不合并；体检报告里每行都点名是**哪两个文件**在冲突。
 
@@ -589,6 +589,8 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 
 **「落盘审计」会在 `.inkflow/audit/brief-<章 id>.json` 记一份**：只记段 id、字节数、token 数、是否被裁、裁剪比例，外加第一行书名的原文（`header` 字段），**不记正文**，也**不记时间戳与绝对路径**——所以同一章、同一套文件跑两次，文件字节完全相同（`git diff` 里看得出来「今天和昨天一样」）。它跟「体检」页导出的 `audit-时间戳.md` 不是一回事：那个是某一次运行的报告，这个是「这一章此刻的事实」。
 
+**它记的是「你正在看的这一章」**：按钮会把页面上显示的那一章一起带上，所以文件名里的章 id 与你眼前的章是同一个——在第二章点「落盘审计」，得到的是 `brief-<第二章 id>.json`，不是这本书最后一章的那份。自己写脚本调这个接口时同理：它接受与读简报**完全同一组**参数（`chapterId` / `chapterSeq` / `budgetTokens` / `tailChars`），`chapterId` 优先于 `chapterSeq`；指了一个不存在的章会直接回 `CHAPTER_NOT_FOUND` 并且**一个文件都不写**（错误里带 `nothingWritten: true`）；什么都不传则沿用默认的「最后一章」，回执里的 `chapterId` 说明这次记的是哪一章。
+
 **预览就是注入**：preview 与写进审计记录的那一份来自同一次计算、同一份入参，所以你在页面上看到的九段与模型实际收到的一致——不存在「面板一套、模型一套」。
 
 **模型收到的就是这九段**：写作会话系统提示里那一段，和上面这张表是同一个函数产出的同一份文本，不是「面板照着一份、注入另拼一份」。所以**页面上看不到的段，模型也看不到**：本章大纲没写 `- [承诺]` / `- [锚点]` 那两行时，模型那边同样没有这两段的内容（不是被藏起来）。裁剪也一样——页面上的「裁剪记录」就是模型那边实际发生的那一次。
@@ -619,7 +621,7 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 | `inkflow_etl_plan` | 只读预览：13 张内容表各有多少行、每行落到哪（章 / 角色卡 / 世界观条目 / 大纲 / 伏笔 / 时间线 / 关系 / 资料登记），实体数与字数偏差是否在阈值内，**章号断层**，以及要你裁决的清单 | 不会（旧库以只读方式打开，书只做 stat） |
 | `inkflow_etl_apply` | `action: "apply"` 执行（需 `confirm: true` + 预览给的 `planToken`）；`action: "rollback"` 撤掉某一次执行（同样需确认） | 会；每次执行一个备份包 |
 
-**13 张表分别去哪**：`volumes` → 卷目录 + `outlines/vol-NN-*.md`；`chapters` → `chapters/**/NNNN-*.md`；`chapter_summaries` → `library/etl-chapter-summaries.md` 登记；`characters` / `character_groups` → `characters/*.md` 与卡上的 `group` 字段；`world_categories` / `world_settings` → `world/<分类>/<slug>.md`；`outlines` / `plot_points` / `story_arcs` → `outlines/*.md` 与正文的 `- [故事线] 情节点` 列表；`foreshadowings` → `foreshadowing/*.md`；`timeline_events` → `timeline/*.md`；`knowledge_relations` → `relations/*.md`。`facts/` 是 0.3.0 才有的域，旧库没有来源，所以报告里它是 0 行，不是被漏掉。
+**13 张表分别去哪**：`volumes` → 卷目录 + `outlines/vol-NN-*.md`；`chapters` → `chapters/**/NNNN-*.md`；`chapter_summaries` → `library/etl-chapter-summaries.md` 登记；`characters` / `character_groups` → `characters/*.md` 与卡上的 `group` 字段；`world_categories` / `world_settings` → `world/<分类>/<slug>.md`；`outlines` / `plot_points` / `story_arcs` → `outlines/*.md` 与正文的 `- [故事线] 情节点` 列表；`foreshadowings` → `foreshadowing/*.md`；`timeline_events` → `timeline/*.md`；`knowledge_relations` → `relations/*.md`。`facts/` 是旧 InkFlow 没有的域（旧库没有来源表），所以报告里它是 0 行，不是被漏掉。
 
 **章号断层不会被自动修**：旧库的章号可能不连续（实测一本缺 `49`、`50`，另一本缺 `121–137`）。`plan` 会把「缺哪些号」列出来，`apply` **按原编号落盘**；要连续编号必须显式传 `renumber: "compact"` 重跑（建议在空书上做），那是你的决定，不是插件的。
 
@@ -728,7 +730,7 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 
 **流程**（面板与工具是同一套动作）：
 
-1. 你对 AI 说「先排 20 章草稿，从第 31 章开始」。它会调 `inkflow_batch_enqueue` 建作业：给每章登记标题、可选的大纲摘要与目标字数。**这一步一个字节都不写正文**——不建章文件、不动 `chapters/index.json`、不碰 `index/`，只在书的 `.inkflow/jobs/<作业 id>/` 里落了 `meta.json` 与每章一个 `chapters/<seq>.json`。
+1. 你对 AI 说「先排 20 章草稿，从第 31 章开始」。它会调 `inkflow_batch_enqueue` 建作业：给每章登记标题、可选的大纲摘要与目标字数。**这一步一个字节都不写正文**——不建章文件、不动 `chapters/index.json`、不碰 `index/`，只在书的 `.inkflow/jobs/<作业 id>/` 里落了 `meta.json` 与每章一个 `chapters/<seq>.json`。**章号可以不给**：不传 `seq` 时取「书里已有的最高章号 + 1」——不是作业自己的下一个号，所以一本已有 11 章的书上新开作业从 12 起（你写过的号空着也不回填，因为章号就是阅读顺序；明确给出的号仍然优先）。
 2. AI 反复调 `inkflow_batch_take` 领任务：每次领到最多 `concurrency` 章（默认 3），每章附带**写作上下文**（人物、语言基因、账本、伏笔、世界书——和真实注入用的是同一套装配）。领了不交回，再领就什么都没有：并发上限是整本作业的上限，不是单次调用的上限。
 3. AI 写完一章就调 `inkflow_batch_complete`（作业 id + `seq` + 正文）。**先过门禁再落盘**：八项门禁跑在这份草稿上（字数 / 章末钩子 / 去 AI 味（六维 + 太碎）/ 与设定一致 / 敏感自查 / 平台规则 / 机械校对 / 退化检测：复读、截断、占位语、工程词泄漏），判决写进这一章的记录。
 4. 判决干净 → 建章文件、写正文、把**文件字节的 sha256** 记进这一章的记录。有 warning 及以上（或你建作业时把 `pauseOn` 设成 `"any"`，连提示也算）→ **作业暂停，正文一个字节都不写**，草稿原样留在作业记录里等你看。
@@ -748,7 +750,7 @@ GBK 是**内核自带**的码表（宿主 Node 带 full-ICU），插件不引依
 
 | 工具 | 做什么 | 会不会改正文 |
 |---|---|---|
-| `inkflow_batch_enqueue` | 建作业/加章：登记每章要写什么（标题、大纲、字数预算）、并发与每批上限、暂停策略；同 `seq` 幂等跳过 | 不会（只写 `.inkflow/jobs/`） |
+| `inkflow_batch_enqueue` | 建作业/加章：登记每章要写什么（标题、大纲、字数预算）、并发与每批上限、暂停策略；同 `seq` 幂等跳过；不传 `seq` 取书的下一章号（书内最高号 + 1，空档不回填） | 不会（只写 `.inkflow/jobs/`） |
 | `inkflow_batch_take` | 领下一批待写章，附上每章的写作上下文；同时是读路径——没有可领的章时也返回整个作业状态与门禁结论 | 不会 |
 | `inkflow_batch_complete` | 交回某一章的正文：先跑八项门禁（第 8 项退化检测专抓模型自己写崩的复读/截断/占位/工程词），干净就落盘并记摘要，有 warning 就暂停并留着草稿（回答里 `written: false`） | 会（干净时）；暂停时不会 |
 | `inkflow_batch_approve` | 批准被门禁拦下的草稿并写进正文（需 `confirm: true`）；`seq` 批一章，`all: true` 批全部 | 会（先有草稿） |
