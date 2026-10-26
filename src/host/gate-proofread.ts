@@ -84,17 +84,27 @@ function imbalanceLine(body: string, open: string, close: string): number {
   return lastOpen >= 0 ? lineOf(body, lastOpen) : 1
 }
 
-/** Exactly one character differs, same length. */
+/**
+ * Exactly one character differs, same length, and the difference is **not** the first one.
+ *
+ * See `nearNameHits` for why index 0 is excluded: it is the surname position, and an
+ * unsegmented script puts any character there in front of a name's tail every time that tail
+ * is also an ordinary word.
+ */
 function differByOne(left: string, right: string): boolean {
   const a = [...left]
   const b = [...right]
   if (a.length !== b.length) return false
   let diff = 0
+  let first = -1
   for (let at = 0; at < a.length; at += 1) {
-    if (a[at] !== b[at]) diff += 1
+    if (a[at] !== b[at]) {
+      diff += 1
+      if (first < 0) first = at
+    }
     if (diff > 1) return false
   }
-  return diff === 1
+  return diff === 1 && first > 0
 }
 
 interface NameHit {
@@ -110,6 +120,22 @@ interface NameHit {
  * common word that shares one character with a name ("清风" vs 「清音」) becomes a candidate,
  * and a checker whose noise exceeds its signal is worse than none. The limitation is
  * stated here rather than discovered by the author in a report they stop reading.
+ *
+ * WHY A DIFFERENCE IN THE **FIRST** CHARACTER DOES NOT COUNT. Chinese is written without
+ * word separators, so a declared name of n characters contributes its last n−1 characters as
+ * a window whenever those characters appear as a word: any single character in front of them
+ * forms a same-length window that differs at index 0 and nothing else. Measured on real
+ * prose, every reported hit was that artifact — 看见**静山** (name 叶静山), 的**掌门** (alias
+ * 小掌门), 第**三刀** (name 柳三刀), 叫**知秋** (name 叶知秋) — four false positives in one
+ * chapter, on text the author had written themselves. The surname is the first character, so
+ * a name is never *introduced* by a stray character in front of its tail: index 0 is the one
+ * position where "one character off" carries no signal at all.
+ *
+ * The cost is a miss: a typo in the surname (夜静山 for 叶静山) is silent here. That trade is
+ * deliberate — the check exists to catch a mangled *given* name (李慕青 for 李慕白, the case
+ * its test pins), and a rule that fires on 4 of every 5 chapters is a rule authors turn off,
+ * not a rule that catches typos. `GATE_PROOF_NEAR_NAME` is also waivable per line now, so a
+ * remaining false positive costs one whitelist entry instead of a stopped batch.
  */
 function nearNameHits(input: GateInput): NameHit[] {
   const declared = new Map<string, string>()

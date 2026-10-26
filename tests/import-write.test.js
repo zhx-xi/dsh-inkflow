@@ -774,3 +774,34 @@ test('a 200-chapter, 60万字 manuscript imports without losing a paragraph', as
       `写出与索引 ${String(Math.round(value.ms))} ms · 备份包 ${String(value.backup.files)} 个文件`,
   )
 })
+
+test('the preview renders the plan it was handed, and prints the token', async () => {
+  const root = book()
+  const dir = workdir('inkflow-import-tool3-')
+  const source = sourceFile('旧稿.txt', Buffer.from(CHAPTERS_SOURCE, 'utf8'))
+  const tools = makeTools(join(dir, 'state'), root)
+  const tool = tools.get('inkflow_library_import')
+  const call = (args) => tool.execute(args, { signal: AbortSignal.timeout(20_000), agent: { id: 'test-session' } })
+
+  const preview = await call({ sourcePath: source })
+  assert.equal(preview.ok, true, JSON.stringify(preview))
+  const rendered = tool.output.render({}, preview).map((block) => block.text).join('\n')
+
+  // The plan action answers FLAT (`{ok, root, action, …planned}`) while apply nests the plan.
+  // Reading `value.plan` unconditionally printed `? · ? · 行尾 ?`, "0 章", and an empty token —
+  // a preview that shows nothing AND loses the token `apply` needs.
+  assert.doesNotMatch(rendered, /\? · \? ·/u, 'a preview must not render empty placeholders')
+  assert.match(rendered, /导入预览（未写盘）/u)
+  assert.match(rendered, /utf8/u)
+  assert.match(rendered, /第一章 入山/u)
+  assert.match(rendered, /2 章/u)
+  assert.equal(preview.planToken.length, 64, 'the preview carries a real token')
+  assert.match(rendered, new RegExp(preview.planToken, 'u'), 'and the render hands it to the caller')
+
+  // The apply path still renders from the nested plan.
+  const applied = await call({ sourcePath: source, action: 'apply', confirm: true, planToken: preview.planToken })
+  assert.equal(applied.ok, true, JSON.stringify(applied))
+  const appliedText = tool.output.render({}, applied).map((block) => block.text).join('\n')
+  assert.match(appliedText, /已导入/u)
+  assert.match(appliedText, /第一章 入山/u)
+})
