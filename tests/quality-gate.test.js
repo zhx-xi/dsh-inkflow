@@ -732,3 +732,35 @@ test('质量门禁：工具 inkflow_gate_check 回八项、落一个文件，wri
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('门禁 PROOF_NEAR_NAME：名字的尾字被前面的普通字借去组词时，不再当成写错名字', () => {
+  // 四例都来自真实稿件的实测误报：窗口是「前面的字 + 名字的后两字」，差的那一个字在首字
+  // （姓）的位置上。中文不分词，只要名字的后两字本身也是常用词，这种窗口就会自然出现。
+  const roster = [
+    { id: 'char-jingshan', name: '叶静山', aliases: [] },
+    { id: 'char-zhangmen', name: '为真子', aliases: ['小掌门'] },
+    { id: 'char-sandao', name: '柳三刀', aliases: [] },
+    { id: 'char-zhiqiu', name: '叶知秋', aliases: [] },
+    { id: 'char-mubai', name: '李慕白', aliases: [] },
+  ]
+  const body = '他看见静山那边起了雾，的掌门位置上没人，第三刀落下时，叫知秋的后生应了一声。屋里只剩沉静。\n'
+  const report = gateBody(body, { characters: roster })
+  assert.deepEqual(
+    codesOf(report).filter((code) => code === 'GATE_PROOF_NEAR_NAME'),
+    [],
+    '看见静山 / 的掌门 / 第三刀 / 叫知秋 都是「前一字 + 名字后两字」，不是写错名字',
+  )
+
+  // 名字中间或末字写错仍然报：那是真的错字，而且没有上面的结构性假象。
+  const typo = gateBody('李慕青走进院子，把伞收了。\n', { characters: roster })
+  assert.ok(codesOf(typo).includes('GATE_PROOF_NEAR_NAME'), 'given-name typo still fires')
+
+  // 首字写错（姓）刻意不报——这是这条规则的已知代价，写成用例而不是留在注释里：
+  // 不分词就分不出「前一字 + 名字后两字」与「姓写错了」。
+  const surnameTypo = gateBody('夜静山走进院子，把伞收了。\n', { characters: roster })
+  assert.equal(
+    codesOf(surnameTypo).includes('GATE_PROOF_NEAR_NAME'),
+    false,
+    'a wrong surname is silent: it is indistinguishable from the artifact this rule now ignores',
+  )
+})
