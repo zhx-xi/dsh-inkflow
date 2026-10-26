@@ -127,6 +127,13 @@ export interface EditorState {
   /** What the Host last confirmed — the point the file is at. */
   saved: EditorFields
   fingerprint: FileFingerprint | null
+  /**
+   * The format the file is in NOW: the one it was read in, replaced by whatever the Host
+   * echoes after a save or a reload. Rendered beside the path (a CRLF file must say so —
+   * it is the reason a one-character edit is not a whole-file diff), so it is no longer
+   * only a payload field.
+   */
+  style: ChapterStyle
   phase: SavePhase
   conflict: ConflictInfo | null
   errorCode: string | null
@@ -203,7 +210,8 @@ export function createEditorModel(options: EditorModelOptions): EditorModel {
   let fields: EditorFields = { ...options.fields }
   let saved: EditorFields = { ...options.fields }
   let fingerprint: FileFingerprint | null = options.fingerprint ?? null
-  // Carried, never rendered: only the save payload and a reload touch it.
+  // Carried AND rendered beside the path: a save writes these back, and the editor twice
+  // adopts what the Host says it actually wrote (a declaration cannot outvote the disk).
   let style: ChapterStyle = { ...(options.style ?? DEFAULT_STYLE) }
   let phase: SavePhase = 'idle'
   let conflict: ConflictInfo | null = null
@@ -225,6 +233,7 @@ export function createEditorModel(options: EditorModelOptions): EditorModel {
       fields: { ...fields },
       saved: { ...saved },
       fingerprint,
+      style: { ...style },
       phase,
       conflict: conflict === null ? null : { current: conflict.current, changed: [...conflict.changed] },
       errorCode,
@@ -426,4 +435,72 @@ export function createEditorModel(options: EditorModelOptions): EditorModel {
       listeners.clear()
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// The file footer
+//
+// WHY IT LIVES HERE AND NOT IN THE TREE: the chapter tree used to print every file's path
+// under its heading, which doubled the height of a list whose job is "find chapter 43". The
+// path answers a different question — "which file am I editing" — and that question is asked
+// once, about the one chapter that is open. So the facts moved beside the editor, and the
+// formatter that assembles them is a pure function here, where `node --test` can read it.
+// ---------------------------------------------------------------------------
+
+/** What the footer is given: the path, the format, and the fingerprint of the bytes on disk. */
+export interface FileFacts {
+  /** Project-relative path (`chapters/vol-01/0003-出门.md`), never an absolute one. */
+  path: string
+  /** The file's format; omitted only for a chapter the Host could not describe. */
+  style?: ChapterStyle | undefined
+  /** `null`/absent = the Host did not fingerprint it (the size and mtime are then unknown). */
+  fingerprint?: FileFingerprint | null | undefined
+}
+
+/**
+ * `2048` → `2.0 KB`. Binary units, because this is a file size in a git repository, not a
+ * disk vendor's decimal one — and one decimal place is enough to see a chapter grow.
+ */
+export function describeBytes(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return '大小未知'
+  if (size < 1024) return `${String(size)} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * `2026-10-27 02:03:15`, in the reader's own timezone and fixed-width.
+ *
+ * Not `toLocaleString`: two files opened one after the other are compared by eye, and a
+ * locale-dependent format makes that comparison cost a translation. An unparseable stamp is
+ * shown as it arrived rather than as "invalid date".
+ */
+export function describeMtime(ms: number): string {
+  const at = new Date(ms)
+  if (Number.isNaN(at.getTime())) return String(ms)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`
+}
+
+/**
+ * The one line under the editor: `chapters/…/0003-出门.md · 2.0 KB · CRLF · BOM · 改于 …`.
+ *
+ * Two rules keep it honest: a missing fingerprint is stated (`大小未知`), never rendered as
+ * `0 B`; and `LF`/no-BOM — the default for every file this plugin writes — is printed for the
+ * line ending only. A BOM is the exception, so only a BOM is worth a word.
+ */
+export function describeFileFacts(facts: FileFacts): string {
+  const path = facts.path.trim() === '' ? '未命名文件' : facts.path.trim()
+  // `?? null` because the caller may pass `undefined` (a detail answer with no fingerprint)
+  // as well as an explicit `null` (a chapter the Host could not stat).
+  const fingerprint = facts.fingerprint ?? null
+  const parts: string[] = [path, fingerprint === null ? '大小未知' : describeBytes(fingerprint.size)]
+  if (facts.style !== undefined) {
+    parts.push(facts.style.eol === 'crlf' ? 'CRLF' : 'LF')
+    if (facts.style.bom) parts.push('BOM')
+  }
+  if (fingerprint !== null && fingerprint.mtimeMs > 0) {
+    parts.push(`改于 ${describeMtime(fingerprint.mtimeMs)}`)
+  }
+  return parts.join(' · ')
 }

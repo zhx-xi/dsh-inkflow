@@ -25,8 +25,8 @@ import {
   AUTOSAVE_DELAY_MS,
   CHAPTER_STATUSES,
   SAVE_LABELS,
-  UNDO_GROUP_MS,
   createEditorModel,
+  describeFileFacts,
   isChapterStatus,
 } from './editor-model.js'
 import type {
@@ -364,8 +364,14 @@ export function EditorPane({ sessionId, chapterId, detail, volumes, onSaved, onG
         }}
       />
 
+      {/*
+        The footer answers "which file am I editing": the chapter tree used to print every
+        path under every heading, which doubled a list whose job is to find a chapter. Read
+        from `state`, not from the props, so a save that changed the file's size or mtime
+        keeps this line true without a reload.
+      */}
       <div style={{ ...mono, ...muted }}>
-        撤销合并粒度 {UNDO_GROUP_MS}ms · 保存成功后清空撤销栈 · 冲突必须二选一，默认不覆盖
+        {describeFileFacts({ path: detail.path ?? chapterId, style: state.style, fingerprint: state.fingerprint })}
       </div>
     </div>
   )
