@@ -37,7 +37,6 @@ import {
   flattenOutlineTree,
   outlineItemOf,
   parseOutlinePlotPoints,
-  plotPointLabel,
 } from './outline-model.js'
 import type { OutlineNode, OutlinePlotPoint, OutlineRow } from './outline-model.js'
 
@@ -166,9 +165,10 @@ function Field({ name, value }: { name: string; value: string | number | null })
 /** One plot point: its `[标签]` as a badge, then the text the author wrote. */
 function PlotPointLine({ point }: { point: OutlinePlotPoint }) {
   return (
-    // The tooltip carries the line exactly as the file spells it, so a reader can always
-    // see whether the tag is there — the badge is a rendering, the file is the truth.
-    <li title={plotPointLabel(point)} style={{ ...mono, margin: '2px 0' }}>
+    // The tooltip carries `point.raw` — the file's own line, `- ` and all — so a reader can
+    // always check the badge against the file: a tag the parser refused still stands in the
+    // line, and a joined continuation still reads as two lines there.
+    <li title={point.raw} style={{ ...mono, margin: '2px 0' }}>
       {point.arc === undefined ? null : <span style={tagBadgeStyle}>[{point.arc}]</span>}
       <span style={{ wordBreak: 'break-word' }}>{point.text}</span>
     </li>

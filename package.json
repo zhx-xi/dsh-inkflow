@@ -1,6 +1,6 @@
 {
   "name": "dsh-inkflow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "InkFlow: one DeepSeek Harness plugin for the whole long-form novel writing workflow — projects, volumes, chapters, outlines, characters, world settings, foreshadowing, timelines, an in-Harness workbench and inkflow_* tools. Local-first, pure TypeScript.",
