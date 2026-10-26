@@ -239,11 +239,10 @@ const ROUTES: readonly InternalRoute[] = [
     pattern: /^\/chapters\/([^/]+)$/,
     methods: ['GET', 'POST', 'DELETE'],
     query: [],
-    // `eol`/`bom` are the file's own format, read from `GET /chapters/:id` and
-    // handed back on save (ADR-0016): without them the write door can only
-    // normalise, which rewrites a CRLF chapter to LF. Both are validated by
-    // `internal.ts` — the whitelist is about *which* fields may travel, not what
-    // values they carry.
+    // `eol`/`bom` are the file's own format, read from `GET /chapters/:id` and handed back on
+    // save (ADR-0016): without them the write door can only normalise, which rewrites a CRLF
+    // chapter to LF. Both are validated by `internal.ts` — the whitelist is about *which* fields
+    // may travel, not what values they carry.
     body: CHAPTER_SAVE_BODY_FIELDS,
     handle: async (input) => {
       if (input.method === 'POST') return toReply(await writeChapterViaChannel(writeRequestOf(input)))
@@ -262,9 +261,8 @@ const ROUTES: readonly InternalRoute[] = [
     handle: async (input) => toReply(await moveChapterViaChannel(writeRequestOf(input))),
   },
   {
-    // The single search entry (roadmap X-16): body prose plus every setting kind,
-    // one page at a time. `kinds` (repeated or comma-separated) narrows it; an unusable
-    // index is a 200 answer with `degradedReason`, never a 5xx.
+    // The single search entry (roadmap X-16): body prose plus every setting kind, one page at a time.
+    // `kinds` (repeated or comma-separated) narrows it; an unusable index is a 200 answer with `degradedReason`, never a 5xx.
     name: 'search',
     pattern: /^\/search$/,
     methods: ['GET'],
@@ -284,9 +282,9 @@ const ROUTES: readonly InternalRoute[] = [
     },
   },
   {
-    // The replace preview (X-17): what a batch would change, with the exact
-    // `expected` set an apply must send back. Read-only — it does not even refresh the
-    // index, because a preview is a question and a rebuild during a question is a write.
+    // The replace preview (X-17): what a batch would change, with the exact `expected` set an
+    // apply must send back. Read-only — it does not even refresh the index, because a preview is
+    // a question and a rebuild during a question is a write.
     name: 'replace-preview',
     pattern: /^\/replace$/,
     methods: ['GET'],
