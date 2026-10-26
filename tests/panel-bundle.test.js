@@ -103,10 +103,28 @@ async function loadWizardModel() {
   return import(`data:text/javascript;base64,${code}`)
 }
 
+/** The brief page's pure view model, bundled the same way. */
+async function loadBriefModel() {
+  const esbuild = require('esbuild')
+  const result = await esbuild.build({
+    entryPoints: [join(ROOT, 'src/client/brief-model.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    target: 'node22',
+    write: false,
+    logLevel: 'silent',
+  })
+  const file = result.outputFiles[0]
+  const code = Buffer.from(file.text, 'utf8').toString('base64')
+  return import(`data:text/javascript;base64,${code}`)
+}
+
 const model = await loadPanelModel()
 const hub = await loadHubModel()
 const shared = await loadSharedModel()
 const wizard = await loadWizardModel()
+const briefModel = await loadBriefModel()
 
 // ---------------------------------------------------------------------------
 // 1. The built bundle: one registration, in the session-scoped View slot
@@ -1013,4 +1031,23 @@ test('the library detail pane keeps its header OUT of the scrolling box (issue 1
   assert.equal(depth, 1, 'the scrolling box is a direct child of the pane root: the header is not in its scroll flow')
   assert.ok(before.includes('编辑'), 'the 编辑 button belongs to the header that never scrolls')
   assert.ok(before.includes('item.path'), 'so does the path the author copies')
+})
+
+test('the brief page records the chapter it is showing, not the book’s default one', () => {
+  const route = briefModel.briefAuditRoute
+  assert.equal(
+    route({ chapterId: 'ch-0002', chapterPath: 'chapters/vol-01/0002-起风.md' }),
+    '/brief/audit?chapterId=ch-0002',
+    'the button names the chapter the page is showing, so the record is THAT brief',
+  )
+  // The id travels as data: an id with a space or a slash must not turn into another URL.
+  assert.equal(
+    route({ chapterId: 'ch 0002/x', chapterPath: 'chapters/x.md' }),
+    '/brief/audit?chapterId=ch%200002%2Fx',
+    'the id is encoded, never pasted into the path',
+  )
+  // A book with no chapter yet answers `no-chapter` and points at no file: there is nothing
+  // to name, and sending that literal back would be a 404 for a chapter nobody asked about.
+  assert.equal(route({ chapterId: 'no-chapter', chapterPath: null }), '/brief/audit')
+  assert.equal(route({ chapterId: null, chapterPath: null }), '/brief/audit')
 })
