@@ -122,6 +122,10 @@ const groupRowStyle = {
   cursor: 'pointer',
   textAlign: 'left',
   width: '100%',
+  // A row of three boxes (caret, name, count): without flex a block-level svg starts its own line.
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
 } as const
 
 function SectionTitle({ children }: { children: string }) {
@@ -455,7 +459,7 @@ export function LibraryView({
             <button type="button" style={groupRowStyle} onClick={() => toggle(group.kind)} aria-expanded={expanded.includes(group.kind)}>
               <Icon name={expanded.includes(group.kind) ? 'caret-down' : 'caret'} size={12} />
               {group.label}
-              <span style={{ ...muted, ...mono, marginLeft: 6 }}>{group.total}</span>
+              <span style={{ ...muted, ...mono, marginLeft: 2 }}>{group.total}</span>
               {group.truncated ? <span style={{ ...muted, fontSize: 11 }}> （已达上限，列表不完整）</span> : null}
             </button>
             {/* X-20: the import entry lives in the 资料 group, not in a tab of its own — importing

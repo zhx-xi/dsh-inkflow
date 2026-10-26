@@ -247,3 +247,36 @@ test('a two-step confirm still says the word, so the icon is never the only cue'
   assert.ok(proposal.applyActionLabel(true).startsWith('确认'))
   assert.ok(proposal.rollbackActionLabel(true).startsWith('确认'))
 })
+
+/**
+ * An icon must not start a line of its own.
+ *
+ * The first icon pass put `display: 'block'` on the shared `<svg>`, which is what an SVG
+ * defaults to anyway. Inside a flex row (the tab bar, the shared action button) that was
+ * invisible; inside an inline `<span>` (a tree caret) and inside a plain `<button>` with no
+ * `display` of its own (设定库's group row) it pushed the glyph onto its own line box — the
+ * caret rendered ABOVE its label instead of beside it.
+ *
+ * These two assertions pin the fix at the two places the class of bug lives: the one component
+ * that draws every icon, and the one row that was reported.
+ */
+test('icons flow with the text they sit next to, never above it', () => {
+  const icons = sourceOf('icons.tsx')
+  assert.match(
+    icons,
+    /display: 'inline-block'/,
+    'the shared svg must be inline-block: block-level starts a new line in a span or a plain button',
+  )
+  assert.match(icons, /verticalAlign: '-2px'/, 'and sit on the text baseline rather than the descender line')
+  assert.doesNotMatch(icons, /display: 'block'/, 'block is the value that broke the caret in 设定库')
+})
+
+test('设定库 group rows lay the caret, the name and its count on one line', () => {
+  const source = sourceOf('library.tsx')
+  const start = source.indexOf('const groupRowStyle = {')
+  assert.ok(start > 0, 'the group row has its own style object')
+  const style = source.slice(start, source.indexOf('} as const', start))
+  assert.match(style, /display: 'flex'/, 'a row, not a line of text')
+  assert.match(style, /alignItems: 'center'/, 'the caret and the 12px label share a centre line')
+  assert.match(style, /gap: /, 'spacing comes from the container, not from a margin on the count')
+})
