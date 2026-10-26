@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import {
   EMPTY_BATCH_NOTE,
   batchPanelState,
@@ -37,6 +38,7 @@ import {
 import type { BatchJobView, BatchPageView } from './batch-model.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 
@@ -60,16 +62,6 @@ const cardStyle = {
 const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
-
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
 
 const rowStyle = {
   display: 'grid',
@@ -195,7 +187,8 @@ export function BatchView({ sessionId }: BatchViewProps) {
             </div>
             {pause !== null ? <div style={{ color: 'var(--dsw-alias-state-warning-primary)', marginTop: 6 }}>{pause}</div> : null}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-              <button type="button" style={buttonStyle} disabled={busy || blocked !== null} onClick={() => void resume()}>
+              <button type="button" style={ACTION_BUTTON_STYLE} disabled={busy || blocked !== null} onClick={() => void resume()}>
+                <Icon name="play" size={13} />
                 {busy ? '续跑中…' : '续跑'}
               </button>
               {blocked !== null ? <span style={muted}>{blocked}</span> : null}

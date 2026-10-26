@@ -286,9 +286,21 @@ export function describeHunk(row: HunkRow): string {
   return `第 ${String(row.lineFrom)} 行起 · ${describeHunkKind(row.kind)} · +${String(row.added)} −${String(row.removed)} · ${describeHunkStatus(row.status)}`
 }
 
-/** `共 3 段：待定 3 · 接受 0 · 拒绝 0` */
+/**
+ * One hunk's head: `第 3 处`.
+ *
+ * WHY NOT A HASH NUMBER: the hash form is the wire's spelling (`index`), and a page read by an
+ * author should say what the thing is — the third block of changes — while the address line
+ * keeps the file position. 段 was the wrong word too: it reads as a paragraph or as one of the
+ * brief's segments, and a hunk is neither.
+ */
+export function hunkLabel(index: number): string {
+  return `第 ${String(index)} 处`
+}
+
+/** `共 3 个改动块：待定 3 · 接受 0 · 拒绝 0` */
 export function describeCounts(counts: ProposalCounts): string {
-  return `共 ${String(counts.total)} 段：待定 ${String(counts.pending)} · 接受 ${String(counts.accepted)} · 拒绝 ${String(counts.rejected)}`
+  return `共 ${String(counts.total)} 个改动块：待定 ${String(counts.pending)} · 接受 ${String(counts.accepted)} · 拒绝 ${String(counts.rejected)}`
 }
 
 /** The proposal list split at "still waiting on the author" vs "finished". */
@@ -366,8 +378,8 @@ export function preferredProposalId(page: ProposalPage): string | null {
  */
 export function applyBlocked(counts: ProposalCounts, status: string): string | null {
   if (status !== 'open') return status === 'applied' ? '这个提案已经应用过了；要改回去用「回滚」' : '这个提案已经回滚，不能再应用'
-  if (counts.pending > 0) return `还有 ${String(counts.pending)} 段没有决定——未决定的段不会被写入`
-  if (counts.accepted === 0) return '每一段都被拒绝了，没有可写入的内容'
+  if (counts.pending > 0) return `还有 ${String(counts.pending)} 个改动块没有决定——没决定的改动块不会被写入`
+  if (counts.accepted === 0) return '每一个改动块都被拒绝了，没有可写入的内容'
   return null
 }
 
@@ -442,9 +454,9 @@ export function describeOutcome(
     case 'FILE_CHANGED':
       return '章节在你做决定之后被改过（FILE_CHANGED）：你的改动被保留，什么都没写。重新生成提案再逐段决定。'
     case 'PROPOSAL_PENDING_HUNKS':
-      return '还有段落没决定：未决定的段不会被写入，所以这次应用被拒绝。'
+      return '还有改动块没决定：没决定的改动块不会被写入，所以这次应用被拒绝。'
     case 'PROPOSAL_NOTHING_ACCEPTED':
-      return '每一段都被拒绝了，没有可写入的内容。'
+      return '每一个改动块都被拒绝了，没有可写入的内容。'
     case 'BACKUP_CONFLICT':
       return '应用之后章节又被改过，回滚不会覆盖你的新正文（BACKUP_CONFLICT）。'
     case 'CONFIRM_REQUIRED':
@@ -460,6 +472,11 @@ export function describeOutcome(
   }
 }
 
-/** The page's one-line explanation of where proposals land, printed in the header. */
+/**
+ * The page's one-line explanation of where proposals land, and of the three pairs of words
+ * a reader has to keep apart: 改动块 (a hunk: one contiguous block of removed/added lines),
+ * 接受/拒绝 (per block, before anything is written) and 应用/回滚 (the whole file, with a
+ * backup package each way).
+ */
 export const PROPOSAL_NOTE =
-  '提案落在书的 .inkflow/proposals/ 里：未确认的提案一个字节都不会写进正文；应用前自动开备份包，回滚逐字节还原。'
+  '提案落在书的 .inkflow/proposals/ 里：未确认的提案一个字节都不会写进正文。逐条决定的是改动块（hunk：一段连续的增删行），「接受/拒绝」只改这一块的去留；「应用」把已接受的改动块写进正文（应用前自动开备份包），「回滚」把整份正文逐字节还原到应用之前。'

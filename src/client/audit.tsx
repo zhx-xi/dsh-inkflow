@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import {
   auditGroupLine,
   auditHeadline,
@@ -40,8 +41,10 @@ import {
 import type { AuditFinding, AuditJumpTarget, AuditView } from './audit-model.js'
 import { fetchInternal, writeInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
+import { AUDIT_SCOPE_NOTE } from './page-notes.js'
 
 // Same shape as the other pages: the height comes from the shared measurement (issue 116),
 // the colours from the host theme (AGENTS.md §6). This module keeps its own small style set
@@ -66,16 +69,6 @@ const cardStyle = {
 const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
-
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
 
 const rowStyle = {
   display: 'grid',
@@ -166,19 +159,22 @@ export function AuditView({ sessionId, onOpen }: AuditViewProps) {
           <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
             <button
               type="button"
-              style={buttonStyle}
+              style={ACTION_BUTTON_STYLE}
               disabled={exporting || loading || loadError !== null}
               title="把完整报告写成 Markdown 放进这本书的 .inkflow/audit/"
               onClick={() => void exportReport()}
             >
+              <Icon name="export" size={13} />
               {exporting ? '导出中…' : exportLabel(view.exportPath)}
             </button>
-            <button type="button" style={buttonStyle} disabled={loading} onClick={() => void load()}>
+            <button type="button" style={ACTION_BUTTON_STYLE} disabled={loading} onClick={() => void load()}>
+              <Icon name="refresh" size={13} />
               {loading ? '读取中…' : '重新体检'}
             </button>
           </span>
         </div>
 
+        <div style={{ ...muted, ...mono, fontSize: 11 }}>{AUDIT_SCOPE_NOTE}</div>
         {view.title === null ? null : (
           <div style={{ ...muted, ...mono, fontSize: 11 }}>
             《{view.title}》 · 耗时 {String(view.ms)} ms · 索引状态 {view.indexState === '' ? '未知' : view.indexState}
@@ -247,7 +243,8 @@ function FindingRow({ finding, onOpen }: { finding: AuditFinding; onOpen?: (targ
         {finding.fixable ? <span style={{ ...muted, fontSize: 11 }}>可自动修复</span> : null}
         {jumpLabel === null || onOpen === undefined || target === null ? null : (
           <span style={{ marginLeft: 'auto' }}>
-            <button type="button" style={buttonStyle} title="跳到这一项所在的位置" onClick={() => onOpen(target)}>
+            <button type="button" style={ACTION_BUTTON_STYLE} title="跳到这一项所在的位置" onClick={() => onOpen(target)}>
+              <Icon name="locate" size={13} />
               {jumpLabel}
             </button>
           </span>

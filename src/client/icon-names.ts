@@ -31,6 +31,8 @@ export const ICON_NAMES = [
   'undo',
   'plus',
   'caret',
+  'caret-down',
+  'edit',
   'locate',
   'search',
   'lock',

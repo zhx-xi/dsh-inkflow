@@ -4,28 +4,28 @@
  * One screen: pick a chapter, read the eight checks, filter by severity. Nothing here
  * decides anything — the Host runs the gate (`gate.ts`) and this page prints what it said:
  *
- *   1. **八项各多少项** — a clean check is visible as a zero instead of being
- *      indistinguishable from a check nobody ran;
- *   2. **每条 finding 的地址、说什么、怎么办** — the address is the same string the
- *      conclusion file carries, so a row can be pasted into an issue;
- *   3. **按严重级过滤** — 需要处理 / 提示, because a chapter with 30 informational
- *      proofreading notes hides its 2 warnings otherwise.
+ *   1. **八项各多少项** — a clean check shows a zero instead of looking like a check nobody ran;
+ *   2. **每条 finding 先说人话** — the sentence leads and the code plus the address drop to a
+ *      second line: the address is the string the conclusion file carries (paste-able into an
+ *      issue), but the sentence is what a reader needs first;
+ *   3. **按严重级过滤** — 需要处理 / 提示, because 30 informational notes hide 2 warnings.
  *
- * Read-only by construction: it calls `GET /gate`, which the Host answers with
- * `runGate(record: false)` — opening this tab never writes the verdict file. The file is
- * produced by `inkflow_gate_check` (or the Host's own gate run), and the header prints where
- * it lands so the author can diff two runs.
+ * Read-only by construction: it calls `GET /gate` (`runGate(record: false)`), so opening this
+ * tab never writes the verdict file. `inkflow_gate_check` writes it, and the header prints
+ * where it lands so two runs can be diffed.
  *
- * Every hook sits before the first possible `return` (AGENTS.md §8 陷阱 2b): the page has no
- * early return at all, which is the cheapest way to keep that true while it grows.
+ * Every hook sits before the first possible `return` (AGENTS.md §8 陷阱 2b); the page has no early return at all.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import { fetchInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
+import { GATE_SCOPE_NOTE } from './page-notes.js'
 import { chapterHeading, flattenChapters } from './panel-model.js'
 import type { ChapterNode, ChaptersValue } from './panel-model.js'
 
@@ -49,16 +49,6 @@ const cardStyle = {
 const muted = { color: 'var(--dsw-alias-label-secondary)' } as const
 
 const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const
-
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
 
 const selectStyle = {
   ...mono,
@@ -218,6 +208,16 @@ function severityLabel(severity: string): string {
   return '提示'
 }
 
+/** The severity as a chip, so a row leads with its sentence and the level is a small badge. */
+function GateSeverityBadge({ severity }: { severity: string }) {
+  const tone = { color: severityColor(severity), borderColor: severityColor(severity) }
+  return (
+    <span style={{ display: 'inline-flex', padding: '0 6px', borderRadius: 999, border: '1px solid', ...tone }}>
+      {severityLabel(severity)}
+    </span>
+  )
+}
+
 function describeError(error: { code?: string; message?: string; hint?: string } | undefined): string {
   if (error === undefined) return '门禁读取失败'
   const code = error.code === undefined ? '' : `（${error.code}）`
@@ -330,7 +330,7 @@ export function GateQualityView({ sessionId }: GateViewProps) {
               <button
                 key={level}
                 type="button"
-                style={{ ...buttonStyle, ...(filter === level ? { borderColor: 'var(--dsw-alias-label-primary)' } : {}) }}
+                style={{ ...ACTION_BUTTON_STYLE, ...(filter === level ? { borderColor: 'var(--dsw-alias-label-primary)' } : {}) }}
                 onClick={() => {
                   setFilter(level)
                 }}
@@ -338,12 +338,14 @@ export function GateQualityView({ sessionId }: GateViewProps) {
                 {level === 'all' ? '全部' : severityLabel(level)}
               </button>
             ))}
-            <button type="button" style={buttonStyle} disabled={loading} onClick={() => void loadGate(selected)}>
+            <button type="button" style={ACTION_BUTTON_STYLE} disabled={loading} onClick={() => void loadGate(selected)}>
+              <Icon name="refresh" size={13} />
               {loading ? '读取中…' : '重新跑'}
             </button>
           </span>
         </div>
 
+        <div style={{ ...muted, ...mono, fontSize: 11 }}>{GATE_SCOPE_NOTE}</div>
         <div style={{ ...muted, ...mono, fontSize: 11 }}>
           {view.recordPath === '' ? '只读：这个页面不写任何文件' : `结论文件：${view.recordPath}（同章同文件两次运行字节相同）`}
         </div>
@@ -376,15 +378,15 @@ export function GateQualityView({ sessionId }: GateViewProps) {
             ) : (
               check.items.map((finding) => (
                 <div key={`${finding.check}:${finding.code}:${finding.address}:${finding.detail}`} style={rowStyle}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                    <span style={{ ...mono, fontSize: 11, color: severityColor(finding.severity) }}>
-                      {severityLabel(finding.severity)}
-                    </span>
-                    <span style={{ ...mono, fontSize: 11 }}>{finding.code}</span>
-                    <span style={{ ...muted, ...mono, fontSize: 11 }}>{finding.address}</span>
-                    {finding.fixable ? <span style={{ ...muted, fontSize: 11 }}>可自动修复</span> : null}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <GateSeverityBadge severity={finding.severity} />
+                    <span style={{ fontSize: 13, flex: '1 1 200px' }}>{finding.detail}</span>
                   </div>
-                  <div style={{ fontSize: 13 }}>{finding.detail}</div>
+                  <div style={{ ...muted, ...mono, fontSize: 11, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <span>{finding.code}</span>
+                    <span>{finding.address}</span>
+                    {finding.fixable ? <span>可自动修复</span> : null}
+                  </div>
                   <div style={{ ...muted, fontSize: 12 }}>{finding.hint}</div>
                 </div>
               ))
@@ -393,9 +395,7 @@ export function GateQualityView({ sessionId }: GateViewProps) {
         ))}
 
         {!loading && loadError === null && view.total === 0 && view.checks.length > 0 ? (
-          <div style={{ ...muted, fontSize: 12 }}>
-            八项门禁都没有发现问题。门禁只做机械判读（零模型调用）：它拦的是错字与硬伤，不管你写得好不好。
-          </div>
+          <div style={{ ...muted, fontSize: 12 }}>八项门禁都没有发现问题。</div>
         ) : null}
         {view.truncated ? (
           <div style={{ ...muted, fontSize: 11 }}>

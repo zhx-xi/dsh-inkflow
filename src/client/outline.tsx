@@ -18,8 +18,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
 import { fetchInternal } from './internal.js'
 import type { InternalResult } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import { LibraryItemEditor } from './library-editor.js'
@@ -105,16 +107,6 @@ const selectedRowStyle = {
 } as const
 
 const groupRowStyle = { ...muted, fontSize: 11, letterSpacing: 0.2, marginTop: 6 } as const
-
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
-} as const
 
 const tierBadgeStyle = {
   ...mono,
@@ -375,7 +367,7 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
                   role="presentation"
                   style={muted}
                 >
-                  {open ? '▾' : '▸'}
+                  {open ? <Icon name="caret-down" size={12} /> : <Icon name="caret" size={12} />}
                 </span>
                 <span style={tierBadgeStyle}>{OUTLINE_TIER_LABELS[row.node.tier]}</span>
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.node.title}</span>
@@ -422,13 +414,14 @@ export function OutlineView({ sessionId, focus }: { sessionId: string; focus?: L
               <span style={{ ...muted, ...mono }}>{selected.path}</span>
               <button
                 type="button"
-                style={buttonStyle}
+                style={ACTION_BUTTON_STYLE}
                 disabled={!editable}
                 onClick={() => {
                   setStatus(null)
                   setEditing(true)
                 }}
               >
+                <Icon name="edit" size={13} />
                 编辑
               </button>
               {editable ? null : <span style={{ ...muted, fontSize: 11 }}>读不到文件基线，暂时不能编辑</span>}

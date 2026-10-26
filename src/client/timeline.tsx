@@ -23,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { fetchInternal, writeInternal } from './internal.js'
+import { Icon } from './icons.js'
 import { SCROLL_BOX_STYLE, SCROLL_COLUMN_STYLE } from './layout-model.js'
 import { useScrollBox } from './layout.js'
 import {
@@ -92,6 +93,9 @@ const badgeStyle = {
   border: '1px solid var(--dsw-alias-border-l2)',
   ...muted,
 } as const
+
+/** The badge-shaped action: the pill above, opened up so a glyph and its word share a baseline. */
+const badgeButtonStyle = { ...badgeStyle, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' } as const
 
 const inputStyle = {
   width: '100%',
@@ -222,17 +226,19 @@ export function TimelineView({ sessionId, focus }: { sessionId: string; focus?: 
           <span style={{ ...muted, fontSize: 11 }}>{current?.pendingNote ?? '没有待定'}</span>
           <span style={{ ...muted, fontSize: 11 }}>·</span>
           <span style={{ ...muted, fontSize: 11 }}>{current?.conflictsNote ?? '没有冲突'}</span>
-          <button type="button" style={{ ...badgeStyle, marginLeft: 'auto', cursor: 'pointer' }} onClick={() => void refresh()}>
+          <button type="button" style={{ ...badgeButtonStyle, marginLeft: 'auto' }} onClick={() => void refresh()}>
+            <Icon name="refresh" size={13} />
             刷新
           </button>
           <button
             type="button"
-            style={{ ...badgeStyle, cursor: 'pointer' }}
+            style={badgeButtonStyle}
             onClick={() => {
               setDraft(draftOf(null))
               setReceipt(null)
             }}
           >
+            <Icon name="plus" size={13} />
             新建事件
           </button>
         </div>
@@ -331,13 +337,15 @@ export function TimelineView({ sessionId, focus }: { sessionId: string; focus?: 
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button
                 type="button"
-                style={{ ...badgeStyle, cursor: saving ? 'progress' : 'pointer' }}
+                style={{ ...badgeButtonStyle, cursor: saving ? 'progress' : 'pointer' }}
                 disabled={saving || draft.title.trim() === ''}
                 onClick={() => void submit()}
               >
+                <Icon name="check" size={13} />
                 {saving ? '保存中…' : '保存'}
               </button>
-              <button type="button" style={{ ...badgeStyle, cursor: 'pointer' }} onClick={() => setDraft(null)}>
+              <button type="button" style={badgeButtonStyle} onClick={() => setDraft(null)}>
+                <Icon name="close" size={13} />
                 取消
               </button>
             </div>

@@ -10,6 +10,8 @@
  * for itself would put a hook in a component that may be rendered conditionally).
  */
 
+import { ACTION_BUTTON_STYLE } from './action-button.js'
+import { Icon } from './icons.js'
 import { describePurgedEntry } from './purge-model.js'
 import type { PurgedEntry } from './purge-model.js'
 
@@ -29,16 +31,6 @@ const rowStyle = {
   flexWrap: 'wrap',
   padding: '6px 0',
   borderBottom: '1px solid var(--dsw-alias-border-l1)',
-} as const
-
-const buttonStyle = {
-  padding: '2px 10px',
-  fontSize: 12,
-  borderRadius: 6,
-  cursor: 'pointer',
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-  color: 'var(--dsw-alias-label-primary)',
 } as const
 
 export interface PurgeCardProps {
@@ -73,12 +65,13 @@ export function PurgeCard({ title, entries, error, busy, note, onRestore }: Purg
           <span style={{ ...muted, fontSize: 12 }}>{describePurgedEntry(entry)}</span>
           <button
             type="button"
-            style={buttonStyle}
+            style={ACTION_BUTTON_STYLE}
             disabled={busy || !entry.present}
             onClick={() => {
               onRestore(entry.id)
             }}
           >
+            <Icon name="undo" size={13} />
             还原
           </button>
         </div>
