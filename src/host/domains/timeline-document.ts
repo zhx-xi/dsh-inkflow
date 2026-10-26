@@ -60,7 +60,12 @@ export function renderTimelineDocument(input: {
 
   let out = patchFrontmatter(normalized, entries).text
   if (input.fields.participants !== undefined) out = patchInlineArray(out, 'participants', input.fields.participants)
-  if (body !== undefined) out = `${splitFrontmatter(out).head}${body === '' ? '' : `${body}\n`}`
+  // The blank line between the block and the prose is part of the document, not decoration:
+  // `freshDocument` writes it, so the patch has to write it too. Without this line the SECOND
+  // identical write of one event dropped that byte, which means every save from the panel
+  // produced a `git diff` of one line and "same input, same bytes" was false for the surface
+  // that saves most often (found by the channel suite's overwrite case).
+  if (body !== undefined) out = `${splitFrontmatter(out).head}${body === '' ? '' : `\n${body}\n`}`
   return out
 }
 

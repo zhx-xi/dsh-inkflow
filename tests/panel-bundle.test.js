@@ -526,14 +526,15 @@ test('PANEL_TABS is the build’s own list of pages a user can open', () => {
   // read-only board), 体检 (the five-family audit), 候选 (the extraction queue — X-20's
   // one new tab), 地图 (places are world entries, ADR-0025 D4), 简报 (nine segments,
   // X-23), 门禁 (the seven quality gates, ADR-0022 D4), 审稿 (the review runs and their
-  // evidence chain), 提案 (per-hunk accept, apply, rollback) and 批量 (the batch job's
-  // status, gate counts and 续跑). This list is the build's own claim about what a user
+  // evidence chain), 提案 (per-hunk accept, apply, rollback), 批量 (the batch job's status, gate
+  // counts and 续跑) and 时间线 (two axes over the same events, the pending area and the findings).
+  // This list is the build's own claim about what a user
   // can click, so it is spelled out rather than derived — and it is ONE list, not one
   // list per issue.
   assert.deepEqual(
     available.map((tab) => tab.id),
-    ['chapters', 'library', 'outline', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal', 'batch'],
-    '章节, 设定库, 大纲, 伏笔, 回收站, 体检, 候选、地图、简报、门禁、审稿、提案 与批量 exist in this build',
+    ['chapters', 'library', 'outline', 'foreshadowing', 'trash', 'audit', 'candidates', 'map', 'brief', 'gate', 'review', 'proposal', 'batch', 'timeline'],
+    '章节, 设定库, 大纲, 伏笔, 回收站, 体检, 候选、地图、简报、门禁、审稿、提案、批量 与时间线 exist in this build',
   )
   // 大纲 was the last placeholder row and its page landed: nothing is disabled any more.
   // A tab that is live with no page, or a live page nobody can reach, is what the two

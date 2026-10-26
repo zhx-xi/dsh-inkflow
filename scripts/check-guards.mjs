@@ -267,7 +267,6 @@ const OVER_CAP_BUDGET = {
   'src/host/domains/foreshadowing-query.ts': 605,
   'src/host/domains/outline-tools.ts': 800,
   'src/host/domains/timeline-plan.ts': 679,
-  'src/host/domains/timeline-tools.ts': 822,
   'src/host/domains/world-tools.ts': 661,
   'src/host/etl-plan.ts': 1209,
   'src/host/etl-source.ts': 631,

@@ -166,6 +166,7 @@ import {
   BATCH_RESUME_BODY_FIELDS,
   buildBatchPage,
   resumeViaChannel as resumeBatchViaChannel,
+  TIMELINE_ROUTES,
 } from './internal.js'
 import type { ChannelTarget, JsonRecord, WriteReply } from './internal.js'
 import { PRIVATE_PURGE_ROUTES } from './private-purge-routes.js'
@@ -421,6 +422,9 @@ const ROUTES: readonly InternalRoute[] = [
     body: TRASH_PURGE_BODY_FIELDS,
     handle: ({ target, version, body }) => purgeTrashReply(target, version, body),
   },
+  // The timeline pane: two axes + the pending area + the findings + the book calendar, and one
+  // confirmed upsert. Descriptors in `timeline-channel.ts`; the same dispatcher guards them.
+  ...TIMELINE_ROUTES,
   {
     // The foreshadow board (data-model §3.2): read-only, three groupings
     // of the same entries (open / late / by linked entity). Lateness is computed by
