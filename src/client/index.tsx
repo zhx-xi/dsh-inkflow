@@ -45,21 +45,21 @@ import { tabForEntityKind } from './outline-model.js'
 import { TrashView } from './trash.js'
 import { ForeshadowView } from './foreshadow.js'
 import { AuditView } from './audit.js'
-// The seven quality gates for one chapter (ADR-0022 D4). Its own file, so the
-// workbench's renderer map stays one line per page (X-12).
+// The seven quality gates for one chapter (ADR-0022 D4): its own file, so the renderer map stays one per page (X-12).
 import { GateQualityView } from './gate.js'
-// Proposals — one chapter's revision cut into hunks, decided piece by piece,
-// then applied (with a backup package) or rolled back. Its own four routes.
+// Proposals — one chapter's revision cut into hunks, decided piece by piece, then applied (with a
+// backup package) or rolled back. Its own four routes.
 import { ProposalView } from './proposal.js'
 import { ExtractView } from './extract.js'
 import { BriefView } from './brief.js'
 import { MapView } from './map.js'
-// The review tab — recorded runs, opinions with their evidence, and the
-// cross-model table. One file, one line in the page map below (X-12).
+// The review tab — recorded runs, opinions with their evidence and the cross-model table; one line below (X-12).
 import { ReviewView } from './review.js'
-// The batch job tab — status, per-chapter gate counts, the pause reason and the one
-// 续跑 button. One file, one line in the page map below (X-12).
+// The batch job tab — status, per-chapter gate counts, the pause reason and the one 续跑 button (X-12).
 import { BatchView } from './batch.js'
+// 时间线 — two axes over the same events (when it happened / when the reader learns it), the pending
+// area and the findings: one read (`GET /timeline`) and one confirmed write (`POST /timeline/upsert`).
+import { TimelineView } from './timeline.js'
 import { PLACE_KIND } from './map-model.js'
 import type { EvidenceJump } from './extract-model.js'
 import type { AuditJumpTarget } from './audit-model.js'
@@ -585,6 +585,7 @@ export function InkflowView({ sessionId, useSessions, useSession, useWorkspaces 
     // reason and the 续跑 button. `GET /batch` is read-only; the button writes the job records
     // and never a chapter file (approving prose is a tool call, not a click).
     batch: () => <BatchView sessionId={sessionId} />,
+    timeline: () => <TimelineView sessionId={sessionId} />,
   }
 
   /**

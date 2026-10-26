@@ -34,12 +34,7 @@ import type {
 import { getLoadedBuild, summarizeBuild } from './build-info.js'
 import { readCatalog } from './catalog.js'
 import type { CatalogChapter, CatalogVolume } from './catalog.js'
-import {
-  createChapter,
-  deleteChapter,
-  moveChapter,
-  writeChapter,
-} from './chapters.js'
+import { createChapter, deleteChapter, moveChapter, writeChapter } from './chapters.js'
 import type { ChapterOpFailure, ChapterOpError, ChapterView } from './chapters.js'
 import { INDEX_SCHEMA_VERSION, CHAPTER_STATUSES } from './conventions.js'
 import { fingerprintProjectFile } from './file-cas.js'
@@ -1259,3 +1254,6 @@ export type { BatchChapterRow, BatchCounts, BatchDetail, BatchPage } from './job
 
 export { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'
 
+// The timeline pane: the wire shape is `domains/timeline-view.ts`, the pipeline `domains/timeline-write.ts`.
+export { TIMELINE_QUERY, TIMELINE_ROUTES, TIMELINE_UPSERT_BODY_FIELDS, timelineListReply, timelineUpsertReply } from './timeline-channel.js'
+export type { TimelineChannelReply, TimelineChannelSource } from './timeline-channel.js'

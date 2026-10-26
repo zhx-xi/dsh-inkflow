@@ -496,7 +496,6 @@ export function describeFacts(facts: ProjectFacts): string {
   return `${index} · ${volumes} · ${chapters}`
 }
 
-
 // ---------------------------------------------------------------------------
 // Build identity and stale-load warning. Self-contained on purpose:
 // it is one block of additions, so a parallel change to the panel's book tree
@@ -629,10 +628,9 @@ export const PANEL_TABS: PanelTab[] = [
   // array's, and inserting into the middle of a four-issue shared list is a merge conflict
   // per rebase.
   { id: 'map', label: '地图', available: true },
-  // 0.5.0 placeholders, one row per page a B1/B2 batch was landing:
-  // `brief` (nine segments + token share + what was trimmed), `gate` (the seven
-  // quality gates with evidence), `review` (审稿意见 by chapter/paragraph/offset) and
-  // `proposal` (diff accepted or rejected piece by piece, then apply/roll back).
+  // 0.5.0 placeholders, one row per page a B1/B2 batch was landing: `brief` (nine segments +
+  // token share + what was trimmed), `gate` (the seven quality gates with evidence), `review`
+  // (审稿意见 by chapter/paragraph/offset) and `proposal` (diff, hunk by hunk, apply or roll back).
   { id: 'brief', label: '简报', available: true },
   // The page is `src/client/gate.tsx`, fed by `GET /gate`.
   { id: 'gate', label: '门禁', available: true },
@@ -644,5 +642,7 @@ export const PANEL_TABS: PanelTab[] = [
   // The page is `src/client/batch.tsx`, fed by `GET /batch` and
   // the one write `POST /batch/resume` (job records only — approving prose stays a tool call).
   { id: 'batch', label: '批量', available: true },
+  // 时间线 — two axes, the pending area and the findings (`GET /timeline`); the page is `timeline.tsx`.
+  { id: 'timeline', label: '时间线', available: true },
 ]
 
