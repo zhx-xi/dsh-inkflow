@@ -196,22 +196,22 @@ test('outline-model: plot points keep their [标签] and the text after it', asy
   assert.deepEqual(
     points,
     [
-      { text: '少年入山', arc: '主线' },
-      { text: '沈青登场', arc: '人物' },
-      { text: '断剑第一次出现', arc: '伏笔' },
-      { text: '无标签的一条 续行并进上一条' },
-      { text: '这一章要让读者相信他赢不了', arc: '承诺' },
-      { text: '雨落在石阶上', arc: '锚点' },
-      { text: '收尾', arc: '主线' },
+      { text: '少年入山', arc: '主线', raw: '- [主线] 少年入山' },
+      { text: '沈青登场', arc: '人物', raw: '- [人物] 沈青登场' },
+      { text: '断剑第一次出现', arc: '伏笔', raw: '- [伏笔] 断剑第一次出现' },
+      { text: '无标签的一条 续行并进上一条', raw: '- 无标签的一条' },
+      { text: '这一章要让读者相信他赢不了', arc: '承诺', raw: '- [承诺] 这一章要让读者相信他赢不了' },
+      { text: '雨落在石阶上', arc: '锚点', raw: '- [锚点] 雨落在石阶上' },
+      { text: '收尾', arc: '主线', raw: '- [主线] 收尾' },
     ],
     'the tag is data, the text is what follows it, and prose/fenced code are not plot points',
   )
-  assert.equal(
-    model.plotPointLabel(points[0]),
-    '[主线] 少年入山',
-    'the label puts the tag back in front, so nothing can quietly strip it',
-  )
-  assert.equal(model.plotPointLabel(points[3]), '无标签的一条 续行并进上一条', 'an untagged point gains no brackets')
+  // `raw` is the file's line, so the tooltip can be checked against the file rather than
+  // trusted: it keeps the list marker the badge drops, and it does NOT gain the
+  // continuation line the joined `text` carries.
+  assert.equal(points[0].raw, '- [主线] 少年入山', 'the tooltip line keeps what the badge cannot show')
+  assert.equal(points[3].raw, '- 无标签的一条', 'a joined continuation does not enter the raw line')
+  assert.equal(points[3].text, '无标签的一条 续行并进上一条', 'the joined text is still what the page renders')
   assert.deepEqual(model.parseOutlinePlotPoints(''), [], 'an empty body has no plot points')
 })
 

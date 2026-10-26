@@ -348,22 +348,32 @@ export function tabForEntityKind(kind: string): string {
   return kind === OUTLINE_KIND ? OUTLINE_TAB : 'library'
 }
 
-/** One plot point: the author's text, plus the story line it was tagged with. */
+/**
+ * One plot point: the author's text, the story line it was tagged with, and the file's
+ * own line.
+ *
+ * `raw` is what the reader can hold against the file: the list item exactly as written,
+ * `- ` included, before the tag is parsed and before a continuation line is joined. The
+ * badge is a rendering (`text` + `arc`), the file is the truth — and a tooltip that
+ * rebuilt the line instead of quoting it could not show the difference (a lost `- `, a
+ * joined continuation, a tag the parser refused still standing in the file).
+ */
 export interface OutlinePlotPoint {
   text: string
   arc?: string
+  raw: string
 }
 
 /** One list item's content → a plot point (`- [主线] 开场` → arc 主线, text 开场). */
-function plotPointOf(content: string): OutlinePlotPoint | undefined {
+function plotPointOf(content: string, raw: string): OutlinePlotPoint | undefined {
   if (content === '') return undefined
   const tag = ARC_TAG.exec(content)
   if (tag !== null) {
     const arc = (tag[1] ?? '').trim()
     const text = content.slice(tag[0].length).trim()
-    if (arc !== '' && text !== '') return { text, arc }
+    if (arc !== '' && text !== '') return { text, arc, raw }
   }
-  return { text: content }
+  return { text: content, raw }
 }
 
 /**
@@ -388,7 +398,7 @@ export function parseOutlinePlotPoints(body: string): OutlinePlotPoint[] {
 
     const item = PLOT_POINT_ITEM.exec(line)
     if (item !== null) {
-      current = plotPointOf((item[1] ?? '').trim())
+      current = plotPointOf((item[1] ?? '').trim(), line.trimEnd())
       if (current !== undefined) points.push(current)
       continue
     }
@@ -403,11 +413,6 @@ export function parseOutlinePlotPoints(body: string): OutlinePlotPoint[] {
     current = undefined
   }
   return points
-}
-
-/** A plot point as one line of text — the tag goes back in front of its text. */
-export function plotPointLabel(point: OutlinePlotPoint): string {
-  return point.arc === undefined ? point.text : `[${point.arc}] ${point.text}`
 }
 
 /** The one-line hint under the tree: counts per tier, and the two "not attached" states. */
