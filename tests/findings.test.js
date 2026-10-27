@@ -101,6 +101,11 @@ const WRITE_SIDE_CODES = new Set([
   'INDEX_BUILD_FAILED',
   'INDEX_UNAVAILABLE',
   'NOT_AN_INKFLOW_PROJECT',
+  // The anchor itself was missing (no session working directory to search), as opposed to a
+  // directory that was searched and turned out not to be a book. A call problem, never a
+  // problem in the book — and the two must stay apart: one is fixed by passing projectRoot,
+  // the other by initialising the project.
+  'PROJECT_ROOT_UNKNOWN',
   // The review run's own refusals. A bad opinion shape (`REVIEW_DIMENSION_UNKNOWN`,
   // `REVIEW_TEXT_REQUIRED`, `REVIEW_SEVERITY_INVALID`), a node that could not be run
   // (`REVIEW_NODE_MISSING`), a node that failed (`REVIEW_NODE_FAILED`) or a project that

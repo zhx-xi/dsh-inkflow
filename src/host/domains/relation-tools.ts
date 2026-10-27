@@ -16,13 +16,15 @@ import { join, resolve as resolvePath } from 'node:path'
 
 import type { ContentBlock, JsonSchemaNode, ToolDefinition, ToolRunContext } from '../context.js'
 import { writeTextAtomic } from '../io.js'
-import { findProjectRoot } from '../project.js'
-import { sessionCwd } from '../session-cwd.js'
 import { applyCandidate } from './types.js'
 import { chapterPlacementsForBook, listRelationsFor, titlesForIds } from './query.js'
 import type { RelationEdge } from './query.js'
 import { relationPeriodMarks } from './relation-period.js'
 import type { RelationPeriodMark } from './relation-period.js'
+// The anchor lives apart so it can be compared with the other three implementations
+// (`tool-support`, `tool-project`, `outline-target`) instead of hiding in this module's plumbing.
+import { projectRootOf } from './relation-target.js'
+import type { RootLookup } from './relation-target.js'
 import { RELATION_DIRECTIONS, RELATION_KINDS, planRelationUpsert, renderRelationFile } from './relation-write.js'
 import type { RelationKind, RelationRow } from './relation-write.js'
 import type { DomainModule, DomainToolDeps } from './types.js'
@@ -54,35 +56,6 @@ const SUCCESS_SCHEMA: JsonSchemaNode = {
   properties: { ok: { type: 'boolean' } },
   required: ['ok'],
   additionalProperties: true,
-}
-
-interface RootLookup {
-  root?: string
-  error?: { code: string; message: string; hint?: string }
-}
-
-/**
- * Resolve the book without a Host context.
- *
- * An explicit `projectRoot` wins; otherwise the book is resolved from the **session's**
- * working directory via `sessionCwd(deps.ctx, exec)` — the same anchor a built-in tool
- * uses, and never bare `process.cwd()` (inside the host process that is the DSH
- * install directory, so the tool would always report NOT_AN_INKFLOW_PROJECT).
- */
-async function projectRootOf(value: unknown, deps: DomainToolDeps, exec: ToolRunContext): Promise<RootLookup> {
-  const explicit = optionalString(value)
-  if (explicit !== undefined && explicit.trim() !== '') return { root: resolvePath(explicit.trim()) }
-  const found = findProjectRoot(await sessionCwd(deps.ctx, exec))
-  if (found === undefined) {
-    return {
-      error: {
-        code: 'NOT_AN_INKFLOW_PROJECT',
-        message: 'no InkFlow project found from the session working directory',
-        hint: 'pass projectRoot: the absolute path of the book',
-      },
-    }
-  }
-  return { root: found }
 }
 
 /**

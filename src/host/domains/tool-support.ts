@@ -20,7 +20,7 @@ import { resolve as resolvePath } from 'node:path'
 
 import type { ContentBlock, JsonSchemaNode, ToolRunContext } from '../context.js'
 import { findProjectRoot, inspectProject } from '../project.js'
-import { sessionCwd } from '../session-cwd.js'
+import { sessionCwdWithSource } from '../session-cwd.js'
 import type { DomainToolDeps } from './types.js'
 
 export type Json = Record<string, unknown>
@@ -132,7 +132,23 @@ export function indexFailure(root: string, failure: { code: string; errno?: stri
   }
 }
 
-/** Gate → run. A non-usable project gets the same four-state refusal `tools.ts` gives. */
+/**
+ * Gate → run. A non-usable project gets the same four-state refusal `tools.ts` gives.
+ *
+ * THE ANCHOR IS THE SAME ONE `outline-target.ts` USES, DOWN TO THE FIELDS: explicit
+ * `projectRoot` → the session working directory walking up to the nearest book → refuse. The
+ * two used to differ in the one way that is worst for a caller: when no session directory was
+ * available this function fell back to `process.cwd()` (inside the host process, the DSH
+ * install directory) and answered "no InkFlow project was found", while the outline tools
+ * refused with `PROJECT_ROOT_UNKNOWN`. Same session, two different stories about why the book
+ * cannot be found — and the fallback's story names a directory the user never chose.
+ *
+ * WHY NO TOOL KEEPS THE FALLBACK: `process.cwd()` is not the author's workspace, so "searched
+ * from there and found nothing" is not evidence about the book. A refusal that says which
+ * anchor was missing is something the caller can act on (pass `projectRoot`); a search of an
+ * unrelated directory is not. If a future tool genuinely needs the loose path, it has to say
+ * so here with a reason rather than growing a second opinion quietly.
+ */
 export async function withProject(
   deps: DomainToolDeps,
   exec: ToolRunContext,
@@ -141,16 +157,38 @@ export async function withProject(
 ): Promise<Json> {
   const a = asRecord(args)
   const requested = optionalString(a['projectRoot'])
-  const root = requested !== undefined ? resolvePath(requested) : findProjectRoot(await sessionCwd(deps.ctx, exec))
-  if (root === undefined) {
-    return {
-      ok: false,
-      error: {
-        code: 'NOT_AN_INKFLOW_PROJECT',
-        state: 'needs-setup',
-        message: 'no InkFlow project was found from the session working directory',
-        hint: 'pass projectRoot, or open the book so the session working directory is inside it',
-      },
+  let root: string | undefined
+  if (requested !== undefined) {
+    root = resolvePath(requested)
+  } else {
+    const session = await sessionCwdWithSource(deps.ctx, exec)
+    if (session.source === 'process') {
+      return {
+        ok: false,
+        error: {
+          code: 'PROJECT_ROOT_UNKNOWN',
+          cwd: session.dir,
+          cwdSource: 'process',
+          searchedFrom: 'none',
+          message: 'no session working directory is available, so the book cannot be resolved without projectRoot',
+          hint: 'pass projectRoot: the absolute path of the book (inkflow_project_status reports the root)',
+        },
+      }
+    }
+    root = findProjectRoot(session.dir)
+    if (root === undefined) {
+      return {
+        ok: false,
+        error: {
+          code: 'NOT_AN_INKFLOW_PROJECT',
+          state: 'needs-setup',
+          cwd: session.dir,
+          cwdSource: 'session',
+          searchedFrom: 'cwd',
+          message: `no InkFlow project was found from the session working directory ${session.dir}`,
+          hint: 'pass projectRoot, or open the book so the session working directory is inside it',
+        },
+      }
     }
   }
   const probe = inspectProject(root)

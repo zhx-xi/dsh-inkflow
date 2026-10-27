@@ -26,10 +26,11 @@ import { buildIndex, describeIndexBuildFailure } from '../index-build.js'
 import { ensureIndex } from '../index-freshness.js'
 import { scanProject } from '../indexer.js'
 import { withProjectWriteLock, writeTextAtomic } from '../io.js'
-import { findProjectRoot, inspectProject } from '../project.js'
-import { sessionCwd } from '../session-cwd.js'
 import { listWorldEntries } from './query.js'
 import { readText, rowsOf } from './scan-helpers.js'
+// The anchor is NOT re-implemented here: two copies of "where is this book" is how the
+// world tools and the outline tools came to answer the same question differently.
+import { withProject } from './tool-support.js'
 import { applyCandidate } from './types.js'
 import type { DomainModule, DomainWriteView, DomainToolDeps } from './types.js'
 import type { WorldRow } from './world.js'
@@ -68,7 +69,7 @@ function optionalString(value: unknown): string | undefined {
 const PROJECT_ROOT_PARAM = {
   type: 'string',
   description:
-    'Absolute path of the InkFlow project root. Omit to resolve from the process working directory (walks up to the nearest project).',
+    'Absolute path of the InkFlow project root. Omit to resolve from the session working directory (walks up to the nearest project).',
 } as const
 
 const OUTPUT_SCHEMA: JsonSchemaNode = {
@@ -167,56 +168,6 @@ function indexFailure(root: string, failure: { code: string; errno?: string; mes
           : 'the previous index (if any) is still readable; fix the cause and rebuild',
     },
   }
-}
-
-/** Gate → run. A non-usable project gets the same four-state refusal `tools.ts` gives. */
-async function withProject(
-  deps: DomainToolDeps,
-  exec: ToolRunContext,
-  args: unknown,
-  run: (root: string) => Promise<Json>,
-): Promise<Json> {
-  const a = asRecord(args)
-  const requested = optionalString(a['projectRoot'])
-  // Explicit argument first, then the session's working directory. Never bare
-  // `process.cwd()`: inside the host process that is the DSH install directory, so a
-  // tool would quietly target the wrong tree.
-  const root = requested !== undefined ? resolvePath(requested) : findProjectRoot(await sessionCwd(deps.ctx, exec))
-  if (root === undefined) {
-    return {
-      ok: false,
-      error: {
-        code: 'NOT_AN_INKFLOW_PROJECT',
-        state: 'needs-setup',
-        message: 'no InkFlow project was found from the process working directory',
-        hint: 'pass projectRoot, or open the book so the session working directory is inside it',
-      },
-    }
-  }
-  const probe = inspectProject(root)
-  if (probe.usable !== true) {
-    const code =
-      probe.state === 'needs-newer-plugin'
-        ? 'PROJECT_NEEDS_NEWER_PLUGIN'
-        : probe.state === 'needs-repair'
-          ? 'PROJECT_NEEDS_REPAIR'
-          : 'NOT_AN_INKFLOW_PROJECT'
-    return {
-      ok: false,
-      error: {
-        code,
-        state: probe.state,
-        root: probe.root,
-        message: `this directory is not a usable InkFlow project (state: ${probe.state})`,
-        missing: probe.missing,
-        hint:
-          code === 'PROJECT_NEEDS_NEWER_PLUGIN'
-            ? 'this book was written by a newer dsh-inkflow; tell the user to upgrade the plugin'
-            : 'run inkflow_project_plan, show the list to the user, then inkflow_project_init with confirm: true',
-      },
-    }
-  }
-  return run(probe.root)
 }
 
 function indent(depth: number): string {
