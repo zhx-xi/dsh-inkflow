@@ -23,7 +23,7 @@ import { REQUIRED_DIRS, ROOT_META_FILE } from '../conventions.js'
 import type { HostContext, ToolRunContext } from '../context.js'
 import { checkProjectRootScope, findProjectRoot, inspectProject } from '../project.js'
 import type { ProjectProbe, ProjectState, ScopeRejection } from '../project.js'
-import { sessionCwd } from '../session-cwd.js'
+import { sessionCwd, sessionCwdWithSource } from '../session-cwd.js'
 
 export { sessionCwd } from '../session-cwd.js'
 
@@ -38,9 +38,19 @@ export interface Resolution {
   cwd: string
   root: string
   source: 'argument' | 'cwd' | 'none'
+  /** Where `cwd` came from. `process` means nobody named a session directory. */
+  cwdSource?: 'session' | 'process'
   probe?: ProjectProbe
   /** Set when an explicit path was refused before touching the disk. */
   rejection?: ScopeRejection
+  /**
+   * `true` = there was no session working directory to search, so `cwd` is the host process's
+   * own directory. The caller must refuse with `PROJECT_ROOT_UNKNOWN` and never inspect it:
+   * `inspectProject()` recreates `index/`, and in the host process `cwd` is the DSH install
+   * directory — stat-ing it would be answering a question nobody asked, and creating a directory
+   * in it would be worse.
+   */
+  anchorUnknown?: boolean
 }
 
 export async function resolveProject(
@@ -50,24 +60,31 @@ export async function resolveProject(
 ): Promise<Resolution> {
   // The session working directory is the only trust anchor: it is the directory
   // the user actually opened. Every other path must be proven to live inside it.
-  const cwd = await sessionCwd(deps.ctx, exec)
+  const session = await sessionCwdWithSource(deps.ctx, exec)
+  const cwd = session.dir
 
   if (typeof argumentRoot === 'string' && argumentRoot.trim() !== '') {
     const root = resolvePath(argumentRoot.trim())
     const rejection = checkProjectRootScope(root, cwd)
     // Checked BEFORE inspectProject: that call recreates index/, so a bad path
     // would already have written to someone else's directory.
-    if (rejection !== undefined) return { cwd, root, source: 'argument', rejection }
-    return { cwd, root, source: 'argument', probe: inspectProject(root) }
+    if (rejection !== undefined) return { cwd, root, source: 'argument', cwdSource: session.source, rejection }
+    return { cwd, root, source: 'argument', cwdSource: session.source, probe: inspectProject(root) }
+  }
+
+  // No session directory means no anchor: refusing here is the whole point of
+  // `anchorUnknown` — see its comment.
+  if (session.source === 'process') {
+    return { cwd, root: cwd, source: 'none', cwdSource: 'process', anchorUnknown: true }
   }
 
   const found = findProjectRoot(cwd)
-  if (found !== undefined) return { cwd, root: found, source: 'cwd', probe: inspectProject(found) }
+  if (found !== undefined) return { cwd, root: found, source: 'cwd', cwdSource: session.source, probe: inspectProject(found) }
 
   // No fallback to state.lastProjectRoot: that file records whichever
   // session ran last, so answering with it reports another book as this
   // session's project. A session outside a project must say exactly that.
-  return { cwd, root: cwd, source: 'none', probe: inspectProject(cwd) }
+  return { cwd, root: cwd, source: 'none', cwdSource: session.source, probe: inspectProject(cwd) }
 }
 
 /** True when a resolution must be answered with `gateFailure()` instead of running. */
@@ -86,6 +103,21 @@ export function isRefused(value: Resolution): boolean {
  */
 export function gateFailure(value: Resolution): Json {
   if (value.rejection !== undefined) return { ok: false, error: { ...value.rejection } }
+  // The anchor was never there: say which directory was unavailable and where it came from,
+  // instead of describing an unrelated directory as "not an InkFlow project".
+  if (value.anchorUnknown === true) {
+    return {
+      ok: false,
+      error: {
+        code: 'PROJECT_ROOT_UNKNOWN',
+        cwd: value.cwd,
+        cwdSource: 'process',
+        searchedFrom: 'none',
+        message: 'no session working directory is available, so the book cannot be resolved without projectRoot',
+        hint: 'pass projectRoot: the absolute path of the book (inkflow_project_status reports the root)',
+      },
+    }
+  }
   const probe = value.probe
   const state: ProjectState = probe?.state ?? 'needs-setup'
   const code =
@@ -110,6 +142,7 @@ export function gateFailure(value: Resolution): Json {
       needsRepair: state === 'needs-repair',
       readOnly: probe?.readOnly ?? false,
       cwd: value.cwd,
+      cwdSource: value.cwdSource ?? 'session',
       searchedFrom: value.source,
       root: probe?.root ?? value.root,
       checks: probe?.checks ?? { git: false, dirs: {}, keeps: {}, meta: false },
