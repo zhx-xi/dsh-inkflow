@@ -16,6 +16,7 @@
  * cannot create a cycle (`routes.ts` → channel module → `route-types.ts`).
  */
 
+import type { HostContext } from './context.js'
 import type { ChannelTarget, JsonRecord } from './internal.js'
 
 /** Only the verbs the channel will ever declare; anything else is a 405. */
@@ -75,4 +76,15 @@ export interface InternalRoute {
    * handler is allowed to be async; the dispatcher awaits it either way.
    */
   readonly handle: (input: RouteInput) => RouteReply | Promise<RouteReply>
+}
+
+/**
+ * What the HTTP half is given once, at mount: the host context, the plugin data directory and
+ * the version this build reports. It lives here rather than in `routes.ts` because BOTH route
+ * groups need it, and a hub file that imported `routes.ts` would close a cycle.
+ */
+export interface HttpDeps {
+  ctx: HostContext
+  dataDir: string
+  version: string
 }

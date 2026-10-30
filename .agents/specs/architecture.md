@@ -516,7 +516,10 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/hub-wizard.ts` | **新开书向导**（ADR-0010 D4/D6）：`plan`（锚点三级判定 → 路径闸门 → 只读 plan → 签发 token）与 `apply`（消耗 token → 摘要比对 → `applyWorkspace` → `workspaceRegistry.create`）、一次性 `planToken` 存储（TTL 5 分钟、可注入时钟）、`nextStep` 降级 A 文案 | 自己写文件（一律走 `workspace.ts`）、接受 `apply` 的路径、发 token 给已注册目录、commit/配远端 |
 | `src/host/impact.ts` | **改设定前的影响清单 + 改名计划**（#34，[ADR-0014](../adrs/0014-entity-id-pinning.md)）：`(kind, id)`／标题模糊匹配 → 实体文件（只读扫描，索引不可用时也能解析）；五处影响面（提及章读 `entity_mentions`、关系读 `relations`、时间线/账本/伏笔因无投影直接读文件）＋总计数；改名计划（目标路径、要钉的 id、冲突判定） | 写任何文件、重建索引、决定是否执行（执行由 `impact-write.ts` 与面板的确认动作承担） |
 | `src/host/impact-write.ts` | **改名的唯一写实现**：写锁内「先写新文件（旧 id 钉进 frontmatter `id`）→ 再删旧文件」、`TARGET_EXISTS`/`FILE_CHANGED`/失败回滚、写后 `ensureIndex(rebuild)` 并回报 `id` 不变 / `path` 更新 / 提及条数不变 | 生成影响清单、重写引用方字段（X-15：一个都不改）、直接拼项目路径（经 `io.ts`） |
-| `src/host/routes.ts` | 私有内部通道的路由表（逐路由声明方法）、loopback 与参数加固、JSON 信封、body 字段白名单；另含**书库路由组** `/hub/*` 的独立分派（无会话；写路由要求 `Origin` 与 `Host` 同源） | 业务规则、写真相文件、解析会话 |
+| `src/host/routes.ts` | 通道的**装配与分派**：把两个路由组挂上 HTTP 服务器、按序执行 fail-closed 加固（peer 身份 → 页面同源 → 方法与 body 白名单 → 会话 id），再交给表里的 handler | 业务规则、写真相文件、解析会话、路由表本身（在 `routes-internal.ts` / `routes-hub.ts`） |
+| `src/host/routes-internal.ts` | **会话通道路由表**（`/inkflow/internal/*`，逐路由声明方法与 body 白名单）：纯数据，~500 行，新增一条投影就是在这里加一个块 | 任何分派或加固（`routes.ts` 走这张表） |
+| `src/host/routes-hub.ts` | **书库通道路由组**（`/inkflow/internal/hub/*`，无会话）：表 + 类型 + `handleHubRequest`；写路由要求 `Origin` 与 `Host` 同源（ADR-0010 D6） | 会话通道的任何状态、`routes.ts` 的任何符号（依赖方向单向） |
+| `src/host/routes-http.ts` | 两张表共用的**水管**：loopback/同源判定、body 与 query 解析、`ok`/`failure` 信封、写路由适配（`toReply`/`readChapterReply`） | 任何路由（不知道有哪些路由存在，故不构成环） |
 | `src/host/route-types.ts` | 通道的**路由契约**（`HttpMethod` / `RouteInput` / `RouteReply` / `InternalRoute` / `KNOWN_METHODS`），被 `routes.ts` 与自带路由描述符的通道模块共用 | 任何分派、加固或业务（纯类型 + 一个常量，运行时不可见） |
 | `src/client/index.tsx` | 两处入口的注册（`conversation.view` 工作台 + `sidebar.panellist`/`main` 书库）、工作台骨架（四态徽章 / 编辑器 / 向导清单）、页表 `pageRenderers`（roadmap X-12：非 `chapters` 页一行一页，JSX 里不再有页分支）、`fetchInternal` 调用 | 业务规则、文件 IO、拼路径参数、章节树本身（在 `chapter-tree.tsx`） |
 | `src/client/chapter-tree.tsx` | 章节页左栏的树：卷可折叠（整行是控件，带 `aria-expanded`）、每行只印 `序号. 标题`（文件路径改到编辑器底部）、卷头给出章数；折叠状态只活在本会话 | 业务规则（判定在 `chapter-tree-model.ts`）、取数、写盘、渲染路径 |

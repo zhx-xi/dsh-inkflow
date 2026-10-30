@@ -286,7 +286,6 @@ const OVER_CAP_BUDGET = {
   'src/host/migrate.ts': 670,
   'src/host/ovk.ts': 699,
   'src/host/repair.ts': 945,
-  'src/host/routes.ts': 1580,
   'src/host/search.ts': 626,
   'src/host/series.ts': 762,
   'src/host/settings-tools.ts': 643,

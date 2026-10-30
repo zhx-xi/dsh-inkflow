@@ -29,7 +29,12 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const ROOT = join(import.meta.dirname, '..')
-const ROUTES = join(ROOT, 'src', 'host', 'routes.ts')
+// The route tables live in their own modules now (`routes-internal.ts` for the session
+// channel, `routes-hub.ts` for the hub). The guard follows the tables: a whitelist written
+// inline in either one is the thing it forbids.
+const ROUTE_FILES = ['routes-internal.ts', 'routes-hub.ts', 'routes.ts'].map((name) =>
+  join(ROOT, 'src', 'host', name),
+)
 
 /**
  * Source text with comments removed, one trimmed line each.
@@ -47,15 +52,15 @@ function codeLines(source) {
 }
 
 test('no route declares its body whitelist as an inline array literal', () => {
-  const lines = codeLines(readFileSync(ROUTES, 'utf8'))
+  const lines = ROUTE_FILES.flatMap((file) => codeLines(readFileSync(file, 'utf8')))
 
-  // Sanity: the scan must be looking at the route table, not at an empty string. If
-  // this ever fails, the file moved or the allowlists stopped being referenced here —
-  // and then the assertion below would pass for the wrong reason.
+  // Sanity: the scan must be looking at the route tables, not at empty strings. If this ever
+  // fails, the tables moved again or the allowlists stopped being referenced — and then the
+  // assertion below would pass for the wrong reason.
   const references = lines.filter((line) => /body:\s*[A-Za-z_$][\w$]*,?$/u.test(line))
   assert.ok(
     references.length > 0,
-    'expected routes.ts to reference body whitelists by constant; the guard is scanning nothing',
+    'expected the route tables to reference body whitelists by constant; the guard is scanning nothing',
   )
 
   const offenders = lines.filter((line) => /body:\s*\[/u.test(line))
