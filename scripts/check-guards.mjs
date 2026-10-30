@@ -260,7 +260,6 @@ const OVER_CAP_BUDGET = {
   'src/host/backup-zip.ts': 716,
   'src/host/backup.ts': 644,
   'src/host/catalog.ts': 823,
-  'src/host/chapters.ts': 1415,
   'src/host/diagnostics.ts': 621,
   'src/host/domains/facts-tools.ts': 674,
   'src/host/domains/foreshadowing-query.ts': 605,
