@@ -47,6 +47,10 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: node scripts/check-guards.mjs --no-artifacts
+      # Size gate: >800 lines fails this job, 601-800 only prints annotations (see
+      # scripts/check-file-sizes.mjs). In the required `lint` job rather than its own
+      # context, so the hard cap blocks a merge without re-applying branch protection.
+      - run: node scripts/check-file-sizes.mjs
 
   test:
     name: test (${{ matrix.os }})
