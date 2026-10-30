@@ -36,9 +36,6 @@ const HARD_CAP = 800
  * Shrink-only: see the header. Each entry is a split waiting to happen.
  */
 const OVER_HARD_CAP_DEBT = {
-  'src/host/io.ts': 925,
-  'src/host/repair.ts': 945,
-  'src/host/shared-copy.ts': 896,
 }
 
 function trackedSources() {

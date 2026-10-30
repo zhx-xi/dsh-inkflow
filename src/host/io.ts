@@ -33,16 +33,21 @@
  * hand these to the model, and a stack trace tells a model nothing about what to
  * do next. Measured on Windows 11 + Node 24.16: an open handle on the target
  * blocks the rename with EPERM (same semantics as the atomic index build).
+ *
+ * HOW THE DOOR IS SPLIT: this file keeps the path parser, the atomic write and
+ * the two non-textual mutations (delete / rename) that go through the same
+ * parser and the same lock. The single-writer lock itself is `io-lock.ts`, the
+ * failure vocabulary and the liveness probes `io-support.ts`, and every shape a
+ * caller names `io-types.ts`. All public names are re-exported below, so no
+ * caller address moved.
  */
 
-import { randomBytes } from 'node:crypto'
 import {
   closeSync,
   existsSync,
   fsyncSync,
   mkdirSync,
   openSync,
-  readFileSync,
   readdirSync,
   renameSync,
   rmdirSync,
@@ -54,117 +59,37 @@ import {
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { INDEX_DIR, PRIVATE_STATE_DIR, PRIVATE_STATE_SUBDIRS, WRITE_DIRS } from './conventions.js'
+import { acquireProjectWriteLock } from './io-lock.js'
+import type {
+  AtomicWriteOptions,
+  IoFailure,
+  ProjectLock,
+  ResolveWriteTargetResult,
+  WriteResult,
+  WriteTarget,
+} from './io-types.js'
+import {
+  INDEX_BUILD_LOCK_FILE,
+  IoWriteError,
+  LOCK_FILE,
+  errnoOf,
+  fail,
+  failure,
+  fileAgeMs,
+  isDirectory,
+  messageOf,
+  processAlive,
+  randomToken,
+  toFailure,
+} from './io-support.js'
 import { checkSegment } from './path-rules.js'
 import type { SegmentProblem } from './path-rules.js'
 import { isWithin, realpathLoose } from './project.js'
 import { LF_STYLE, applyTextStyle } from './text-style.js'
-import type { TextStyle } from './text-style.js'
-
-// ---------------------------------------------------------------------------
-// Contract types
-// ---------------------------------------------------------------------------
-
-export type IoErrorCode =
-  /** The path itself is not a legal write target (empty, `..`, absolute, UNC, illegal characters). */
-  | 'PATH_INVALID'
-  /** The path resolves outside the project root (junction/symlink escape). */
-  | 'PATH_OUT_OF_SCOPE'
-  /** The first segment is not one of the nine content directories or `index/`. */
-  | 'PATH_NOT_WRITABLE'
-  /** A Windows reserved device name (CON/PRN/AUX/NUL/COM1-9/LPT1-9). */
-  | 'PATH_RESERVED'
-  /** Longer than a write may safely be (240 characters) or a segment over 255. */
-  | 'PATH_TOO_LONG'
-  /** `projectRoot` is missing or not a directory. */
-  | 'PROJECT_NOT_FOUND'
-  /** The source of a move/delete does not exist (or is not the kind it must be). */
-  | 'PATH_NOT_FOUND'
-  /** The destination of a move already exists; moves never overwrite a file. */
-  | 'TARGET_EXISTS'
-  /** Another session/process holds the project write lock. */
-  | 'PROJECT_BUSY'
-  /** The filesystem refused the operation (permissions, sharing violation, disk). */
-  | 'IO_FAILED'
-
-/** The model-facing shape of a refused or failed write. */
-export interface IoFailure {
-  code: IoErrorCode
-  message: string
-  /** Project root the operation was scoped to (realpath). */
-  root: string
-  /** Project-relative path that was rejected, when there is one. */
-  path?: string
-  /** Filesystem errno (`EPERM`, `ENOSPC`, ...) when the OS reported one. */
-  errno?: string
-  hint?: string
-  /** Temp file the failure happened on (diagnostics/tests only). */
-  tempFile?: string
-}
-
-/** A validated write destination. */
-export interface WriteTarget {
-  /** Realpath of the project root. */
-  root: string
-  /** Realpath-resolved absolute path of the (possibly not yet existing) file. */
-  absolute: string
-  /** Normalized project-relative path, always with `/` separators. */
-  relative: string
-  /** First segment: the allowed directory the file lives in. */
-  dir: string
-  /** Absolute directory that will hold the file. */
-  parent: string
-  exists: boolean
-}
-
-export type ResolveWriteTargetResult = { ok: true; target: WriteTarget } | { ok: false; error: IoFailure }
-
-export type WriteResult =
-  | { ok: true; target: WriteTarget; bytes: number; created: boolean }
-  | { ok: false; error: IoFailure }
-
-/** A held project write lock. `release()` is idempotent and token-verified. */
-export interface ProjectLock {
-  readonly root: string
-  readonly token: string
-  release(): void
-}
-
-export type ProjectLockResult = { ok: true; value: ProjectLock } | { ok: false; error: IoFailure }
-
-export type IoResult<T> = { ok: true; value: T } | { ok: false; error: IoFailure }
-
-export interface AtomicWriteOptions {
-  /**
-   * Create the parent directories of the target (default true). A chapter write
-   * needs `chapters/vol-01/` to exist even though the volume has no file yet.
-   */
-  createParents?: boolean
-  /**
-   * Write the string exactly as given instead of the normalised form.
-   *
-   * The normal path strips a BOM and rewrites CRLF to LF (one place for the
-   * encoding invariant). A rollback has the opposite job: it must put the
-   * *previous bytes* back, so it passes `verbatim: true` and skips both steps.
-   */
-  verbatim?: boolean
-  /**
-   * The style to serialise the normalised payload in (ADR-0016).
-   *
-   * Normalisation is not the end of the story: an existing chapter has a format
-   * of its own (CRLF, a BOM), and rewriting it to LF turns a one-character edit
-   * into a whole-chapter diff. Omitted = a new file, i.e. `LF_STYLE`.
-   */
-  style?: TextStyle
-}
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** The project write lock lives next to the derived index (never committed). */
-const LOCK_FILE = '.write.lock'
-/** `index-build.ts` owns that one; it is not a legal write target for callers. */
-const INDEX_BUILD_LOCK_FILE = '.lock'
 
 /**
  * Windows refuses paths over ~260 characters unless long paths are enabled, and
@@ -172,115 +97,11 @@ const INDEX_BUILD_LOCK_FILE = '.lock'
  * `.tmp-<pid>-<rand>` suffix added to the same directory.
  */
 const MAX_WRITE_PATH = 240
-/** A lock older than this was left behind by a hung/crashed writer. */
-const STALE_LOCK_MS = 10 * 60_000
-/** The lock file is created before its pid is written: do not judge it too early. */
-const LOCK_WRITE_GRACE_MS = 10_000
 /** A temp file older than this is garbage even if its pid is still alive. */
 const STALE_TEMP_MS = 10 * 60_000
-const MAX_ERROR_MESSAGE = 300
 
 /** `<name>.tmp-<pid>-<rand>` — see docs/conventions.md §5. */
 const TEMP_FILE = /\.tmp-(\d+)-[0-9a-f]+$/
-
-// ---------------------------------------------------------------------------
-// Failure helpers
-// ---------------------------------------------------------------------------
-
-interface FailureExtra {
-  root?: string
-  path?: string
-  errno?: string
-  hint?: string
-  tempFile?: string
-}
-
-function failure(code: IoErrorCode, message: string, extra: FailureExtra = {}): IoFailure {
-  const result: IoFailure = { code, message, root: extra.root ?? '' }
-  if (extra.path !== undefined) result.path = extra.path
-  if (extra.errno !== undefined) result.errno = extra.errno
-  if (extra.hint !== undefined) result.hint = extra.hint
-  if (extra.tempFile !== undefined) result.tempFile = extra.tempFile
-  return result
-}
-
-function fail(code: IoErrorCode, message: string, extra: FailureExtra = {}): { ok: false; error: IoFailure } {
-  return { ok: false, error: failure(code, message, extra) }
-}
-
-function errnoOf(cause: unknown): string {
-  if (typeof cause === 'object' && cause !== null) {
-    const code = (cause as { code?: unknown }).code
-    if (typeof code === 'string' && code !== '') return code
-  }
-  return 'EUNKNOWN'
-}
-
-function messageOf(cause: unknown): string {
-  const raw = cause instanceof Error ? cause.message : String(cause)
-  // Errors may quote a path (never novel text); bound them so a giant OS
-  // message cannot flood the model's context.
-  return raw.length > MAX_ERROR_MESSAGE ? `${raw.slice(0, MAX_ERROR_MESSAGE)}...` : raw
-}
-
-function randomToken(): string {
-  return randomBytes(6).toString('hex')
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-function fileAgeMs(path: string): number {
-  try {
-    return Date.now() - statSync(path).mtimeMs
-  } catch {
-    return Number.POSITIVE_INFINITY
-  }
-}
-
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (cause) {
-    // Windows reports EPERM for a live process owned by somebody else; only
-    // "no such process" proves the lock/temp owner is gone.
-    return errnoOf(cause) === 'EPERM'
-  }
-}
-
-/** Internal carrier for an already-classified write failure. */
-class IoWriteError extends Error {
-  readonly code: IoErrorCode
-  readonly errno: string
-  readonly tempFile: string | undefined
-
-  constructor(code: IoErrorCode, message: string, errno: string, tempFile?: string) {
-    super(message)
-    this.name = 'IoWriteError'
-    this.code = code
-    this.errno = errno
-    this.tempFile = tempFile
-  }
-}
-
-function toFailure(cause: unknown, root: string, path: string | undefined): IoFailure {
-  const extra: FailureExtra = { root }
-  if (path !== undefined) extra.path = path
-  if (cause instanceof IoWriteError) {
-    extra.errno = cause.errno
-    if (cause.tempFile !== undefined) extra.tempFile = cause.tempFile
-    return failure(cause.code, cause.message, extra)
-  }
-  const errno = errnoOf(cause)
-  if (errno !== 'EUNKNOWN') extra.errno = errno
-  return failure('IO_FAILED', messageOf(cause), extra)
-}
 
 // ---------------------------------------------------------------------------
 // Path resolution: the only way in
@@ -410,181 +231,6 @@ export function resolveWriteTarget(projectRoot: string, relativePath: string): R
       parent: dirname(absolute),
       exists: existsSync(absolute),
     },
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Project write lock
-// ---------------------------------------------------------------------------
-
-interface HeldLock {
-  token: string
-  depth: number
-  path: string
-}
-
-/** Locks this process holds, keyed by realpath root (nested writes reuse them). */
-const heldLocks = new Map<string, HeldLock>()
-
-/**
- * A lock is stale when the holder is provably gone: a dead pid, an unparsable
- * file older than the write grace, or a recorded start older than STALE_LOCK_MS.
- *
- * A lock carrying *our own* pid but absent from `heldLocks` is stale too: it
- * belongs to a previous plugin generation (or a release that failed), and
- * honoring it would wedge every write in this process for ten minutes.
- */
-function lockIsStale(lockPath: string): boolean {
-  let raw: string
-  try {
-    raw = readFileSync(lockPath, 'utf8')
-  } catch {
-    return true // vanished between EEXIST and the read: retry the O_EXCL create
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return fileAgeMs(lockPath) > LOCK_WRITE_GRACE_MS
-  }
-  if (typeof parsed !== 'object' || parsed === null) return fileAgeMs(lockPath) > LOCK_WRITE_GRACE_MS
-  const record = parsed as Record<string, unknown>
-  const pid = record['pid']
-  const startedAt = record['startedAt']
-  if (typeof pid === 'number' && pid === process.pid) return true
-  if (typeof pid === 'number' && Number.isInteger(pid) && pid > 0 && !processAlive(pid)) return true
-  if (typeof startedAt === 'number') return Date.now() - startedAt > STALE_LOCK_MS
-  return fileAgeMs(lockPath) > STALE_LOCK_MS
-}
-
-function releaseProjectWriteLock(root: string, entry: HeldLock): void {
-  const current = heldLocks.get(root)
-  // A stale-heal may have replaced the entry; never drop the new owner's depth.
-  if (current !== entry) return
-  entry.depth -= 1
-  if (entry.depth > 0) return
-  heldLocks.delete(root)
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(entry.path, 'utf8'))
-    if (typeof parsed !== 'object' || parsed === null) return
-    // Token check: after a stale-heal race this file belongs to somebody else.
-    if ((parsed as { token?: unknown }).token !== entry.token) return
-    unlinkSync(entry.path)
-  } catch {
-    // Best effort: the next writer treats a leftover lock as stale.
-  }
-}
-
-type LockFileOpen = { kind: 'created'; fd: number } | { kind: 'exists' } | { kind: 'failed'; errno: string; cause: unknown }
-
-function tryCreateLockFile(lockPath: string): LockFileOpen {
-  try {
-    return { kind: 'created', fd: openSync(lockPath, 'wx', 0o600) }
-  } catch (cause) {
-    const errno = errnoOf(cause)
-    if (errno === 'EEXIST') return { kind: 'exists' }
-    return { kind: 'failed', errno, cause }
-  }
-}
-
-/**
- * Take the project write lock (`index/.write.lock`, created with O_EXCL).
- *
- * The lock is re-entrant within one process: a nested acquire returns the lock
- * already held and only the outermost release removes the file. Across
- * processes/plugin generations it never waits — a live holder means
- * `PROJECT_BUSY` immediately, so a tool cannot hang behind another session.
- */
-export function acquireProjectWriteLock(projectRoot: string): ProjectLockResult {
-  if (typeof projectRoot !== 'string' || projectRoot.trim() === '') {
-    return fail('PATH_INVALID', 'a project root is required')
-  }
-  const input = resolve(projectRoot.trim())
-  const root = realpathLoose(input)
-  if (!isDirectory(root)) {
-    return fail('PROJECT_NOT_FOUND', `the project root ${input} is not a directory`, { root })
-  }
-
-  const held = heldLocks.get(root)
-  if (held !== undefined) {
-    held.depth += 1
-    return { ok: true, value: { root, token: held.token, release: () => releaseProjectWriteLock(root, held) } }
-  }
-
-  const lockDir = join(root, INDEX_DIR)
-  try {
-    mkdirSync(lockDir, { recursive: true })
-  } catch (cause) {
-    return fail('IO_FAILED', `cannot create the index directory ${lockDir}: ${messageOf(cause)}`, {
-      root,
-      errno: errnoOf(cause),
-    })
-  }
-  const lockPath = join(lockDir, LOCK_FILE)
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const token = randomToken()
-    const opened = tryCreateLockFile(lockPath)
-    if (opened.kind === 'failed') {
-      return fail('IO_FAILED', `cannot create the project lock ${lockPath}: ${messageOf(opened.cause)}`, {
-        root,
-        errno: opened.errno,
-      })
-    }
-    if (opened.kind === 'exists') {
-      if (attempt === 0 && lockIsStale(lockPath)) {
-        try {
-          unlinkSync(lockPath)
-        } catch {
-          // Another process removed/replaced it first: the retry decides.
-        }
-        continue
-      }
-      return fail('PROJECT_BUSY', `another session is writing to ${root}; retry when it is done`, {
-        root,
-        errno: 'EBUSY',
-        hint: 'the project write lock is single-writer; wait for the other write (or remove a stale index/.write.lock)',
-      })
-    }
-    const { fd } = opened
-    try {
-      writeSync(fd, JSON.stringify({ pid: process.pid, token, startedAt: Date.now() }))
-    } catch (cause) {
-      try {
-        unlinkSync(lockPath)
-      } catch {
-        // A half-written lock becomes stale after the grace period.
-      }
-      return fail('IO_FAILED', `cannot write the project lock ${lockPath}: ${messageOf(cause)}`, {
-        root,
-        errno: errnoOf(cause),
-      })
-    } finally {
-      closeSync(fd)
-    }
-    const entry: HeldLock = { token, depth: 1, path: lockPath }
-    heldLocks.set(root, entry)
-    return { ok: true, value: { root, token, release: () => releaseProjectWriteLock(root, entry) } }
-  }
-
-  return fail('PROJECT_BUSY', `another session is writing to ${root}; retry when it is done`, { root, errno: 'EBUSY' })
-}
-
-/**
- * Run `body` while holding the project write lock. Used by multi-file operations
- * (scaffolding, repair, chapter + catalog) that must not interleave with another
- * session halfway through. The lock is released even when the body throws.
- */
-export function withProjectWriteLock<T>(projectRoot: string, body: (lock: ProjectLock) => T): IoResult<T> {
-  const locked = acquireProjectWriteLock(projectRoot)
-  if (!locked.ok) return { ok: false, error: locked.error }
-  const lock = locked.value
-  try {
-    return { ok: true, value: body(lock) }
-  } catch (cause) {
-    return { ok: false, error: toFailure(cause, lock.root, undefined) }
-  } finally {
-    lock.release()
   }
 }
 
@@ -923,3 +569,21 @@ export function renameProjectDirectory(projectRoot: string, fromRelative: string
     lock.release()
   }
 }
+
+// ---------------------------------------------------------------------------
+// The rest of the door, at its original addresses
+// ---------------------------------------------------------------------------
+
+export { acquireProjectWriteLock, withProjectWriteLock } from './io-lock.js'
+
+export type {
+  AtomicWriteOptions,
+  IoErrorCode,
+  IoFailure,
+  IoResult,
+  ProjectLock,
+  ProjectLockResult,
+  ResolveWriteTargetResult,
+  WriteResult,
+  WriteTarget,
+} from './io-types.js'
