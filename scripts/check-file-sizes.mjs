@@ -33,15 +33,12 @@ const HARD_CAP = 800
 
 /**
  * Files already over the hard cap when the gate landed, with the count that was measured.
- * Shrink-only: see the header. Six entries, and each one is a split waiting to happen.
+ * Shrink-only: see the header. Each entry is a split waiting to happen.
  */
 const OVER_HARD_CAP_DEBT = {
-  'src/client/library-model.ts': 821,
-  'src/host/catalog.ts': 823,
   'src/host/io.ts': 925,
   'src/host/repair.ts': 945,
   'src/host/shared-copy.ts': 896,
-  'src/host/writing-context.ts': 863,
 }
 
 function trackedSources() {
