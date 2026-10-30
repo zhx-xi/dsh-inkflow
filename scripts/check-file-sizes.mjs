@@ -14,7 +14,7 @@
  *               guideline was protecting (a reader can see the whole module at once).
  *
  * WHY THE HARD CAP STILL HAS A DEBT LIST: turning it on over a backlog would block every
- * merge on day one. The nine files already over 800 are recorded with their current count,
+ * merge on day one. The files already over 800 are recorded with their current count,
  * and the list only shrinks — a file may not grow past its record, and once it is back under
  * 800 its entry must be deleted in the same change, or the list becomes a permanent
  * exemption. Everything else is a flat cap.
@@ -33,13 +33,11 @@ const HARD_CAP = 800
 
 /**
  * Files already over the hard cap when the gate landed, with the count that was measured.
- * Shrink-only: see the header. Nine entries, and each one is a split waiting to happen.
+ * Shrink-only: see the header. Six entries, and each one is a split waiting to happen.
  */
 const OVER_HARD_CAP_DEBT = {
-  'src/client/index.tsx': 1053,
   'src/client/library-model.ts': 821,
   'src/host/catalog.ts': 823,
-  'src/host/extract.ts': 1084,
   'src/host/io.ts': 925,
   'src/host/repair.ts': 945,
   'src/host/shared-copy.ts': 896,

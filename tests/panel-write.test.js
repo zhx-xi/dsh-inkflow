@@ -162,7 +162,7 @@ test('client bundle ships the autosave and undo machinery, and no editor library
 })
 
 test('the editor draws every colour from theme tokens', () => {
-  for (const file of ['index.tsx', 'editor.tsx', 'editor-model.ts']) {
+  for (const file of ['panel-view.tsx', 'panel-chrome.tsx', 'editor.tsx', 'editor-model.ts']) {
     const path = join(ROOT, 'src/client', file)
     if (!existsSync(path)) continue
     const source = readFileSync(path, 'utf8')
