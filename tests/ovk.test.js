@@ -331,7 +331,9 @@ test('guard: `forget` appears only on the purge path (ADR-0009 P6)', () => {
   }
   // The book's own write paths (chapter delete, trash, replace, import) are the ones a
   // future "clean up the index after deleting" change would touch first.
-  for (const file of ['chapters.ts', 'internal.ts', 'trash.ts', 'replace.ts', 'import-write.ts']) {
+  // The panel's write routes moved out of internal.ts into internal-writes.ts when that
+  // module was split; the guard follows the code that can actually forget blocks.
+  for (const file of ['chapters.ts', 'internal-writes.ts', 'trash.ts', 'replace.ts', 'import-write.ts']) {
     const text = readFileSync(join(HOST_DIR, file), 'utf8')
     assert.equal(text.includes('ovkForget'), false, `${file} must not call the physical delete`)
   }

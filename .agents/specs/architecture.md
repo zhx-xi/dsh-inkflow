@@ -3,7 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)、[ADR-0006](../adrs/0006-workspace-contract-v2.md)、[ADR-0007](../adrs/0007-plugin-shared-library.md)、[ADR-0008](../adrs/0008-panel-data-channel.md)、[ADR-0009](../adrs/0009-ovk-semantic-search.md)。
 > **依赖**：[conventions.md](conventions.md)（契约）、[data-model.md](data-model.md)（数据形状）。
 > **相关 ADR**：0003（构建链）、0004（loopback 加固，继承）。
-> **状态**：活跃（v3）。本文只写**已实测**的宿主契约与**已裁决**的目标形态；未落地部分标【未实现】，未观测部分标【未验证】。DSH 侧签名来自 `cordis_inspect_query` 的 Host/Client Service 与 Slot 契约（0.2.1-rc.2 实测）。
+> **状态**：活跃（v3）。本文只写**已实测**的宿主契约与**已裁决**的目标形态；未落地部分标【未实现】，未观测部分标【未验证】。DSH 侧签名来自 `cordis_inspect_query` 的 Host/Client Service 与 Slot 契约（0.2.1-rc.2 实测，0.2.1-rc.5 复核）。
 
 ## 1. 一句话架构
 
@@ -65,6 +65,7 @@
 
 ## 4. DSH 集成点（实测签名）
 
+> **版本基线**：下列签名取自 0.2.1-rc.2 的打包产物，0.2.1-rc.3 → 0.2.1-rc.5 的复核结论是**契约未变**：`@deepseek-ai/dsh-base` / `dsh-tools` / `dsh-session` / `dsh-client-ui-cordis` / `dsh-agent-preset-registry` 在这三个版本之间零改动；唯一的破坏性变更（rc.4 的 `conversation.chat.reasoning.body` 新增 `rawText`）不在本插件的注册面上——我们只注册 `conversation.view` / `sidebar.panellist` / `main`。因此 `engines.dsh` 的下限保持 `>=0.2.1-rc.2`：插件在 rc.2…rc.5 上都成立。
 ### 4.1 工具 — `ctx.tools`
 
 `ctx.tools.register(definition: ToolDefinition): () => void`，注册即进 system prompt。本插件用**原始 JSON Schema**（`parameters`）+ 纯对象定义，不 import `defineTool`（零运行时依赖，见 §5.1）。`output.render(args, value)` 必须返回 `[{type:'text', text}]`。
@@ -86,9 +87,9 @@
 
 请求只携带 `sessionId`（query 或 `x-inkflow-session`）。Host 按序解析：`workspaceRegistry.list()` 的 `sessionIds → Workspace.path` → `workingDirectory.get(sessions.get(id))` → `Session.header.cwd` → 失败即 `200 + ok:false + NO_SESSION_CONTEXT`（附 `actions[]`，零写盘）；`session-` 前缀的两种写法都匹配。解析出的目录经 `findProjectRoot` 向上找书，再 `inspectProject(root, { recreateIndexDir: false })` 过四态门禁——面板与工具看到同一份 `state`/`checks`/`missing`/`actions`（D5）。
 
-路由清单与错误码见 [conventions.md](conventions.md) §6.2。投影实现在 `src/host/internal.ts`，全部只读真相文件：关掉 `index/` 的自动放宽、卷章树走 `readCatalog` 的 `.md` 投影、索引只以 `readOnly` 打开（检索函数本身不建库）、章节文件只读且必须落在 `chapters/` 内。**唯一允许的写是派生缓存**：`/chapters` 与 `/search` 先经 `ensureIndex` 把索引弄新鲜（issue #5，§7），失败则降级——继续用旧索引或 catalog 投影作答并回 `indexError`。面板**从不修复项目结构**（`needs-repair` / `needs-setup` 下的写入只能由用户确认后的向导触发）；`index/` 缺失时 `/status` 报 `index.dbExists: false`，卷章树仍从文件投影得到。
+路由清单与错误码见 [conventions.md](conventions.md) §6.2。投影实现在 `src/host/internal-projections.ts`，全部只读真相文件：关掉 `index/` 的自动放宽、卷章树走 `readCatalog` 的 `.md` 投影、索引只以 `readOnly` 打开（检索函数本身不建库）、章节文件只读且必须落在 `chapters/` 内。**唯一允许的写是派生缓存**：`/chapters` 与 `/search` 先经 `ensureIndex` 把索引弄新鲜（issue #5，§7），失败则降级——继续用旧索引或 catalog 投影作答并回 `indexError`。面板**从不修复项目结构**（`needs-repair` / `needs-setup` 下的写入只能由用户确认后的向导触发）；`index/` 缺失时 `/status` 报 `index.dbExists: false`，卷章树仍从文件投影得到。
 
-**body 白名单的归属（#162）**：每条路由的 `body` 是一个 `*_BODY_FIELDS` 常量，**定义在读取该 body 的模块里**（`internal.ts` 的 `CHAPTER_*_BODY_FIELDS`、`hub-settings.ts`、`hub-wizard.ts`、`shared-channel.ts`、`extract-channel.ts` …），`routes.ts` 只 import、不写字面量；设置页的 `HUB_SETTINGS_BODY_FIELDS` 由 `settings.ts` 的 `SETTINGS_FIELDS` **派生**（+ `confirm`），不再手抄。依据是 #162：手抄字段表在 #41 加 `semanticEndpoint`/`semanticApiKey` 时差点漏改，而漏改只表现为设置页保存 `400 UNEXPECTED_BODY_FIELD`——字段在设置层完全合法，所以没有任何别的测试会红。机械守卫：`tests/body-fields.test.js` 扫描 `routes.ts` 禁止行内 `body: [`；`tests/hub-settings.test.js` 断言白名单 = `SETTINGS_FIELDS` + `confirm`，且线上逐个字段都被接受。
+**body 白名单的归属（#162）**：每条路由的 `body` 是一个 `*_BODY_FIELDS` 常量，**定义在读取该 body 的模块里**（`internal-writes.ts` 的 `CHAPTER_*_BODY_FIELDS`、`hub-settings.ts`、`hub-wizard.ts`、`shared-channel.ts`、`extract-channel.ts` …），`routes.ts` 只 import、不写字面量；设置页的 `HUB_SETTINGS_BODY_FIELDS` 由 `settings.ts` 的 `SETTINGS_FIELDS` **派生**（+ `confirm`），不再手抄。依据是 #162：手抄字段表在 #41 加 `semanticEndpoint`/`semanticApiKey` 时差点漏改，而漏改只表现为设置页保存 `400 UNEXPECTED_BODY_FIELD`——字段在设置层完全合法，所以没有任何别的测试会红。机械守卫：`tests/body-fields.test.js` 扫描 `routes.ts` 禁止行内 `body: [`；`tests/hub-settings.test.js` 断言白名单 = `SETTINGS_FIELDS` + `confirm`，且线上逐个字段都被接受。
 
 **书库通道 `/inkflow/internal/hub/*`：无会话、独立路由组**（[ADR-0010](../adrs/0010-book-hub-entry.md) D3/D6）。左侧栏书库是 root 作用域面板，拿不到会话，所以这条通道**不改动上面的会话路由一行**，而是在同一个 `/inkflow` 前缀下先按段分发（`internalPath` 以 `/hub` 开头即进 hub 分派器）：
 
@@ -471,7 +472,10 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/chapters-types.ts` | 卷章操作的**契约**：每个输入、每个成功形状、每个失败形状（纯类型，200 行） | 任何实现 |
 | `src/host/chapters-ops.ts` | 四个**章**操作：新建 / 写入（含期望基线）/ 移卷 / 删除 | 命名规则与 CAS 的实现（在 `chapters.ts`，本文件只调用） |
 | `src/host/chapters-ops-volume.ts` | 两个**卷**操作：新建 / 改名（含目录改名与 catalog 级联） | 同上；一个卷是目录 + 一行 catalog，一个章是文件 + 一行，`ops` 与 `ops-volume` 的接缝就是这条数据差别 |
-| `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError`（`/search` 自 #39 起是 X-16 的单一入口，索引不可用时降级为章元数据扫描并带 `degradedReason`；检索替换的三条路由在 `search-channel.ts`） | HTTP 加固、写作品文件、自己决定是否重建 |
+| `src/host/internal.ts` | 私有通道的**解析与门禁**：会话 id 经 workspace 注册表 → `workingDirectory` → header 三步落到目录，`inspectProject` 判四态并给出通道版拒绝清单（`NO_SESSION_CONTEXT` = 答不了，不是传输失败）；本文件不建投影、不写文件，`build*` / `*ViaChannel` 全部从下面三个文件再导出，调用方只 import 这一个 | HTTP 加固、写作品文件、决定是否重建 |
+| `src/host/internal-types.ts` | 通道的**共享词汇**：`JsonRecord`、`SessionRoot`/`SessionRootSource`、`ChannelTarget`/`ChannelResolution`；投影与写路由只需要这些形状，做成叶子模块后三者互不依赖，模块图保持无环 | 任何运行时逻辑、门禁判定 |
+| `src/host/internal-projections.ts` | 通道的**只读投影**：`/status`、`/chapters`、`/chapters/:id`、`/search` 四个 builder；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError`（`/search` 是 X-16 的单一入口，索引不可用时降级为章元数据扫描并带 `degradedReason`；检索替换的三条路由在 `search-channel.ts`） | 写作品文件、决定是否重建、分派路由 |
+| `src/host/internal-writes.ts` | 通道的**写路由**：面板编辑器的保存路径（建章 / 保存 / 移动 / 删除），一律经 `chapters.ts` 走写锁、原子替换、catalog 重建与 `commitIndex`；请求问题按 HTTP 词汇回答，`CHAPTER_*_BODY_FIELDS` 白名单也在这里定义 | 读投影、分派路由、决定门禁 |
 | `src/host/findings.ts` | **「问题」的唯一形状**（roadmap X-14）：`Finding` / `FindingLocator` / 五个报告分组 / `FINDING_CODES` 目录 / `compareFindings` 的稳定排序 | 任何检查实现、任何 IO（#33 产出、#36 消费） |
 | `src/host/calendar-book.ts` | **哪张历法表属于这本书**（#48，ADR-0025 D1/D3）：`readBookCalendar(root)` 从 `inkflow.json` 的 `calendar` 读表（缺省 → `DEFAULT_CALENDAR`，**存在但非法 → 结构化拒绝，绝不回退**）、`writeBookCalendar(root, spec)` 校验后临时文件+rename 原子改写（`resolveWriteTarget` 有意不管根级元数据，与 `hub-wizard`/`shared-copy` 同路）、`defaultEraOf(spec)`（裸日期读在**最新**纪元）、`calendarFingerprint(root)`（索引 `meta` 里存的那枚指纹，供新鲜度对拍） | 任何换算（`calendar.ts`）、索引列的写入（timeline 域）、私有落点 |
 | `src/host/calendar.ts` | **历法换算的唯一实现**（#180，roadmap X-28）：可配置历法表（每纪元 `epochOffsetDays` + 月长 + 三种闰规则 `none`/`every N`/`gregorian`）、`toAbsolute({era,y,m,d})` 与 `fromAbsolute(days)` 双向换算（A→B→A 误差 0，含闰日与跨纪元）、`calendarDaysBetween`、`monthLength`/`isLeapYear`/`eraAt`/`findEra`、`validateCalendarSpec` 与 `DEFAULT_CALENDAR`；结果是 `{ok,value}`/`{ok,error}`，**永不抛**。理由写在文件头（不另立 ADR：X-28 已是决策，编号不预占） | 任何 IO、任何 `Date`/时钟、解析 `timeline/*.md`（文件与字段归 timeline 域）；它只回答「这一天是第几天」 |
