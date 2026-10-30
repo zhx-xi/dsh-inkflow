@@ -467,7 +467,10 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 | `src/host/tools/gate-tools.ts` | `inkflow_gate_check`（#44）：八项门禁跑一章 + 结论文件；`write: false` 只算不写 | 八条规则（`gate-rules.ts` / `gate-fragment.ts` / `gate-proofread.ts` / `gate-degeneration.ts`）、词表（`gate-vocabulary.ts`）、任何模型调用 |
 | `src/host/tools/shared-library-tools.ts` | 共享库三工具（#40）：`inkflow_shared_list` / `_copy` / `_update`；`list` 不要求书可用（库不属于任何项目），书可用时同一答案附副本与 stale 列表 | 写共享库或 `index.json`、双向同步（ADR-0007 C6）、副本语义（`shared-copy.ts`） |
 | `src/host/tools/import-tools.ts` | `inkflow_library_import`（#37）：`plan` 只读、`apply` 要 `confirm` + `planToken`；配套 `renderImportFailure` / `importFailure` | 分章与编码判定（`import.ts`）、写入与整批回滚（`import-write.ts`） |
-| `src/host/chapters.ts` | 卷章 CRUD 的规则：id/uuid、seq/slug 分配、改卷名级联、移卷、删章、失败回滚、catalog 与索引重建、写锁内的期望基线 CAS（`FILE_CHANGED`） | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
+| `src/host/chapters.ts` | 卷章写路径**共用的那一半**：id/uuid、seq/slug 分配、卷号与文件名推导、失败助手、投影读取、写锁内的期望基线 CAS（`FILE_CHANGED`）、回滚步骤与 catalog/索引重建；并把契约与六个操作按原地址转发 | 门禁判定（由 tools 先做）、直接拼项目路径（经 io.ts）、派生索引的 schema |
+| `src/host/chapters-types.ts` | 卷章操作的**契约**：每个输入、每个成功形状、每个失败形状（纯类型，200 行） | 任何实现 |
+| `src/host/chapters-ops.ts` | 四个**章**操作：新建 / 写入（含期望基线）/ 移卷 / 删除 | 命名规则与 CAS 的实现（在 `chapters.ts`，本文件只调用） |
+| `src/host/chapters-ops-volume.ts` | 两个**卷**操作：新建 / 改名（含目录改名与 catalog 级联） | 同上；一个卷是目录 + 一行 catalog，一个章是文件 + 一行，`ops` 与 `ops-volume` 的接缝就是这条数据差别 |
 | `src/host/internal.ts` | 私有通道的**投影层**：会话 → 工作区/项目解析、四态门禁的通道版拒绝清单、`/status`/`/chapters`/`/chapters/:id`/`/search` 四个投影；`/chapters` 与 `/search` 先 `ensureIndex`，失败降级并报告 `indexError`（`/search` 自 #39 起是 X-16 的单一入口，索引不可用时降级为章元数据扫描并带 `degradedReason`；检索替换的三条路由在 `search-channel.ts`） | HTTP 加固、写作品文件、自己决定是否重建 |
 | `src/host/findings.ts` | **「问题」的唯一形状**（roadmap X-14）：`Finding` / `FindingLocator` / 五个报告分组 / `FINDING_CODES` 目录 / `compareFindings` 的稳定排序 | 任何检查实现、任何 IO（#33 产出、#36 消费） |
 | `src/host/calendar-book.ts` | **哪张历法表属于这本书**（#48，ADR-0025 D1/D3）：`readBookCalendar(root)` 从 `inkflow.json` 的 `calendar` 读表（缺省 → `DEFAULT_CALENDAR`，**存在但非法 → 结构化拒绝，绝不回退**）、`writeBookCalendar(root, spec)` 校验后临时文件+rename 原子改写（`resolveWriteTarget` 有意不管根级元数据，与 `hub-wizard`/`shared-copy` 同路）、`defaultEraOf(spec)`（裸日期读在**最新**纪元）、`calendarFingerprint(root)`（索引 `meta` 里存的那枚指纹，供新鲜度对拍） | 任何换算（`calendar.ts`）、索引列的写入（timeline 域）、私有落点 |
