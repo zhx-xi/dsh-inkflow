@@ -269,7 +269,6 @@ const OVER_CAP_BUDGET = {
   'src/host/etl-plan.ts': 1209,
   'src/host/etl-source.ts': 631,
   'src/host/etl.ts': 753,
-  'src/host/export.ts': 1004,
   'src/host/extract-accept.ts': 704,
   'src/host/extract-tools.ts': 677,
   'src/host/extract.ts': 1084,
