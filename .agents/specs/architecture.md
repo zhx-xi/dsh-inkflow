@@ -434,7 +434,9 @@ staleLoadedCode = diskMtime > loadedAt + STALE_TOLERANCE_MS     // 容差 5000 m
 
 | 模块 | 只做 | 不做 |
 |---|---|---|
-| `src/host/index.ts` | 装配、生命周期、日志 | 业务逻辑 |
+| `src/host/index.ts` | 插件入口：`name`/`inject`、版本戳、`apply()` 装配（技能 → 工具 → 通道，按序执行且各自可降级），并把公开面转发给 `plugin-exports*` | 业务逻辑、再导出清单本身 |
+| `src/host/plugin-exports.ts` | 公开面的**前半**：数据域与查询（设定、大纲、伏笔、账本、检索）——工具会去用的那一半 | 任何运行时逻辑（纯 `export … from`） |
+| `src/host/plugin-exports-channel.ts` | 公开面的**后半**：通道、面板载荷、导出/导入/批量与版本戳 | 任何运行时逻辑（纯 `export … from`） |
 | `src/host/config.ts` | 插件配置（`dataDir` 缺省 `$DSH_HOME/inkflow`、`serveHttp`） | 作品数据 |
 | `src/host/conventions.ts` | **目录/文件约定的唯一常量来源**（九目录 + `index/` + `.gitkeep` + `.gitignore` 必需行） | 任何 IO |
 | `src/host/project.ts` | 四态门禁判定、逐项清单（`missing` / `actions`）、`inkflow.json` 读写、路径作用域 | 执行动作、索引 |

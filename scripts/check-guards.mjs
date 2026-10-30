@@ -279,7 +279,6 @@ const OVER_CAP_BUDGET = {
   'src/host/hub-wizard.ts': 656,
   'src/host/impact.ts': 619,
   'src/host/import-write.ts': 675,
-  'src/host/index.ts': 1519,
   'src/host/internal.ts': 1261,
   'src/host/io.ts': 925,
   'src/host/jobs-tools.ts': 624,
