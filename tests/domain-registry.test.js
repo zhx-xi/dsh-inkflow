@@ -57,7 +57,7 @@ const BUILT_IN_TOOLS = [
   // chapters *and* a `library/` copy, so no single content directory owns it.
   ['inkflow_library_import', '39f228ea'],
   ['inkflow_project_plan', '52c0ddec'],
-  ['inkflow_project_init', '4226bc54'],
+  ['inkflow_project_init', '6ddd8313'],
   ['inkflow_volume_create', 'a805a3ed'],
   ['inkflow_volume_rename', 'dd03c04a'],
   ['inkflow_chapter_create', '0df12472'],
