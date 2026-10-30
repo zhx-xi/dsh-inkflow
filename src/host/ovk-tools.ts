@@ -79,9 +79,11 @@ function summaryLines(summary: RebuildSummary): string[] {
     `最近一次重建：${summary.at}`,
     `写入 ${String(summary.written)} 章 / 墓碑 ${String(summary.tombstoned)} 章 / 未变 ${String(summary.unchanged)} 章`,
     `块 ${String(summary.blocks)} 个 · ${bytesLabel(summary.bytes)} · 调用 ${String(summary.calls)} 次`,
-    ...(summary.stale === 0
+    // A receipt is replayed JSON: the preview path has no `summary` at all, and a stored
+    // summary may predate `staleChapters`. Both are absent fields, not broken data.
+    ...((summary.stale ?? 0) === 0
       ? []
-      : [`未完成（下次重试）：${String(summary.stale)} 章 — ${summary.staleChapters.slice(0, 5).join(', ')}`]),
+      : [`未完成（下次重试）：${String(summary.stale)} 章 — ${(summary.staleChapters ?? []).slice(0, 5).join(', ')}`]),
   ]
 }
 
@@ -172,7 +174,10 @@ export function semanticTools(deps: SemanticToolDeps): ToolDefinition[] {
         if (v['requiresConfirm'] === true) {
           return text([...estimateLines, '超过首建阈值，需要 confirm: true 才会执行（每块一次模型摘要调用，即真实费用）。'])
         }
-        return text([...estimateLines, '', ...summaryLines(asRecord(v['summary']) as unknown as RebuildSummary)])
+        // Only a real run has a summary; the estimate-only reply stops at the two lines above.
+        const summary = asRecord(v['summary'])
+        const tail = Object.keys(summary).length === 0 ? [] : ['', ...summaryLines(summary as unknown as RebuildSummary)]
+        return text([...estimateLines, ...tail])
       },
     },
     execute: async (args, exec) => {
