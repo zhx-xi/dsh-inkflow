@@ -39,7 +39,6 @@ const OVER_HARD_CAP_DEBT = {
   'src/client/index.tsx': 1053,
   'src/client/library-model.ts': 821,
   'src/host/catalog.ts': 823,
-  'src/host/etl-plan.ts': 1209,
   'src/host/extract.ts': 1084,
   'src/host/io.ts': 925,
   'src/host/repair.ts': 945,
