@@ -308,10 +308,15 @@ export function projectWizardTools(deps: ToolDeps): ToolDefinition[] {
     parameters: {
       type: 'object',
       properties: {
+        projectRoot: {
+          type: 'string',
+          description:
+            'Absolute path of the project root. Omit to create the book at the session working directory. Must live inside the session working directory.',
+        },
         root: {
           type: 'string',
           description:
-            'Absolute path of the project root. Omit to use the session working directory. Must live inside the session working directory.',
+            'Deprecated alias of projectRoot, kept so older callers keep working. Passing both with different values is refused.',
         },
         title: {
           type: 'string',
@@ -380,8 +385,24 @@ export function projectWizardTools(deps: ToolDeps): ToolDefinition[] {
     execute: async (args, exec) => {
       const a = asRecord(args)
       const cwd = await sessionCwd(deps.ctx, exec)
-      const rootRaw = a['root']
-      const root = typeof rootRaw === 'string' && rootRaw.trim() !== '' ? resolvePath(rootRaw.trim()) : cwd
+      // One name for the project root, as in every other tool; `root` still answers because
+      // it shipped first. Two different answers cannot both be honoured — picking one would
+      // create a book somewhere the caller never named, which is how this went wrong once.
+      const explicitRaw = a['projectRoot']
+      const legacyRaw = a['root']
+      const explicit = typeof explicitRaw === 'string' && explicitRaw.trim() !== '' ? resolvePath(explicitRaw.trim()) : undefined
+      const legacy = typeof legacyRaw === 'string' && legacyRaw.trim() !== '' ? resolvePath(legacyRaw.trim()) : undefined
+      if (explicit !== undefined && legacy !== undefined && explicit !== legacy) {
+        return {
+          ok: false,
+          error: {
+            code: 'PROJECT_ROOT_CONFLICT',
+            message: `projectRoot and its deprecated alias root name two different directories (${explicit} vs ${legacy})`,
+            hint: 'pass projectRoot only; root is kept for older callers',
+          },
+        }
+      }
+      const root = explicit ?? legacy ?? cwd
 
       // Refuse before creating anything: apply writes a whole directory tree and
       // runs git init, so an unchecked path is an arbitrary-directory-write

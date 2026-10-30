@@ -45,6 +45,8 @@ const EXEMPT = {
     'the confirm gate runs before any book is resolved, because a broken book is the usual reason to export diagnostics',
   'inkflow_relation_upsert':
     'the argument/confirm check runs before the anchor: a call that forgot `confirm` is answered CONFIRM_REQUIRED, which is more actionable than a missing directory',
+  'inkflow_project_init':
+    'this is the tool that CREATES the book, so "no book here" is its input rather than a refusal: it answers with the plan/confirm gate',
 }
 
 /**
