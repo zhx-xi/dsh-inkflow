@@ -264,23 +264,25 @@ test('client bundle carries the build stamp and the restart guidance', () => {
 
 test('the stale-build banner sits above the tabs, so every gate state shows it', () => {
   // A stale generation renders the REFUSAL screen for a usable book, so the
-  // banner must not live inside the usable-only branch of the panel tree.
-  const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
+  // banner must not live inside the usable-only branch of the panel tree. The tree moved
+  // into `panel-view.tsx`; the verdict it renders is still read in the data hook.
+  const source = readFileSync(join(ROOT, 'src/client', 'panel-view.tsx'), 'utf8')
   const banner = source.indexOf('<StaleBuildBanner')
   // The row itself moved into `panel-tabs.tsx`; this test is about the ORDER in the tree, so
   // it anchors on the element that renders the row rather than on the row's own markup.
   const tabs = source.indexOf('<PanelTabRow')
   assert.ok(banner > 0 && tabs > 0 && banner < tabs, 'the banner is rendered before the tab row')
-  assert.ok(source.includes('readBuild(status)'), 'the panel reads the stamp out of /status, not from a guess')
+  const hook = readFileSync(join(ROOT, 'src/client', 'use-workbench.ts'), 'utf8')
+  assert.ok(hook.includes('readBuild(status)'), 'the panel reads the stamp out of /status, not from a guess')
 })
 
 test('every live tab has a page in the renderer map (roadmap X-12)', () => {
-  // The tab row is driven by PANEL_TABS, the page by the map in index.tsx. A tab that
+  // The tab row is driven by PANEL_TABS, the page by the map in panel-view.tsx. A tab that
   // is `available` with no page in that map renders an empty panel with no error —
   // exactly the failure this guard exists to catch before a user finds it.
-  const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
+  const source = readFileSync(join(ROOT, 'src/client', 'panel-view.tsx'), 'utf8')
   const mapStart = source.indexOf('const pageRenderers: Readonly<Record<string, () => ReactNode>> = {')
-  assert.ok(mapStart > 0, 'index.tsx keeps the page map the tabs are resolved against')
+  assert.ok(mapStart > 0, 'panel-view.tsx keeps the page map the tabs are resolved against')
   const mapEnd = source.indexOf('\n  }', mapStart)
   assert.ok(mapEnd > mapStart)
   const mapBody = source.slice(mapStart, mapEnd)
@@ -304,12 +306,13 @@ test('every live tab has a page in the renderer map (roadmap X-12)', () => {
 })
 
 test('client sources draw every colour from theme tokens', () => {
-  for (const file of ['index.tsx', 'hub.tsx', 'hub-shared.tsx', 'hub-wizard.tsx']) {
+  // The workbench's colour table is `panel-chrome.tsx` now; the entry file draws nothing.
+  for (const file of ['panel-chrome.tsx', 'panel-view.tsx', 'hub.tsx', 'hub-shared.tsx', 'hub-wizard.tsx']) {
     const source = readFileSync(join(ROOT, 'src/client', file), 'utf8')
     assert.deepEqual(findColorLiterals(source), [], `no hardcoded colour literals in ${file} (AGENTS.md §6)`)
     assert.ok(source.includes('var(--dsw-alias-'), `colours come from --dsw-alias-* tokens in ${file}`)
   }
-  const source = readFileSync(join(ROOT, 'src/client', 'index.tsx'), 'utf8')
+  const source = readFileSync(join(ROOT, 'src/client', 'panel-chrome.tsx'), 'utf8')
   assert.ok(source.includes('var(--dsw-alias-state-'), 'the badge tone is a theme state token')
 })
 

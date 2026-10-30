@@ -95,10 +95,11 @@ test('the tree row shows the heading only — the path lives in the editor now',
   assert.equal(page.includes('.path'), false, 'the row must not render the file path')
   assert.ok(page.includes('chapterHeading'), 'the row still says which chapter it is')
 
-  // `index.tsx` keeps `chapter.path` in ONE place that is not a row: a jump address coming
+  // The workbench keeps `chapter.path` in ONE place that is not a row: a jump address coming
   // from the audit page is matched against a chapter's path, and that is not a render. What
   // must be gone is the row itself — which was the only caller of `chapterHeading` there.
-  const index = sourceOf('index.tsx')
+  // The page moved to `panel-view.tsx` when the entry file was reduced to registration.
+  const index = sourceOf('panel-view.tsx')
   assert.equal(index.includes('chapterHeading'), false, 'the old row render is gone from the workbench too')
   assert.ok(index.includes('<ChapterTree'), 'the workbench renders the extracted tree')
 })

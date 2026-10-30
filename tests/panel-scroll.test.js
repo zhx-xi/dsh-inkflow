@@ -86,7 +86,7 @@ test('no viewport constant is baked into the client half', () => {
   // The height is measured at runtime. A `calc(100dvh - Npx)` would be a magic
   // number tied to one harness chrome height, and it would slide the columns under
   // the harness composer (128px measured) — the reason it was rejected.
-  for (const file of ['index.tsx', 'library.tsx', 'layout.ts', 'layout-model.ts']) {
+  for (const file of ['index.tsx', 'panel-chrome.tsx', 'panel-view.tsx', 'use-workbench.ts', 'library.tsx', 'layout.ts', 'layout-model.ts']) {
     assert.equal(/100dvh|100vh/.test(readSource(file)), false, `${file} must not carry a viewport constant`)
   }
   assert.equal(/100dvh|100vh/.test(readBundle()), false, 'the bundle must not carry a viewport constant')
@@ -123,26 +123,35 @@ test('no harness class name is trusted by the geometry', () => {
 // ---------------------------------------------------------------------------
 
 test('both panel tabs consume the shared scroll-box helpers', () => {
-  for (const file of ['index.tsx', 'library.tsx']) {
+  // The workbench is three files now and each helper has exactly one owner: the hook
+  // measures, the view spreads the box height, the colour/style table takes the column
+  // scrolling (which is where a column's own scroll declaration lives).
+  const expected = {
+    'use-workbench.ts': ['useScrollBox'],
+    'panel-view.tsx': ['SCROLL_BOX_STYLE'],
+    'panel-chrome.tsx': ['SCROLL_COLUMN_STYLE'],
+    'library.tsx': ['useScrollBox', 'SCROLL_BOX_STYLE', 'SCROLL_COLUMN_STYLE'],
+  }
+  for (const [file, markers] of Object.entries(expected)) {
     const source = readSource(file)
-    assert.ok(source.includes('useScrollBox'), `${file} measures the available height with the shared hook`)
-    assert.ok(source.includes('SCROLL_BOX_STYLE'), `${file} takes the box height source from the shared style`)
-    assert.ok(source.includes('SCROLL_COLUMN_STYLE'), `${file} takes the column scrolling from the shared style`)
+    for (const marker of markers) assert.ok(source.includes(marker), `${file} takes ${marker} from the shared helper`)
   }
 })
 
 test('neither view restates the variable name', () => {
-  for (const file of ['index.tsx', 'library.tsx']) {
+  for (const file of ['index.tsx', 'panel-chrome.tsx', 'panel-view.tsx', 'use-workbench.ts', 'library.tsx']) {
     assert.equal(readSource(file).includes('--inkflow-body-h'), false, `${file} must not hardcode the variable name`)
   }
 })
 
 test('the chapter body is a sized box, not a `flex: 1` grower', () => {
-  const source = readSource('index.tsx')
+  // The style table and the spread live in different files after the split: the
+  // declaration in `panel-chrome.tsx`, the use site in `panel-view.tsx`.
+  const source = readSource('panel-chrome.tsx')
   const body = /const bodyStyle = \{([\s\S]*?)\n\}/.exec(source)
   assert.ok(body !== null, 'bodyStyle is still a module constant')
   assert.equal(/flex:\s*1/.test(body[1]), false, 'the body cannot keep `flex: 1`: flex-basis 0 would override its height')
-  assert.ok(source.includes('...SCROLL_BOX_STYLE'), 'the body grid spreads the shared box style')
+  assert.ok(readSource('panel-view.tsx').includes('...SCROLL_BOX_STYLE'), 'the body grid spreads the shared box style')
 })
 
 // ---------------------------------------------------------------------------
