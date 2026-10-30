@@ -3,7 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)、[ADR-0006](../adrs/0006-workspace-contract-v2.md)、[ADR-0007](../adrs/0007-plugin-shared-library.md)、[ADR-0008](../adrs/0008-panel-data-channel.md)、[ADR-0009](../adrs/0009-ovk-semantic-search.md)。
 > **依赖**：[conventions.md](conventions.md)（契约）、[data-model.md](data-model.md)（数据形状）。
 > **相关 ADR**：0003（构建链）、0004（loopback 加固，继承）。
-> **状态**：活跃（v3）。本文只写**已实测**的宿主契约与**已裁决**的目标形态；未落地部分标【未实现】，未观测部分标【未验证】。DSH 侧签名来自 `cordis_inspect_query` 的 Host/Client Service 与 Slot 契约（0.2.1-rc.2 实测）。
+> **状态**：活跃（v3）。本文只写**已实测**的宿主契约与**已裁决**的目标形态；未落地部分标【未实现】，未观测部分标【未验证】。DSH 侧签名来自 `cordis_inspect_query` 的 Host/Client Service 与 Slot 契约（0.2.1-rc.2 实测，0.2.1-rc.5 复核）。
 
 ## 1. 一句话架构
 
@@ -64,6 +64,8 @@
 **会话目录来源**：优先 `ctx.get('workingDirectory').ensure(agent)`（公共服务，缺失时降级 `process.cwd()`）。工具也接受显式 `projectRoot`，但该路径必须 `realpath` 后落在**会话工作区子树**内；盘符根、家目录本身、系统与安装目录硬拒（`PATH_OUT_OF_SCOPE` / `PATH_FORBIDDEN`，写盘前拒绝）。跨会话状态 `state.json` 的 `lastProjectRoot` 只用于展示（启动日志），**不作为任何解析来源**——它是"某个会话最后碰过的书"，拿来兜底会把别人的书当成当前项目。
 
 ## 4. DSH 集成点（实测签名）
+
+> **版本基线**：下列签名取自 0.2.1-rc.2 的打包产物，0.2.1-rc.3 → 0.2.1-rc.5 的复核结论是**契约未变**：`@deepseek-ai/dsh-base` / `dsh-tools` / `dsh-session` / `dsh-client-ui-cordis` / `dsh-agent-preset-registry` 在这三个版本之间零改动；唯一的破坏性变更（rc.4 的 `conversation.chat.reasoning.body` 新增 `rawText`）不在本插件的注册面上——我们只注册 `conversation.view` / `sidebar.panellist` / `main`。因此 `engines.dsh` 的下限保持 `>=0.2.1-rc.2`：插件在 rc.2…rc.5 上都成立。
 ### 4.1 工具 — `ctx.tools`
 
 `ctx.tools.register(definition: ToolDefinition): () => void`，注册即进 system prompt。本插件用**原始 JSON Schema**（`parameters`）+ 纯对象定义，不 import `defineTool`（零运行时依赖，见 §5.1）。`output.render(args, value)` 必须返回 `[{type:'text', text}]`。
