@@ -724,17 +724,22 @@ test('the candidate store and the accept path have exactly the importers they ma
   // "Silent ingestion = 0" is a structural claim (ADR-0017 D5): only the tool surface and
   // the panel channel may reach the store, and only they may reach the accept path. A
   // second module here would be a second way in — which is exactly what must not exist.
+  //
+  // `plugin-exports-channel.ts` is not a second way in: it is the re-export layer `index.ts`
+  // forwards, so it reaches the store for exactly the reason `index.ts` does (the contract
+  // tests import the surface by name). It is listed here rather than merged into a wildcard
+  // because the point of this assertion is that every importer is named and justified.
   assert.deepEqual(importersOf('src/host/extract.ts'), [
     'src/host/extract-accept.ts',
     'src/host/extract-channel.ts',
     'src/host/extract-tools.ts',
-    'src/host/index.ts',
+    'src/host/plugin-exports-channel.ts',
   ])
 
   assert.deepEqual(importersOf('src/host/extract-accept.ts'), [
     'src/host/extract-channel.ts',
     'src/host/extract-tools.ts',
-    'src/host/index.ts',
+    'src/host/plugin-exports-channel.ts',
   ])
 
   // The fields→document function is the only place a candidate becomes text, so it may be
@@ -753,7 +758,10 @@ test('the candidate store and the accept path have exactly the importers they ma
     }
   }
   walk(join(ROOT, 'src'))
-  assert.deepEqual(materializeUsers.sort(), ['src/host/extract-accept.ts', 'src/host/index.ts'])
+  assert.deepEqual(materializeUsers.sort(), [
+    'src/host/extract-accept.ts',
+    'src/host/plugin-exports-channel.ts',
+  ])
 })
 
 // ---------------------------------------------------------------------------

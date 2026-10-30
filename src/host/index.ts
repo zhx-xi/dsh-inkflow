@@ -34,20 +34,6 @@ export const name = 'dsh-inkflow'
  * skills and the preset declaration are data this plugin owns, so the assembly
  * inputs are part of that surface.
  */
-export {
-  BUNDLED_SKILL_NAMES,
-  SKILL_PROVIDER_NAME,
-  SKILL_RANK,
-  bundledSkillsDir,
-  createInkflowSkillProvider,
-  isWritingWorkspace,
-  loadBundledSkills,
-  readBundledSkill,
-  registerInkflowSkills,
-} from './skills.js'
-export type { BundledSkill, SkillFileProblem, SkillRegistration } from './skills.js'
-export { WRITING_PRESET_ID, buildWritingPreset, registerWritingPreset, writingPersona } from './preset.js'
-export type { PresetRegistration } from './preset.js'
 
 /**
  * The writing context is exported the same way: `buildWritingContext`
@@ -55,17 +41,6 @@ export type { PresetRegistration } from './preset.js'
  * scraping a fake prompt pipeline. The panel's future briefing preview reuses
  * the same entry point, so this is not a test-only surface.
  */
-export { DEFAULT_BUDGET_TOKENS, DEFAULT_TAIL_CHARS, EXTRA_SEGMENTS, buildWritingContext, estimateTokens } from './writing-context.js'
-export type {
-  ExtraSegmentInput,
-  ExtraSegmentSpec,
-  WritingContextOptions,
-  WritingContextResult,
-  WritingContextSegment,
-  WritingContextSegmentName,
-} from './writing-context.js'
-export { PROMPT_SECTION_NAME, PROMPT_SECTION_ORDER, registerWritingContext } from './prompt.js'
-export type { WritingContextRegistration } from './prompt.js'
 
 /**
  * The nine-segment brief (ADR-0022 D1/D2, roadmap X-23/X-25).
@@ -76,36 +51,6 @@ export type { WritingContextRegistration } from './prompt.js'
  * audit record/serialiser — is what lets the acceptance tests assert "preview = audit" and
  * "two runs, same bytes" against the artifact users install instead of against internals.
  */
-export {
-  BRIEF_CAP_RATIOS,
-  BRIEF_LABELS,
-  BRIEF_SEGMENT_ORDER,
-  BRIEF_TRIM_ORDER,
-  buildWritingBrief,
-} from './writing-context.js'
-export type {
-  BriefSegmentId,
-  BriefSegmentRecord,
-  BriefTrimRecord,
-  WritingBrief,
-} from './writing-context.js'
-export { MAX_TAGGED_CHARS, charactersInChapter, voiceInChapter } from './brief-sources.js'
-export type { BriefCastSource, BriefPackedText } from './brief-sources.js'
-export {
-  BRIEF_AUDIT_FORMAT,
-  BRIEF_AUDIT_SCHEMA,
-  briefAuditName,
-  briefAuditPath,
-  briefAuditRecord,
-  briefFor,
-  briefRunSummary,
-  briefWire,
-  resetBriefRunSummary,
-  serializeBriefAudit,
-  writeBriefAudit,
-  writeBriefAuditFor,
-} from './brief.js'
-export type { BriefAuditRecord, BriefAuditSegment, BriefAuditWrite, BriefRunSummary, BriefWire } from './brief.js'
 
 /**
  * The calendar table and its one conversion (roadmap X-28).
@@ -116,26 +61,6 @@ export type { BriefAuditRecord, BriefAuditSegment, BriefAuditWrite, BriefRunSumm
  * the derived absolute-day column to the index and the foreshadow deadline work compares
  * chapters; both call these functions instead of growing a second day count.
  */
-export {
-  DEFAULT_CALENDAR,
-  calendarDaysBetween,
-  eraAt,
-  findEra,
-  fromAbsolute,
-  isLeapYear,
-  monthLength,
-  toAbsolute,
-  validateCalendarSpec,
-} from './calendar.js'
-export type {
-  CalendarDate,
-  CalendarError,
-  CalendarErrorCode,
-  CalendarResult,
-  CalendarSpec,
-  EraSpec,
-  LeapRule,
-} from './calendar.js'
 
 /**
  * Where the book's calendar lives, and what a missing/broken one means.
@@ -145,8 +70,6 @@ export type {
  * and a caller that has the first without the second has to guess, which is the failure
  * mode ADR-0025 D1 exists to prevent.
  */
-export { BOOK_CALENDAR_KEY, calendarFingerprint, defaultEraOf, readBookCalendar, writeBookCalendar } from './calendar-book.js'
-export type { BookCalendar } from './calendar-book.js'
 
 /**
  * The frontmatter reader/writer is re-exported from the bundle entry so the
@@ -154,8 +77,6 @@ export type { BookCalendar } from './calendar-book.js'
  * proposal writer uses the same pair in-process, so this is not a test-only
  * surface: `parseMarkdown` reads a file, `patchFrontmatter` rewrites one line.
  */
-export { parseMarkdown, patchFrontmatter } from './frontmatter.js'
-export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
 
 /**
  * The map tab's pure view model and the panel tab list.
@@ -165,12 +86,13 @@ export type { FrontmatterPatchResult, ParsedMarkdown } from './frontmatter.js'
  * somebody has to keep in mind. The model itself lives in the client half; this is the same
  * re-export the panel's other pure models get, and it stays pure (no React, no IO).
  */
-export { MAP_NOTE, PLACE_KIND, describePin, placeGroups, readMapView } from '../client/map-model.js'
-export type { MapView, PlaceGroup, PlacePin } from '../client/map-model.js'
-export { PANEL_TABS } from '../client/panel-model.js'
-export type { PanelTab } from '../client/panel-model.js'
 
 /** Hard dependency: the tool registry. `webServer` is injected lazily. */
+// Every re-export lives in plugin-exports.ts; forwarding it keeps the public surface byte
+// for byte identical while leaving this file with the assembler.
+export * from './plugin-exports.js'
+export * from './plugin-exports-channel.js'
+
 export const inject = ['tools']
 
 /**
@@ -194,9 +116,6 @@ export const PLUGIN_VERSION = VERSION
  * without pulling in plugin assembly (`IndexBuildError` is the documented
  * failure type for `buildIndex`).
  */
-export { buildIndex, describeIndexBuildFailure, IndexBuildError } from './index-build.js'
-export type { IndexBuildErrorCode, IndexBuildFailure } from './index-build.js'
-export type { IndexBuildResult } from './indexer.js'
 
 /**
  * Domain module registry: the seam every 0.2.0 data domain plugs into
@@ -204,16 +123,9 @@ export type { IndexBuildResult } from './indexer.js'
  * surface is "built-ins + registered modules" and that the pre-write replace
  * (`applyCandidate`) keeps `I-04` honest.
  */
-export { DOMAIN_MODULES, applyCandidate, domainTools } from './domains/index.js'
 /** Outline planners: pure, so the write-side invariants are test-driven directly. */
-export { planOutlineMove, planOutlinePlacement, planOutlineUpsert } from './domains/outline-write.js'
-export type { OutlinePlan, OutlineRefusal, OutlineRefusalCode, OutlineWriteNode } from './domains/outline-write.js'
 /** Cross-class projection queries: the nine-class panel and mention work read through these. */
-export { entityCounts, listEntities, listEntityIds, listWorldEntries, searchEntities } from './domains/query.js'
 /** One entity's edges in both roles: the read behind `inkflow_relation_list`. */
-export { listRelationsFor } from './domains/query.js'
-export type { EntitySummary, WorldIndexEntry } from './domains/query.js'
-export type { RelationEdge } from './domains/query.js'
 
 /**
  * Relation domain: `planRelationUpsert` is exported so the write-side decision
@@ -221,47 +133,15 @@ export type { RelationEdge } from './domains/query.js'
  * cannot pass while the tool would refuse (or the other way round). The rest of the
  * domain stays behind `DOMAIN_MODULES`, like every other module.
  */
-export { planRelationUpsert } from './domains/relation-write.js'
 
 /**
  * The knowledge graph's type vocabulary and its two contradiction rules — direction and
  * `since`/`until` windows. Exported because a test and a panel need them and each rule has
  * one implementation every net and reader calls (X-4); the window judgement is pure arithmetic, so
  * "1000 edges under 100 ms" is measured on the function itself (`relation-period.ts`). */
-export { RELATION_KINDS, relationConflicts } from './domains/relation-write.js'
-export type { RelationConflict } from './domains/relation-write.js'
 // Inline `type` specifiers, one line: this file sits at its recorded line budget (a file may not grow past its recorded count).
-export { chapterPositionsFromProjection, relationPeriodFindings, relationPeriodMarks, type RelationPeriodConflict, type RelationPeriodMark, type RelationPeriodUncomparable, type RelationPeriodVerdict } from './domains/relation-period.js'
 
 /** Timeline planners and views: pure, so both axes are test-driven directly. */
-export {
-  planTimelineUpsert,
-  planTimelineView,
-  timelineConflicts,
-  timelineValidate,
-  parseWorldTime,
-} from './domains/timeline-plan.js'
-export type {
-  TimelineConflict,
-  TimelineConflictCode,
-  TimelineRow,
-  TimelineStatus,
-  TimelineUpsertPlan,
-  WorldTime,
-} from './domains/timeline-plan.js'
-export { listTimelineEvents } from './domains/query.js'
-export type {
-  RelationDirection,
-  RelationErrorCode,
-  RelationKind,
-  RelationPlan,
-  RelationPlanError,
-  RelationRow,
-  RelationUpsertRequest,
-  RelationUpsertView,
-} from './domains/relation-write.js'
-export { ENTITY_COLUMNS, entityFromRow, entityKey } from './domains/entities.js'
-export type { DomainWriteView } from './domains/index.js'
 
 /**
  * Entity mentions: the scan is pure (text in, rows out) so the DoD's
@@ -270,10 +150,6 @@ export type { DomainWriteView } from './domains/index.js'
  * `insertMentions` are the seam's half — `indexer.ts` creates the table and writes
  * the rows, because `mentions` owns no content directory and is not a domain.
  */
-export { MENTIONS_DDL, MENTIONS_TABLE, MENTION_SOURCES, chaptersOf, insertMentions, scanMentions } from './domains/mentions.js'
-export type { MentionChapter, MentionRow, MentionSource } from './domains/mentions.js'
-export { absentEntities, chaptersMentioning, mentionsOf } from './domains/mentions-query.js'
-export type { AbsentEntity, AbsentQueryOptions, MentionChapterHit, MentionHit, MentionQueryOptions } from './domains/mentions-query.js'
 
 /**
  * World book: the keyword matcher, the write-side half of I-08 and the tree
@@ -281,50 +157,12 @@ export type { AbsentEntity, AbsentQueryOptions, MentionChapterHit, MentionHit, M
  * entry this chapter pulls in" is testable without a project on disk. The
  * injection chain that consumes them belongs to the brief and is not wired yet.
  */
-export { matchWorldBook } from './domains/world-match.js'
-export type { WorldBookEntry, WorldBookHit, WorldBookMatchReason } from './domains/world-match.js'
-export { buildWorldTree, planWorldUpsert, worldIssues } from './domains/world-plan.js'
-export type {
-  WorldPlanRow,
-  WorldTree,
-  WorldTreeEntry,
-  WorldTreeGroup,
-  WorldTreeNode,
-  WorldUpsertCandidate,
-  WorldUpsertCode,
-  WorldUpsertPlan,
-  WorldUpsertRejection,
-} from './domains/world-plan.js'
 /** Exported for the tool-surface contract test: it asserts the aggregate is wired. */
-export { buildTools } from './tools.js'
 /**
  * Character cards: `planCharacterUpsert` is the write-side I-03 decision and
  * is a pure function precisely so it can be asserted without a disk; the card
  * reader answers "what was he at chapter 30" outside a tool call too.
  */
-export { planCharacterUpsert } from './domains/character-write.js'
-export type {
-  CharacterIdentity,
-  CharacterRejectCode,
-  CharacterUpsertPlan,
-  CharacterUpsertPlanInput,
-} from './domains/character-write.js'
-export { listCharacters } from './domains/character-query.js'
-export type { CharacterListOptions, CharacterSummary } from './domains/character-query.js'
-export type {
-  DomainDatabase,
-  DomainEntityRef,
-  DomainFile,
-  DomainFileParse,
-  DomainModule,
-  DomainParseInput,
-  DomainScanInput,
-  DomainScanResult,
-  DomainSchema,
-  DomainTableRows,
-  DomainToolDeps,
-  DomainValidateInput,
-} from './domains/types.js'
 
 /**
  * Index freshness: `checkIndexFreshness` is the read-only verdict and
@@ -332,33 +170,18 @@ export type {
  * embedders and tests the same way `buildIndex` is — the tools and the panel
  * channel both go through `ensureIndex`, so this is not a test-only surface.
  */
-export { FRESHNESS_REASON_LIMIT, checkIndexFreshness, ensureIndex } from './index-freshness.js'
-export type { EnsureIndexOptions, EnsureIndexResult, IndexFreshness, IndexFreshnessState } from './index-freshness.js'
-export { walkProjectFiles } from './indexer.js'
-export type { WalkedFile } from './indexer.js'
 // The read-only projections over the cache, exported for the same reason
 // `walkProjectFiles` is: a caller that must prove "the cache already knows this" cannot
 // do it through `ensureIndex` (which would rebuild first and hide the staleness).
 // `listChapters` serves one page (capped at `LIST_CHAPTERS_MAX`), `countChapters` is the
 // whole book, and `listAllChapters` is the unabridged read for the semantic ledger — one
 // chapter count, one source.
-export {
-  LIST_CHAPTERS_DEFAULT,
-  LIST_CHAPTERS_MAX,
-  clampChapterPage,
-  countChapters,
-  listAllChapters,
-  listChapters,
-  readIndexMeta,
-} from './indexer.js'
-export type { ChapterSummary, IndexMeta } from './indexer.js'
 
 /**
  * The internal channel's request-body ceiling. Exported so the tests state
  * the number once: a save carries a whole chapter, and the old 64 KiB ceiling
  * refused a ~20k-character chapter outright.
  */
-export { MAX_INTERNAL_BODY_BYTES } from './internal.js'
 
 /**
  * Write-time compare-and-swap: a writer may state the baseline it
@@ -366,39 +189,12 @@ export { MAX_INTERNAL_BODY_BYTES } from './internal.js'
  * writes. Exported so a caller can hand a test (or the panel) the same
  * fingerprint shape the writers compare against.
  */
-export { compareExpectation, fingerprintBytes, fingerprintFile, fingerprintProjectFile, normalizeExpectation } from './file-cas.js'
-export type { FileChange, FileChangeField, FileExpectation, FileFingerprint } from './file-cas.js'
 
 /**
  * Write-layer API: the single door for project file writes.
  * Exported for the tests now and for the chapter/scaffolding writers next; no
  * tool registers against it yet, so this adds no model-facing surface.
  */
-export {
-  acquireProjectWriteLock,
-  resolveWriteTarget,
-  withProjectWriteLock,
-  writeJsonAtomic,
-  writeTextAtomic,
-} from './io.js'
-export type {
-  AtomicWriteOptions,
-  IoErrorCode,
-  IoFailure,
-  IoResult,
-  ProjectLock,
-  ProjectLockResult,
-  ResolveWriteTargetResult,
-  WriteResult,
-  WriteTarget,
-} from './io.js'
-export {
-  CONTENT_DIRS,
-  INDEX_SCHEMA_VERSION,
-  PRIVATE_STATE_IGNORE_LINE,
-  REQUIRED_GITIGNORE_LINES,
-  WRITE_DIRS,
-} from './conventions.js'
 
 /**
  * Volume/chapter catalog (ADR-0006 D6): a reviewable, committed
@@ -406,22 +202,8 @@ export {
  * the project write lock and replace both files atomically; validation reports
  * drift instead of blocking. No tool registers against it yet.
  */
-export { readCatalog, rebuildCatalog, validateCatalog } from './catalog.js'
-export type {
-  CatalogChapter,
-  CatalogIssue,
-  CatalogIssueCode,
-  CatalogReadResult,
-  CatalogRebuildResult,
-  CatalogValidateResult,
-  CatalogVolume,
-  RootCatalog,
-  VolumeCatalog,
-} from './catalog.js'
 
 /** Exported for the tests (and embedders) so the gate can be asserted after a catalog change. */
-export { inspectProject } from './project.js'
-export type { ProjectProbe, ProjectState } from './project.js'
 
 /**
  * Book hub (ADR-0010): the no-session projection of the workspace
@@ -429,16 +211,6 @@ export type { ProjectProbe, ProjectState } from './project.js'
  * per book, 3 s budget, 200 rows — is only testable with an injected probe, and
  * because "which books does the hub see" must be answerable without a browser.
  */
-export { HUB_BOOK_TIMEOUT_MS, HUB_CONCURRENCY, HUB_MAX_BOOKS, HUB_SEGMENT, HUB_TOTAL_BUDGET_MS, buildHubBooks } from './hub.js'
-export type {
-  HubBookCounts,
-  HubBookRow,
-  HubBookState,
-  HubBooksOptions,
-  HubBooksResult,
-  HubBooksValue,
-  HubWorkspaceEntry,
-} from './hub.js'
 
 /**
  * Shared library (ADR-0010 D5): the **read-only** projection of the
@@ -451,22 +223,6 @@ export type {
  * from `settings.ts`'s `sharedRootOf` (`dataDir/shared` unless `sharedRoot` is
  * configured).
  */
-export {
-  SHARED_HEAD_BYTES,
-  SHARED_MAX_ENTRIES,
-  SHARED_MAX_HASH_BYTES,
-  SHARED_MAX_JSON_BYTES,
-  SHARED_SCAN_BUDGET_MS,
-  buildHubShared,
-} from './hub-shared.js'
-export type {
-  HubSharedError,
-  HubSharedOptions,
-  HubSharedResult,
-  HubSharedValue,
-  SharedEntry,
-} from './hub-shared.js'
-export { sharedDir } from './config.js'
 
 /**
  * The hub's new-book wizard (ADR-0010 D4/D6). Exported because the
@@ -476,31 +232,12 @@ export { sharedDir } from './config.js'
  * envelope over these two functions, and the tests drive both the envelope and
  * the functions to prove they agree.
  */
-export {
-  HUB_PLAN_TOKEN_TTL_MS,
-  createHubPlanTokenStore,
-  hubApply,
-  hubPlan,
-  hubPlanTokens,
-} from './hub-wizard.js'
-export type {
-  HubPlanAnchor,
-  HubPlanTokenLookup,
-  HubPlanTokenRecord,
-  HubPlanTokenStatus,
-  HubPlanTokenStore,
-  HubPlanTokenStoreOptions,
-  HubWizardOptions,
-  HubWizardReply,
-} from './hub-wizard.js'
 
 /**
  * GBK mojibake detection: a pure function over the title text, so the
  * tests can pin the precision bar (genuine Chinese/Japanese/emoji must not trip
  * it) without building a project on disk.
  */
-export { MIN_NON_ASCII_RATIO, MIN_SIGNATURE_FEATURES, describeEncodingSuspicion, looksLikeGbkMojibake } from './encoding.js'
-export type { EncodingSuspicion } from './encoding.js'
 
 /**
  * Build identity: `getLoadedBuild` is what `/status`, the status tool
@@ -509,24 +246,12 @@ export type { EncodingSuspicion } from './encoding.js'
  * because the contract tests import `lib/index.js` only, and because any surface
  * that answers "am I running old code" must ask the same function.
  */
-export { STALE_TOLERANCE_MS, UNKNOWN_BUILD, decideStale, getLoadedBuild, summarizeBuild } from './build-info.js'
-export type { BuildSummary, LoadedBuild, LoadedBuildOptions } from './build-info.js'
 
 /**
  * Chapter search: the read-only query half of `chapters_fts`.
  * Exported because the panel's future search box reuses it in-process, so this
  * is not a test-only surface — the tool and the tests drive the same function.
  */
-export { DEFAULT_SEARCH_LIMIT, DEFAULT_SNIPPET_RADIUS, MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, searchChapters } from './search.js'
-export type {
-  ChapterSearchErrorCode,
-  ChapterSearchFailure,
-  ChapterSearchHit,
-  ChapterSearchOptions,
-  ChapterSearchResult,
-  ChapterSearchSuccess,
-  SearchMode,
-} from './search.js'
 
 /**
  * The single search entry for every kind (roadmap X-16) and the
@@ -536,37 +261,6 @@ export type {
  * two tools and the channel routes all read through these two functions, and the
  * contract tests must drive what users get — not a second copy of the logic.
  */
-export {
-  MAX_SEARCH_OFFSET,
-  SEARCH_KINDS,
-  searchEntries,
-} from './search.js'
-export type {
-  SearchBackend,
-  SearchEntriesFailure,
-  SearchEntriesOptions,
-  SearchEntriesResult,
-  SearchEntriesSuccess,
-  SearchEntry,
-  SearchKind,
-} from './search.js'
-export { REPLACE_CONTEXT_CHARS, REPLACE_KINDS, replaceApply, replacePreview } from './replace.js'
-export type {
-  ReplaceApplyFailure,
-  ReplaceApplyRequest,
-  ReplaceApplyResult,
-  ReplaceApplySuccess,
-  ReplaceExpectation,
-  ReplaceFailure,
-  ReplaceHit,
-  ReplacePreviewResult,
-  ReplacePreviewSuccess,
-  ReplaceRequest,
-  ReplaceSkipped,
-  ReplaceSkipReason,
-} from './replace.js'
-export { searchEntityHits } from './domains/query.js'
-export type { EntityHit, EntityHitOptions, EntityHitPage } from './domains/query.js'
 
 export function apply(ctx: HostContext, rawConfig: unknown): void {
   const config = resolveConfig(rawConfig)
@@ -648,42 +342,14 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
 /**
  * 卷章 CRUD。
  */
-export { createChapter, createVolume, deleteChapter, moveChapter, renameVolume, writeChapter } from './chapters.js'
-export type {
-  ChapterCreateInput,
-  ChapterCreateResult,
-  ChapterDeleteInput,
-  ChapterDeleteResult,
-  ChapterErrorCode,
-  ChapterMoveInput,
-  ChapterMoveResult,
-  ChapterOpError,
-  ChapterOpFailure,
-  ChapterView,
-  ChapterWriteInput,
-  ChapterWriteResult,
-  CommitInfo,
-  RollbackStep,
-  VolumeCreateInput,
-  VolumeCreateResult,
-  VolumeRenameInput,
-  VolumeRenameResult,
-  VolumeView,
-} from './chapters.js'
 
 /** New frontmatter and io helpers (one export statement each). */
-export { frontmatterLine, splitFrontmatter } from './frontmatter.js'
-export type { FrontmatterPatchOptions, FrontmatterSplit } from './frontmatter.js'
-export { removeEmptyProjectDirectory, removeProjectFile, renameProjectDirectory } from './io.js'
-export type { RemoveResult, RenameResult } from './io.js'
 
 /**
  * The shared finding shape (roadmap X-14): the vocabulary the audit report
  * and the repair pass both speak, plus the ordering a report needs to
  * be stable between two runs on unchanged files.
  */
-export { FINDING_CODES, FINDING_GROUPS, compareFindings, findingCode, locatorKey } from './findings.js'
-export type { Finding, FindingCodeSpec, FindingGroup, FindingLocator, FindingSeverity } from './findings.js'
 
 /**
  * The quality gate (roadmap X-24/X-26): seven checks over one chapter, the
@@ -691,22 +357,6 @@ export type { Finding, FindingCodeSpec, FindingGroup, FindingLocator, FindingSev
  * The rules live in `gate-rules.ts`; this block is the one entry point for the tool, the
  * panel route and the tests.
  */
-export {
-  GATE_FILE_SCHEMA_VERSION,
-  GATE_LIST_LIMIT,
-  buildGate,
-  gateFileName,
-  gateFilePath,
-  gateFindingRecord,
-  gateWire,
-  renderGateFile,
-  runGate,
-} from './gate.js'
-export { GATE_CHECKS } from './gate.js'
-export { GATE_CHECK_IDS, GATE_CHECK_LABELS, GATE_CODES, GATE_DEFAULTS, gateCheckOf } from './gate-vocabulary.js'
-export type { GateCheck } from './gate.js'
-export type { GateCheckId, GateFact, GateInput, GateRosterEntry, GateThresholds } from './gate-vocabulary.js'
-export type { GateCounts, GateError, GateFileResult, GateReport, GateRequest, GateResult, GateRunOptions } from './gate.js'
 
 /**
  * The review DAG (roadmap X-24/X-26, ADR-0022 D3): five independent dimension
@@ -718,74 +368,6 @@ export type { GateCounts, GateError, GateFileResult, GateReport, GateRequest, Ga
  * answers the callers, `review-nodes.ts` owns the dimensions and the node table,
  * `review-locate.ts` owns the addressing protocol, `review-store.ts` owns the record file.
  */
-export {
-  REVIEW_DIMENSIONS,
-  REVIEW_DIMENSION_CODES,
-  REVIEW_DIMENSION_LABELS,
-  REVIEW_DIMENSION_SPECS,
-  REVIEW_DIMENSION_TASKS,
-  REVIEW_NODES,
-} from './review-nodes.js'
-export type {
-  ReviewAnchorValue,
-  ReviewDimension,
-  ReviewDimensionSpec,
-  ReviewNode,
-  ReviewNodeInput,
-  ReviewNodeOutput,
-  ReviewNodeResult,
-} from './review-nodes.js'
-export {
-  REVIEW_CONTEXT_CHARS,
-  REVIEW_DEFAULT_CONTEXT_CHARS,
-  frontmatterLineCount,
-  locateOpinion,
-  paragraphsOf,
-} from './review-locate.js'
-export type {
-  ReviewChapter,
-  ReviewError,
-  ReviewEvidence,
-  ReviewHintSource,
-  ReviewOpinion,
-  ReviewOpinionInput,
-  ReviewParagraph,
-  ReviewRejection,
-} from './review-locate.js'
-export {
-  REVIEW_FILE_SCHEMA_VERSION,
-  REVIEW_LIST_LIMIT,
-  listReviewRuns,
-  renderReviewRunFile,
-  reviewDirOf,
-  reviewOpinionRecord,
-  reviewRunId,
-  reviewRunPath,
-  reviewRunSummary,
-  reviewRunWire,
-} from './review-store.js'
-export type {
-  ReviewDimensionSummary,
-  ReviewFileResult,
-  ReviewRunList,
-  ReviewRunRecord,
-} from './review-store.js'
-export { buildReviewContext, buildReviewList, runReview } from './review.js'
-export type {
-  ReviewContextResult,
-  ReviewContextValue,
-  ReviewRequest,
-  ReviewResult,
-  ReviewRunOptions,
-} from './review.js'
-export {
-  REVIEW_COMPARE_COLUMNS,
-  buildReviewCompare,
-  compareReviewRuns,
-  renderCompareMarkdown,
-  reviewCompareWire,
-} from './review-compare.js'
-export type { ReviewCompare, ReviewCompareColumn, ReviewCompareRow } from './review-compare.js'
 
 /**
  * The batch job queue (ADR-0023, roadmap X-26/X-30): the state machine and its records
@@ -793,262 +375,50 @@ export type { ReviewCompare, ReviewCompareColumn, ReviewCompareRow } from './rev
  * and for the routes' one entry point — the same arrangement as the gate, the review and the
  * proposals.
  */
-export {
-  CHAPTER_STATUSES,
-  CLAIM_LEASE_MS,
-  DEFAULT_BATCH_SIZE,
-  DEFAULT_CONCURRENCY,
-  JOB_CHAPTER_FORMAT,
-  JOB_FORMAT,
-  JOB_GATE_FINDINGS_LIMIT,
-  JOB_ID_PREFIX,
-  JOB_SCHEMA_VERSION,
-  JOB_STATUSES,
-  MAX_ATTEMPTS,
-  MAX_BATCH_SIZE,
-  MAX_CONCURRENCY,
-  PAUSE_POLICIES,
-  approveDrafts,
-  chapterDigest,
-  completeChapter,
-  enqueueJob,
-  inFlightCount,
-  isJobId,
-  jobChapterPath,
-  jobDirRelative,
-  jobMetaPath,
-  listJobs,
-  pauseWorthy,
-  readJob,
-  reconcileChapter,
-  resumeJob,
-  statusFor,
-  takeBatch,
-} from './jobs.js'
-export type {
-  ApproveInput,
-  ApproveResult,
-  ChapterStatus,
-  CompleteInput,
-  CompleteResult,
-  EnqueueInput,
-  JobChapter,
-  JobChapterInput,
-  JobChapterRef,
-  JobError,
-  JobGateVerdict,
-  JobMeta,
-  JobPause,
-  JobResult,
-  JobState,
-  JobStatus,
-  JobSummary,
-  PausePolicy,
-  TakeResult,
-  TakeTask,
-} from './jobs.js'
-export { BATCH_RESUME_BODY_FIELDS, buildBatchPage, resumeViaChannel } from './jobs-wire.js'
-export type { BatchChapterRow, BatchCounts, BatchDetail, BatchPage } from './jobs-wire.js'
-export { jobsTools } from './jobs-tools.js'
 
 /**
  * The 批量 page's pure view model. Re-exported for the same reason as `proposal-model`:
  * the three states the page can be in, and the sentence that explains a disabled 续跑, are
  * claims the user reads, so the tests assert them on the built artifact.
  */
-export {
-  EMPTY_BATCH_NOTE,
-  batchPanelState,
-  describeChapter,
-  describeChapterStatus,
-  describeGate,
-  describeJobRow,
-  describeJobStatus,
-  describePause,
-  readBatchPage,
-  resumeBlockedReason,
-  resumePayload,
-} from '../client/batch-model.js'
-export type { BatchChapterView, BatchJobRow, BatchJobView, BatchPageView, BatchPanelState } from '../client/batch-model.js'
 
 /** Private state directory (`.inkflow/`) helpers — ADR-0012, roadmap X-9. */
-export {
-  PRIVATE_STATE_DIR,
-  PRIVATE_STATE_SUBDIRS,
-  ensurePrivateStateIgnored,
-  isPrivateStatePath,
-  privateStateDirRelative,
-  privateStateRelative,
-} from './private-state.js'
 
 /**
  * 设定变更的影响面与改名（conventions §5.6, ADR-0014): the read-only listing
  * (five reference sites, the plan preview) and the one write that follows it
  * (move the file, pin the old id, rewrite nothing else).
  */
-export { IMPACT_KINDS, buildImpact, impactKindOf, planRename, renameRefusal, resolveEntity, scanKindEntities, titleFieldOf } from './impact.js'
-export type {
-  ImpactChapterRow,
-  ImpactEventRow,
-  ImpactFactRow,
-  ImpactForeshadowRow,
-  ImpactRelationRow,
-  ImpactRenamePlan,
-  ImpactReply,
-  ImpactReport,
-  ImpactRequest,
-  ImpactSource,
-  ResolvedEntity,
-} from './impact.js'
-export { renameEntity } from './impact-write.js'
-export type { RenameRequest } from './impact-write.js'
 
 /**
  * The recovery bin (roadmap X-9/X-10): move one file into `.inkflow/trash/`,
  * list what is there, put an entry back byte-identically, or purge one entry —
  * the last only with `confirm: true`.
  */
-export { listTrash, purgeTrash, restoreTrash, trashFile, undoTrashFile } from './trash.js'
-export type {
-  PurgeInput,
-  PurgeResult,
-  RestoreInput,
-  RestoreResult,
-  TrashEntry,
-  TrashEntryView,
-  TrashError,
-  TrashFileInput,
-  TrashFileResult,
-  TrashListResult,
-} from './trash.js'
 
 /**
  * The fact ledger: the line format as a parse/render **pair** (ADR-0013), the
  * interval judgement (I-23) and the "which facts hold at chapter N" query. Pure, so the
  * round-trip and the conflict rule are test-driven directly instead of through a tool.
  */
-export {
-  DEFAULT_FACT_SOURCE,
-  FACT_KEYS,
-  FACT_SOURCES,
-  classifyFactLine,
-  isFactLine,
-  parseFactLine,
-  renderFactLine,
-} from './domains/facts-line.js'
-export type { FactKnownKey, FactLine, FactLineVerdict, FactSource, ParsedFactLine } from './domains/facts-line.js'
-export {
-  FACTS_TABLE,
-  chapterIdsUsed,
-  chapterSeqFrom,
-  chapterSeqFromMap,
-  conflictsTouching,
-  factAnchor,
-  factInEffect,
-  factsConflicts,
-  factsFileParse,
-  factsSnapshot,
-  factsValidate,
-  parseFactsFile,
-  sortFacts,
-  unresolvedChapterIds,
-} from './domains/facts-plan.js'
-export type { ChapterSeq, FactConflict, FactRow, ParsedFacts } from './domains/facts-plan.js'
-export { chapterIndex, readFactsRows, seqOfChapters } from './domains/facts-query.js'
-export type { ChapterIndex } from './domains/facts-query.js'
-export { MAX_SEGMENT_FACTS, factsSegment } from './domains/facts-prompt.js'
 
 /**
  * The foreshadow state machine and its computed lateness (data-model
  * §3.2). Exported so a test can assert the **matrix** itself rather than inferring
  * it from which writes happen to be refused.
  */
-export {
-  FORESHADOW_STATUSES,
-  baseStatusOf,
-  comparePosition,
-  foreshadowTransitionAllowed,
-  foreshadowUrgency,
-  volumeOrderOf,
-} from './domains/foreshadowing-plan.js'
-export type { ChapterPosition, ForeshadowStatus, ForeshadowUrgency } from './domains/foreshadowing-plan.js'
-export {
-  chapterPositions,
-  chapterPositionsFromFiles,
-  readForeshadowView,
-  volumeOrdersOf,
-} from './domains/foreshadowing-query.js'
 
 /**
  * The consistency audit (roadmap X-14). Exported so tests can drive the engine
  * directly — the report body's determinism and the locator mapping are assertions about
  * plain data, not about a tool envelope.
  */
-export {
-  AUDIT_LIST_LIMIT,
-  auditProject,
-  auditReportName,
-  exportAuditReport,
-  hintOf,
-  renderAuditReport,
-  severityOf,
-  sortFindings,
-} from './audit.js'
-export type { AuditCounts, AuditExportResult, AuditReport, RenderOptions } from './audit.js'
-export { auditWire, buildAudit, exportAudit, findingWire } from './audit-channel.js'
-export type { AuditReply, AuditSource } from './audit-channel.js'
 
 /**
  * Maintenance (ADR-0015): the rollback package, the 6→9 migration and the
  * three-stage repair pass. Exported for the tests and for embedders; the two tools
  * that expose them are registered through `tools.ts` like every other built-in.
  */
-export {
-  BACKUP_KINDS,
-  BACKUP_MANIFEST_FILE,
-  BACKUP_SCHEMA_VERSION,
-  backupCopyPath,
-  backupStamp,
-  digestRelative,
-  listBackups,
-  normalizeBackupDir,
-  openBackup,
-  readBackup,
-  rollbackBackup,
-  sealBackup,
-  stageFile,
-} from './backup.js'
-export type {
-  BackupBody,
-  BackupDigest,
-  BackupFileEntry,
-  BackupHandle,
-  BackupKind,
-  BackupManifest,
-  RollbackResult,
-} from './backup.js'
-export { applyRepair, detectFindings, findingKey, planRepair } from './repair.js'
-export type {
-  ApplyOptions,
-  DetectResult,
-  DetectSummary,
-  PlanOptions,
-  RepairAction,
-  RepairKind,
-  RepairOutcome,
-  RepairPlan,
-  RepairResult,
-  RepairSkip,
-} from './repair.js'
-export { applyMigration, planMigration, rollbackMigration } from './migrate.js'
-export type {
-  MigrationAction,
-  MigrationApplyResult,
-  MigrationOp,
-  MigrationPlan,
-  RollbackOutcome,
-} from './migrate.js'
-export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from './repair-report.js'
 
 /**
  * The shared library's take-out direction (ADR-0007 C2–C6): copy snapshot,
@@ -1059,150 +429,25 @@ export { migrationReportMarkdown, repairReportMarkdown, writeAuditReport } from 
  * "reference is library/-only" are proved by driving these functions directly and
  * comparing whole-tree hashes, not by reading a route envelope.
  */
-export {
-  SHARED_COPY_MAX_ROWS,
-  applyOriginBlock,
-  buildSharedCopies,
-  copySharedEntry,
-  ensureProjectId,
-  updateSharedEntry,
-} from './shared-copy.js'
 // The library save path is exported here so a test can prove the one rule that
 // lives in it and nowhere else: a `mode: reference` card refuses every write
 // (ADR-0007 C4 `REFERENCE_READONLY`), whatever the panel or a tool asks for.
-export { writeLibraryItem } from './library-write.js'
-export type {
-  EnsureProjectIdValue,
-  SharedCopiesValue,
-  SharedCopyError,
-  SharedCopyInput,
-  SharedCopyMode,
-  SharedCopyRow,
-  SharedCopyValue,
-  SharedOriginCopy,
-  SharedOriginReference,
-  SharedResult,
-  SharedUpdateInput,
-  SharedUpdateValue,
-} from './shared-copy.js'
-export { scanSharedLibrary } from './hub-shared.js'
-export type { SharedLibraryScan } from './hub-shared.js'
 // The series sync: the engine, exported so the contract tests can call `plan` and
 // `apply` with a plain book on disk — no Host context, no HTTP, no session.
-export { SERIES_SYNC_KINDS, applySeriesSync, buildSeriesPlan, compareSeriesContent, seriesRunName } from './series.js'
-export type {
-  SeriesAction,
-  SeriesApplyInput,
-  SeriesApplyValue,
-  SeriesConflictReason,
-  SeriesDecision,
-  SeriesDecisionChoice,
-  SeriesError,
-  SeriesExclusions,
-  SeriesKeptRow,
-  SeriesPlanCounts,
-  SeriesPlanEntry,
-  SeriesPlanValue,
-  SeriesResult,
-  SeriesRunRecord,
-  SeriesSkippedRow,
-  SeriesWriteRow,
-} from './series.js'
-export { SERIES_APPLY_BODY_FIELDS, seriesApplyReply, seriesPlanReply } from './series-channel.js'
 
 /**
  * The ZIP container (ADR-0018 D3): store-only by design, so a backup can
  * be opened by any tool and checked by hand. Exported for the tests and for the
  * settings/backup work that writes the package.
  */
-export { ZipError, crc32, readZip, writeZip } from './zip.js'
-export type { ZipEntry, ZipErrorCode, ZipWriteEntry, ZipWriteOptions } from './zip.js'
 
 /**
  * The plugin's own state (ADR-0018): settings (D1/D2), the diagnostics package
  * (D5) and the local ZIP backups (D3/D4/D6). None of it is book data, which is why
  * these three modules sit together and write only under `dataDir`.
  */
-export {
-  SETTINGS_DEFAULTS,
-  SETTINGS_FIELDS,
-  SETTINGS_FILE,
-  SETTINGS_LIMITS,
-  SETTINGS_SCHEMA_VERSION,
-  coerceSettings,
-  readSettings,
-  removeSettingsFile,
-  settingsOf,
-  settingsPath,
-  sharedRootOf,
-  writeSettings,
-} from './settings.js'
 // Exported for the equivalence test: the route's body whitelist must stay
 // `SETTINGS_FIELDS` + `confirm`, and a test can only compare what it can import.
-export { HUB_SETTINGS_BODY_FIELDS } from './hub-settings.js'
-export type {
-  InkflowSettings,
-  SettingsError,
-  SettingsField,
-  SettingsRead,
-  SettingsResult,
-  SettingsWarning,
-  SettingsWrite,
-  SharedRootResolution,
-  SharedRootWarning,
-} from './settings.js'
-export {
-  BACKUPS_DIR,
-  BACKUP_EXCLUDED_DIRS,
-  BACKUP_KEEP_DEFAULT,
-  BACKUP_KEEP_MAX,
-  BACKUP_KEEP_MIN,
-  BACKUP_ROOT_FILES,
-  bookSlugOf,
-  backupsDir,
-  collectBackupFiles,
-  createBookBackup,
-  listBookBackups,
-  openBookBackup,
-  planRestore,
-  pruneBookBackups,
-  restoreBookBackup,
-} from './backup-zip.js'
-export type {
-  BackupPackage,
-  BackupZipError,
-  BackupZipErrorCode,
-  BackupZipResult,
-  CollectOptions,
-  CreateBackupOptions,
-  CreateBackupValue,
-  OpenBackupValue,
-  RestoreOptions,
-  RestorePlan,
-  RestorePlanEntry,
-  RestoreReport,
-} from './backup-zip.js'
-export {
-  DIAGNOSTICS_DIR,
-  DIAGNOSTICS_FORMAT,
-  DIAGNOSTICS_LOG_LINES,
-  buildDiagnostics,
-  diagnosticsDir,
-  exportDiagnostics,
-  maskPath,
-  toolSurfaceHash,
-} from './diagnostics.js'
-export type {
-  DiagnosticsDocument,
-  DiagnosticsIndex,
-  DiagnosticsInput,
-  DiagnosticsResult,
-  ExportDiagnosticsValue,
-  ToolSurfaceEntry,
-  ToolSurfaceSource,
-} from './diagnostics.js'
-export { settingsTools } from './settings-tools.js'
-export type { SettingsToolDeps } from './settings-tools.js'
 
 /**
  * 资料导入（roadmap X-17）：字节 → 编码嗅探 → 行尾风格 → 分章的分析半，以及
@@ -1211,125 +456,11 @@ export type { SettingsToolDeps } from './settings-tools.js'
  * 全是纯函数或经 `chapters.ts` / `io.ts` 的写入；预览与执行共用同一份 `prepare()`，
  * 所以「预览 = 执行」是集合比较得出的，不是两处各算一遍。
  */
-export {
-  IMPORT_EXTENSIONS,
-  MAX_IMPORT_BYTES,
-  analyzeImportBytes,
-  decodeImportBytes,
-  splitImportChapters,
-} from './import.js'
-export type {
-  ImportAnalysis,
-  ImportChapter,
-  ImportDecoded,
-  ImportEncoding,
-  ImportEol,
-  ImportPattern,
-} from './import.js'
-export { applyImport, planImport } from './import-write.js'
-export type {
-  ImportApplyOptions,
-  ImportApplyResult,
-  ImportApplyValue,
-  ImportAppliedChapter,
-  ImportError,
-  ImportPlan,
-  ImportPlanChapter,
-  ImportPlanLibrary,
-  ImportPlanOptions,
-  ImportPlanResult,
-  ImportPlanSource,
-  ImportPlanTarget,
-} from './import-write.js'
 
 // Semantic retrieval (ADR-0009 / ADR-0020). Four layers: transport + block shape, the
 // ledger this machine keeps, the per-book job, and the one composition into X-16's search
 // entry. Exported by module so a caller cannot mistake the job for the backend or the ledger
 // for the truth.
-export {
-  OVK_BLOCK_CHARS,
-  OVK_BLOCK_OVERLAP,
-  OVK_CONFIG_MAX_BYTES,
-  OVK_CONFIG_VERSION,
-  OVK_DEGRADED_REASONS,
-  OVK_FIRST_BUILD_BYTES,
-  OVK_FIRST_BUILD_CHAPTERS,
-  OVK_HEALTH_PATH,
-  OVK_SEARCH_PATH,
-  OVK_TIMEOUT_MS,
-  OVK_WRITE_PATH,
-  PEER_ID_PATTERN,
-  blockContentOf,
-  blockTagsOf,
-  blockUriOf,
-  chunkBody,
-  connectionOf,
-  contentHashOf,
-  hitsOf,
-  ovkFind,
-  ovkForget,
-  ovkHealth,
-  ovkRequest,
-  ovkWriteBlock,
-  parseBlockUri,
-  projectSubtreeUri,
-  resolveOvkPeer,
-  tombstoneContentOf,
-} from './ovk.js'
-export type {
-  BlockMetadata,
-  ConnectionResult,
-  OvkBlock,
-  OvkConnection,
-  OvkDegradedReason,
-  OvkFailure,
-  OvkFailureReason,
-  OvkHit,
-  OvkResult,
-  ParsedBlockUri,
-  PeerProblem,
-  PeerResolution,
-} from './ovk.js'
-export {
-  SEMANTIC_DIR,
-  SEMANTIC_SCHEMA_VERSION,
-  blockCountOf,
-  chapterSources,
-  ledgerPath,
-  planRebuild,
-  projectIdFor,
-  readLedger,
-  semanticSlugOf,
-  tombstonedUrisOf,
-  writeLedger,
-} from './ovk-ledger.js'
-export type {
-  BlockRecord,
-  ChapterRecord,
-  ChapterSource,
-  LedgerRead,
-  RebuildPlan,
-  RebuildSummary,
-  SemanticLedger,
-} from './ovk-ledger.js'
-export {
-  REBUILD_DEBOUNCE_MS,
-  REBUILD_RETRIES,
-  enqueueRebuild,
-  planOnly,
-  queueSnapshotOf,
-  readChapterBody,
-  resetQueue,
-  runRebuild,
-} from './ovk-queue.js'
-export type { QueueSnapshot, RebuildOutcome, SemanticRuntime } from './ovk-queue.js'
-export { diagnoseSemantic, searchWithSemantic } from './ovk-search.js'
-export type { SemanticAvailability, SemanticDeps, SemanticSearchOutcome } from './ovk-search.js'
-export { estimateRebuild, purgeApply, purgePlanOf, rebuildNow, runtimeOf, semanticStatusOf } from './ovk-status.js'
-export type { PurgeOutcome, RebuildEstimate, SemanticStatus } from './ovk-status.js'
-export { semanticTools } from './ovk-tools.js'
-export { buildHubSemantic, purgeHubSemantic, rebuildHubSemantic } from './ovk-hub.js'
-export { maskSettingsSecrets } from './diagnostics.js'
 
 // ---------------------------------------------------------------------------
 // The extraction queue (X-20, ADR-0017). Exported for the tests and for
@@ -1338,22 +469,6 @@ export { maskSettingsSecrets } from './diagnostics.js'
 // "one way in" is a property of the code, not of a convention.
 // ---------------------------------------------------------------------------
 
-export { CANDIDATE_SCHEMA_VERSION, EXTRACT_KINDS, CANDIDATE_STATUSES, CONFIDENCES, proposeCandidates, readCandidateStore, purgeCandidates } from './extract.js'
-export type {
-  CandidateBatch,
-  CandidateProposal,
-  CandidateRecord,
-  CandidateStatus,
-  Confidence,
-  ExtractCode,
-  ExtractError,
-  ExtractKind,
-  ProposeResult,
-} from './extract.js'
-export { acceptCandidates, materializeCandidate } from './extract-accept.js'
-export type { AcceptOutcome, AcceptRefusal, AcceptReport } from './extract-accept.js'
-export { acceptViaChannel, buildCandidates, purgeViaChannel, rejectViaChannel } from './extract-channel.js'
-export type { CandidateReply, CandidateSource } from './extract-channel.js'
 
 // ---------------------------------------------------------------------------
 // The old-library migrator (X-29 / X-30). Exported for the tests and for
@@ -1361,40 +476,6 @@ export type { CandidateReply, CandidateSource } from './extract-channel.js'
 // would be a second way to start a migration without its plan.
 // ---------------------------------------------------------------------------
 
-export { ETL_DEFAULT_BATCH_SIZE, ETL_MAX_BATCH_SIZE, applyEtl, planEtl, readEtlIdMap, rollbackEtl } from './etl.js'
-export type {
-  EtlApplyInput,
-  EtlApplyResult,
-  EtlApplyValue,
-  EtlError,
-  EtlIdMapResult,
-  EtlPlanResult,
-  EtlRollbackInput,
-  EtlRollbackResult,
-  EtlRollbackValue,
-  EtlRunOptions,
-} from './etl.js'
-export { ETL_IDMAP_RELATIVE, ETL_IDMAP_VERSION, buildEtlPlan, hasFrontmatterBlock } from './etl-plan.js'
-export { ETL_TABLES } from './etl-source.js'
-export type { EtlTable } from './etl-source.js'
-export type {
-  EtlClassReport,
-  EtlComputation,
-  EtlDecision,
-  EtlDiskProbe,
-  EtlGap,
-  EtlIdMap,
-  EtlIdMapEntry,
-  EtlItem,
-  EtlItemState,
-  EtlPlan,
-  EtlPlanOptions,
-  EtlReconcile,
-  EtlWrite,
-} from './etl-plan.js'
-export { listLegacyProjects, readLegacyBook } from './etl-source.js'
-export type { EtlSourceOptions, LegacyBook, LegacyProject } from './etl-source.js'
-export { etlTools } from './etl-tools.js'
 
 // ---------------------------------------------------------------------------
 // Proposals (ADR-0023, X-25 / X-26). The store, the line diff, the four
@@ -1403,57 +484,6 @@ export { etlTools } from './etl-tools.js'
 // byte-for-byte reversible through the backup package.
 // ---------------------------------------------------------------------------
 
-export {
-  PROPOSAL_HUNKS_DIR,
-  PROPOSAL_HUNK_STATUSES,
-  PROPOSAL_ID_PREFIX,
-  PROPOSAL_META_FILE,
-  PROPOSAL_SCHEMA_VERSION,
-  PROPOSAL_STATUSES,
-  countsOf,
-  isProposalHunkStatus,
-  isProposalId,
-  listProposals,
-  proposalDirRelative,
-  proposalHunkPath,
-  proposalMetaPath,
-  proposalsDirRelative,
-  readProposal,
-} from './proposal.js'
-export { createProposal, decideProposal } from './proposal-actions.js'
-export { applyProposal, rollbackProposal } from './proposal-apply.js'
-export type {
-  ProposalBase,
-  ProposalCounts,
-  ProposalDigest,
-  ProposalError,
-  ProposalHunk,
-  ProposalHunkFile,
-  ProposalHunkRef,
-  ProposalHunkStatus,
-  ProposalMeta,
-  ProposalRead,
-  ProposalResult,
-  ProposalStatus,
-} from './proposal.js'
-export type { CreateProposalInput, CreateProposalOk, DecideProposalInput, DecideProposalOk, HunkDecision } from
-  './proposal-actions.js'
-export type { ApplyProposalInput, ApplyProposalOk, RollbackProposalInput, RollbackProposalOk } from './proposal-apply.js'
-export { applyHunks, diffLines, joinLines, splitLines } from './proposal-diff.js'
-export type { HunkKind, LineHunk } from './proposal-diff.js'
-export {
-  PROPOSAL_APPLY_BODY_FIELDS,
-  PROPOSAL_DECIDE_BODY_FIELDS,
-  PROPOSAL_HUNK_LINE_LIMIT,
-  PROPOSAL_LIST_LIMIT,
-  PROPOSAL_ROLLBACK_BODY_FIELDS,
-  applyViaChannel,
-  buildProposals,
-  decideViaChannel,
-  rollbackViaChannel,
-} from './proposal-channel.js'
-export type { ProposalReply, ProposalSource } from './proposal-channel.js'
-export { proposalTools } from './proposal-tools.js'
 
 /**
  * The proposal tab's pure view model. Re-exported for the same reason as
@@ -1461,27 +491,6 @@ export { proposalTools } from './proposal-tools.js'
  * disabled" sentences, are claims the user sees, so the tests assert them on the built
  * artifact. Pure by construction — no React, no network, no IO.
  */
-export {
-  PROPOSAL_NOTE,
-  applyActionLabel,
-  applyBlocked,
-  confirmPayload,
-  decidePayload,
-  describeCounts,
-  describeHunk,
-  describeHunkKind,
-  describeHunkStatus,
-  describeOutcome,
-  describeProposalStatus,
-  describeTotals,
-  detailRequestPath,
-  pendingDecisions,
-  preferredProposalId,
-  readProposalPage,
-  rollbackActionLabel,
-  rollbackBlocked,
-} from '../client/proposal-model.js'
-export type { Decision, HunkRow, ProposalPage, ProposalRow } from '../client/proposal-model.js'
 
 // ---------------------------------------------------------------------------
 // Export (ADR-0024, X-27). One writer, one container, one directory
@@ -1490,29 +499,3 @@ export type { Decision, HunkRow, ProposalPage, ProposalRow } from '../client/pro
 // `readZip`, and exporting changes nothing inside the book.
 // ---------------------------------------------------------------------------
 
-export {
-  EPUB_MIMETYPE,
-  EXPORTS_DIR,
-  EXPORT_FORMATS,
-  EXPORT_TARGETS,
-  escapeXml,
-  exportBook,
-  exportsDir,
-  markdownBlocks,
-} from './export.js'
-export type {
-  ExportChapterStatus,
-  ExportChapter,
-  ExportError,
-  ExportErrorCode,
-  ExportFormat,
-  ExportGroup,
-  ExportMeta,
-  ExportPlan,
-  ExportRequest,
-  ExportResult,
-  ExportTarget,
-  ExportValue,
-  MarkdownBlock,
-} from './export.js'
-export { exportTools } from './export-tools.js'
