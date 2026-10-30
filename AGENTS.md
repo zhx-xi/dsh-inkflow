@@ -196,7 +196,7 @@ Spec（改 .agents/specs/） → Test(RED) → Code(GREEN) → Refactor → pnpm
 
 - 组合优于继承、early return 优于深嵌套、显式优于隐式。
 - 标准库优先；不手搓已有轮子。
-- 无巨型文件，两档门禁（`pnpm run check:sizes`，`scripts/check-file-sizes.mjs`）：**601–800 行只提示**（本地 warn + CI annotation，不使 job 失败，改到该文件时顺手拆即可）；**超过 800 行 job 失败**，必须拆分。已在 800 以上的文件记在 `OVER_HARD_CAP_DEBT`（只减不增：不得长过记录值，回落到 ≤800 时同一次改动里删条目）。
+- 无巨型文件，两档门禁（`pnpm run check:sizes`，`scripts/check-file-sizes.mjs`）：**601–800 行只提示**（本地 warn + CI annotation，不使 job 失败，改到该文件时顺手拆即可）；**超过 800 行 job 失败**，必须拆分。没有豁免清单——历史上超过 800 的 9 个文件已全部拆分，硬上限是扁平的，任何超过 800 行的源文件都使 job 失败。
 - 新代码全类型化；边界处先校验再进内部类型。
 
 ### 10.6 证据与来源
