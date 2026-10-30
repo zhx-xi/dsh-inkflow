@@ -36,11 +36,16 @@
  * "push", and no `index.json` write-back — the manifest is derived), no
  * bidirectional sync, no automatic update, and no `origin` sidecar for a binary
  * original (the card's `origin` covers the pair — ADR-0007 C3).
+ *
+ * WHERE THE PIECES LIVE: the wire shapes are `shared-copy-types.ts`, the
+ * book-side recording (identity, destination, `origin` block) is
+ * `shared-copy-provenance.ts`, the read-only stale list is
+ * `shared-copy-list.ts`, and this file keeps the two write operations — copy and
+ * update. Every public name is re-exported below, so no caller address moved.
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { closeSync, openSync, readSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, resolve } from 'node:path'
 
 import { newBackupBody, openBackup, sealBackup, stageFile } from './backup.js'
@@ -53,360 +58,42 @@ import {
   SHARED_REFERENCE_MODE,
   SHARED_SERIES_ID_PREFIX,
 } from './conventions.js'
-import type { SharedKind } from './conventions.js'
 import { fingerprintProjectFile } from './file-cas.js'
-import { frontmatterLine, frontmatterListItem, parseMarkdown, splitFrontmatter } from './frontmatter.js'
+import { frontmatterLine, frontmatterListItem, parseMarkdown } from './frontmatter.js'
 import { scanSharedLibrary } from './hub-shared.js'
 import type { SharedEntry } from './hub-shared.js'
-import { writeTextAtomic, removeProjectFile } from './io.js'
+import { removeProjectFile, writeTextAtomic } from './io.js'
 import { sharedRootOf } from './settings.js'
+import { buildSharedCopies } from './shared-copy-list.js'
+import {
+  applyOriginBlock,
+  asRecord,
+  ensureProjectId,
+  fail,
+  nonEmptyString,
+  originLines,
+  readMetaRecord,
+  readText,
+  sharedDestinationOf,
+  writeMetaRecord,
+} from './shared-copy-provenance.js'
+import type {
+  SharedCopyInput,
+  SharedCopyMode,
+  SharedCopyValue,
+  SharedOriginCopy,
+  SharedOriginReference,
+  SharedResult,
+  SharedUpdateInput,
+  SharedUpdateValue,
+} from './shared-copy-types.js'
 
 // ---------------------------------------------------------------------------
-// Wire shapes
+// Small helpers only a write operation needs
 // ---------------------------------------------------------------------------
-
-/** `origin` on a copy: evidence of WHICH version was copied (ADR-0007 C3). */
-export interface SharedOriginCopy {
-  projectId: string | null
-  entryId: string
-  contentHash: string
-}
-
-/** `origin` on a reference card: the source hash, and no copy hash (C4). */
-export interface SharedOriginReference {
-  projectId: string | null
-  entryId: string
-  sha256: string
-}
-
-export type SharedCopyMode = typeof SHARED_COPY_MODE | typeof SHARED_REFERENCE_MODE
-
-export interface SharedCopyError {
-  code: string
-  message: string
-  hint?: string
-  path?: string
-}
-
-export type SharedResult<T> = { ok: true; value: T } | { ok: false; error: SharedCopyError }
-
-export interface SharedCopyInput {
-  /** The plugin data directory; `shared/` under it is the source library. */
-  dataDir: string
-  /** The book to copy INTO (already past the gate: this module never gates). */
-  root: string
-  entryId: string
-  mode?: SharedCopyMode
-  confirm?: boolean
-}
-
-export interface SharedCopyValue {
-  root: string
-  entryId: string
-  kind: SharedKind
-  mode: SharedCopyMode
-  /** Project-relative files this call created (empty for a series link). */
-  files: string[]
-  origin?: SharedOriginCopy | SharedOriginReference
-  /** `true` when this call added `projectId` to `inkflow.json`. */
-  projectIdCreated: boolean
-  projectId: string | null
-  /** Present for a series entry: the `inkflow.json.seriesId` it set. */
-  seriesId?: string
-  /** Things the user should know but that are not failures. */
-  warnings: string[]
-}
-
-export interface SharedUpdateInput {
-  dataDir: string
-  root: string
-  /** Address the copy by its shared entry id… */
-  entryId?: string
-  /** …or by the project file it lives at (which is what the panel shows). */
-  file?: string
-  confirm?: boolean
-}
-
-export interface SharedUpdateValue {
-  root: string
-  updated: string[]
-  unchanged: string[]
-  /** Absent when nothing was written: a no-op leaves no package behind. */
-  backupDir?: string
-  origin?: SharedOriginCopy
-}
-
-/** What the "only the differences" view prints per copy (ADR-0007 V3). */
-export interface SharedCopyRow {
-  file: string
-  kind: SharedKind
-  /** `null` for a file whose `origin` block carries no id (hand-edited). */
-  entryId: string | null
-  mode: SharedCopyMode
-  /** The hash recorded in `origin` at copy time. */
-  contentHash?: string
-  /** The shared entry's hash right now; absent when the source is gone. */
-  currentHash?: string
-  state: 'current' | 'stale' | 'missing-source'
-}
-
-export interface SharedCopiesValue {
-  root: string
-  projectId: string | null
-  seriesId: string | null
-  seriesFound: boolean
-  /** `false` when at least one copy is a reference (ADR-0007 C4). */
-  selfContained: boolean
-  entries: SharedCopyRow[]
-  /** The reference cards by path, so a caller can name them without filtering. */
-  references: string[]
-  counts: { total: number; current: number; stale: number; missing: number }
-  /** True when the walk hit its cap: the list is short, not complete. */
-  truncated: boolean
-}
-
-export interface EnsureProjectIdValue {
-  /** `null` when `inkflow.json` cannot be read or parsed: `origin.projectId` is then `null`. */
-  projectId: string | null
-  /** `true` only when THIS call wrote the field. */
-  created: boolean
-}
-
-// ---------------------------------------------------------------------------
-// Small helpers
-// ---------------------------------------------------------------------------
-
-/** Copies considered in one status answer; beyond this the list says `truncated`. */
-export const SHARED_COPY_MAX_ROWS = 500
-
-/** Bytes read from a copy's head to find `origin` (frontmatter lives in 4 KiB). */
-const COPY_HEAD_BYTES = 4096
-
-function fail(code: string, message: string, extra: Partial<SharedCopyError> = {}): { ok: false; error: SharedCopyError } {
-  return { ok: false, error: { code, message, ...extra } }
-}
 
 function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
-}
-
-function readText(absolute: string): string | undefined {
-  try {
-    // A BOM is common in files edited on Windows; every reader here strips it (H11).
-    return readFileSync(absolute, 'utf8').replace(/^\uFEFF/u, '')
-  } catch {
-    return undefined
-  }
-}
-
-/** The first `bytes` of a file, for a cheap "does it carry an origin block" test. */
-function readHead(absolute: string, bytes: number): string {
-  let fd: number | undefined
-  try {
-    fd = openSync(absolute, 'r')
-    const buffer = Buffer.alloc(bytes)
-    const read = readSync(fd, buffer, 0, bytes, 0)
-    return buffer.subarray(0, read).toString('utf8').replace(/^\uFEFF/u, '')
-  } catch {
-    return ''
-  } finally {
-    if (fd !== undefined) closeSync(fd)
-  }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-}
-
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-// ---------------------------------------------------------------------------
-// `inkflow.json`: projectId (ADR-0007 C3 / ADR-0018 D7) and seriesId (C5)
-// ---------------------------------------------------------------------------
-
-interface MetaRead {
-  record: Record<string, unknown>
-}
-
-function readMetaRecord(root: string): MetaRead | undefined {
-  const text = readText(join(root, ROOT_META_FILE))
-  if (text === undefined) return undefined
-  try {
-    const record = asRecord(JSON.parse(text))
-    return record === undefined ? undefined : { record }
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Rewrite `inkflow.json` with the fields `mutate` changed — the one root file
- * this feature writes, and only for `projectId` / `seriesId`.
- *
- * Root metadata is outside `resolveWriteTarget` (only the scaffolding path writes
- * it — ADR-0006 D3), so this is the same direct write `workspace.ts` and
- * `hub-wizard.ts` already do. The parsed object is merged, so every other key the
- * author has survives; a file that cannot be parsed is never "repaired" here.
- */
-function writeMetaRecord(root: string, record: Record<string, unknown>): SharedResult<{ path: string }> {
-  try {
-    writeFileSync(join(root, ROOT_META_FILE), `${JSON.stringify(record, null, 2)}\n`, 'utf8')
-  } catch (cause) {
-    return fail('META_WRITE_FAILED', `${ROOT_META_FILE} could not be written: ${String(cause)}`, { path: ROOT_META_FILE })
-  }
-  return { ok: true, value: { path: ROOT_META_FILE } }
-}
-
-/**
- * Give the book a `projectId` the first time something needs it.
- *
- * The wizard writes it for a new book (`workspace.ts`); this covers books that
- * already existed — which is why the ADR makes the field optional and keeps it
- * out of the gate: a book without one is still a book, and a copy from it simply
- * records `origin.projectId: null`. A second call is a no-op, and an existing
- * value is never replaced.
- */
-export function ensureProjectId(root: string): SharedResult<EnsureProjectIdValue> {
-  const meta = readMetaRecord(resolve(root))
-  if (meta === undefined) return { ok: true, value: { projectId: null, created: false } }
-  const existing = nonEmptyString(meta.record['projectId'])
-  if (existing !== undefined) return { ok: true, value: { projectId: existing, created: false } }
-
-  const projectId = randomUUID()
-  const written = writeMetaRecord(resolve(root), { ...meta.record, projectId })
-  if (!written.ok) return written
-  return { ok: true, value: { projectId, created: true } }
-}
-
-// ---------------------------------------------------------------------------
-// The two sides of the mapping (ADR-0007 C1/C2)
-// ---------------------------------------------------------------------------
-
-/**
- * Where a shared entry lands in the book.
- *
- * `world/` keeps its own sub-path so a shared tree copies 1:1; `snippets/` lands
- * under `library/snippets/` because `library/` is the "material" domain and the
- * book contract has exactly nine content directories (no tenth); a
- * `series/*.json` never lands as a file at all (C2/C5).
- */
-function destinationFor(entry: SharedEntry): string | undefined {
-  if (entry.kind === 'world') return entry.path.startsWith('world/') ? entry.path : undefined
-  if (entry.kind === 'library') return entry.path.startsWith('library/') ? entry.path : undefined
-  if (entry.kind === 'snippets') {
-    const name = entry.path.slice('snippets/'.length)
-    if (name === '' || name.split('/').includes('..')) return undefined
-    return `library/snippets/${name}`
-  }
-  return undefined
-}
-
-/** Which kind a project file came from, from its path alone (no index involved). */
-function kindOfProjectFile(file: string): SharedKind {
-  if (file.startsWith('world/')) return 'world'
-  if (file.startsWith('library/snippets/')) return 'snippets'
-  return 'library'
-}
-
-/**
- * Where a shared entry lands inside a book — exported for the series sync.
- *
- * One function, so "which book path does this entry become" has exactly one answer: a
- * copy and a series sync that disagreed about it would write the same entry to two
- * places, or collide with a file the other one already owns.
- */
-export function sharedDestinationOf(entry: SharedEntry): string | undefined {
-  return destinationFor(entry)
-}
-
-// ---------------------------------------------------------------------------
-// `origin`: reading and writing the block
-// ---------------------------------------------------------------------------
-
-function originLines(origin: SharedOriginCopy | SharedOriginReference): string[] {
-  const lines = [
-    `${SHARED_ORIGIN_KEY}:`,
-    `  projectId: ${origin.projectId === null ? 'null' : origin.projectId}`,
-    `  entryId: ${origin.entryId}`,
-  ]
-  if ('contentHash' in origin) lines.push(`  contentHash: ${origin.contentHash}`)
-  else lines.push(`  sha256: ${origin.sha256}`)
-  return lines
-}
-
-/**
- * Put the `origin` block into a document, keeping every other byte.
- *
- * An existing block (a refresh) is REPLACED rather than appended: two `origin:`
- * keys would make the reader's answer depend on line order. Line endings follow
- * the file; a document with no frontmatter gets one, and `writeTextAtomic` then
- * normalises the new file to LF/no-BOM like every other file this plugin writes.
- */
-export function applyOriginBlock(text: string, origin: SharedOriginCopy | SharedOriginReference): string {
-  const lines = originLines(origin)
-  const eol = text.includes('\r\n') ? '\r\n' : '\n'
-  const parts = splitFrontmatter(text)
-  if (!parts.hasFrontmatter) return ['---', ...lines, '---', '', text].join(eol)
-
-  const headLines = parts.head.split(/\r?\n/u)
-  let closeIndex = -1
-  for (let index = headLines.length - 1; index >= 1; index -= 1) {
-    if ((headLines[index] ?? '').trim() === '---') {
-      closeIndex = index
-      break
-    }
-  }
-  if (closeIndex < 0) return text
-
-  const originAt = headLines.findIndex(
-    (line, index) => index > 0 && index < closeIndex && new RegExp(`^${SHARED_ORIGIN_KEY}:`, 'u').test(line),
-  )
-  if (originAt < 0) {
-    headLines.splice(closeIndex, 0, ...lines)
-  } else {
-    let end = originAt + 1
-    while (end < closeIndex && /^\s+\S/u.test(headLines[end] ?? '')) end += 1
-    headLines.splice(originAt, end - originAt, ...lines)
-  }
-  return `${headLines.join(eol)}${parts.body}`
-}
-
-interface ReadOrigin {
-  mode: SharedCopyMode
-  entryId: string | null
-  projectId: string | null
-  contentHash?: string
-  sha256?: string
-}
-
-/** The `origin` a copy carries, or `undefined` for a file that was not copied. */
-function readOrigin(text: string): ReadOrigin | undefined {
-  const parsed = parseMarkdown(text)
-  const record = asRecord(parsed.data[SHARED_ORIGIN_KEY])
-  if (record === undefined) return undefined
-  const contentHash = nonEmptyString(record['contentHash'])
-  const sha256 = nonEmptyString(record['sha256'])
-  const mode: SharedCopyMode =
-    nonEmptyString(parsed.data['mode']) === SHARED_REFERENCE_MODE ? SHARED_REFERENCE_MODE : SHARED_COPY_MODE
-  return {
-    mode,
-    entryId: nonEmptyString(record['entryId']) ?? null,
-    projectId: nonEmptyString(record['projectId']) ?? null,
-    ...(contentHash === undefined ? {} : { contentHash }),
-    ...(sha256 === undefined ? {} : { sha256 }),
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -462,7 +149,7 @@ export function copySharedEntry(input: SharedCopyInput): SharedResult<SharedCopy
 
   if (entry.kind === 'series') return linkSeries(root, sharedRoot, entry)
 
-  const destination = destinationFor(entry)
+  const destination = sharedDestinationOf(entry)
   if (destination === undefined) {
     return fail('SHARED_PATH_INVALID', `"${entry.path}" does not map into a book directory`, { path: entry.path })
   }
@@ -648,143 +335,6 @@ function linkSeries(root: string, sharedRoot: string, entry: SharedEntry): Share
 }
 
 // ---------------------------------------------------------------------------
-// The copies in a book: the stale list (reading only)
-// ---------------------------------------------------------------------------
-
-interface CollectedCopy {
-  file: string
-  kind: SharedKind
-  origin: ReadOrigin
-}
-
-/** Every file under the two copyable content directories, bounded. */
-function walkProjectFiles(root: string): { files: string[]; truncated: boolean } {
-  const files: string[] = []
-  const stack: string[] = ['world', 'library']
-  while (stack.length > 0) {
-    const relative = stack.pop()
-    if (relative === undefined) break
-    let dirents
-    try {
-      dirents = readdirSync(join(root, ...relative.split('/')), { withFileTypes: true })
-    } catch {
-      continue
-    }
-    dirents.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
-    for (const dirent of dirents) {
-      if (files.length >= SHARED_COPY_MAX_ROWS) return { files, truncated: true }
-      if (dirent.name.startsWith('.')) continue
-      const child = `${relative}/${dirent.name}`
-      if (dirent.isDirectory()) {
-        stack.push(child)
-        continue
-      }
-      if (!dirent.isFile()) continue
-      if (extname(dirent.name).toLowerCase() !== '.md') continue
-      files.push(child)
-    }
-  }
-  return { files, truncated: false }
-}
-
-/** The project files that carry an `origin` block, with that block read. */
-function collectCopies(root: string): { copies: CollectedCopy[]; truncated: boolean } {
-  const walked = walkProjectFiles(root)
-  const copies: CollectedCopy[] = []
-  for (const file of walked.files) {
-    const head = readHead(join(root, ...file.split('/')), COPY_HEAD_BYTES)
-    // Cheap prefilter: a file that does not even mention the key cannot carry it.
-    if (!head.includes(`${SHARED_ORIGIN_KEY}:`)) continue
-    const origin = readOrigin(head)
-    if (origin === undefined) continue
-    copies.push({ file, kind: kindOfProjectFile(file), origin })
-  }
-  return { copies, truncated: walked.truncated }
-}
-
-/**
- * What this book holds from the shared library, and how fresh each copy is
- * (ADR-0007 V3 — "only the differences" is this list filtered to `stale`).
- *
- * Read-only: it hashes the shared library, reads the head of each copy and never
- * writes — not even to `shared/index.json`.
- */
-export function buildSharedCopies(input: { dataDir: string; root: string }): SharedResult<SharedCopiesValue> {
-  const root = resolve(input.root)
-  const collected = collectCopies(root)
-  const library = scanSharedLibrary(sharedRootOf(input.dataDir).root)
-  if (!library.ok) return fail('SHARED_UNAVAILABLE', library.error.message, { hint: library.error.hint })
-
-  const byId = new Map<string, SharedEntry>()
-  for (const entry of library.entries) byId.set(entry.entryId, entry)
-
-  const entries: SharedCopyRow[] = []
-  const counts = { total: 0, current: 0, stale: 0, missing: 0 }
-  let selfContained = true
-  for (const copy of collected.copies) {
-    const source = copy.origin.entryId === null ? undefined : byId.get(copy.origin.entryId)
-    const currentHash = source?.sha256
-    const recorded = copy.origin.mode === SHARED_REFERENCE_MODE ? copy.origin.sha256 : copy.origin.contentHash
-    const state: SharedCopyRow['state'] =
-      currentHash === undefined ? 'missing-source' : recorded === currentHash ? 'current' : 'stale'
-    if (copy.origin.mode === SHARED_REFERENCE_MODE) selfContained = false
-    counts.total += 1
-    if (state === 'current') counts.current += 1
-    else if (state === 'stale') counts.stale += 1
-    else counts.missing += 1
-    entries.push({
-      file: copy.file,
-      kind: copy.kind,
-      entryId: copy.origin.entryId,
-      mode: copy.origin.mode,
-      ...(recorded === undefined ? {} : { contentHash: recorded }),
-      ...(currentHash === undefined ? {} : { currentHash }),
-      state,
-    })
-  }
-
-  const meta = readMetaRecord(root)
-  const seriesId = meta === undefined ? null : (nonEmptyString(meta.record['seriesId']) ?? null)
-  const seriesFound = seriesId === null ? false : seriesExists(sharedRootOf(input.dataDir).root, seriesId)
-
-  return {
-    ok: true,
-    value: {
-      root,
-      projectId: meta === undefined ? null : (nonEmptyString(meta.record['projectId']) ?? null),
-      seriesId,
-      seriesFound,
-      selfContained,
-      entries: entries.sort((left, right) => (left.file < right.file ? -1 : left.file > right.file ? 1 : 0)),
-      references: entries.filter((entry) => entry.mode === SHARED_REFERENCE_MODE).map((entry) => entry.file),
-      counts,
-      truncated: collected.truncated || library.truncated,
-    },
-  }
-}
-
-/** Whether `shared/series/*.json` declares this `seriesId` (V6: reported, never fixed). */
-function seriesExists(sharedRoot: string, seriesId: string): boolean {
-  let names: string[]
-  try {
-    names = readdirSync(join(sharedRoot, 'series'))
-  } catch {
-    return false
-  }
-  for (const name of names) {
-    if (extname(name).toLowerCase() !== '.json') continue
-    const text = readText(join(sharedRoot, 'series', name))
-    if (text === undefined) continue
-    try {
-      if (nonEmptyString(asRecord(JSON.parse(text))?.['seriesId']) === seriesId) return true
-    } catch {
-      // A series file that does not parse simply does not match.
-    }
-  }
-  return false
-}
-
-// ---------------------------------------------------------------------------
 // The explicit per-entry update (ADR-0007 C3: stale is a report, not a repair)
 // ---------------------------------------------------------------------------
 
@@ -894,3 +444,26 @@ export function updateSharedEntry(input: SharedUpdateInput): SharedResult<Shared
 
   return { ok: true, value: { root, updated: [row.file], unchanged: [], backupDir: handle.dir, origin } }
 }
+
+// ---------------------------------------------------------------------------
+// The public surface, at its original address
+// ---------------------------------------------------------------------------
+
+export { buildSharedCopies } from './shared-copy-list.js'
+export { applyOriginBlock, ensureProjectId, sharedDestinationOf } from './shared-copy-provenance.js'
+export { SHARED_COPY_MAX_ROWS } from './shared-copy-types.js'
+
+export type {
+  EnsureProjectIdValue,
+  SharedCopiesValue,
+  SharedCopyError,
+  SharedCopyInput,
+  SharedCopyMode,
+  SharedCopyRow,
+  SharedCopyValue,
+  SharedOriginCopy,
+  SharedOriginReference,
+  SharedResult,
+  SharedUpdateInput,
+  SharedUpdateValue,
+} from './shared-copy-types.js'
