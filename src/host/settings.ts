@@ -27,6 +27,12 @@
  * stamped newer than `SETTINGS_SCHEMA_VERSION` is read (known fields only) but never
  * overwritten, and the caller gets `SETTINGS_NEWER_VERSION` instead of a quiet data
  * loss.
+ *
+ * ONE CONSUMER CANNOT RE-READ, so a successful save also notifies listeners
+ * (`onSettingsWritten`). Everything that renders a setting per request reads the file at
+ * that moment; the writing preset is a registered composition, and the Host hands each new
+ * session the revision registered when it started — so "the switch took effect without a
+ * restart" needs a push, and only for the next session.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -47,9 +53,9 @@ export const SETTINGS_FILE = 'settings.json'
 /**
  * The settings a book-independent surface may read.
  *
- * Optional keys (`sharedRoot`, `authorName`) are ABSENT when unset rather than
- * empty strings, so "set to empty" and "never set" stay distinguishable on the wire
- * and in the written file.
+ * Optional keys (`sharedRoot`, `authorName`, `semanticEndpoint`, `semanticApiKey`,
+ * `subagentProvider`, `subagentModel`) are ABSENT when unset rather than empty strings, so
+ * "set to empty" and "never set" stay distinguishable on the wire and in the written file.
  */
 export interface InkflowSettings {
   /**
@@ -99,6 +105,30 @@ export interface InkflowSettings {
   excludeDirs: string[]
   /** How many local backup packages to keep per book (1–50, D3). */
   backupKeep: number
+  /**
+   * Whether generation work (outline, chapter beat sheet, prose) should be handed to
+   * a subagent instead of being written by the session's own agent.
+   *
+   * THIS PLUGIN HAS NO MODEL CLIENT (roadmap X-26), so this is a POLICY, not a
+   * capability: it is rendered into the session (a systemPrompt section and one line
+   * in the batch tool's reply) and the agent is the one that dispatches. Nothing here
+   * can make a subagent run, and nothing observes whether one did.
+   */
+  subagentEnabled: boolean
+  /**
+   * Provider route the subagent should be dispatched on; absent = the session's own
+   * routing is kept. Optional key: absent rather than an empty string, so "never set"
+   * and "set to empty" stay distinguishable in the file and on the wire.
+   */
+  subagentProvider?: string
+  /**
+   * Model id for that dispatch; absent = not configured.
+   *
+   * A provider WITHOUT a model is not a usable route, so `delegation.ts` reads that
+   * pair as unconfigured and asks the author at the moment of use instead of
+   * inventing a model.
+   */
+  subagentModel?: string
 }
 
 /** What a missing file, or a field a broken file could not supply, reads as. */
@@ -116,6 +146,12 @@ export const SETTINGS_DEFAULTS = {
   autosaveIntervalMs: 1500,
   backupKeep: 5,
   excludeDirs: [] as readonly string[],
+  /**
+   * Off by default: delegation changes where the prose comes from, and an author who
+   * never touched this page must keep today's behaviour (the session's own agent
+   * writes the chapter).
+   */
+  subagentEnabled: false,
 } as const
 
 /** Ranges are clamped, never refused (D2). Stated as data so the panel can show them. */
@@ -134,12 +170,27 @@ export const SETTINGS_FIELDS = [
   'authorName',
   'excludeDirs',
   'backupKeep',
+  'subagentEnabled',
+  'subagentProvider',
+  'subagentModel',
 ] as const
 export type SettingsField = (typeof SETTINGS_FIELDS)[number]
 
 /** One line the diagnostics package carries instead of failing (D2/D5). */
 export interface SettingsWarning {
-  code: 'SETTINGS_UNREADABLE' | 'SETTINGS_NOT_OBJECT' | 'SETTINGS_NEWER_VERSION'
+  code: 'SETTINGS_UNREADABLE' | 'SETTINGS_NOT_OBJECT' | 'SETTINGS_NEWER_VERSION' | 'SETTINGS_FIELD_IGNORED'
+  message: string
+}
+
+/**
+ * One configured value the whitelist could not use, with why.
+ *
+ * Separate from `warn` because a settings file can hold SEVERAL such values while
+ * `warn` is one sentence the diagnostics package carries: the sentence is built from
+ * these lines, and the panel shows them one per field.
+ */
+export interface SettingsFieldNotice {
+  field: SettingsField
   message: string
 }
 
@@ -151,6 +202,11 @@ export interface SettingsRead {
   /** The `schemaVersion` on disk when it differed from ours or was unreadable. */
   fileSchemaVersion?: number
   warn?: SettingsWarning
+  /**
+   * Hand-edited values that read as "not configured" (D2). Present only when the file
+   * held something no route could use — never a refusal, always a report.
+   */
+  notices?: SettingsFieldNotice[]
 }
 
 /** A write's answer: what is on disk now, and which fields actually moved. */
@@ -257,7 +313,85 @@ function normalizeExcludeDirs(value: unknown): string[] {
  * between reading and saving.
  */
 export function coerceSettings(raw: unknown): InkflowSettings {
+  return coerceSettingsDetailed(raw).settings
+}
+
+/** A provider route name, or nothing — the shape a dispatch route can have. */
+const PROVIDER_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:@-]*$/u
+
+/**
+ * A model id, or nothing.
+ *
+ * Wider than a provider id on purpose: some vendors namespace their own models with a
+ * slash (`deepseek/deepseek-chat`), and a model id is passed through to the adapter
+ * verbatim. What is refused is the same thing for both — whitespace and control
+ * characters. A route token with a space in it cannot be dispatched, and a value the
+ * plugin cannot dispatch must read as "not configured" rather than as a promise it
+ * cannot keep.
+ */
+const MODEL_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:/@+~-]*$/u
+
+/** A short, quotable rendering of whatever a hand edit put in the file. */
+function preview(value: unknown): string {
+  try {
+    const text = typeof value === 'string' ? value : JSON.stringify(value) ?? String(value)
+    return JSON.stringify(text.length > 40 ? `${text.slice(0, 40)}…` : text) ?? '""'
+  } catch {
+    return 'a value that cannot be rendered'
+  }
+}
+
+/**
+ * One optional route-shaped field, or `undefined` plus a notice.
+ *
+ * WHY A NOTICE AND NOT A REFUSAL (D2): the file is a human-editable thing. A wrong
+ * type, a field typed full of spaces, or a value with a space inside it is a typo, and
+ * the honest answer is "that reads as not configured, here is why" — never a throw, and
+ * never a value that looks configured and silently fails at dispatch time.
+ */
+function routeField(
+  value: unknown,
+  field: SettingsField,
+  shape: RegExp,
+  label: string,
+  notices: SettingsFieldNotice[],
+): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') {
+    notices.push({ field, message: `${field} is ${preview(value)}, not a string; it reads as not configured` })
+    return undefined
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    notices.push({
+      field,
+      message: `${field} is blank; remove the key (or save null from the panel) to clear it — it reads as not configured`,
+    })
+    return undefined
+  }
+  if (trimmed.length > 200 || !shape.test(trimmed)) {
+    notices.push({ field, message: `${field} ${preview(trimmed)} is not a usable ${label}; it reads as not configured` })
+    return undefined
+  }
+  return trimmed
+}
+
+/** A read projection: the complete settings plus what could not be used. */
+export interface CoercedSettings {
+  settings: InkflowSettings
+  notices: SettingsFieldNotice[]
+}
+
+/**
+ * `coerceSettings` with the reasons kept.
+ *
+ * The reader needs both halves (settings + what it ignored, D2); the writer and every
+ * other caller only need the settings, which is why the one-argument form stays the
+ * public one.
+ */
+export function coerceSettingsDetailed(raw: unknown): CoercedSettings {
   const record = asRecord(raw) ?? {}
+  const notices: SettingsFieldNotice[] = []
   const settings: InkflowSettings = {
     semanticSearch:
       typeof record['semanticSearch'] === 'boolean' ? record['semanticSearch'] : SETTINGS_DEFAULTS.semanticSearch,
@@ -268,6 +402,8 @@ export function coerceSettings(raw: unknown): InkflowSettings {
     ),
     excludeDirs: normalizeExcludeDirs(record['excludeDirs']),
     backupKeep: clampedInt(record['backupKeep'], SETTINGS_DEFAULTS.backupKeep, SETTINGS_LIMITS.backupKeep),
+    subagentEnabled:
+      typeof record['subagentEnabled'] === 'boolean' ? record['subagentEnabled'] : SETTINGS_DEFAULTS.subagentEnabled,
   }
   const sharedRoot = trimmedString(record['sharedRoot'])
   if (sharedRoot !== undefined) settings.sharedRoot = sharedRoot
@@ -277,7 +413,28 @@ export function coerceSettings(raw: unknown): InkflowSettings {
   if (semanticEndpoint !== undefined) settings.semanticEndpoint = semanticEndpoint
   const semanticApiKey = trimmedString(record['semanticApiKey'])
   if (semanticApiKey !== undefined) settings.semanticApiKey = semanticApiKey
-  return settings
+  const subagentProvider = routeField(record['subagentProvider'], 'subagentProvider', PROVIDER_TOKEN, 'provider route', notices)
+  if (subagentProvider !== undefined) settings.subagentProvider = subagentProvider
+  const subagentModel = routeField(record['subagentModel'], 'subagentModel', MODEL_TOKEN, 'model id', notices)
+  if (subagentModel !== undefined) settings.subagentModel = subagentModel
+  return { settings, notices }
+}
+
+/**
+ * The one sentence the diagnostics package reports for ignored fields.
+ *
+ * ONE sentence for N fields because `SettingsWarning` is one line by design: the panel
+ * and the settings tools show the per-field `notices`, and the support package only has
+ * to say "this file holds a value the plugin could not use".
+ */
+function ignoredFieldsWarning(notices: readonly SettingsFieldNotice[]): SettingsWarning | undefined {
+  if (notices.length === 0) return undefined
+  return {
+    code: 'SETTINGS_FIELD_IGNORED',
+    message: `${SETTINGS_FILE} holds ${String(notices.length)} value(s) this plugin cannot use (${notices
+      .map((notice) => notice.field)
+      .join(', ')}); they read as not configured`,
+  }
 }
 
 /**
@@ -349,7 +506,13 @@ export function readSettings(dataDir: string): SettingsRead {
 
   const rawVersion = record['schemaVersion']
   const version = typeof rawVersion === 'number' && Number.isFinite(rawVersion) ? rawVersion : undefined
-  const settings = coerceSettings(record)
+  const coerced = coerceSettingsDetailed(record)
+  const settings = coerced.settings
+  // Two independent reports on one payload: a file-level problem (a newer schema) wins
+  // the single `warn` slot because it is about the whole document, and the per-field
+  // `notices` still travel beside it.
+  const ignored = ignoredFieldsWarning(coerced.notices)
+  const notices = coerced.notices.length === 0 ? undefined : coerced.notices
   if (version !== undefined && version !== SETTINGS_SCHEMA_VERSION) {
     return {
       settings,
@@ -362,9 +525,10 @@ export function readSettings(dataDir: string): SettingsRead {
             ? `${SETTINGS_FILE} was written by a newer plugin (schemaVersion ${String(version)}); the fields this version knows are used and the file is never overwritten`
             : `${SETTINGS_FILE} carries schemaVersion ${String(version)}; this plugin writes ${String(SETTINGS_SCHEMA_VERSION)} and the fields it knows are used`,
       },
+      ...(notices === undefined ? {} : { notices }),
     }
   }
-  return { settings, source: 'file' }
+  return { settings, source: 'file', ...(ignored === undefined ? {} : { warn: ignored }), ...(notices === undefined ? {} : { notices }) }
 }
 
 /** The settings themselves, for a caller that does not care how they were read. */
@@ -464,6 +628,42 @@ function changedFields(before: InkflowSettings, after: InkflowSettings): Setting
 }
 
 /**
+ * Who wants to know that a save landed.
+ *
+ * WHY AN OBSERVER AND NOT A RE-READ AT USE TIME: everything that renders this setting
+ * per request (the delegation section, the batch tool's reply) already re-reads the
+ * file, because it is a few hundred bytes. One consumer cannot: the writing preset is a
+ * REGISTERED composition, and the Host hands each new Agent the revision registered when
+ * it starts. So the only way "the switch takes effect for the next session, without a
+ * restart" can be true is to re-register the composition when the switch moves — and
+ * that needs to be told, not polled.
+ *
+ * Process-wide on purpose: settings are process-wide (D1), and the listener set is
+ * empty until `apply()` wires the preset controller and disposed when the plugin unloads.
+ */
+const SETTINGS_LISTENERS = new Set<(settings: InkflowSettings) => void>()
+
+/** Subscribe to successful saves. Returns the unsubscribe. */
+export function onSettingsWritten(listener: (settings: InkflowSettings) => void): () => void {
+  SETTINGS_LISTENERS.add(listener)
+  return () => {
+    SETTINGS_LISTENERS.delete(listener)
+  }
+}
+
+function notifySettingsWritten(settings: InkflowSettings): void {
+  for (const listener of SETTINGS_LISTENERS) {
+    // A listener is a side effect of a successful save; it must never turn a written
+    // file into a failed reply the user would retry.
+    try {
+      listener(settings)
+    } catch {
+      // Swallowed by contract: the file is already on disk.
+    }
+  }
+}
+
+/**
  * Merge `patch` into the settings on disk and replace the file atomically.
  *
  * MERGE, NOT REPLACE: a field the caller omits keeps its current effective value,
@@ -528,6 +728,7 @@ export function writeSettings(dataDir: string, patch: Record<string, unknown>): 
 
   const result: SettingsWrite = { settings: next, changed, repaired: read.source === 'default' && existsSync(path) }
   if (read.warn !== undefined && read.warn.code !== 'SETTINGS_NEWER_VERSION') result.warn = read.warn
+  if (changed.length > 0) notifySettingsWritten(next)
   return { ok: true, value: result }
 }
 

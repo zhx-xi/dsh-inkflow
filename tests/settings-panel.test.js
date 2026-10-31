@@ -198,3 +198,82 @@ test('anchorOf prefers the registry id and falls back to the directory name', as
   assert.equal(model.defaultBook([]), undefined)
   assert.equal(model.defaultBook([{ workspaceId: 'ws-1', bookSlug: 'a', title: 'A' }])?.workspaceId, 'ws-1')
 })
+
+// ---------------------------------------------------------------------------
+// The delegation block (子智能体): form ↔ wire, the "还差模型" state, and the notice
+// ---------------------------------------------------------------------------
+
+test('the delegation fields round-trip through the form, and an untouched form changes nothing', async () => {
+  const model = await loadModel()
+  // A payload from a build that predates the switch: absent reads as OFF, not as a change.
+  const draft = model.formFromSettings(SETTINGS)
+  assert.equal(draft.subagentEnabled, false)
+  assert.equal(draft.subagentProvider, '')
+  assert.equal(draft.subagentModel, '')
+  assert.deepEqual(model.describeDraftChanges(draft, SETTINGS), [])
+
+  // Empty boxes CLEAR the optional halves (`null`), and the switch is always sent.
+  const patch = model.patchFromForm({ ...draft, subagentProvider: '  ', subagentModel: ' deepseek-v4-pro ' })
+  assert.equal(patch.subagentProvider, null)
+  assert.equal(patch.subagentModel, 'deepseek-v4-pro')
+  assert.equal(patch.subagentEnabled, false)
+
+  const filled = model.formFromSettings({
+    ...SETTINGS,
+    subagentEnabled: true,
+    subagentProvider: 'deepseek-account',
+    subagentModel: 'deepseek-v4-pro',
+  })
+  assert.equal(filled.subagentEnabled, true)
+  assert.equal(filled.subagentProvider, 'deepseek-account')
+  assert.equal(model.describeDelegationFields({
+    enabled: filled.subagentEnabled,
+    provider: filled.subagentProvider,
+    model: filled.subagentModel,
+  }).state, 'delegated')
+
+  // Only the switch moving is a change; the two stored values are already what the form says.
+  const moved = model.describeDraftChanges({ ...filled, subagentEnabled: false }, {
+    ...SETTINGS,
+    subagentEnabled: true,
+    subagentProvider: 'deepseek-account',
+    subagentModel: 'deepseek-v4-pro',
+  })
+  assert.deepEqual(moved, ['子智能体'])
+})
+
+test('the page says "还差模型" for a provider with no model, and never invents one', async () => {
+  const model = await loadModel()
+  const off = model.describeDelegationFields({ enabled: false })
+  assert.equal(off.state, 'off')
+  assert.equal(off.label, '关')
+
+  const missing = model.describeDelegationFields({ enabled: true, provider: 'deepseek-account', model: '' })
+  assert.equal(missing.state, 'unconfigured')
+  assert.match(missing.label, /还差模型/u)
+  assert.ok(missing.notes.some((note) => note.includes('还差模型：只填了 provider（deepseek-account）')))
+
+  const ready = model.describeDelegationFields({ enabled: true, provider: 'deepseek-account', model: 'deepseek-v4-pro' })
+  assert.equal(ready.state, 'delegated')
+  assert.match(ready.label, /deepseek-account\/deepseek-v4-pro/u)
+  // "No provider" is a legal choice: the model alone is then the route.
+  const sessionRoute = model.describeDelegationFields({ enabled: true, model: 'deepseek-v4-pro' })
+  assert.equal(sessionRoute.state, 'delegated')
+  assert.match(sessionRoute.label, /沿用当前会话/u)
+
+  // The one sentence a panel must not leave out: a composition is loaded at session start.
+  assert.match(model.DELEGATION_SESSION_NOTICE, /新开的会话/u)
+})
+
+test('the settings summary names the delegation state instead of the three raw values', async () => {
+  const model = await loadModel()
+  const lines = model.describeSettings({ ...SETTINGS, subagentEnabled: true, subagentModel: 'deepseek-v4-pro' })
+  const line = lines.find((entry) => entry.startsWith('子智能体：'))
+  assert.ok(line, 'the summary must have a delegation line')
+  assert.match(line, /开（deepseek-v4-pro/u)
+  assert.equal(
+    model.describeSettings(SETTINGS).some((entry) => entry === '子智能体：关'),
+    true,
+    'a payload with no switch reads as off in the summary too',
+  )
+})

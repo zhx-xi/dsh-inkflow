@@ -771,8 +771,13 @@ test('apply assembles the section and honours the configured budget', async (t) 
 
   apply(ctx, { dataDir, serveHttp: false, promptBudgetTokens: 60, promptTailChars: 300 })
 
-  assert.equal(sections.length, 1)
-  const squeezed = sections[0].text({ agent: { session: {} } })
+  // Two sections now: the writing context (120) and the delegation policy (121). Selected
+  // by NAME rather than by index — the order is advisory and a second host-level section
+  // moved the list.
+  assert.equal(sections.length, 2)
+  const writing = sections.find((entry) => entry.name === PROMPT_SECTION_NAME)
+  assert.ok(writing, 'the writing-context section must be among the registered sections')
+  const squeezed = writing.text({ agent: { session: {} } })
   assert.match(squeezed, /\[trimmed: /)
   assert.ok(squeezed.includes('### 剧情点'))
 
@@ -780,7 +785,9 @@ test('apply assembles the section and honours the configured budget', async (t) 
   const second = createPromptService()
   const other = createCtx({ services: { systemPrompt: second.service, workingDirectory: { get: () => root } } })
   apply(other.ctx, { dataDir, serveHttp: false })
-  assert.ok(!second.sections[0].text({ agent: { session: {} } }).includes('[trimmed: '))
+  const briefing = second.sections.find((entry) => entry.name === PROMPT_SECTION_NAME)
+  assert.ok(briefing)
+  assert.ok(!briefing.text({ agent: { session: {} } }).includes('[trimmed: '))
 })
 
 /**
@@ -817,7 +824,9 @@ test('a squeezed injection is counted in the brief run summary (diagnostics)', a
   const { ctx } = createCtx({ services: { systemPrompt: service, workingDirectory: { get: () => root } } })
   apply(ctx, { dataDir, serveHttp: false, promptBudgetTokens: 200 })
 
-  const text = sections[0].text({ agent: { session: {} } })
+  const writing = sections.find((entry) => entry.name === PROMPT_SECTION_NAME)
+  assert.ok(writing)
+  const text = writing.text({ agent: { session: {} } })
   assert.ok(text.includes('### 剧情点'), 'the task statement is still injected')
   assert.match(text, /\[trimmed: 世界书、上章结尾/u)
 

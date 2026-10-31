@@ -20,8 +20,10 @@ import { getLoadedBuild } from './build-info.js'
 import { resolveConfig } from './config.js'
 import { BUNDLED_SKILL_NAMES, bundledSkillsDir, registerInkflowSkills } from './skills.js'
 import { buildWritingPreset, registerWritingPreset } from './preset.js'
+import { delegationEnabled, registerDelegationSection } from './delegation.js'
 import { registerWritingContext } from './prompt.js'
 import { describeError } from './probe.js'
+import { onSettingsWritten, settingsOf } from './settings.js'
 import { readState } from './state.js'
 import { buildTools } from './tools.js'
 import { createHttpHandler } from './routes.js'
@@ -291,11 +293,27 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
   // second row mounting this package, say) must not cost the user their tools.
   try {
     const skills = registerInkflowSkills(ctx, { dir: bundledSkillsDir(import.meta.url), log })
-    registerWritingPreset(
-      ctx,
-      buildWritingPreset(skills.names.length > 0 ? skills.names : [...BUNDLED_SKILL_NAMES]),
-      log,
-    )
+    const skillNames = skills.names.length > 0 ? skills.names : [...BUNDLED_SKILL_NAMES]
+    // The delegation row belongs to the COMPOSITION, so it is decided at registration time
+    // and re-decided only when the switch moves. That is the whole of "改设置只影响新开的
+    // 会话": a session is bound to the revision that was current when it started, so a
+    // revision registered now reaches the next session and leaves the running ones alone.
+    let delegate = delegationEnabled(settingsOf(config.dataDir))
+    const preset = registerWritingPreset(ctx, buildWritingPreset(skillNames, { delegate }), log)
+    if (preset.revise !== undefined) {
+      const revise = preset.revise
+      ctx.effect(() =>
+        onSettingsWritten((next) => {
+          const wanted = delegationEnabled(next)
+          // Only the switch changes the tool set. A provider/model edit changes the policy
+          // TEXT, which is a thunk and needs no re-registration — reloading the
+          // composition for it would churn every panel row for nothing.
+          if (wanted === delegate) return
+          delegate = wanted
+          revise(buildWritingPreset(skillNames, { delegate: wanted }))
+        }),
+      )
+    }
   } catch (error) {
     log.warn(`writing surface skipped: ${describeError(error)}`)
   }
@@ -311,6 +329,15 @@ export function apply(ctx: HostContext, rawConfig: unknown): void {
     })
   } catch (error) {
     log.warn(`writing context skipped: ${describeError(error)}`)
+  }
+
+  // Delegation policy: one section, read per assembly from the settings file, so a save is
+  // in force on the next request. Own try/catch for the same reason as the context above —
+  // a broken section must never cost the user their tools.
+  try {
+    registerDelegationSection(ctx, { dataDir: config.dataDir, log })
+  } catch (error) {
+    log.warn(`delegation policy skipped: ${describeError(error)}`)
   }
 
   const tools = ctx.tools

@@ -970,6 +970,10 @@ test('工具：enqueue 零写内容 → take 给上下文 → complete 落盘 �
     assert.equal(taken.tasks.length, 1)
     assert.equal(taken.tasks[0].context.segments.length, 9)
     assert.equal(taken.tasks[0].context.planned, true)
+    // The reply says who writes these chapters. The words are the delegation policy's, and
+    // the default is off, so a fresh machine is told to write them itself.
+    assert.equal(taken.delegation.state, 'off')
+    assert.equal(taken.delegation.sentence, '写作方式：自己写（未开启子智能体）')
 
     const held = await callTool(harness, 'inkflow_batch_complete', { projectRoot: fixture.root, jobId, seq: 1, body: WARNED_BODY })
     assert.equal(held.ok, true, JSON.stringify(held.error ?? null))

@@ -76,10 +76,13 @@ const BUILT_IN_TOOLS = [
   // The plugin's own state — settings, the diagnostics package and the local
   // backups. Built-ins for the same reason as the pair above: none of them belongs to
   // one content directory, and two of them touch no book at all.
-  ['inkflow_settings_get', 'd41c07e7'],
+  // Both settings tools gained the subagent fields (`subagentEnabled` / `subagentProvider` /
+  // `subagentModel`): `get` names them in its description, `update` carries them in its
+  // schema. Baselines recomputed with `node scripts/surface-hash.mjs`.
+  ['inkflow_settings_get', '087ffa29'],
   // added `semanticEndpoint` / `semanticApiKey` to this schema (ADR-0020 决策), and
   // wired `sharedRoot`; the recorded hash follows both.
-  ['inkflow_settings_update', 'e7622d6a'],
+  ['inkflow_settings_update', '7934286d'],
   ['inkflow_diagnostics_export', '81804879'],
   ['inkflow_backup_create', '375f1aa7'],
   ['inkflow_backup_restore', '830aaf3b'],

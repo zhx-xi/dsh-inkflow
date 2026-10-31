@@ -33,6 +33,7 @@ import {
 import type { BackupPackage } from './backup-zip.js'
 import { buildDiagnostics, exportDiagnostics, maskPath } from './diagnostics.js'
 import type { ToolSurfaceSource } from './diagnostics.js'
+import { describeDelegation } from './delegation.js'
 import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, redactSettings, writeSettings } from './settings.js'
 import type { InkflowSettings } from './settings.js'
 
@@ -139,6 +140,12 @@ function describeSettings(settings: InkflowSettings, sharedRoot?: unknown): stri
     `authorName: ${settings.authorName ?? '（未设置）'}`,
     `excludeDirs: ${settings.excludeDirs.length === 0 ? '（空）' : settings.excludeDirs.join(', ')}`,
     `backupKeep: ${String(settings.backupKeep)}`,
+    `subagentEnabled: ${String(settings.subagentEnabled)}`,
+    `subagentProvider: ${settings.subagentProvider ?? '（未设置）'}`,
+    `subagentModel: ${settings.subagentModel ?? '（未设置）'}`,
+    // The decision, not the three values again: this line is the same sentence the batch
+    // tool prints and the injected policy starts with (`describeDelegation`).
+    describeDelegation(settings).sentence,
   ]
   if (ignored !== undefined) lines.push(`注意：sharedRoot 未生效 — ${String(ignored['message'] ?? '')}`)
   return lines
@@ -157,12 +164,14 @@ export function settingsTools(deps: SettingsToolDeps): ToolDefinition[] {
   const get: ToolDefinition = {
     name: 'inkflow_settings_get',
     description:
-      'Read the plugin-level settings (ADR-0018 D1/D2): sharedRoot, semanticSearch, autosaveIntervalMs, authorName, ' +
-      'excludeDirs, backupKeep. They live in one file OUTSIDE every book ($DSH_HOME/inkflow/settings.json), never in the ' +
+      'Read the plugin-level settings (ADR-0018 D1/D2): sharedRoot, semanticSearch, semanticEndpoint, autosaveIntervalMs, ' +
+      'authorName, excludeDirs, backupKeep, and the subagent switch (subagentEnabled / subagentProvider / subagentModel). ' +
+      'They live in one file OUTSIDE every book ($DSH_HOME/inkflow/settings.json), never in the ' +
       'book\'s inkflow.json — a book is the author\'s git repository, and a machine-specific preference in it would be ' +
       'committed and shared. The reply always carries a complete settings object: a missing file, a missing field, an ' +
-      'out-of-range number (clamped) or a wrong type (default) is not an error, and `warn` reports a broken file so you can ' +
-      'tell the user. Read-only; no project is resolved, so this works on a broken book too.',
+      'out-of-range number (clamped) or a wrong type (default) is not an error, and `warn`/`notices` report a broken file ' +
+      'or a value the plugin could not use so you can tell the user. The delegation line is the policy the session is asked ' +
+      'to follow, not a capability this plugin exercises. Read-only; no project is resolved, so this works on a broken book too.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: {
       schema: SUCCESS_SCHEMA,
@@ -192,7 +201,11 @@ export function settingsTools(deps: SettingsToolDeps): ToolDefinition[] {
       '1–50), a wrong type falls back to the default, excludeDirs entries are normalised to book-relative names. Only the ' +
       'whitelist is written; unknown keys are ignored. Nothing is written without confirm: true, and NO book file is ever ' +
       'touched. A settings file stamped with a newer schemaVersion is refused rather than downgraded, so a newer plugin\'s ' +
-      'fields are not silently dropped.',
+      'fields are not silently dropped. The subagent switch (subagentEnabled / subagentProvider / subagentModel) is a ' +
+      'POLICY the plugin states to the session — this plugin calls no model client, so it cannot start a subagent. A ' +
+      'provider without a model reads as unconfigured (ask the author, do not invent one). Do NOT use this tool to persist ' +
+      'a model the author picked for one session: that answer is meant for that session only, and writing it here would ' +
+      'turn a one-off choice into the default for every book.',
     parameters: {
       type: 'object',
       properties: {
@@ -220,6 +233,21 @@ export function settingsTools(deps: SettingsToolDeps): ToolDefinition[] {
           description: 'Book-relative directories bulk operations skip (e.g. a scratch directory inside the repository). Replaces the whole list; [] clears it.',
         },
         backupKeep: { type: 'integer', description: 'How many local backup packages to keep per book (1–50; default 5). The oldest beyond this are deleted on the next backup.' },
+        subagentEnabled: {
+          type: 'boolean',
+          description:
+            'Whether generation work (outline / beat sheet / prose) should be delegated to a subagent (default false). A POLICY, not a capability: the plugin states it to the session and the session\'s agent dispatches. Loading the delegation tool row happens at composition time, so a change here reaches NEW sessions; a session already running keeps the tool set it started with.',
+        },
+        subagentProvider: {
+          type: 'string',
+          description:
+            'Provider route to dispatch the subagent on, e.g. deepseek-account. Omit to keep the session\'s own routing; null to clear. A provider WITHOUT a model is not a usable route and reads as unconfigured.',
+        },
+        subagentModel: {
+          type: 'string',
+          description:
+            'Model id for that dispatch. Omit to keep the current value; null to clear. When it is absent the session asks the author at the moment of use and keeps the answer for THAT SESSION ONLY — never write a one-off answer back here.',
+        },
         confirm: CONFIRM_PARAM,
       },
       additionalProperties: false,
