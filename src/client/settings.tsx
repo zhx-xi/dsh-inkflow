@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { fetchInternal, writeInternal } from './internal.js'
+import { DelegationSection } from './delegation.js'
 import {
   SETTINGS_FIELD_LABELS,
   SETTINGS_TEXTS,
@@ -485,6 +486,9 @@ export function SettingsView({ onClose, initialAnchor }: { onClose: () => void; 
                 onChange={(event) => setDraft({ ...draft, semanticApiKey: event.target.value })}
               />
             </Field>
+            {/* The delegation block is part of the same form: it edits the draft, and the
+                save button below is the only thing that writes (one confirm card). */}
+            <DelegationSection draft={draft} onChange={(next) => setDraft({ ...draft, ...next })} />
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <button
                 type="button"

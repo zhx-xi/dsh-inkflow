@@ -33,6 +33,10 @@ export interface SettingsValues {
   authorName?: string
   excludeDirs: string[]
   backupKeep: number
+  /** Delegation policy (optional: a payload from a build without it reads as `false`). */
+  subagentEnabled?: boolean
+  subagentProvider?: string
+  subagentModel?: string
 }
 
 export interface SettingsWarning {
@@ -50,10 +54,17 @@ export interface HubSettingsValue {
   settings: SettingsValues
   source: 'default' | 'file'
   warn: SettingsWarning | null
+  /** Per-field detail behind `warn`: a hand-edited value the reader could not use. */
+  notices?: Array<{ field: string; message: string }>
   fields: string[]
   limits: { autosaveIntervalMs: { min: number; max: number }; backupKeep: { min: number; max: number } }
   dataDir: string
   books: BookChoice[]
+  /**
+   * What the session is being told about delegation right now (the Host's own decision,
+   * so the page never re-derives it): state + the one sentence.
+   */
+  delegation?: { state: 'off' | 'delegated' | 'unconfigured'; sentence: string; provider?: string; model?: string }
 }
 
 export interface BackupPackageView {
@@ -119,6 +130,10 @@ export interface SettingsDraft {
   authorName: string
   excludeDirs: string
   backupKeep: string
+  /** Delegation policy. `subagentModel` empty = ask the author at the moment of use. */
+  subagentEnabled: boolean
+  subagentProvider: string
+  subagentModel: string
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +175,9 @@ export const SETTINGS_FIELD_LABELS: Record<string, string> = {
   authorName: '作者名',
   excludeDirs: '排除目录',
   backupKeep: '保留份数',
+  subagentEnabled: '子智能体',
+  subagentProvider: '子智能体 provider',
+  subagentModel: '子智能体默认模型',
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +195,11 @@ export function formFromSettings(settings: SettingsValues): SettingsDraft {
     authorName: settings.authorName ?? '',
     excludeDirs: settings.excludeDirs.join(', '),
     backupKeep: String(settings.backupKeep),
+    // Absent means off (a payload from a build without the field), and an absent model means
+    // "ask me" — the empty box, not a guess.
+    subagentEnabled: settings.subagentEnabled === true,
+    subagentProvider: settings.subagentProvider ?? '',
+    subagentModel: settings.subagentModel ?? '',
   }
 }
 
@@ -212,7 +235,34 @@ export function patchFromForm(draft: SettingsDraft): Record<string, unknown> {
     .split(/[,，\n]/u)
     .map((entry) => entry.trim())
     .filter((entry) => entry !== '')
+  // Delegation: an empty box CLEARS the field (`null`), which is the same intent as the
+  // endpoint above. The switch is always sent — it is a boolean, and "unchecked" is a
+  // value, not an omission. A provider with no model is stored as given and reads as
+  // unconfigured on the Host side, which is exactly what the note beside the field says.
+  patch['subagentEnabled'] = draft.subagentEnabled === true
+  const provider = (draft.subagentProvider ?? '').trim()
+  patch['subagentProvider'] = provider === '' ? null : provider
+  const model = (draft.subagentModel ?? '').trim()
+  patch['subagentModel'] = model === '' ? null : model
   return patch
+}
+
+/**
+ * Whether a patch value equals what is stored.
+ *
+ * Three shapes, three rules: arrays compare by content; a BOOLEAN compares against
+ * "absent = false", because a payload from a build without the field has no key at all and
+ * an unchecked box is not a change; everything else uses the empty-string identity the
+ * rest of this module already relies on (`null` and absent both mean "cleared").
+ */
+function sameFieldValue(next: unknown, current: unknown): boolean {
+  if (Array.isArray(next) || Array.isArray(current)) {
+    const left = Array.isArray(next) ? next.map(String) : []
+    const right = Array.isArray(current) ? current.map(String) : []
+    return left.join('\u0000') === right.join('\u0000')
+  }
+  if (typeof next === 'boolean' || typeof current === 'boolean') return (next === true) === (current === true)
+  return (next ?? '') === (current ?? '')
 }
 
 /** Which fields the save would change, by label — what the confirm card lists. */
@@ -221,15 +271,63 @@ export function describeDraftChanges(draft: SettingsDraft, settings: SettingsVal
   const changed: string[] = []
   for (const [field, label] of Object.entries(SETTINGS_FIELD_LABELS)) {
     if (!Object.prototype.hasOwnProperty.call(patch, field)) continue
-    const next = patch[field]
     const current = (settings as unknown as Record<string, unknown>)[field]
-    const same = Array.isArray(next) && Array.isArray(current)
-      ? next.join('\u0000') === current.join('\u0000')
-      : (next ?? '') === (current ?? '')
-    if (!same) changed.push(label)
+    if (!sameFieldValue(patch[field], current)) changed.push(label)
   }
   return changed
 }
+
+/** The delegation block as the page shows it: one deciding line plus what to do next. */
+export interface DelegationView {
+  state: 'off' | 'delegated' | 'unconfigured'
+  /** The summary label: `关` / `开（provider/model）` / `还差模型`. */
+  label: string
+  /** What the state means, in the page's own words. */
+  notes: string[]
+}
+
+/**
+ * The page's reading of the three values.
+ *
+ * NOT a copy of the policy the Host injects: that sentence is produced once, in
+ * `src/host/delegation.ts`, and reaches the session (and the tool reply) from there. This
+ * function answers a different question — "what does this form currently mean, and what is
+ * missing before it can work" — and it is neutral about wording so the two cannot be
+ * mistaken for each other.
+ */
+export function describeDelegationFields(fields: {
+  enabled?: boolean
+  provider?: string
+  model?: string
+}): DelegationView {
+  const provider = (fields.provider ?? '').trim()
+  const model = (fields.model ?? '').trim()
+  if (fields.enabled !== true) {
+    return { state: 'off', label: '关', notes: ['生成类任务（大纲 / 细纲 / 正文）由本会话自己写，不委派。'] }
+  }
+  if (model === '') {
+    return {
+      state: 'unconfigured',
+      label: '还差模型',
+      notes: [
+        provider === ''
+          ? '还差模型：模型留空 = 没有默认路由，每次动手前会先问你要用哪个模型（选项来自模型目录）。'
+          : `还差模型：只填了 provider（${provider}），模型留空 —— 只填 provider 不构成一条能派发的路由，每次动手前会先问你要用哪个模型。`,
+      ],
+    }
+  }
+  return {
+    state: 'delegated',
+    label: provider === '' ? `开（${model}，provider 沿用当前会话）` : `开（${provider}/${model}）`,
+    notes: ['生成类任务（大纲 / 细纲 / 正文）委派给这条路由；审计与设定入库留在本会话。'],
+  }
+}
+
+/**
+ * The one thing about this switch a panel can get wrong: a composition is loaded when the
+ * session starts, so a change here reaches the NEXT session.
+ */
+export const DELEGATION_SESSION_NOTICE = '改这里只影响新开的会话：正在跑的会话保持它注册时的工具集。'
 
 /** One line per setting, including the ones that are unset. */
 export function describeSettings(settings: SettingsValues): string[] {
@@ -241,6 +339,7 @@ export function describeSettings(settings: SettingsValues): string[] {
     `作者名：${settings.authorName ?? '未设置'}`,
     `排除目录：${settings.excludeDirs.length === 0 ? '无' : settings.excludeDirs.join('、')}`,
     `备份保留：${String(settings.backupKeep)} 份`,
+    `子智能体：${describeDelegationFields({ enabled: settings.subagentEnabled, provider: settings.subagentProvider, model: settings.subagentModel }).label}`,
   ]
 }
 

@@ -31,6 +31,7 @@ import {
 } from './backup-zip.js'
 import type { BackupPackage, RestorePlan } from './backup-zip.js'
 import { buildDiagnostics, exportDiagnostics, maskPath } from './diagnostics.js'
+import { describeDelegation } from './delegation.js'
 import { listRegisteredWorkspaces } from './hub.js'
 import { SETTINGS_FIELDS, SETTINGS_LIMITS, readSettings, redactSettings, sharedRootOf, writeSettings } from './settings.js'
 import { buildTools } from './tools.js'
@@ -218,8 +219,15 @@ export function buildHubSettings(deps: HubSettingsDeps): Json {
     settings: redactSettings(read.settings),
     source: read.source,
     warn: read.warn ?? null,
+    // Per-field detail behind `warn`: a hand edit with a wrong type in it is one field
+    // the reader ignored, and the page says WHICH field rather than one sentence.
+    notices: read.notices ?? [],
     fields: [...SETTINGS_FIELDS],
     limits: SETTINGS_LIMITS,
+    // The delegation decision, computed by the same function the injection and the batch
+    // tool read — so the page can show "what is in force now" without a second copy of
+    // the wording (and without guessing which state the saved values are in).
+    delegation: describeDelegation(read.settings).wire,
     dataDir: maskPath(deps.dataDir, { home: homeDir(), dataDir: deps.dataDir }),
     sharedRoot: {
       path: maskPath(shared.root, { home: homeDir(), dataDir: deps.dataDir }),

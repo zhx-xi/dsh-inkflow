@@ -18,8 +18,8 @@ export {
   registerInkflowSkills,
 } from './skills.js'
 export type { BundledSkill, SkillFileProblem, SkillRegistration } from './skills.js'
-export { WRITING_PRESET_ID, buildWritingPreset, registerWritingPreset, writingPersona } from './preset.js'
-export type { PresetRegistration } from './preset.js'
+export { DELEGATION_TOOL_ROW_NAME, WRITING_PRESET_ID, buildWritingPreset, registerWritingPreset, writingPersona } from './preset.js'
+export type { PresetRegistration, WritingPresetOptions } from './preset.js'
 export { DEFAULT_BUDGET_TOKENS, DEFAULT_TAIL_CHARS, EXTRA_SEGMENTS, buildWritingContext, estimateTokens } from './writing-context.js'
 export type {
   ExtraSegmentInput,

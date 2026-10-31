@@ -192,6 +192,8 @@ export {
   SETTINGS_LIMITS,
   SETTINGS_SCHEMA_VERSION,
   coerceSettings,
+  coerceSettingsDetailed,
+  onSettingsWritten,
   readSettings,
   removeSettingsFile,
   settingsOf,
@@ -201,9 +203,11 @@ export {
 } from './settings.js'
 export { HUB_SETTINGS_BODY_FIELDS } from './hub-settings.js'
 export type {
+  CoercedSettings,
   InkflowSettings,
   SettingsError,
   SettingsField,
+  SettingsFieldNotice,
   SettingsRead,
   SettingsResult,
   SettingsWarning,
@@ -211,6 +215,36 @@ export type {
   SharedRootResolution,
   SharedRootWarning,
 } from './settings.js'
+// The delegation policy: the three texts, the section that injects one of them, and the
+// switch that decides whether the writing preset loads the workflow row.
+export {
+  DELEGATION_SECTION_NAME,
+  DELEGATION_SECTION_ORDER,
+  delegationEnabled,
+  delegationPolicyText,
+  describeDelegation,
+  registerDelegationSection,
+} from './delegation.js'
+export type {
+  DelegationPlan,
+  DelegationSectionRegistration,
+  DelegationSettings,
+  DelegationState,
+} from './delegation.js'
+// The model catalog behind the settings page's picker. Exported because its degradation
+// (missing service / 2 s deadline / one provider failing) IS the contract, and a contract
+// is asserted against the built artifact.
+export { MODELS_TIMEOUT_MS, buildHubModels } from './hub-models.js'
+export type {
+  HubModelsErrorCode,
+  HubModelsReply,
+  HubModelsValue,
+  LlmModelLike,
+  LlmProviderLike,
+  LlmServiceLike,
+  ModelChoice,
+  ProviderChoice,
+} from './hub-models.js'
 export {
   BACKUPS_DIR,
   BACKUP_EXCLUDED_DIRS,

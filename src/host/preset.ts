@@ -5,9 +5,10 @@
  * `inkflow_*` tools are registered for every session, so a novel session
  * already works without choosing anything. What a preset adds is the part a
  * catalog cannot: an identity that says *which* stage to run and *how*, plus a
- * deliberately small tool set for a writing agent — no shell, no delegation, no
- * workflow engine, so an author-facing session cannot wander into repository
- * surgery.
+ * deliberately small tool set for a writing agent — no shell, so an author-facing
+ * session cannot wander into repository surgery. Delegation is the one conditional
+ * row: it is mounted only while the plugin setting asks for it (see
+ * `DELEGATION_TOOL_ROW` and `revise`).
  *
  * Declared through `agentPresets.register(definition)` from this plugin, which
  * the registry documents as the seam "supplied by the declaring plugin". The
@@ -33,9 +34,13 @@ export const WRITING_PRESET_ID = 'inkflow-writing'
  * isolated, and this composition deliberately has none).
  *
  * Left out on purpose: `tool-bash` / `tool-pwsh` (an author-facing writing
- * session has no business shelling out), subagents and workflow (a chapter is
- * one agent's job), compaction rows (the deployment's default composition owns
- * the token budget).
+ * session has no business shelling out), compaction rows (the deployment's
+ * default composition owns the token budget).
+ *
+ * The delegation row is CONDITIONAL (below): a chapter is normally one agent's job, so
+ * `tool-workflow` is not part of the base composition. It is added only while the
+ * plugin setting asks for delegation, because that is the one thing that makes an
+ * author-facing writing session need a workflow engine at all.
  */
 const WRITING_TOOL_ROWS: readonly LoaderEntryLike[] = [
   { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
@@ -45,6 +50,11 @@ const WRITING_TOOL_ROWS: readonly LoaderEntryLike[] = [
   { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
   { id: 'tool-web', name: '@deepseek-ai/dsh-tool-web' },
 ]
+
+/** The delegation row, mounted only when the plugin setting enables delegation. */
+export const DELEGATION_TOOL_ROW_NAME = '@deepseek-ai/dsh-tool-workflow'
+
+const DELEGATION_TOOL_ROW: LoaderEntryLike = { id: 'tool-workflow', name: DELEGATION_TOOL_ROW_NAME }
 
 /**
  * The persona. It is agent-plane prose, so it names the five stages and the
@@ -84,17 +94,30 @@ export function writingPersona(skillNames: readonly string[]): string {
   ].join('\n')
 }
 
+/** How the composition is put together for one registration. */
+export interface WritingPresetOptions {
+  /**
+   * Load the delegation row. A REGISTRATION-TIME snapshot: whatever the setting says
+   * when `apply()` runs (or when the switch moves, see `revise`), not when a session
+   * starts — a session inherits the revision that was current when it began.
+   */
+  delegate?: boolean
+}
+
 /** Build the declaration handed to `agentPresets.register`. */
-export function buildWritingPreset(skillNames: readonly string[]): PresetDefinitionLike {
+export function buildWritingPreset(skillNames: readonly string[], options: WritingPresetOptions = {}): PresetDefinitionLike {
+  const delegate = options.delegate === true
   return {
     id: WRITING_PRESET_ID,
     name: 'InkFlow 写作',
-    description:
-      '长篇小说写作：架构 / 起草 / 审校 / 修订 / 润色五个工艺阶段，装载 InkFlow 写作技能与 inkflow_* 工具，不含 shell 与委派。',
+    description: delegate
+      ? '长篇小说写作：架构 / 起草 / 审校 / 修订 / 润色五个工艺阶段，装载 InkFlow 写作技能与 inkflow_* 工具，不含 shell；生成类任务可委派给子智能体（默认模型见插件设置）。'
+      : '长篇小说写作：架构 / 起草 / 审校 / 修订 / 润色五个工艺阶段，装载 InkFlow 写作技能与 inkflow_* 工具，不含 shell 与委派。',
     order: 20,
     plugins: [
       { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { prefix: writingPersona(skillNames) } },
       ...WRITING_TOOL_ROWS,
+      ...(delegate ? [DELEGATION_TOOL_ROW] : []),
     ],
   }
 }
@@ -105,15 +128,48 @@ export interface PresetRegistration {
   id?: string
   /** Why registration did not happen or failed after the fact. */
   reason?: string
+  /**
+   * Re-register with a new declaration, for a setting that changes the composition.
+   *
+   * WHY THIS EXISTS. A preset is a Cordis composition, not a bag of options: the Host
+   * loads it eagerly and each Agent keeps the revision it started under. So a setting
+   * that adds or removes a tool row cannot be honoured on the next request the way the
+   * delegation TEXT is (that one is a thunk). It has to become a new registration —
+   * after which sessions that start get the new rows, and sessions already running keep
+   * theirs. That is exactly "改设置只影响新开的会话", stated in the settings page copy.
+   *
+   * Absent when the registry was missing (there is nothing to revise).
+   */
+  revise?: (definition: PresetDefinitionLike) => void
 }
 
 /**
- * Register the preset for the lifetime of the plugin.
+ * One registration attempt: activate, log, and hand back the disposer.
  *
- * `register()` is asynchronous and its failure is *visible in the roster*
- * rather than thrown, so the promise is consumed here: a rejection is logged
- * once and the plugin keeps running (a broken preset must not take the tools
- * down with it). The disposer is awaited on unload, but unload must not block.
+ * A rejection is logged and answered with `undefined` rather than thrown — a broken
+ * preset row must not take the plugin (and therefore every tool) down with it.
+ */
+async function activate(
+  registry: AgentPresetRegistryLike,
+  definition: PresetDefinitionLike,
+  log: LogSink,
+): Promise<(() => Promise<void>) | undefined> {
+  try {
+    const dispose = await registry.register(definition)
+    log.info(`agent preset registered: ${definition.id}${definition.plugins.length > 0 ? ` (${String(definition.plugins.length)} rows)` : ''}`)
+    return dispose
+  } catch (error) {
+    log.warn(`agent preset ${definition.id} could not be registered: ${describeError(error)}`)
+    return undefined
+  }
+}
+
+/**
+ * Register the preset for the lifetime of the plugin, with the option to revise it.
+ *
+ * `register()` is asynchronous and its failure is *visible in the roster* rather than
+ * thrown, so the promise is consumed here: a rejection is logged once and the plugin
+ * keeps running. The disposer is awaited on unload, but unload must not block.
  */
 export function registerWritingPreset(
   ctx: HostContext,
@@ -130,26 +186,52 @@ export function registerWritingPreset(
     return { registered: false, reason: 'agentPresets service missing' }
   }
 
+  const state: { dispose: (() => Promise<void>) | undefined; cancelled: boolean } = {
+    dispose: undefined,
+    cancelled: false,
+  }
+
   ctx.effect(() => {
-    let dispose: (() => Promise<void>) | undefined
-    let cancelled = false
-    void registry
-      .register(definition)
-      .then((registeredDispose) => {
-        if (cancelled) {
-          void registeredDispose()
-          return
-        }
-        dispose = registeredDispose
-        log.info(`agent preset registered: ${definition.id}`)
-      })
-      .catch((error: unknown) => {
-        log.warn(`agent preset ${definition.id} could not be registered: ${describeError(error)}`)
-      })
+    void activate(registry, definition, log).then((dispose) => {
+      if (state.cancelled) {
+        void dispose?.()
+        return
+      }
+      state.dispose = dispose
+    })
     return () => {
-      cancelled = true
-      void dispose?.()
+      state.cancelled = true
+      void state.dispose?.()
     }
   })
-  return { registered: true, id: definition.id }
+
+  return {
+    registered: true,
+    id: definition.id,
+    revise: (next: PresetDefinitionLike): void => {
+      if (state.cancelled) return
+      // Dispose first, then register: registering the same id twice at once is a state
+      // the registry need not accept, and a replacement that loses the race would leave
+      // the author with no preset at all. The window between the two is one await; a
+      // session that starts inside it gets the tools and the policy, just not this
+      // composition — the smaller of the two failures.
+      void (async () => {
+        const previous = state.dispose
+        state.dispose = undefined
+        if (previous !== undefined) {
+          try {
+            await previous()
+          } catch (error) {
+            log.warn(`the previous ${definition.id} revision could not be disposed: ${describeError(error)}`)
+          }
+        }
+        const dispose = await activate(registry, next, log)
+        if (state.cancelled) {
+          void dispose?.()
+          return
+        }
+        state.dispose = dispose
+      })()
+    },
+  }
 }

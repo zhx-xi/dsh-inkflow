@@ -3,7 +3,7 @@
 > **依据**：[ADR-0005](../adrs/0005-files-first-with-derived-index.md)（文件真相 + 派生索引）、[ADR-0006](../adrs/0006-workspace-contract-v2.md)（九目录 / 四态门禁 / catalog / 向导）、[ADR-0007](../adrs/0007-plugin-shared-library.md)（共享库字段与 `.gitignore`）、[ADR-0008](../adrs/0008-panel-data-channel.md)（面板通道）。
 > **依赖**：[data-model.md](data-model.md)（字段字典与不变量）、[architecture.md](architecture.md)（模块边界）。
 > **相关 ADR**：0004（loopback 加固，继承）、0006（目录与门禁，修改 0005 条款）、0007、0008。
-> **references/**：本文件受 800 行上限约束（S6），超出部分下沉到这个目录：[references/impact-and-rename.md](references/impact-and-rename.md)（§5.6 细则）、[references/trash-semantics.md](references/trash-semantics.md)（§3.11.1 细则）、[references/private-purge.md](references/private-purge.md)（§3.11 的回收区细则：#199）、[references/gate-waivers-and-thresholds.md](references/gate-waivers-and-thresholds.md)（§3.1 的 `gate` 段与 `library/gate-whitelist.txt` 细则，ADR-0028）。
+> **references/**：本文件受 800 行上限约束（S6），超出部分下沉到这个目录：[references/impact-and-rename.md](references/impact-and-rename.md)（§5.6 细则）、[references/trash-semantics.md](references/trash-semantics.md)（§3.11.1 细则）、[references/private-purge.md](references/private-purge.md)（§3.11 的回收区细则：#199）、[references/gate-waivers-and-thresholds.md](references/gate-waivers-and-thresholds.md)（§3.1 的 `gate` 段与 `library/gate-whitelist.txt` 细则，ADR-0028）、[references/delegation.md](references/delegation.md)（子智能体委派策略与 `GET /hub/models` 的载荷细则，§6.2.1 的 `/hub/models` 行）。
 > **状态**：活跃。本文是插件的唯一契约来源；代码里的 `src/host/conventions.ts` 必须与本文逐字一致。契约已定而尚未落地的部分见 §9。
 
 ## 1. 什么算一个 InkFlow 项目
@@ -688,7 +688,7 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 
 **成本与规模**（[ADR-0010](../adrs/0010-book-hub-entry.md) D8）：判定并发 **4**；单本 **2 s** 超时 → 该行 `state: 'timeout'`，不重试；整次预算 **3 s** → 返回已完成行 + `truncated: true`；单次最多 **200** 行 → `capped: true`（`total` 仍是注册表总书数）。客户端**不做轮询**：打开时取一次 + 用户点「刷新」。
 
-**只读纪律**：`inspectProject(root, { recreateIndexDir: false })`（关掉 `index/` 放宽）、catalog 只读已提交文件、`state.json` 不写、目录缺失只报告不创建。拒绝路径与只读路径都要求**零写盘**（整树 hash 前后一致）。本通道唯一的写路由是 `/hub/apply`（只补缺失、不覆盖），`/hub/plan` 仍是纯读。
+**只读纪律**：`inspectProject(root, { recreateIndexDir: false })`（关掉 `index/` 放宽）、catalog 只读已提交文件、`state.json` 不写、目录缺失只报告不创建。拒绝路径与只读路径都要求**零写盘**（整树 hash 前后一致）。本通道唯一的写路由是 `/hub/apply`（只补缺失、不覆盖），`/hub/plan` 仍是纯读。**设置页另有一条只读路由** `/inkflow/internal/hub/models`（模型目录）：无锚点、**无 query、无 body**，成功值 `providers[]{id,name,models[]{id,name,description?}}` + `timeoutMs`，失败是 HTTP 200 + `ok:false` + `LLM_UNAVAILABLE`（宿主没有 `llm` 服务）/ `LLM_TIMEOUT`（整次 2 s 截止）/ `LLM_FAILED`；载荷与降级细则见 [references/delegation.md](references/delegation.md) §5。
 
 #### 6.2.2 共享内容通道（`/inkflow/internal/hub/shared`，只读）
 

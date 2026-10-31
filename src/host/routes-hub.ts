@@ -20,6 +20,7 @@ import { HUB_BACKUP_CREATE_BODY_FIELDS, HUB_BACKUP_RESTORE_BODY_FIELDS, HUB_DIAG
 import { buildHubShared } from './hub-shared.js'
 import { HUB_APPLY_BODY_FIELDS, HUB_PLAN_BODY_FIELDS, hubApply, hubPlan } from './hub-wizard.js'
 import { HUB_SEGMENT, buildHubBooks } from './hub.js'
+import { buildHubModels } from './hub-models.js'
 import { MAX_INTERNAL_BODY_BYTES, SESSION_ID_PARAM, findPathParam, findPathParamInBody } from './internal.js'
 import type { JsonRecord } from './internal.js'
 import { SEMANTIC_HUB_BODY_FIELDS, buildHubSemantic, purgeHubSemantic, rebuildHubSemantic } from './ovk-hub.js'
@@ -282,6 +283,31 @@ export const HUB_ROUTES: readonly HubRoute[] = [
     query: [],
     body: HUB_DIAGNOSTICS_EXPORT_BODY_FIELDS,
     handle: ({ ctx, dataDir, version, body }) => reply(exportHubDiagnostics({ ctx, dataDir, version }, body)),
+  },
+  {
+    // The model catalog the subagent switch offers (read-only, no anchor, no query).
+    //
+    // `ok: false` here is NOT a transport failure: the channel still answers HTTP 200,
+    // and the page turns that into "type it by hand" — "I cannot list the models" must
+    // never become "you cannot save a model". Two failure shapes are deliberate:
+    // `LLM_UNAVAILABLE` (no `llm` service in this profile) and `LLM_TIMEOUT` (the 2 s
+    // deadline expired); a provider whose own listing throws is reported as an empty
+    // model list rather than as a failed catalog.
+    name: 'hub-models',
+    pattern: /^\/hub\/models$/,
+    methods: ['GET'],
+    query: [],
+    handle: async ({ ctx }) => {
+      const result = await buildHubModels(ctx)
+      // Two successes are visible on the wire: `LLM_UNAVAILABLE` and `LLM_TIMEOUT` are
+      // ordinary answers here (HTTP 200 + `ok:false`), because the page has a degraded
+      // state for them and a transport error would only be retried.
+      if (result.ok) return { status: 200, body: ok({ providers: result.value.providers, timeoutMs: result.value.timeoutMs }) }
+      return {
+        status: 200,
+        body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }),
+      }
+    },
   },
   {
     // The backup list of ONE book. The anchor is a registered book path, a registry id

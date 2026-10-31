@@ -266,3 +266,53 @@ test('backup restore renders a conflict as a partial report rather than a bare f
     h.cleanup()
   }
 })
+
+/**
+ * The delegation fields on the TOOL surface.
+ *
+ * The model reaches these two tools, not the settings file, so three things have to be
+ * true here and only here: the parameters exist (or the model cannot pass them), `execute`
+ * actually reads them (or the parameter is decoration), and the renderer prints the
+ * decision rather than the three raw values (or the model has to infer it).
+ */
+test('settings tools read and write the subagent switch, and the reply prints the writing mode', async () => {
+  const h = harness()
+  try {
+    const update = h.tools.get('inkflow_settings_update')
+    for (const field of ['subagentEnabled', 'subagentProvider', 'subagentModel']) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(update.parameters.properties, field),
+        `inkflow_settings_update must accept ${field}`,
+      )
+    }
+
+    const saved = await call(h, 'inkflow_settings_update', {
+      subagentEnabled: true,
+      subagentProvider: 'deepseek-account',
+      subagentModel: 'deepseek-v4-pro',
+      confirm: true,
+    })
+    assert.equal(saved.ok, true, JSON.stringify(saved.error ?? null))
+    assert.deepEqual(saved.changed, ['subagentEnabled', 'subagentProvider', 'subagentModel'])
+    assert.equal(settingsOf(h.dataDir).subagentModel, 'deepseek-v4-pro')
+    // One line, from `describeDelegation` — the same sentence the injection and the batch
+    // tool carry, so the model does not have to reconcile three descriptions.
+    const text = rendered(h, 'inkflow_settings_update', { confirm: true }, saved)
+    assert.match(text, /写作方式：委派子智能体（deepseek-account\/deepseek-v4-pro）/u)
+    assert.match(text, /subagentEnabled: true/u)
+
+    const read = await call(h, 'inkflow_settings_get', {})
+    assert.equal(read.settings.subagentModel, 'deepseek-v4-pro')
+    assert.match(rendered(h, 'inkflow_settings_get', {}, read), /写作方式：委派子智能体/u)
+
+    // Only a provider: the decision reads "unconfigured" here too (no invented model).
+    const providerOnly = await call(h, 'inkflow_settings_update', {
+      subagentModel: null,
+      confirm: true,
+    })
+    assert.equal(providerOnly.ok, true)
+    assert.match(rendered(h, 'inkflow_settings_update', { confirm: true }, providerOnly), /写作方式：未配置模型/u)
+  } finally {
+    h.cleanup()
+  }
+})

@@ -44,6 +44,8 @@ import {
   takeBatch,
 } from './jobs.js'
 import type { ApproveResult, CompleteResult, JobState, TakeResult } from './jobs.js'
+import { describeDelegation } from './delegation.js'
+import { settingsOf } from './settings.js'
 import { rememberProject } from './state.js'
 
 type Json = Record<string, unknown>
@@ -135,6 +137,18 @@ function statusLine(value: Json): string {
     `失败 ${String(Number(counts['failed'] ?? 0))}` +
     (Number(counts['edited'] ?? 0) > 0 ? ` · 作者改过 ${String(Number(counts['edited'] ?? 0))}` : '')
   )
+}
+
+/**
+ * 「写作方式：…」 from the reply's `delegation` block, or nothing when it is absent.
+ *
+ * The words come from `delegation.ts` (`describeDelegation`), not from this renderer: the
+ * same sentence is the first line of the injected policy, so the tool reply and the
+ * system prompt cannot drift into two descriptions of who should write the chapter.
+ */
+function writingModeLine(value: Json): string | undefined {
+  const delegation = asRecord(value['delegation'])
+  return typeof delegation['sentence'] === 'string' ? delegation['sentence'] : undefined
 }
 
 /** One line per chapter: the status, the attempts, where it landed, and what the gate said. */
@@ -418,6 +432,11 @@ export function jobsTools(deps: JobsToolDeps): ToolDefinition[] {
         const v = asRecord(value)
         if (v['ok'] !== true) return describeFailure(v)
         const lines = [statusLine(v)]
+        // Who writes these chapters, on the one reply that hands out prose work. Placed
+        // before the context dump on purpose: it is a instruction about what to do with
+        // the chapters below, so it must be read before them.
+        const writingMode = writingModeLine(v)
+        if (writingMode !== undefined) lines.push(writingMode)
         const note = pauseNote(v)
         if (note !== null) lines.push(note)
         const tasks = Array.isArray(v['tasks']) ? (v['tasks'] as Json[]) : []
@@ -473,7 +492,14 @@ export function jobsTools(deps: JobsToolDeps): ToolDefinition[] {
       const taken = takeBatch(probe.root, jobId === undefined ? {} : { jobId })
       if (!taken.ok) return { ok: false, root: probe.root, error: taken.error }
       rememberProject(deps.dataDir, probe.root)
-      return { ok: true, root: probe.root, ...takeWire(taken.value) }
+      return {
+        ok: true,
+        root: probe.root,
+        // Read per call, not cached: `settings.json` is a few hundred bytes, and a save
+        // in the settings page therefore applies to the very next take without a restart.
+        delegation: describeDelegation(settingsOf(deps.dataDir)).wire,
+        ...takeWire(taken.value),
+      }
     },
   }
 

@@ -16,6 +16,7 @@ import {
   SETTINGS_DEFAULTS,
   SETTINGS_FILE,
   SETTINGS_SCHEMA_VERSION,
+  buildDiagnostics,
   coerceSettings,
   readSettings,
   settingsOf,
@@ -51,7 +52,14 @@ test('a missing file reads as the defaults and reports no warning', () => {
       autosaveIntervalMs: SETTINGS_DEFAULTS.autosaveIntervalMs,
       excludeDirs: [],
       backupKeep: SETTINGS_DEFAULTS.backupKeep,
+      // The delegation switch defaults to OFF: a machine that never opened the settings
+      // page must keep today's behaviour (the session's own agent writes the chapter).
+      subagentEnabled: SETTINGS_DEFAULTS.subagentEnabled,
     })
+    // …and the two optional halves are ABSENT rather than empty strings, so "never set"
+    // and "set to empty" stay distinguishable in the file and on the wire.
+    assert.equal(Object.prototype.hasOwnProperty.call(read.settings, 'subagentProvider'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(read.settings, 'subagentModel'), false)
   } finally {
     cleanup()
   }
@@ -190,6 +198,7 @@ test('a write is merged, atomic, immediately readable, and only the whitelist la
       'excludeDirs',
       'schemaVersion',
       'semanticSearch',
+      'subagentEnabled',
     ])
   } finally {
     cleanup()
@@ -290,6 +299,78 @@ test('the settings file name is the single constant, and the reply names it', ()
   try {
     writeSettings(dataDir, { backupKeep: 2 })
     assert.ok(settingsPath(dataDir).endsWith(SETTINGS_FILE))
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// The delegation fields: round trip, and the four bad hand edits (D2)
+// ---------------------------------------------------------------------------
+
+test('the delegation fields round-trip, and only a real value is written', () => {
+  const { dataDir, cleanup } = workspace()
+  try {
+    const written = writeSettings(dataDir, {
+      subagentEnabled: true,
+      subagentProvider: 'deepseek-account',
+      subagentModel: 'deepseek-v4-pro',
+    })
+    assert.equal(written.ok, true)
+    assert.deepEqual(written.value.changed, ['subagentEnabled', 'subagentProvider', 'subagentModel'])
+
+    const read = readSettings(dataDir)
+    assert.equal(read.source, 'file')
+    assert.equal(read.settings.subagentEnabled, true)
+    assert.equal(read.settings.subagentProvider, 'deepseek-account')
+    assert.equal(read.settings.subagentModel, 'deepseek-v4-pro')
+    // Adding fields is not a schema change: the stamped version stays 1 (a bump would make
+    // every older build refuse to write the file).
+    const onDisk = JSON.parse(readFileSync(settingsPath(dataDir), 'utf8'))
+    assert.equal(onDisk.schemaVersion, SETTINGS_SCHEMA_VERSION)
+
+    // `null` clears an optional half, and clearing leaves the KEY absent, never "".
+    writeSettings(dataDir, { subagentModel: null })
+    const cleared = JSON.parse(readFileSync(settingsPath(dataDir), 'utf8'))
+    assert.equal(Object.prototype.hasOwnProperty.call(cleared, 'subagentModel'), false)
+    assert.equal(cleared.subagentProvider, 'deepseek-account')
+  } finally {
+    cleanup()
+  }
+})
+
+test('a hand-edited delegation value that cannot be used reads as not configured, and is reported', () => {
+  const { dataDir, cleanup } = workspace()
+  try {
+    writeRaw(
+      dataDir,
+      `${JSON.stringify(
+        { schemaVersion: 1, subagentEnabled: true, subagentProvider: '   ', subagentModel: 42 },
+        null,
+        2,
+      )}\n`,
+    )
+    // Never a throw: a settings file a human edited is a supported input (D2).
+    const read = readSettings(dataDir)
+    assert.equal(read.settings.subagentEnabled, true)
+    assert.equal(Object.prototype.hasOwnProperty.call(read.settings, 'subagentProvider'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(read.settings, 'subagentModel'), false)
+    assert.equal(read.warn?.code, 'SETTINGS_FIELD_IGNORED')
+    assert.deepEqual(
+      read.notices?.map((notice) => notice.field),
+      ['subagentProvider', 'subagentModel'],
+    )
+
+    // The diagnostics package carries the same sentence, which is where a support report
+    // finds it (D5).
+    const document = buildDiagnostics({ dataDir, version: '0.0.0-test' })
+    assert.equal(document.settings.warn?.code, 'SETTINGS_FIELD_IGNORED')
+
+    // A route token with a space in it cannot be dispatched: refused for the same reason.
+    writeRaw(dataDir, `${JSON.stringify({ schemaVersion: 1, subagentEnabled: true, subagentModel: 'deep seek' })}\n`)
+    const spaced = readSettings(dataDir)
+    assert.equal(Object.prototype.hasOwnProperty.call(spaced.settings, 'subagentModel'), false)
+    assert.deepEqual(spaced.notices?.map((notice) => notice.field), ['subagentModel'])
   } finally {
     cleanup()
   }

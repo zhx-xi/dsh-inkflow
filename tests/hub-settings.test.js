@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { HUB_SETTINGS_BODY_FIELDS, SETTINGS_FIELDS, apply } from '../lib/index.js'
+import { HUB_SETTINGS_BODY_FIELDS, MODELS_TIMEOUT_MS, SETTINGS_FIELDS, apply, buildHubModels } from '../lib/index.js'
 import { hashTree } from './hash-tree.mjs'
 
 const HOST = '127.0.0.1:2149'
@@ -46,7 +46,7 @@ function bookDir(parent, name) {
 }
 
 /** A harness with a fake workspace registry: two books, one of them registered twice. */
-function harness() {
+function harness({ services = {} } = {}) {
   const parent = mkdtempSync(join(tmpdir(), 'inkflow-hub-settings-'))
   const bookA = bookDir(parent, '书甲')
   const bookB = bookDir(parent, '书乙')
@@ -68,6 +68,7 @@ function harness() {
     },
     get(name) {
       if (name === 'workspaceRegistry') return { list: () => registry }
+      if (Object.prototype.hasOwnProperty.call(services, name)) return services[name]
       return undefined
     },
     logger() {
@@ -147,7 +148,14 @@ test('GET /hub/settings answers with the defaults and the book choices, and name
       'authorName',
       'excludeDirs',
       'backupKeep',
+      'subagentEnabled',
+      'subagentProvider',
+      'subagentModel',
     ])
+    // The page shows "what the session is being told" without re-deriving it: the Host
+    // decides, with the same function the injection and the batch tool read.
+    assert.deepEqual(value.delegation, { state: 'off', sentence: '写作方式：自己写（未开启子智能体）' })
+    assert.deepEqual(value.notices, [])
     // The token is a credential (ADR-0020 E6): the page may learn THAT it is set, never the
     // value, so the wire carries `semanticApiKeySet` and no `semanticApiKey` at all.
     assert.equal(value.settings.semanticApiKeySet, false)
@@ -251,6 +259,9 @@ test('every settings field passes the save route body whitelist', async () => {
       authorName: '作者',
       excludeDirs: ['scratch'],
       backupKeep: 3,
+      subagentEnabled: true,
+      subagentProvider: 'deepseek-account',
+      subagentModel: 'deepseek-v4-pro',
     }
     assert.deepEqual(Object.keys(sample).sort(), [...SETTINGS_FIELDS].sort(), 'add a sample value for the new setting')
 
@@ -378,6 +389,135 @@ test('diagnostics: the preview writes nothing, the export needs confirm, and the
     // A book-less package is legal: the plugin-wide half is still worth exporting.
     const global = await post(h, '/diagnostics/export', { confirm: true })
     assert.equal(global.json.ok, true)
+  } finally {
+    h.cleanup()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// The model catalog behind the subagent switch (`GET /hub/models`)
+// ---------------------------------------------------------------------------
+
+/**
+ * The picker's data source is a CAPABILITY, not a prerequisite: a profile may expose no
+ * `llm` service, and a provider may hang. Both degrade to "type the ids by hand", and the
+ * values are stored either way — so the assertion below that matters most is the one on
+ * the SAVE, not on the catalog.
+ */
+test('GET /hub/models without an llm service answers a typed failure, and the setting still saves by hand', async () => {
+  const h = harness()
+  try {
+    const response = await get(h, '/models')
+    assert.equal(response.status, 200, 'a missing capability is an answer, never a transport failure')
+    assert.equal(response.json.ok, false)
+    assert.equal(response.json.error.code, 'LLM_UNAVAILABLE')
+    assert.ok(typeof response.json.error.hint === 'string' && response.json.error.hint !== '')
+
+    const saved = await post(h, '/settings/update', {
+      subagentEnabled: true,
+      subagentProvider: 'deepseek-account',
+      subagentModel: 'deepseek-v4-pro',
+      confirm: true,
+    })
+    assert.equal(saved.json.ok, true, JSON.stringify(saved.json))
+    assert.equal(saved.json.value.settings.subagentModel, 'deepseek-v4-pro')
+    // The page does not re-derive the state: the Host decides with the same function the
+    // injection and the batch tool read.
+    assert.equal(saved.json.value.delegation.state, 'delegated')
+    assert.equal(saved.json.value.delegation.sentence, '写作方式：委派子智能体（deepseek-account/deepseek-v4-pro）')
+  } finally {
+    h.cleanup()
+  }
+})
+
+test('GET /hub/models lists providers and models; one provider failing costs only its own list', async () => {
+  const llm = {
+    listProviders: () => [
+      { id: 'deepseek-account', name: 'DeepSeek' },
+      { id: 'broken', name: '坏路由' },
+    ],
+    listModels: async (provider) => {
+      // The message quotes a URL on purpose: an adapter's error text can carry a
+      // credential, so the route must not forward it.
+      if (provider === 'broken') throw new Error('adapter exploded: https://example.test/v1?key=SECRET')
+      return [{ id: 'deepseek-v4-pro', name: 'V4 Pro' }]
+    },
+  }
+  const h = harness({ services: { llm } })
+  try {
+    const response = await get(h, '/models')
+    assert.equal(response.json.ok, true, JSON.stringify(response.json))
+    assert.deepEqual(response.json.value.providers, [
+      { id: 'deepseek-account', name: 'DeepSeek', models: [{ id: 'deepseek-v4-pro', name: 'V4 Pro' }] },
+      { id: 'broken', name: '坏路由', models: [] },
+    ])
+    assert.equal(JSON.stringify(response.json).includes('SECRET'), false, 'adapter error text must not reach the page')
+  } finally {
+    h.cleanup()
+  }
+})
+
+test('the catalog gives up at its deadline instead of holding the page open', async () => {
+  // 2 s is what production uses; the deadline is injectable so this test does not wait for it.
+  assert.equal(MODELS_TIMEOUT_MS, 2000)
+  const hung = {
+    listProviders: () => [{ id: 'slow', name: '慢' }],
+    listModels: () => new Promise(() => {}),
+  }
+  const started = Date.now()
+  const result = await buildHubModels({ get: () => hung }, { timeoutMs: 25 })
+  assert.equal(result.ok, false)
+  assert.equal(result.error.code, 'LLM_TIMEOUT')
+  assert.ok(Date.now() - started < 2000, 'the injected deadline is the one that fires')
+})
+
+test('a provider with no model reads as unconfigured, and the page is told what is missing', async () => {
+  const h = harness()
+  try {
+    const saved = await post(h, '/settings/update', {
+      subagentEnabled: true,
+      subagentProvider: 'deepseek-account',
+      confirm: true,
+    })
+    assert.equal(saved.json.ok, true, JSON.stringify(saved.json))
+    assert.equal(saved.json.value.settings.subagentProvider, 'deepseek-account')
+    // Only the provider is stored; the model key stays ABSENT (not an empty string).
+    assert.equal(Object.prototype.hasOwnProperty.call(saved.json.value.settings, 'subagentModel'), false)
+    assert.equal(saved.json.value.delegation.state, 'unconfigured')
+    assert.equal(saved.json.value.delegation.sentence, '写作方式：未配置模型 —— 先问作者要哪个模型，再委派')
+  } finally {
+    h.cleanup()
+  }
+})
+
+test('a hand-edited value the reader cannot use is reported per field, and reads as unconfigured', async () => {
+  const h = harness()
+  try {
+    mkdirSync(h.dataDir, { recursive: true })
+    writeFileSync(
+      join(h.dataDir, 'settings.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          subagentEnabled: true,
+          subagentProvider: '   ',
+          subagentModel: 42,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    const response = await get(h, '/settings')
+    assert.equal(response.json.ok, true, 'a hand edit must never make the page fail')
+    assert.equal(response.json.value.settings.subagentEnabled, true)
+    assert.equal(Object.prototype.hasOwnProperty.call(response.json.value.settings, 'subagentProvider'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(response.json.value.settings, 'subagentModel'), false)
+    assert.equal(response.json.value.warn.code, 'SETTINGS_FIELD_IGNORED')
+    assert.deepEqual(
+      response.json.value.notices.map((notice) => notice.field),
+      ['subagentProvider', 'subagentModel'],
+    )
   } finally {
     h.cleanup()
   }
