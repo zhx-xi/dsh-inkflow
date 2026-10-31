@@ -167,17 +167,21 @@ export function searchBackendLabel(page: SearchPage): string {
 }
 
 /**
- * Why the semantic backend is not answering, in the author's terms (ADR-0020 E5).
+ * Why the semantic answer fell back to keywords, in the author's terms (ADR-0020 E5).
  *
- * The Host's `degradedReason` is a FIXED vocabulary of six values (plus the free-text reason
- * `internal.ts` uses when the index itself is the problem), so each one can name the one
- * action that fixes it instead of printing a code. An unknown value passes through: a code
- * the panel does not know is still more useful than silence.
+ * The Host's `degradedReason` is a FIXED vocabulary (plus the free-text reason `internal.ts`
+ * uses when the index itself is the problem), so each one can name the one action that fixes
+ * it instead of printing a code. Six of the seven are about the backend; `no-blocks` is about
+ * this book (0 blocks), and its fix is on the book, not on the server. An unknown value
+ * passes through: a code the panel does not know is still more useful than silence.
  */
 const DEGRADED_TEXTS: Record<string, string> = {
   disabled: '语义检索未启用（设置 → 语义检索）',
   'no-endpoint': '语义检索没有填端点（设置 → 语义检索端点）',
   'no-peer': '这本书没有 .openviking 里的 peer.id',
+  // Not a backend failure: the book has no block to recall, so the Host answered from
+  // keywords WITHOUT calling OpenViking at all. The fix is on this book, not on the server.
+  'no-blocks': '这本书还没有建语义块（设置 → 语义检索 → 建立索引）',
   unreachable: '语义检索端点没有响应',
   unauthorized: '语义检索端点拒绝了凭据',
   timeout: '语义检索端点超时',

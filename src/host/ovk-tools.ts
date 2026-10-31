@@ -91,12 +91,16 @@ export function semanticTools(deps: SemanticToolDeps): ToolDefinition[] {
   const status: ToolDefinition = {
     name: 'inkflow_semantic_status',
     description:
-      'Report the semantic (OpenViking) retrieval backend: whether it is enabled in the plugin settings, which endpoint ' +
-      'and peer are in force, whether the server answers right now, how many blocks this book has written, the last ' +
-      'rebuild (chapters / blocks / bytes / calls) and — when it is not usable — one of the six fixed reasons ' +
-      '(disabled / no-endpoint / no-peer / unreachable / unauthorized / timeout). Read-only: it never writes to OVK, the ' +
-      'settings or the book, so it answers on a broken book and on a stopped server, which is exactly when it is worth ' +
-      'calling. The API key is never echoed — only whether one is set.',
+      'Report the semantic (OpenViking) retrieval backend AND the coverage of this book in it, as two separate answers — ' +
+      '"the server answers" and "this book was written into it" are different facts, and a book with 0 blocks cannot ' +
+      'produce a semantic hit however healthy the server is. Backend: whether it is enabled in the plugin settings, ' +
+      'which endpoint and peer are in force, whether the server answers right now, and when it does not, one of the six ' +
+      'fixed reasons (disabled / no-endpoint / no-peer / unreachable / unauthorized / timeout). Coverage: how many of ' +
+      'the chapters of this book have blocks (none / partial with the chapter ratio and how far behind / complete), plus ' +
+      'the ledger counts and the last rebuild (chapters / blocks / bytes / calls). A book with no live block reports ' +
+      '`no-blocks`, which is also what a search answers: it goes straight to keywords without sending an OpenViking ' +
+      'request. Read-only: it never writes to OVK, the settings or the book, so it answers on a broken book and on a ' +
+      'stopped server, which is exactly when it is worth calling. The API key is never echoed — only whether one is set.',
     parameters: {
       type: 'object',
       properties: { projectRoot: PROJECT_ROOT_PARAM },
@@ -113,14 +117,21 @@ export function semanticTools(deps: SemanticToolDeps): ToolDefinition[] {
           return text(lines)
         }
         const availability = asRecord(v['availability'])
+        const coverage = asRecord(v['coverage'])
         const settings = asRecord(v['settings'])
         const peer = asRecord(v['peer'])
         const ledger = asRecord(v['ledger'])
         const queue = asRecord(v['queue'])
+        const backendUp = availability['backend'] === 'ovk'
         const lines = [
-          `语义检索：${availability['backend'] === 'ovk' ? '可用（ovk）' : `降级（fts5：${String(availability['reason'] ?? '')}）`}`,
+          `后端：${backendUp ? '可用（ovk）' : `不可用（关键词检索：${String(availability['reason'] ?? '')}）`}`,
         ]
         if (availability['detail'] !== undefined) lines.push(`  ${String(availability['detail'])}`)
+        // The coverage line only appears when the backend answers: while it does not, the one
+        // fix is the reason above, and a second complaint would point at the wrong thing.
+        // Same wording as the settings page — both print `coverage.headline` verbatim.
+        const headline = coverage['headline']
+        if (backendUp && typeof headline === 'string' && headline !== '') lines.push(`本书覆盖：${headline}`)
         lines.push(`开关：semanticSearch=${String(settings['enabled'] === true)} · 端点：${String(settings['endpoint'] ?? '（未设置）')} · 密钥：${settings['apiKeySet'] === true ? '已设置' : '未设置'}`)
         lines.push(`peer：${String(peer['id'] ?? '（无）')}${peer['source'] === null ? '' : `（${String(peer['source'])} · ${String(peer['configPath'] ?? '')}）`}`)
         lines.push(`块：${String(ledger['blocks'] ?? 0)} 个（章 ${String(ledger['chapters'] ?? 0)} · 墓碑 ${String(ledger['tombstones'] ?? 0)} · projectId ${String(ledger['projectId'] ?? '（未建立）')}）`)

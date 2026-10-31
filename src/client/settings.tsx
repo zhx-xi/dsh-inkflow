@@ -34,6 +34,7 @@ import {
   describePlan,
   describeRestore,
   describeSemantic,
+  describeSemanticCoverage,
   describeSemanticEstimate,
   describeSemanticRun,
   describeSettings,
@@ -171,11 +172,18 @@ function ErrorCard({ message }: { message: string }) {
   )
 }
 
-export function SettingsView({ onClose }: { onClose: () => void }) {
+/**
+ * The settings page.
+ *
+ * `initialAnchor` is how a book-list badge lands here with ITS book selected: the page has
+ * one book in focus, and arriving on the wrong one would make the badge's click useless.
+ * An empty/absent value keeps the old behaviour (the first registered book).
+ */
+export function SettingsView({ onClose, initialAnchor }: { onClose: () => void; initialAnchor?: string | undefined }) {
   const [settings, setSettings] = useState<Loadable<HubSettingsValue>>({ status: 'loading' })
   const [draft, setDraft] = useState<SettingsDraft | null>(null)
   const [diagnostics, setDiagnostics] = useState<Loadable<DiagnosticsValue>>({ status: 'loading' })
-  const [bookAnchor, setBookAnchor] = useState<string>('')
+  const [bookAnchor, setBookAnchor] = useState<string>(initialAnchor ?? '')
   const [backups, setBackups] = useState<Loadable<HubBackupsValue>>({ status: 'loading' })
   const [plan, setPlan] = useState<RestorePlanValue | null>(null)
   const [done, setDone] = useState<string[] | null>(null)
@@ -502,7 +510,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
       {/* -------- 语义检索 -------- */}
       <Section
         title="语义检索"
-        hint="可选能力：需要你自己起一个 OpenViking 并在这里填端点。没配或连不上时，检索自动用关键词（不会报错）；删章不会物理删除语义条目，只有「清理占位」才会。"
+        hint="可选能力：需要你自己起一个 OpenViking 并在这里填端点。没配或连不上时，检索自动用关键词（不会报错）；删章不会物理删除语义条目，只有「清理占位」才会。「后端」是服务能不能答，「本书」是这本书建了多少块——两件事分开看。"
       >
         {semantic.status === 'loading' ? <div style={muted}>{SETTINGS_TEXTS.loading}</div> : null}
         {semantic.status === 'error' ? <div style={{ ...muted, fontSize: 12 }}>{semantic.message}</div> : null}
@@ -513,22 +521,36 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 {line}
               </div>
             ))}
+            {/*
+              The 「本书」 line and the button that fixes it share a row on purpose: «未建块»
+              is a statement about this book, and 「建立索引」 is the one action that changes
+              it — putting them on separate screens is what made the old section unreadable.
+            */}
+            {(() => {
+              const coverage = describeSemanticCoverage(semantic.value)
+              if (coverage === null) return null
+              return (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ ...muted, fontSize: 12 }}>{coverage}</span>
+                  <button
+                    type="button"
+                    style={primaryButtonStyle}
+                    disabled={busy}
+                    onClick={() =>
+                      setPending({
+                        kind: 'semanticRebuild',
+                        label: `${semantic.value.book.title}：${describeSemanticEstimate(semantic.value.estimate, semantic.value.status.thresholds)}`,
+                        anchor: bookAnchor,
+                      })
+                    }
+                  >
+                    建立索引
+                  </button>
+                </div>
+              )
+            })()}
             <div style={{ ...muted, fontSize: 12 }}>{describeSemanticEstimate(semantic.value.estimate, semantic.value.status.thresholds)}</div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                style={primaryButtonStyle}
-                disabled={busy}
-                onClick={() =>
-                  setPending({
-                    kind: 'semanticRebuild',
-                    label: `${semantic.value.book.title}：${describeSemanticEstimate(semantic.value.estimate, semantic.value.status.thresholds)}`,
-                    anchor: bookAnchor,
-                  })
-                }
-              >
-                重建语义索引
-              </button>
               <button
                 type="button"
                 style={buttonStyle}

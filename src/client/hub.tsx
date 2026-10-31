@@ -58,6 +58,7 @@ import {
   relativeToHome,
   rowMarkers,
   rowTitle,
+  semanticBadgeOf,
   splitHubRows,
   whyNotABook,
 } from './hub-model.js'
@@ -137,8 +138,47 @@ function Badge({ label, tone }: { label: string; tone: HubBadgeTone }) {
   )
 }
 
+/**
+ * The semantic badge on a book card, and the one thing it does: take you to the fix.
+ *
+ * WHY IT IS A BUTTON. The badge states a fact about this book («未建块» / «N/M 章»), and the
+ * only action it implies — build the index — lives on the settings page for that same book.
+ * A badge that only reported would leave the author to find the book again in a selector;
+ * clicking it opens the page with this book already selected.
+ *
+ * The label comes from `semanticBadgeOf`; nothing here decides wording, and nothing here
+ * fetches (the Host computed coverage from local files before the row arrived).
+ */
+function SemanticBadge({ row, onOpen }: { row: HubBookRow; onOpen: (anchor: string) => void }) {
+  const badge = semanticBadgeOf(row.semantic)
+  if (badge === null) return null
+  const anchor = typeof row.workspaceId === 'string' && row.workspaceId !== '' ? row.workspaceId : (row.path ?? '')
+  return (
+    <button
+      type="button"
+      title={badge.title}
+      // A badge with nowhere to go stays a label: the anchor is what the settings route
+      // resolves, and inventing one would open the page on a different book.
+      disabled={anchor === ''}
+      onClick={() => onOpen(anchor)}
+      style={{
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'transparent',
+        borderRadius: 999,
+        padding: '0 8px',
+        font: 'inherit',
+        fontSize: 12,
+        cursor: anchor === '' ? 'default' : 'pointer',
+        color: toneColor(badge.tone),
+      }}
+    >
+      {badge.label}
+    </button>
+  )
+}
+
 /** One book: title, `~/…` path (full path on hover), state badge, counts, markers. */
-function BookCard({ row, home }: { row: HubBookRow; home: string | null }) {
+function BookCard({ row, home, onOpenSettings }: { row: HubBookRow; home: string | null; onOpenSettings: (anchor: string) => void }) {
   const badge = badgeOf(row.state)
   const shown = relativeToHome(row.path, home)
   const full = typeof row.path === 'string' && row.path.trim() !== '' ? row.path : '（无路径）'
@@ -148,6 +188,7 @@ function BookCard({ row, home }: { row: HubBookRow; home: string | null }) {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600 }}>{rowTitle(row)}</span>
         <Badge label={badge.label} tone={badge.tone} />
+        <SemanticBadge row={row} onOpen={onOpenSettings} />
         {markers.map((marker) => (
           <span key={marker} style={{ ...muted, fontSize: 12 }}>
             {marker}
@@ -225,7 +266,7 @@ function CopyPromptButton({ row }: { row: HubBookRow }) {
 }
 
 /** One folded directory: name, path, why it is not a book, and the prompt that fixes it. */
-function OtherDirRow({ row, home }: { row: HubBookRow; home: string | null }) {
+function OtherDirRow({ row, home, onOpenSettings }: { row: HubBookRow; home: string | null; onOpenSettings: (anchor: string) => void }) {
   const badge = badgeOf(row.state)
   const shown = relativeToHome(row.path, home)
   const full = typeof row.path === 'string' && row.path.trim() !== '' ? row.path : '（无路径）'
@@ -234,6 +275,9 @@ function OtherDirRow({ row, home }: { row: HubBookRow; home: string | null }) {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600 }}>{rowTitle(row)}</span>
         <Badge label={badge.label} tone={badge.tone} />
+        {/* The folded half is folded, not hidden: a directory that becomes a book should
+            already answer "is it indexed" the moment it does. */}
+        <SemanticBadge row={row} onOpen={onOpenSettings} />
         {rowMarkers(row).map((marker) => (
           <span key={marker} style={{ ...muted, fontSize: 12 }}>
             {marker}
@@ -265,6 +309,12 @@ export function HubView() {
   const [exportOpen, setExportOpen] = useState(false)
   /** 「其他目录（N）」 starts CLOSED — the noisy half must not be the default. */
   const [othersOpen, setOthersOpen] = useState(false)
+  /**
+   * The book a semantic badge asked the settings page to open on. A plain "open settings"
+   * leaves it empty, and the page then picks its own first book — the badge's whole value is
+   * that the book it was pressed on is the one you land on.
+   */
+  const [settingsAnchor, setSettingsAnchor] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     let live = true
@@ -310,6 +360,18 @@ export function HubView() {
     })
   }, [])
 
+  /**
+   * Open the settings page on a named book (the semantic badge's click).
+   *
+   * Declared here, next to `applied` and BEFORE the page switch, because a hook after an
+   * early return is a hook that is missing on those renders (the panel went white once from
+   * exactly that — `scripts/check-hooks-order.mjs` keeps the rule mechanical).
+   */
+  const openSettingsFor = useCallback((anchor: string) => {
+    setSettingsAnchor(anchor)
+    setView('settings')
+  }, [])
+
   // The shared library is a page of its own, and it takes the book list with
   // it: copying a shared entry INTO a book needs a target, and the only names
   // the Host accepts are the rows it just returned here (never a hand-typed path).
@@ -321,7 +383,7 @@ export function HubView() {
       />
     )
   }
-  if (view === 'settings') return <SettingsView onClose={() => setView('books')} />
+  if (view === 'settings') return <SettingsView onClose={() => setView('books')} initialAnchor={settingsAnchor} />
 
   // Two groups, computed by the model (not by a filter written twice). A plain
   // computation, not a hook, so it may sit after the page switch above.
@@ -376,7 +438,12 @@ export function HubView() {
       ) : null}
 
       {main.map((row) => (
-        <BookCard key={row.workspaceId ?? row.path ?? rowTitle(row)} row={row} home={state.status === 'ready' ? state.home : null} />
+        <BookCard
+          key={row.workspaceId ?? row.path ?? rowTitle(row)}
+          row={row}
+          home={state.status === 'ready' ? state.home : null}
+          onOpenSettings={openSettingsFor}
+        />
       ))}
 
       {others.length === 0 ? null : (
@@ -397,6 +464,7 @@ export function HubView() {
                   key={row.workspaceId ?? row.path ?? rowTitle(row)}
                   row={row}
                   home={state.status === 'ready' ? state.home : null}
+                  onOpenSettings={openSettingsFor}
                 />
               ))}
             </>

@@ -93,7 +93,9 @@ const BUILT_IN_TOOLS = [
   ['inkflow_extract_purge', '4d5d5d6e'],
   // Semantic retrieval — status (read-only), rebuild (writes blocks into OVK) and
   // purge (the one tool allowed to delete there, ADR-0009 P6).
-  ['inkflow_semantic_status', '019ec003'],
+  // 3ab36857: the status description now reports the backend AND this book's coverage as
+  // two answers, and names `no-blocks` (a 0-block book never claims a semantic backend).
+  ['inkflow_semantic_status', '3ab36857'],
   ['inkflow_semantic_rebuild', 'b5d3bb95'],
   ['inkflow_semantic_purge', 'e65e1a31'],
   // The old-library migrator (plan / apply / rollback). Built-ins for the same reason as

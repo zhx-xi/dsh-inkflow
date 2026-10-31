@@ -19,6 +19,7 @@
  */
 
 import type { InternalError, InternalResult } from './internal.js'
+import { SEMANTIC_REASON_TEXTS } from './settings-model.js'
 
 /** Panel id shared by the `sidebar.panellist` icon and the `main` body (ADR-0010 D1). */
 export const HUB_PANEL_ID = 'inkflow-hub'
@@ -80,6 +81,25 @@ const UNKNOWN_BADGE: { label: string; tone: HubBadgeTone } = { label: '状态未
 
 export type HubBookCounts = { chapters?: number; volumes?: number }
 
+/**
+ * The semantic coverage the Host reports per book: read from local files only (settings,
+ * the book's peer layer, the ledger, one index count) — never a health probe, so a list of
+ * 200 books does not become 200 HTTP requests. Every field is read defensively: anything
+ * this build does not know is simply not rendered.
+ */
+export interface HubSemantic {
+  state?: string
+  reason?: string
+  hasLedger?: boolean
+  blocks?: number
+  tombstones?: number
+  coveredChapters?: number
+  bookChapters?: number | null
+  behind?: number | null
+  /** The Host's own sentence — the same string `inkflow_semantic_status` prints. */
+  headline?: string
+}
+
 /** One row of `GET /inkflow/internal/hub/books` (only the fields the view reads). */
 export interface HubBookRow {
   workspaceId?: string | null
@@ -91,6 +111,8 @@ export interface HubBookRow {
   actions?: unknown[]
   dirStatus?: string
   counts?: HubBookCounts | null
+  /** Absent = this answer cannot tell (an older Host, or a judgment that timed out). */
+  semantic?: HubSemantic | null
   notABook?: boolean
   duplicates?: number
 }
@@ -152,6 +174,46 @@ export function readHubBooks(result: InternalResult<HubBooksValue>): HubState {
 export function badgeOf(state: unknown): { label: string; tone: HubBadgeTone } {
   if (typeof state !== 'string') return UNKNOWN_BADGE
   return (HUB_STATE_BADGES as Record<string, { label: string; tone: HubBadgeTone }>)[state] ?? UNKNOWN_BADGE
+}
+
+/**
+ * The semantic badge on a book card: `—` / `未建块` / `N/M 章` / `已同步`.
+ *
+ * WHY FOUR WORDS AND NO TIME. The author's ruling: the row says the state and the ratio,
+ * nothing else — a rebuild timestamp on a list of books is noise, and it goes stale in a way
+ * nobody can act on. The time stays on the settings page and in the tool output.
+ *
+ * THE TWO STATE PAIRS THAT MUST NOT COLLAPSE:
+ *   * `—` (unconfigured) vs `未建块`: the first has nothing configured to build WITH
+ *     (settings off, no endpoint, no peer), the second has everything configured and this
+ *     book still unwritten. They need different fixes, so they are different words.
+ *   * `N/M 章` vs `已同步`: "every chapter has a block" is a different claim from "some do".
+ *     When the Host cannot read the index it sends no `bookChapters`, and the label degrades
+ *     to `N 章` instead of inventing a denominator.
+ *
+ * `null` means "no badge": the answer did not carry coverage (an older Host, or a judgment
+ * that timed out). That is not `—` — a missing answer must not read as "not configured".
+ */
+export function semanticBadgeOf(semantic: HubSemantic | null | undefined): { label: string; tone: HubBadgeTone; title: string } | null {
+  if (semantic === null || semantic === undefined || typeof semantic !== 'object') return null
+  const state = typeof semantic.state === 'string' ? semantic.state : ''
+  const headline = typeof semantic.headline === 'string' ? semantic.headline : ''
+  if (state === 'unconfigured') {
+    const reason = SEMANTIC_REASON_TEXTS[semantic.reason ?? ''] ?? '语义检索未配置'
+    return { label: '语义 —', tone: 'idle', title: `${reason}（点这里进设置）` }
+  }
+  if (state === 'no-ledger' || state === 'no-blocks') return { label: '语义 未建块', tone: 'warn', title: headline }
+  if (state === 'complete') return { label: '语义 已同步', tone: 'success', title: headline }
+  if (state === 'partial') {
+    const covered = countOf(semantic.coveredChapters) ?? 0
+    const total = countOf(semantic.bookChapters)
+    return {
+      label: total === null ? `语义 ${String(covered)} 章` : `语义 ${String(covered)}/${String(total)} 章`,
+      tone: 'warn',
+      title: headline,
+    }
+  }
+  return null
 }
 
 /** `/`-spelled path without trailing separators, for comparisons only. */

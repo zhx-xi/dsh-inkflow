@@ -188,6 +188,17 @@ async function callTool(harness, name, args) {
   return tool.execute(args, { signal: AbortSignal.timeout(60000), agent: { id: 'test-session' } })
 }
 
+/** Render through the tool's own renderer, exactly as the Host does on every result. */
+function renderedTool(harness, name, args, value) {
+  const tool = harness.tools.get(name)
+  assert.ok(tool, `tool ${name} must be registered`)
+  const blocks = tool.output.render(args, value)
+  assert.ok(Array.isArray(blocks) && blocks.length > 0, `${name}: the renderer must produce blocks`)
+  const text = blocks.map((block) => String(block.text ?? '')).join('\n')
+  assert.ok(text.trim() !== '', `${name}: the renderer must produce text`)
+  return text
+}
+
 function skeleton(root, meta = {}) {
   mkdirSync(join(root, '.git'), { recursive: true })
   for (const dir of [...CONTENT_DIRS, 'index']) {
@@ -298,6 +309,24 @@ function assertFullyRead(outcome, expected) {
  * that build's log). Only the case that *tests* the timeout wants a small budget, and
  * it passes one (`{ timeoutMs: 200 }`); every other case is timing-independent.
  */
+/**
+ * Give the fixture book real blocks, using a throwaway live stub.
+ *
+ * WHY THE TRANSPORT CASES NEED THIS. A book with no live block answers `no-blocks` from
+ * local files and never probes the endpoint (that is the short-circuit), so a fixture that
+ * never ran a rebuild cannot reach the probe these cases are about. Seeding first makes the
+ * case test the backend's answer instead of the empty book.
+ */
+async function seedBlocks(book) {
+  const stub = await startStub()
+  try {
+    writeSemanticSettings(book.dataDir, { semanticSearch: true, semanticEndpoint: stub.url })
+    await runRebuild({ root: book.root, dataDir: book.dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+  } finally {
+    await stub.close()
+  }
+}
+
 async function degradedCase(name, prepare, expectedReason, options = {}) {
   const dir = workdir()
   try {
@@ -306,6 +335,7 @@ async function degradedCase(name, prepare, expectedReason, options = {}) {
     const harness = makeHarness(root, dataDir)
     const rebuild = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
     assert.equal(rebuild.ok, true)
+    if (options.seedBlocks === true) await seedBlocks({ root, dataDir })
     const cleanup = await prepare({ root, dataDir })
     try {
       const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 60_000
@@ -356,6 +386,7 @@ test('degrades with `unreachable` when nothing listens on the endpoint', async (
       writeSemanticSettings(dataDir, { semanticSearch: true, semanticEndpoint: endpoint })
     },
     'unreachable',
+    { seedBlocks: true },
   )
 })
 
@@ -368,6 +399,7 @@ test('degrades with `unauthorized` when the endpoint answers 401', async () => {
         writeSemanticSettings(dataDir, { semanticSearch: true, semanticEndpoint: stub.url, semanticApiKey: 'wrong' })
       },
       'unauthorized',
+      { seedBlocks: true },
     )
   } finally {
     await stub.close()
@@ -388,6 +420,7 @@ test('a late 401 is still `unauthorized`, not `timeout`: the probe budget is the
         writeSemanticSettings(dataDir, { semanticSearch: true, semanticEndpoint: stub.url, semanticApiKey: 'wrong' })
       },
       'unauthorized',
+      { seedBlocks: true },
     )
   } finally {
     await stub.close()
@@ -405,7 +438,7 @@ test('degrades with `timeout` when the endpoint hangs (injected timeout)', async
       'timeout',
       // The one case that IS about the clock: a hang must be cut off quickly. Every other
       // caller keeps the generous default, so "401" can never be reported as "timeout".
-      { timeoutMs: 200 },
+      { timeoutMs: 200, seedBlocks: true },
     )
   } finally {
     await stub.close()
@@ -421,6 +454,7 @@ test('a non-JSON 200 (a proxy login page) is not "connected": it degrades as unr
         writeSemanticSettings(dataDir, { semanticSearch: true, semanticEndpoint: stub.url })
       },
       'unreachable',
+      { seedBlocks: true },
     )
   } finally {
     await stub.close()
@@ -851,6 +885,9 @@ test('inkflow_search answers with the keyword page plus the reason when the endp
     const dataDir = join(dir, 'state')
     const harness = makeHarness(root, dataDir)
     await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
+    // Blocks first, then a dead endpoint: without blocks the answer is `no-blocks` and the
+    // probe never runs (see the short-circuit test below).
+    await seedBlocks({ root, dataDir })
     writeSemanticSettings(dataDir, { semanticSearch: true, semanticEndpoint: await closedPort() })
 
     const result = await callTool(harness, 'inkflow_search', { projectRoot: root, query: '残锋' })
@@ -875,6 +912,118 @@ test('purgeApply on a book with no tombstones does nothing at all', async () => 
     assert.equal(result.ok, true)
     assert.deepEqual(result.outcome.deleted, [])
     assert.equal(deleteCalls(stub).length, 0)
+  } finally {
+    await stub.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 10. Coverage: the backend and the book are two answers
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY THIS SECTION EXISTS. A book can have a healthy peer and a live server and still have
+ * nothing in OpenViking. Before the split, that book answered `searchBackend: 'ovk'` after a
+ * round trip that could not hit anything, and the panel called it 「可用」. Now the block count
+ * is asked first (local files), the answer says `no-blocks`, and the server is not consulted
+ * at all — which the request counter here proves, request by request.
+ */
+
+test('a book with 0 blocks answers `no-blocks` without sending any OVK request', async () => {
+  const dir = workdir()
+  const stub = await startStub()
+  try {
+    // Configured and reachable — but no rebuild has ever run, so there is no block to recall.
+    const { root, dataDir } = await wired(dir, stub)
+    const before = stub.state.requests.length
+    const outcome = await searchWithSemantic(root, '残锋', {}, { dataDir })
+    assert.equal(stub.state.requests.length, before, 'not even the health probe: it could not change the answer')
+    assert.equal(outcome.availability.backend, 'fts5')
+    assert.equal(outcome.availability.reason, 'no-blocks')
+    assert.equal(outcome.result.searchBackend, 'fts5')
+    assert.equal(outcome.result.degradedReason, 'no-blocks')
+    assert.equal(outcome.coverage.state, 'no-ledger')
+    assert.equal(outcome.result.ok, true, 'a degraded answer is still an answer')
+    assert.equal(outcome.result.items[0].id, 'ch-0001', 'the keyword hit is still there')
+    assert.equal(outcome.semanticHits, 0)
+  } finally {
+    await stub.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a ledger that only holds tombstones is `no-blocks`, not "never built"', async () => {
+  const dir = workdir()
+  const stub = await startStub()
+  try {
+    const { root, dataDir, harness } = await wired(dir, stub)
+    await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    for (const chapterId of ['ch-0001', 'ch-0002', 'ch-0003']) {
+      const deleted = await callTool(harness, 'inkflow_chapter_delete', { projectRoot: root, chapterId, confirm: true })
+      assert.equal(deleted.ok, true, `delete ${chapterId}: ${JSON.stringify(deleted.error)}`)
+    }
+    await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+
+    const status = await semanticStatusOf(root, { dataDir })
+    assert.equal(status.coverage.hasLedger, true, 'the ledger is still there: that is the difference from "never built"')
+    assert.equal(status.coverage.state, 'no-blocks')
+    assert.equal(status.coverage.blocks, 0, 'a tombstone is not a block a recall can hit')
+    assert.equal(status.coverage.tombstones, 3)
+    assert.match(status.coverage.headline, /未建块/u)
+
+    // and the search still sends nothing: the tombstone-only book cannot produce a hit either
+    const before = stub.state.requests.length
+    const outcome = await searchWithSemantic(root, '残锋', {}, { dataDir })
+    assert.equal(stub.state.requests.length, before)
+    assert.equal(outcome.result.degradedReason, 'no-blocks')
+  } finally {
+    await stub.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('partial coverage still recalls, and says how far behind it is', async () => {
+  const dir = workdir()
+  const stub = await startStub()
+  try {
+    const { root, dataDir, harness } = await wired(dir, stub)
+    await runRebuild({ root, dataDir, connection: { endpoint: stub.url }, peer: 'book-test' })
+    // A chapter written AFTER the rebuild: the book lists four, OpenViking holds three.
+    chapter(root, 'chapters/vol-01/0004-新章.md', 'ch-0004', 4, '第四章 新章', '这是后写的一章。')
+    const rebuilt = await callTool(harness, 'inkflow_index_rebuild', { projectRoot: root })
+    assert.equal(rebuilt.ok, true)
+
+    const outcome = await searchWithSemantic(root, '残锋', {}, { dataDir })
+    assert.equal(outcome.coverage.state, 'partial')
+    assert.equal(outcome.coverage.coveredChapters, 3)
+    assert.equal(outcome.coverage.bookChapters, 4)
+    assert.equal(outcome.coverage.behind, 1)
+    assert.equal(outcome.result.searchBackend, 'ovk', 'the chapters that ARE indexed still answer')
+    assert.equal(outcome.semanticHits > 0, true)
+  } finally {
+    await stub.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('status reports a live backend next to an unbuilt book, and the tool prints both', async () => {
+  const dir = workdir()
+  const stub = await startStub()
+  try {
+    const { root, dataDir, harness } = await wired(dir, stub)
+    const status = await callTool(harness, 'inkflow_semantic_status', { projectRoot: root })
+    assert.equal(status.ok, true)
+    assert.equal(status.availability.backend, 'ovk', 'the BACKEND answers')
+    assert.equal(status.coverage.state, 'no-ledger', 'the BOOK was never built — two different answers')
+    assert.ok(status.reasons.includes('no-blocks'), 'the vocabulary the tool advertises includes the coverage reason')
+
+    const text = renderedTool(harness, 'inkflow_semantic_status', { projectRoot: root }, status)
+    assert.match(text, /^后端：可用/mu)
+    assert.ok(
+      text.includes(`本书覆盖：${status.coverage.headline}`),
+      `the tool must print the Host sentence verbatim (the panel prints the same one): ${text}`,
+    )
   } finally {
     await stub.close()
     rmSync(dir, { recursive: true, force: true })

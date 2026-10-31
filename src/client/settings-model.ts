@@ -284,6 +284,23 @@ export interface SemanticRebuildSummary {
   staleChapters: string[]
 }
 
+/**
+ * How much of this book is in OpenViking — a different answer from `availability`, which
+ * only says whether the backend answers. `headline` is the Host's own sentence (the same
+ * string the tool prints), so the page and the model cannot describe the same state twice.
+ */
+export interface SemanticCoverageValue {
+  state: string
+  reason?: string
+  hasLedger?: boolean
+  blocks?: number
+  tombstones?: number
+  coveredChapters?: number
+  bookChapters?: number | null
+  behind?: number | null
+  headline?: string
+}
+
 export interface SemanticStatusValue {
   availability: {
     backend: 'ovk' | 'fts5'
@@ -294,6 +311,7 @@ export interface SemanticStatusValue {
     configPath?: string
     endpoint?: string
   }
+  coverage?: SemanticCoverageValue
   settings: { enabled: boolean; endpoint: string | null; apiKeySet: boolean }
   peer: { id: string | null; source: string | null; configPath: string | null }
   ledger: {
@@ -354,28 +372,51 @@ export const SEMANTIC_REASON_TEXTS: Record<string, string> = {
   disabled: '设置里的「语义检索」开关是关的',
   'no-endpoint': '没有填语义检索端点（设置里的「语义检索端点」）',
   'no-peer': '这本书没有 .openviking 里的 peer.id',
+  // Not a backend problem: the block count is a fact about the book, so this reason can
+  // only come from a search answer (a 0-block book never probes the server at all).
+  'no-blocks': '这本书还没有建语义块（设置 → 语义检索 → 建立索引）',
   unreachable: '端点没有响应（OpenViking 没起来，或端口不对）',
   unauthorized: '端点拒绝了凭据（密钥不对）',
   timeout: '端点在超时内没有回答',
 }
 
-/** The section's headline: which backend answers, and what to do about it. */
+/** `（OpenViking <endpoint> · peer <id>）`, skipping the halves that are not configured. */
+function backendFacts(status: SemanticStatusValue): string {
+  const endpoint = status.settings.endpoint ?? ''
+  const peer = status.peer.id ?? ''
+  const parts = [endpoint === '' ? '' : endpoint, peer === '' ? '' : `peer ${peer}`].filter((part) => part !== '')
+  return parts.length === 0 ? '' : `（OpenViking ${parts.join(' · ')}）`
+}
+
+/**
+ * The section's headline lines, grouped as two answers instead of one word.
+ *
+ * WHY TWO LINES. 「语义检索：可用」 was one sentence for two facts: the server answers, and
+ * this book is indexed in it. A book with a live peer and 0 blocks read as "可用", which is
+ * exactly the misreading this split removes. The first line is the BACKEND (one health
+ * probe), the second the BOOK (local files only, printed by `describeSemanticCoverage`).
+ * While the backend does not answer there is no second line on purpose: the only fix is the
+ * reason on the first one, and a second complaint would point at the wrong thing.
+ */
 export function describeSemantic(value: SemanticSectionValue): string[] {
   const status = value.status
   const lines: string[] = []
+  const backendUp = status.availability.backend === 'ovk'
   lines.push(
-    status.availability.backend === 'ovk'
-      ? '语义检索：可用（召回由 OpenViking 提供）'
-      : `语义检索：降级为关键词检索 — ${SEMANTIC_REASON_TEXTS[status.availability.reason ?? ''] ?? String(status.availability.reason ?? '未配置')}`,
+    backendUp
+      ? `后端：可用${backendFacts(status)}`
+      : `后端：不可用 —— ${SEMANTIC_REASON_TEXTS[status.availability.reason ?? ''] ?? String(status.availability.reason ?? '未配置')}`,
   )
   if (status.availability.detail !== undefined && status.availability.detail !== '') {
     lines.push(`  ${status.availability.detail}`)
   }
+  // While the backend is down its error is the headline, so the endpoint and peer it was
+  // tried with go on their own line — "which server did it fail to reach" is the next question.
+  if (!backendUp) {
+    lines.push(`端点：${status.settings.endpoint ?? '未设置'} · peer：${status.peer.id ?? '无'}`)
+  }
   lines.push(
-    `端点：${status.settings.endpoint ?? '未设置'} · 密钥：${status.settings.apiKeySet ? '已设置（不显示）' : '未设置'} · peer：${status.peer.id ?? '无'}`,
-  )
-  lines.push(
-    `已写入：${String(status.ledger.blocks)} 块（章 ${String(status.ledger.chapters)} · 已删除章的占位 ${String(status.ledger.tombstones)}）`,
+    `密钥：${status.settings.apiKeySet ? '已设置（不显示）' : '未设置'} · 已写入：${String(status.ledger.blocks)} 块（章 ${String(status.ledger.chapters)} · 已删除章的占位 ${String(status.ledger.tombstones)}）`,
   )
   const last = status.ledger.lastRebuild
   if (last !== null) {
@@ -385,6 +426,24 @@ export function describeSemantic(value: SemanticSectionValue): string[] {
     if (last.stale > 0) lines.push(`  未完成 ${String(last.stale)} 章（下次重建会重试）`)
   }
   return lines
+}
+
+/**
+ * The 「本书」 line: how much of THIS book the semantic index can hit, or `null` when there
+ * is no point showing it.
+ *
+ * `null` in two cases, both deliberate: the backend is not answering (its reason is the one
+ * thing to fix), or the Host does not report coverage at all (an older build — claiming
+ * either "未建块" or "已同步" from missing data would be a guess). The sentence itself is
+ * `coverage.headline`, computed once in the Host and printed here and by
+ * `inkflow_semantic_status`, so the two channels cannot drift.
+ */
+export function describeSemanticCoverage(value: SemanticSectionValue): string | null {
+  const status = value.status
+  if (status.availability.backend !== 'ovk') return null
+  const headline = status.coverage?.headline
+  if (typeof headline !== 'string' || headline === '') return '本书：状态未知（这一版 Host 没有报覆盖率）'
+  return `本书：${headline}`
 }
 
 /** The estimate under the rebuild button: size AND cost, because both are the decision. */

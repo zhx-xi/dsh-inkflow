@@ -645,6 +645,7 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 | `usable` / `missing[]` / `actions[]` | 与工具、工作台**同一份** `inspectProject` 判定（ADR-0008 D5） |
 | `dirStatus` | `'ok'` / `'missing-dir'`：注册还在但目录已被删/搬走（来自 `Workspace.status()`，缺失时退化为一次 `stat`）。**不重建、不自动移除注册** |
 | `counts?` | `{chapters, volumes}`，取自**已提交的** catalog（`chapters/index.json` + 每卷 `index.json`）；缺失或读不完整则**不带该字段**（未知），绝不扫正文、绝不重建 |
+| `semantic?` | 本书的语义覆盖（`SemanticCoverage`）：`state`（`unconfigured`／`no-ledger`／`no-blocks`／`partial`／`complete`）、`reason?`（前者的 `disabled`／`no-endpoint`／`no-peer`）、`hasLedger`、`blocks`、`tombstones`、`coveredChapters`、`bookChapters`（索引不可读时 `null`）、`behind`、`headline`。**零网络**：设置 + 本书 `.openviking` + 本地账本 + 一次索引章节读取，从不探活（N 本书不能变成 N 次请求）；`dataDir` 缺失或判定超时/目录不在了则**不带该字段**（"这一版判断不了"，与 `state:'unconfigured'` 的「—」不是一回事）。文案 `headline` 与 `inkflow_semantic_status` 同源 |
 | `notABook?` | `true` = 无 `inkflow.json` 且无任何内容目录：这是用户打开过的工作区，不是坏书。**不自动初始化**；它的初始化走它自己会话里的 `inkflow_project_init`（已注册目录在书库侧不发写凭证） |
 | `duplicates?` | 同一 canonical 目录被注册多次时被折叠的条数（只列首行） |
 
@@ -795,5 +796,4 @@ dueBy: vol-02            # 期望回收的章 id 或卷 id；超期判定只看�
 | 面板编辑器与提案制修订 | 面板只有章节树与只读正文预览，写入仍走工具 | #45 |
 | 搜索的正文全文检索 | `/search` 只匹配章节元数据，并标 `searchUnavailable: true` | #22 |
 | 插件级共享库（复制快照 / `origin` / stale 列表） | 已落地：三条 hub 路由 + 三个工具（§6.2.3）；**未做**「引用卡 → 复制快照」的一键转换 | 转换随 #49 |
-| OVK 语义检索（peer 只读、按章重建、降级 FTS5） | 未实现；当前只有 FTS5 | #41 |
 | 旧库 ETL（43 表 → 文件树） | 已落地 13 张内容表的映射：`inkflow_etl_plan`（只读预览） / `inkflow_etl_apply`（`confirm` + `planToken`，幂等、可回滚、不跑 git）；`facts/` 没有旧库来源 | #51 |

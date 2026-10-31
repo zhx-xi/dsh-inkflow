@@ -238,15 +238,33 @@ export interface OvkConnection {
 }
 
 /**
- * Why the semantic backend is not answering. Fixed vocabulary (ADR-0020 E5) because the
+ * Why a semantic answer fell back to keywords. Fixed vocabulary (ADR-0020 E5) because the
  * panel turns each value into one concrete next step.
+ *
+ * `no-blocks` is the one member that is NOT about the backend: the server may answer
+ * `/health` perfectly while this book has no live block to recall, so a round trip could
+ * not return a hit. It stays in the same vocabulary so a search answer can say so
+ * (`degradedReason: 'no-blocks'`) instead of pretending the semantic backend answered.
  */
-export type OvkDegradedReason = 'disabled' | 'no-endpoint' | 'no-peer' | 'unreachable' | 'unauthorized' | 'timeout'
+export type OvkDegradedReason =
+  | 'disabled'
+  | 'no-endpoint'
+  | 'no-peer'
+  | 'no-blocks'
+  | 'unreachable'
+  | 'unauthorized'
+  | 'timeout'
 
+/**
+ * The vocabulary in the order an author can fix it: configuration, then this book's
+ * coverage, then transport. `no-blocks` deliberately precedes the transport reasons — it is
+ * decided from local files, so a book that was never indexed never waits on a socket.
+ */
 export const OVK_DEGRADED_REASONS: readonly OvkDegradedReason[] = [
   'disabled',
   'no-endpoint',
   'no-peer',
+  'no-blocks',
   'unreachable',
   'unauthorized',
   'timeout',
