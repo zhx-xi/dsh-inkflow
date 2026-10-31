@@ -100,8 +100,10 @@ export const HUB_ROUTES: readonly HubRoute[] = [
     pattern: /^\/hub\/books$/,
     methods: ['GET'],
     query: [],
-    handle: async ({ ctx, version }) => {
-      const result = await buildHubBooks(ctx, { pluginVersion: version })
+    handle: async ({ ctx, dataDir, version }) => {
+      // `dataDir` is what makes the semantic badge possible: its coverage is read from the
+      // plugin's own ledger and settings, never from the book.
+      const result = await buildHubBooks(ctx, { pluginVersion: version, dataDir })
       if (result.ok) return { status: 200, body: ok(result.value) }
       return { status: 200, body: failure(result.error.code, { message: result.error.message, hint: result.error.hint }) }
     },

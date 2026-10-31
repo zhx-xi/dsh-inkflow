@@ -21,6 +21,11 @@
  *     which for N books is exactly the first-paint cost ADR-0010 D8 caps. A
  *     missing or unreadable catalog leaves `counts` absent (unknown), and is
  *     never rebuilt here.
+ *   - `semantic` — how much of that book is in OpenViking (`semanticCoverageOf`): the
+ *     settings, the book's peer layer, the plugin's ledger and one read of the derived
+ *     index's chapter rows. **Zero network**, on purpose: N books times one probe would be
+ *     the same first-paint cost, and it would make the list slowest exactly when the
+ *     server is down. The badge on the card is a projection of this field.
  *
  * WRITE DISCIPLINE: this module writes nothing. `inspectProject` is called with
  * `recreateIndexDir: false` (its only write path), the catalog files are only
@@ -40,8 +45,12 @@ import { basename, join } from 'node:path'
 
 import type { HostContext } from './context.js'
 import { CATALOG_FILE, CHAPTERS_DIR, CONTENT_DIRS } from './conventions.js'
+import { semanticCoverageOf } from './ovk-coverage.js'
+import type { SemanticCoverage } from './ovk-coverage.js'
 import { inspectProject } from './project.js'
 import type { ProjectProbe, ProjectState, WorkspaceAction } from './project.js'
+import { readSettings } from './settings.js'
+import type { InkflowSettings } from './settings.js'
 
 /** `/hub` is the segment after `/inkflow/internal`; the route table lives in routes.ts. */
 export const HUB_SEGMENT = '/hub'
@@ -92,6 +101,12 @@ export type HubBookRow = {
   dirStatus: 'ok' | 'missing-dir'
   /** Committed catalog totals; absent when the catalog is missing or unreadable. */
   counts?: HubBookCounts
+  /**
+   * Semantic coverage of this book (local files only, no probe). Absent when this answer
+   * cannot tell — a timed-out judgment, a directory that is gone, or a caller with no
+   * `dataDir` — which is different from `state: 'unconfigured'` (`—`): that one is a fact.
+   */
+  semantic?: SemanticCoverage
   /** No `inkflow.json` and no content directory: a workspace that is not a book yet. */
   notABook?: true
   /** Extra registrations of the same canonical directory collapsed into this row. */
@@ -121,6 +136,13 @@ export interface HubBooksOptions {
   budgetMs?: number
   limit?: number
   home?: string
+  /**
+   * Plugin state directory: the semantic coverage of each row is read from it (ledger +
+   * settings) and nowhere else. Absent = rows carry no `semantic` field.
+   */
+  dataDir?: string
+  /** Full override of the coverage read, so a cost test never touches the disk. */
+  coverage?: (root: string) => SemanticCoverage
 }
 
 /**
@@ -171,6 +193,7 @@ export async function buildHubBooks(ctx: HostContext, options: HubBooksOptions =
     concurrency: Math.max(1, options.concurrency ?? HUB_CONCURRENCY),
     bookTimeoutMs: Math.max(1, options.bookTimeoutMs ?? HUB_BOOK_TIMEOUT_MS),
     deadline: Date.now() + Math.max(1, options.budgetMs ?? HUB_TOTAL_BUDGET_MS),
+    coverage: coverageReader(options),
   }
   const judged = await collect(selected, settings)
   const books = judged.filter((row): row is HubBookRow => row !== undefined)
@@ -186,6 +209,29 @@ export async function buildHubBooks(ctx: HostContext, options: HubBooksOptions =
       truncated: capped || books.length < selected.length,
       books,
     },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The semantic badge's data source
+// ---------------------------------------------------------------------------
+
+/**
+ * How one row's coverage is read, or a function that answers `undefined`.
+ *
+ * The settings file is read ONCE for the whole list (lazily, on the first book that needs
+ * it) because it is the same file for every row; the ledger and the peer layer are per book
+ * by definition. `undefined` for a caller with no `dataDir` keeps the row free of a field it
+ * could not have computed — an absent badge is "this build cannot tell", never a verdict.
+ */
+function coverageReader(options: HubBooksOptions): (root: string) => SemanticCoverage | undefined {
+  if (options.coverage !== undefined) return options.coverage
+  const dataDir = options.dataDir
+  if (dataDir === undefined) return () => undefined
+  let settings: InkflowSettings | undefined
+  return (root) => {
+    settings ??= readSettings(dataDir).settings
+    return semanticCoverageOf(root, { dataDir, settings })
   }
 }
 
@@ -291,6 +337,11 @@ interface CollectSettings {
   bookTimeoutMs: number
   /** `Date.now()` deadline for the whole answer. */
   deadline: number
+  /**
+   * The book's semantic coverage, or `undefined` when this answer cannot tell (`dataDir`
+   * absent). Injected so the cost tests can decide it, exactly like `probe`.
+   */
+  coverage: (root: string) => SemanticCoverage | undefined
 }
 
 /**
@@ -342,6 +393,12 @@ async function judgeBook(entry: CollapsedWorkspace, settings: CollectSettings): 
 
   const probe = outcome.value
   const counts = readCatalogCounts(entry.path)
+  // The semantic badge: local files only (settings, the book's peer layer, the ledger, one
+  // read of the index's chapter rows). It is deliberately computed here rather than by
+  // probing, because 200 books times one HTTP request is the cost ADR-0010 D8 caps — and a
+  // badge that costs a socket would make opening the book list slow exactly when a server
+  // is down.
+  const semantic = settings.coverage(entry.path)
   return {
     ...base,
     ...duplicated,
@@ -350,6 +407,7 @@ async function judgeBook(entry: CollapsedWorkspace, settings: CollectSettings): 
     missing: probe.missing,
     actions: probe.actions,
     ...(counts === undefined ? {} : { counts }),
+    ...(semantic === undefined ? {} : { semantic }),
     ...(isNotABook(probe) ? { notABook: true as const } : {}),
   }
 }

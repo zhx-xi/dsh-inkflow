@@ -26,10 +26,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { HUB_BOOK_TIMEOUT_MS, HUB_CONCURRENCY, HUB_MAX_BOOKS, HUB_TOTAL_BUDGET_MS, apply, buildHubBooks } from '../lib/index.js'
+import { HUB_BOOK_TIMEOUT_MS, HUB_CONCURRENCY, HUB_MAX_BOOKS, HUB_TOTAL_BUDGET_MS, apply, buildHubBooks, writeSettings } from '../lib/index.js'
 import { createStateDir } from './state-dir.mjs'
 
 const CONTENT_DIRS = ['chapters', 'characters', 'world', 'outlines', 'foreshadowing', 'timeline', 'relations', 'facts', 'library']
@@ -596,4 +597,56 @@ test('a judgment that throws is reported as a row, not as a failed request', asy
   assert.equal(result.ok, true)
   assert.equal(result.value.books.length, 2)
   assert.equal(result.value.books[1].state, 'timeout')
+})
+
+// ---------------------------------------------------------------------------
+// 5. The semantic badge: local files only, never a probe
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY THE REQUEST COUNTER IS THE ASSERTION. The badge is drawn for every registered book on
+ * every refresh, so "how do you know this book is (not) indexed" must be answerable without
+ * a socket. A stub OpenViking is listening and the settings point at it: after the whole list
+ * has been judged, it must still have received nothing. If that ever changes, 200 books
+ * become 200 HTTP requests and the book list gets slowest exactly when the server is down.
+ */
+test('every row carries the semantic badge, read from local files with zero network', async () => {
+  const requests = []
+  const server = createServer((request, response) => {
+    requests.push(request.url)
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ status: 'ok', result: { healthy: true } }))
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const endpoint = `http://127.0.0.1:${String(server.address().port)}`
+  try {
+    const base = workdir()
+    const dataDir = join(base, 'state')
+    const withPeer = join(base, 'book-peer')
+    const withoutPeer = join(base, 'book-plain')
+    scaffold(withPeer)
+    scaffold(withoutPeer)
+    // A configured, reachable backend and a book that carries a peer — and nothing built yet.
+    mkdirSync(join(withPeer, '.openviking'), { recursive: true })
+    writeFileSync(join(withPeer, '.openviking', 'config.local.json'), `${JSON.stringify({ version: 1, peer: { id: 'shushan' } })}\n`, 'utf8')
+    const written = writeSettings(dataDir, { confirm: true, semanticSearch: true, semanticEndpoint: endpoint })
+    assert.equal(written.ok, true, JSON.stringify(written.error))
+
+    const result = await buildHubBooks(probeCtx([withPeer, withoutPeer]), { probe: usableProbe, dataDir })
+    assert.equal(result.ok, true)
+    const [peerRow, plainRow] = result.value.books
+    assert.equal(peerRow.semantic.state, 'no-ledger', 'configured, but never built for THIS book')
+    assert.match(peerRow.semantic.headline, /还没有索引账本/u)
+    assert.equal(peerRow.semantic.hasLedger, false)
+    assert.equal(plainRow.semantic.state, 'unconfigured', 'nothing to build WITH: no peer in that book')
+    assert.equal(plainRow.semantic.reason, 'no-peer')
+    assert.equal(requests.length, 0, `the badge never probes: ${String(requests.length)} request(s) reached the stub`)
+
+    // No `dataDir` = a caller that cannot read the plugin state: the field is absent, which
+    // the panel renders as no badge. Absent is "cannot tell", never a verdict.
+    const bare = await buildHubBooks(probeCtx([withPeer]), { probe: usableProbe })
+    assert.equal(bare.value.books[0].semantic, undefined)
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
 })

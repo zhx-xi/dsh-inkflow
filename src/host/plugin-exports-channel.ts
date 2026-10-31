@@ -370,6 +370,8 @@ export {
   runRebuild,
 } from './ovk-queue.js'
 export type { QueueSnapshot, RebuildOutcome, SemanticRuntime } from './ovk-queue.js'
+export { coverageOf, semanticCoverageOf } from './ovk-coverage.js'
+export type { CoverageFacts, SemanticCoverage, SemanticCoverageDeps, SemanticCoverageGap, SemanticCoverageState } from './ovk-coverage.js'
 export { diagnoseSemantic, searchWithSemantic } from './ovk-search.js'
 export type { SemanticAvailability, SemanticDeps, SemanticSearchOutcome } from './ovk-search.js'
 export { estimateRebuild, purgeApply, purgePlanOf, rebuildNow, runtimeOf, semanticStatusOf } from './ovk-status.js'

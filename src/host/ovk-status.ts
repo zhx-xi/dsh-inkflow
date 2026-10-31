@@ -12,11 +12,18 @@
  * Read-only by default: `semanticStatusOf` touches no network beyond one health probe and
  * writes nothing; `rebuildNow` needs the caller to have already decided `confirm`;
  * `purgeApply` is the only function here that deletes anything in OVK.
+ *
+ * WHAT THE STATUS NOW KEEPS APART. `availability` says whether the backend answers;
+ * `coverage` says how much of THIS book is in it. One word — 「可用」 — used to carry both,
+ * which is how a book with a live peer and zero blocks looked exactly like a fully indexed
+ * one. Coverage comes from `ovk-coverage.ts`, the same function the book list reads.
  */
 
 import { readSettings } from './settings.js'
 import { OVK_FIRST_BUILD_BYTES, OVK_FIRST_BUILD_CHAPTERS, connectionOf, ovkForget, resolveOvkPeer } from './ovk.js'
 import type { OvkDegradedReason } from './ovk.js'
+import { semanticCoverageOf } from './ovk-coverage.js'
+import type { SemanticCoverage } from './ovk-coverage.js'
 import type { RebuildSummary } from './ovk-ledger.js'
 import { blockCountOf, readLedger, semanticSlugOf, tombstonedUrisOf, writeLedger } from './ovk-ledger.js'
 import { diagnoseSemantic } from './ovk-search.js'
@@ -32,6 +39,12 @@ export interface SemanticOpsDeps {
 
 export interface SemanticStatus {
   availability: SemanticAvailability
+  /**
+   * How much of THIS book is in OVK — a different question from `availability`, which is
+   * only about the backend answering. Reported side by side so neither can be read as the
+   * other (the panel's two lines, the tool's two lines).
+   */
+  coverage: SemanticCoverage
   settings: { enabled: boolean; endpoint: string | null; apiKeySet: boolean }
   peer: { id: string | null; source: string | null; configPath: string | null }
   ledger: {
@@ -55,11 +68,16 @@ export async function semanticStatusOf(root: string, deps: SemanticOpsDeps): Pro
     settings,
     ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
   })
+  // Zero network and cheap (settings already read, one ledger file, one index count), and
+  // it must come from the same function the book list uses — two coverage calculators would
+  // be two answers to "is this book indexed".
+  const coverage = semanticCoverageOf(root, { dataDir: deps.dataDir, settings })
   const slug = semanticSlugOf(root)
   const { ledger, fresh } = readLedger(deps.dataDir, slug)
   const peer = resolveOvkPeer(root)
   return {
     availability,
+    coverage,
     settings: {
       enabled: settings.semanticSearch === true,
       endpoint: settings.semanticEndpoint ?? null,

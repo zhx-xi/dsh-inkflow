@@ -16,6 +16,13 @@
  *      and a `degradedReason`. Nothing throws, nothing 500s: an absent OVK is a capability
  *      downgrade, not a failure (ADR-0009 P8).
  *
+ * WHERE "THIS BOOK HAS NOTHING TO RECALL" SITS. It is not a backend verdict, so it is not
+ * part of `diagnoseSemantic` (which answers `/health` and nothing else — the panel reports
+ * that as 「后端：可用」 even for a book with 0 blocks). It is `semanticCoverageOf`
+ * (`ovk-coverage.ts`), asked here BEFORE the probe: a book with no live block answers
+ * `no-blocks` without a single OVK request, and the receipt stops pretending the semantic
+ * backend was consulted.
+ *
  * WHY THE FTS5 ENTRY STAYS THE BASE. `searchEntries` already answers every kind; the
  * semantic backend only adds *chapter* hits keywords would miss ("那把断剑" ↔ "残锋"). It is
  * merged in front of the keyword page and deduplicated by chapter id, so a chapter both
@@ -26,6 +33,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { parseMarkdown } from './frontmatter.js'
+import { semanticCoverageOf } from './ovk-coverage.js'
+import type { SemanticCoverage } from './ovk-coverage.js'
 import {
   type OvkDegradedReason,
   connectionOf,
@@ -118,6 +127,8 @@ function chapterBodyAt(root: string, path: string): string | undefined {
 export interface SemanticSearchOutcome {
   result: SearchEntriesResult
   availability: SemanticAvailability
+  /** How much of this book is in OVK — the reason `no-blocks` may have short-circuited. */
+  coverage: SemanticCoverage
   /** Semantic hits that made it into the page (0 when the backend is off or silent). */
   semanticHits: number
   /** Hits OVK returned whose URI the ledger could not locate (P7: never guess a chapter). */
@@ -132,6 +143,12 @@ export interface SemanticSearchOutcome {
  * The answer's shape is unchanged (X-16): this composes two results, it does not invent a
  * third — a caller must not need to know which backend answered beyond
  * `searchBackend`/`degradedReason`.
+ *
+ * WHY COVERAGE IS ASKED FIRST. "Is the backend up" and "does this book have anything in it"
+ * are different questions with different costs, and the second one is answered from local
+ * files. Asking it first means a book with no live block answers `no-blocks` without a
+ * single OVK request (not even the health probe, which could not change the outcome), and
+ * the receipt never claims a semantic backend that could not have returned a hit.
  */
 export async function searchWithSemantic(
   root: string,
@@ -141,21 +158,35 @@ export async function searchWithSemantic(
 ): Promise<SemanticSearchOutcome> {
   const base = searchEntries(root, query, options)
   const settings = deps.settings ?? readSettings(deps.dataDir).settings
-  const availability = await diagnoseSemantic(root, { ...deps, settings })
+  const coverage = semanticCoverageOf(root, { dataDir: deps.dataDir, settings })
   const offset = Math.max(0, Math.trunc(options.offset ?? 0))
   const limit = Math.max(1, Math.min(100, Math.trunc(options.limit ?? 20)))
   const radius = Math.max(0, Math.trunc(options.snippet ?? 40))
 
+  // Answered from local files, so it is decided before the socket. `unconfigured` is NOT
+  // this case: there the availability verdict has to name setting/endpoint/peer, which is a
+  // different fix than "build this book's index".
+  if (coverage.state !== 'unconfigured' && coverage.coveredChapters === 0) {
+    const noBlocks: SemanticAvailability = {
+      backend: 'fts5',
+      reason: 'no-blocks',
+      detail: coverage.headline,
+    }
+    return keywordOnly(base, noBlocks, coverage)
+  }
+
+  const availability = await diagnoseSemantic(root, { ...deps, settings })
+
   if (availability.backend === 'fts5') {
-    return { result: annotate(base, availability), availability, semanticHits: 0, staleHits: 0, tombstoneHits: 0 }
+    return keywordOnly(base, availability, coverage)
   }
   // Only chapter prose is in OVK (ADR-0009 P9). A search that excludes chapters must not
   // pay for a recall it cannot use.
   if (options.kinds !== undefined && !options.kinds.includes('chapters')) {
-    return { result: annotate(base, availability), availability, semanticHits: 0, staleHits: 0, tombstoneHits: 0 }
+    return keywordOnly(base, availability, coverage)
   }
   const connection = connectionOf(settings)
-  if (!connection.ok) return { result: annotate(base, availability), availability, semanticHits: 0, staleHits: 0, tombstoneHits: 0 }
+  if (!connection.ok) return keywordOnly(base, availability, coverage)
 
   const slug = semanticSlugOf(root)
   const { ledger } = readLedger(deps.dataDir, slug)
@@ -176,7 +207,7 @@ export async function searchWithSemantic(
         recall.failure.reason === 'unauthorized' || recall.failure.reason === 'timeout' ? recall.failure.reason : 'unreachable',
       detail: recall.failure.detail,
     }
-    return { result: annotate(base, degraded), availability: degraded, semanticHits: 0, staleHits: 0, tombstoneHits: 0 }
+    return keywordOnly(base, degraded, coverage)
   }
 
   const chapters = new Map((chapterSources(root) ?? []).map((chapter) => [chapter.id, chapter]))
@@ -236,7 +267,7 @@ export async function searchWithSemantic(
     // The keyword side has no index but the semantic side answered: that is still a usable
     // answer, so it is returned instead of the INDEX_UNAVAILABLE failure.
     if (entries.length === 0) {
-      return { result: annotate(base, availability), availability, semanticHits: 0, staleHits: totalStale, tombstoneHits }
+      return { result: annotate(base, availability), availability, coverage, semanticHits: 0, staleHits: totalStale, tombstoneHits }
     }
     const page = entries.slice(offset, offset + limit)
     return {
@@ -251,6 +282,7 @@ export async function searchWithSemantic(
         searchBackend: 'ovk',
       },
       availability,
+      coverage,
       semanticHits: entries.length,
       staleHits: totalStale,
       tombstoneHits,
@@ -276,10 +308,20 @@ export async function searchWithSemantic(
       searchBackend: entries.length > 0 ? 'ovk' : 'fts5',
     },
     availability,
+    coverage,
     semanticHits: entries.length,
     staleHits: totalStale,
     tombstoneHits,
   }
+}
+
+/** The keyword answer: no semantic hit reached the page, and the reason says why. */
+function keywordOnly(
+  base: SearchEntriesResult,
+  availability: SemanticAvailability,
+  coverage: SemanticCoverage,
+): SemanticSearchOutcome {
+  return { result: annotate(base, availability), availability, coverage, semanticHits: 0, staleHits: 0, tombstoneHits: 0 }
 }
 
 /** Put the degradation on the answer, leaving a healthy one untouched. */
